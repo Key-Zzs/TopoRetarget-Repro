@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10,<3.14"
 license = {file = "LICENSE"}
 dependencies = [
+  "numpy>=1.26",
   "PyYAML>=6.0",
   "typer>=0.9",
 ]
@@ -23,8 +24,19 @@ dev = [
   "pre-commit>=3.7",
 ]
 future = [
-  "numpy>=1.26",
   "scipy>=1.11",
+  "trimesh>=4.0",
+]
+cache = [
+  "zarr>=2.16",
+  "numcodecs>=0.11",
+]
+viz = [
+  "matplotlib>=3.8",
+  "Pillow>=10.0",
+]
+grab = [
+  "smplx>=0.1.28",
   "trimesh>=4.0",
 ]
 
@@ -51,7 +63,7 @@ select = ["E", "F", "I", "UP", "B"]
 ignore = ["B008"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.13"
 files = ["src"]
 ignore_missing_imports = true
 check_untyped_defs = true

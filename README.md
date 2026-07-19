@@ -11,10 +11,13 @@ dexterous hands.
 
 - Stage 0 complete: repository scaffold, configuration, read-only dataset discovery, and local Arti-MANO importer.
 - Stage 1 complete: complete 16-page paper audit, parameter provenance, assumptions, and fidelity checker.
-- Stage 2+ not started.
+- Stage 2A complete: canonical HOI schema, explicit coordinate semantics, opt-in Zarr storage,
+  deterministic synthetic data, error metrics, and headless comparison visualization.
+- Stage 2B not started: the real-data GRAB inspection adapter is the next bounded step.
 
-This repository does not currently implement the TopoRetarget retargeting algorithm, MANO loading,
-GRAB adapters, numerical optimization, Delaunay/SDF, RL/PPO, or baselines.
+This repository does not implement the TopoRetarget retargeting algorithm, robot interfaces,
+MANO-to-MediaPipe mapping, numerical optimization, Delaunay/SDF, RL/PPO, or baselines. Stage 2A
+does not convert a full dataset and has no robot dependency.
 
 ## Data and local assets
 
@@ -33,6 +36,9 @@ Machine-specific paths belong in ignored `.local/config.yaml` or environment var
 ```bash
 python -m pip install -e ".[dev]"
 toporetarget --help
+toporetarget data --help
+toporetarget data make-synthetic --output .local/cache/hoi/synthetic_demo.zarr
+toporetarget data inspect --input .local/cache/hoi/synthetic_demo.zarr --frame 0
 toporetarget doctor datasets --root "$REF2DEX_STORAGE_ROOT" --max-depth 4
 toporetarget assets import-artimano --source-root "$MANIPTRANS_ROOT" --destination .local/assets/artimano
 toporetarget doctor assets
@@ -62,3 +68,6 @@ See [`docs/ROADMAP.md`](docs/ROADMAP.md), [`docs/PAPER_FIDELITY.md`](docs/PAPER_
 [`docs/LICENSE_AND_DATA_POLICY.md`](docs/LICENSE_AND_DATA_POLICY.md). The existing repository
 license is preserved in [`LICENSE`](LICENSE). Cite the TopoRetarget paper and ManipTrans when
 using the corresponding research or local Arti-MANO source.
+
+The canonical interface is documented in [`docs/HOI_DATA_INTERFACE.md`](docs/HOI_DATA_INTERFACE.md)
+and coordinate semantics in [`docs/COORDINATE_CONVENTIONS.md`](docs/COORDINATE_CONVENTIONS.md).

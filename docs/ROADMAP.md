@@ -4,7 +4,7 @@
 | --- | --- | --- | --- | --- |
 | 0 | Repository creation and architecture | Package, CLI, path policy, dataset discovery, Arti-MANO importer | CI-safe scaffold and local doctors pass | complete |
 | 1 | Paper fidelity audit | Full PDF manifest, equations/tables/figures, configs, assumptions | Fidelity checker and audit report pass | complete |
-| 2 | Canonical HOI schema and coordinate conventions | Schema and frame tests | Contract tested | not started |
+| 2 | Canonical HOI schema and coordinate conventions | Schema, lazy storage, comparison visualization | Stage 2A contract tested; Stage 2B not started | complete (2A) |
 | 3 | MANO to MediaPipe-style 21-keypoint conversion | Converter and fixtures | Converter validated | not started |
 | 4 | Arti-MANO robot adapter | Robot model adapter | Adapter validated | not started |
 | 5 | GRAB dataset adapter | Read-only GRAB adapter | GRAB samples load | not started |
@@ -22,4 +22,3 @@
 | 17 | Paper experiment reproduction | Tables/Figures | Result report | not started |
 | 18 | Performance optimization and v1.0 release | Packaging and benchmarks | Release criteria pass | not started |
 | 19 | Non-paper extensions | MANO cleanup, SPIDER, other extensions | Separately labeled extensions | not started |
-

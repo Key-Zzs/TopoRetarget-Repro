@@ -15,8 +15,16 @@
   author questions, and strict/extended boundaries.
 - Ran the paper fidelity checker and unit tests.
 
+## 2026-07-19 — Stage 2A
+
+- Implemented `toporetarget.hoi.v1`, explicit scene/wrist/object transforms, lazy adapter contract,
+  opt-in Zarr storage, deterministic synthetic data, comparison metrics, and Matplotlib rendering.
+- Preserved timestamps and native FPS as metadata; no temporal resampling, spatial sampling, robot
+  model, source-data modification, or full-dataset conversion was introduced.
+- Stage 2A is complete and is staged as a separate Git snapshot. Stage 2B is not started in this
+  snapshot.
+
 ## Reproducibility boundary
 
 This log does not claim that numerical results, private Pen-Spin data, Wuji hardware transfer, or
 later algorithm stages have been reproduced.
-

@@ -1,1 +1,1 @@
-"""Geometry algorithms are intentionally deferred to a later stage."""
+"""Coordinate-frame and geometry primitives used by the data layer."""

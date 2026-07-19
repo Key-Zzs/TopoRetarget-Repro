@@ -5,6 +5,7 @@ from pathlib import Path
 
 import typer
 
+from toporetarget.cli.data import app as data_app
 from toporetarget.cli.doctor import app as doctor_app
 from toporetarget.config.loader import load_path_config
 from toporetarget.paths.assets import AssetImportError, import_artimano
@@ -15,6 +16,7 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(doctor_app, name="doctor")
+app.add_typer(data_app, name="data")
 assets_app = typer.Typer(help="Manage local robot assets.")
 app.add_typer(assets_app, name="assets")
 
