@@ -1,0 +1,26 @@
+profile_id: artimano_mediapipe21
+version: "1.0.0"
+layout_name: mediapipe21
+notes: Explicit Arti-MANO joint/link anchors in the canonical Stage 3 MediaPipe-21 order.
+anchors:
+  - {semantic_name: wrist, anchor_type: link_origin, link_name: palm, source: URDF link origin, assumptions: [A_ROBOT_KEYPOINT_ANCHORS_001]}
+  - {semantic_name: thumb_cmc, anchor_type: joint_origin, joint_name: j_thumb1x, source: URDF joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}
+  - {semantic_name: thumb_mcp, anchor_type: joint_origin, joint_name: j_thumb2y, source: URDF joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}
+  - {semantic_name: thumb_ip, anchor_type: joint_origin, joint_name: j_thumb3, source: URDF joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}
+  - {semantic_name: thumb_tip, anchor_type: joint_origin, joint_name: j_thumb_tip, source: fixed fingertip joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}
+  - {semantic_name: index_mcp, anchor_type: joint_origin, joint_name: j_index1y, source: URDF joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}
+  - {semantic_name: index_pip, anchor_type: joint_origin, joint_name: j_index2, source: URDF joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}
+  - {semantic_name: index_dip, anchor_type: joint_origin, joint_name: j_index3, source: URDF joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}
+  - {semantic_name: index_tip, anchor_type: joint_origin, joint_name: j_index_tip, source: fixed fingertip joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}
+  - {semantic_name: middle_mcp, anchor_type: joint_origin, joint_name: j_middle1y, source: URDF joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}
+  - {semantic_name: middle_pip, anchor_type: joint_origin, joint_name: j_middle2, source: URDF joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}
+  - {semantic_name: middle_dip, anchor_type: joint_origin, joint_name: j_middle3, source: URDF joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}
+  - {semantic_name: middle_tip, anchor_type: joint_origin, joint_name: j_middle_tip, source: fixed fingertip joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}
+  - {semantic_name: ring_mcp, anchor_type: joint_origin, joint_name: j_ring1y, source: URDF joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}
+  - {semantic_name: ring_pip, anchor_type: joint_origin, joint_name: j_ring2, source: URDF joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}
+  - {semantic_name: ring_dip, anchor_type: joint_origin, joint_name: j_ring3, source: URDF joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}
+  - {semantic_name: ring_tip, anchor_type: joint_origin, joint_name: j_ring_tip, source: fixed fingertip joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}
+  - {semantic_name: pinky_mcp, anchor_type: joint_origin, joint_name: j_pinky1y, source: URDF joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}
+  - {semantic_name: pinky_pip, anchor_type: joint_origin, joint_name: j_pinky2, source: URDF joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}
+  - {semantic_name: pinky_dip, anchor_type: joint_origin, joint_name: j_pinky3, source: URDF joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}
+  - {semantic_name: pinky_tip, anchor_type: joint_origin, joint_name: j_pinky_tip, source: fixed fingertip joint origin, assumptions: [A_ARTIMANO_KEYPOINT_MAPPING_001]}

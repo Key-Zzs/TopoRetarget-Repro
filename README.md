@@ -8,9 +8,9 @@ It provides a robot-independent HOI data contract, explicit coordinate conventio
 conversion tools, reproducibility audits, and a staged path toward full dexterous retargeting.
 
 The repository is intentionally transparent about scope: the current implementation reaches the
-canonical HOI interface and a bounded MANO-to-MediaPipe-style-21 source adapter. It does not yet
-claim to implement the paper's complete robot retargeting optimizer, RL pipeline, or reported
-experimental results.
+canonical HOI interface, a bounded MANO-to-MediaPipe-style-21 source adapter, and the Stage 4
+generic robot-hand/Arti-MANO target kinematics interface. It does not yet claim to implement the
+paper's complete robot retargeting optimizer, RL pipeline, or reported experimental results.
 
 ## Overview
 
@@ -20,6 +20,7 @@ The main entry point is the `toporetarget` CLI. The code is organized around com
   frame conversions;
 - read-only inspection of one GRAB NPZ sequence and conversion to a canonical Zarr cache;
 - explicit MANO semantic layouts and versioned MANO-to-MediaPipe21 mapping profiles;
+- generic differentiable URDF hand FK, named qpos, target anchors, and Arti-MANO RH/LH inspection;
 - source/object/timestamp preservation reports and static or interactive geometry viewers;
 - paper-fidelity auditing, assumptions tracking, and local Arti-MANO asset import support.
 
@@ -39,7 +40,7 @@ that stage; it does not imply full-dataset or result-level reproduction.
 | 1 | Paper fidelity audit | Complete | PDF manifest, equation/table/figure traceability, assumptions, and checker pass. |
 | 2 | Canonical HOI schema and coordinates | Complete, bounded | Schema, lazy Zarr storage, comparison views, and bounded GRAB inspection pass. |
 | 3 | MANO → MediaPipe-style 21 source adapter | Complete, bounded | Explicit layouts/profiles, converter, reports, viewers, synthetic tests, and bounded real GRAB checks pass; semantic and topology assumptions remain explicit. |
-| 4 | Arti-MANO robot adapter | TODO | Implement and validate robot model/joint/link conventions. |
+| 4 | Arti-MANO robot adapter | Complete, with assumptions | Generic URDF/FK interface, explicit MediaPipe-21-compatible anchors, separate geometry inspection, RH/LH validation, Jacobian checks, and CLI pass; paper frame/mapping assumptions remain explicit. |
 | 5 | Full GRAB dataset adapter | TODO | Extend the explicit single-sequence reader to a validated dataset adapter. |
 | 6 | Object sampling, collision geometry, and SDF | TODO | Implement geometry backends and tests. |
 | 7 | Relative bone-direction initialization | TODO | Implement and test the paper's Eq. 1–2 initialization. |
@@ -71,7 +72,7 @@ Chinese roadmap is [docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md).
 Install the complete environment for the currently implemented data and visualization workflows:
 
 ```bash
-python -m pip install -e ".[dev,cache,viz,grab]"
+python -m pip install -e ".[dev,cache,viz,grab,robot]"
 ```
 
 For core schema/tests without Zarr, visualization, or GRAB support, `python -m pip install -e ".[dev]"`
@@ -97,6 +98,8 @@ boundary is [`docs/LICENSE_AND_DATA_POLICY.md`](docs/LICENSE_AND_DATA_POLICY.md)
 toporetarget --help
 toporetarget data --help
 toporetarget keypoints --help
+toporetarget robots --help
+toporetarget robots list
 toporetarget doctor paper
 ```
 
@@ -257,7 +260,59 @@ The importer records hashes and provenance in ignored local manifests. ManipTran
 not copied into this repository. See [`docs/UPSTREAM_REFERENCES.md`](docs/UPSTREAM_REFERENCES.md)
 and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
-### 6. Paper traceability and reproduction audit
+### 6. Target Hand Asset Setup and Kinematic Inspection
+
+The Stage 4 workflow uses the imported Arti-MANO assets as a target-hand model. Core inspection
+commands are:
+
+```bash
+toporetarget robots list
+toporetarget robots inspect \
+  --robot artimano_rh \
+  --json .local/reports/stage4/artimano_rh_inspect.json
+toporetarget robots validate \
+  --robot artimano_rh \
+  --report .local/reports/stage4/artimano_rh_validation.json \
+  --csv .local/reports/stage4/artimano_rh_validation.csv
+toporetarget robots fk \
+  --robot artimano_rh --pose neutral --dtype float64 \
+  --output .local/reports/stage4/artimano_rh_neutral_fk.json
+toporetarget robots anchors \
+  --robot artimano_rh \
+  --csv .local/reports/stage4/artimano_rh_anchors.csv
+```
+
+Run the same core commands with `artimano_lh` to load the actual left-hand URDF independently.
+The registry list command does not require local assets; inspect and validation resolve the asset
+root from `--asset-root`, `ARTIMANO_ASSET_ROOT`, `.local/config.yaml`, or the safe local default.
+
+Debug/Inspection supplements after the core flow:
+
+```bash
+toporetarget robots jacobian-check \
+  --robot artimano_rh --pose random --seed 4 --dtype float64 \
+  --report .local/reports/stage4/artimano_rh_jacobian.json
+toporetarget robots visualize \
+  --robot artimano_rh --pose neutral --geometry visual \
+  --show-keypoints --show-skeleton --show-labels --show-base-frame \
+  --output .local/reports/stage4/artimano_rh_neutral_visual.png
+toporetarget robots visualize \
+  --robot artimano_rh --pose neutral --geometry collision \
+  --show-keypoints --show-skeleton \
+  --output .local/reports/stage4/artimano_rh_neutral_collision.png
+toporetarget robots visualize \
+  --robot artimano_rh --pose random --seed 4 --geometry both \
+  --show-keypoints --show-skeleton --show-labels --show-joint-axes \
+  --output .local/reports/stage4/artimano_rh_random_overlay.png
+```
+
+The interface reports missing collision geometry and does not synthesize it. It defines `palm` as
+the engineering URDF base frame; it does not choose the paper's unresolved wrist-frame
+parameterization or perform MANO-to-Arti-MANO retargeting. See
+[`docs/ROBOT_HAND_INTERFACE.md`](docs/ROBOT_HAND_INTERFACE.md) and
+[`docs/ARTIMANO_ADAPTER.md`](docs/ARTIMANO_ADAPTER.md).
+
+### 7. Paper traceability and reproduction audit
 
 Run the repository-local paper audit and inspect the machine-readable fidelity configuration:
 
@@ -271,7 +326,7 @@ The audited PDF, equation/table/figure traceability, and unresolved assumptions 
 [`docs/PAPER_FIDELITY.yaml`](docs/PAPER_FIDELITY.yaml), and
 [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md).
 
-### 7. Development validation
+### 8. Development validation
 
 ```bash
 ruff check .
@@ -297,6 +352,9 @@ pytest -q tests/licensed_data
 - [Coordinate conventions](docs/COORDINATE_CONVENTIONS.md)
 - [GRAB inspection](docs/GRAB_INSPECTION.md)
 - [MANO-to-MediaPipe21 adapter](docs/MANO_TO_MEDIAPIPE21.md)
+- [Generic robot-hand interface](docs/ROBOT_HAND_INTERFACE.md)
+- [Arti-MANO target adapter](docs/ARTIMANO_ADAPTER.md)
+- [Stage 4 report](docs/stages/STAGE_4_ARTIMANO_TARGET_HAND.md)
 - [Paper fidelity](docs/PAPER_FIDELITY.md)
 - [Data and license policy](docs/LICENSE_AND_DATA_POLICY.md)
 - [Development log](docs/DEVELOPMENT_LOG.md) / [中文开发日志](docs/DEVELOPMENT_LOG.zh-CN.md)

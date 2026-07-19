@@ -647,6 +647,19 @@ items:
     unknowns: [robot assets and keypoint mappings]
     assumptions: [A_ROBOT_HAND_FRAME_001, A_WUJI_ASSET_001]
     notes: "Only local Arti-MANO asset import infrastructure exists in Stage 0."
+  - id: stage4_robot_keypoint_forward_kinematics
+    kind: repository_adapter
+    title: Generic robot-hand forward kinematics and Arti-MANO target adapter
+    paper_section: "Sec. 3.1 input boundary and Sec. 3.2 robot variables"
+    pdf_page: 3
+    evidence_summary: "Stage 4 defines the target-hand P^r(q) infrastructure needed by later retargeting stages."
+    implementation_targets: [src/toporetarget/robots/base.py, src/toporetarget/robots/urdf/kinematics.py, configs/robots/artimano_rh.yaml, configs/robots/artimano_lh.yaml, docs/stages/STAGE_4_ARTIMANO_TARGET_HAND.md]
+    test_targets: [tests/integration/test_synthetic_robot_hand.py, tests/local_assets/test_artimano_assets.py]
+    status: implemented_with_assumptions
+    known_parameters: {target_layout: mediapipe21, rh_dofs: 22, lh_dofs: 22, base_link: palm, unit: meters}
+    unknowns: [paper-author target anchor definition, exact paper wrist-centered robot frame, official qpos contract]
+    assumptions: [A_ROBOT_KEYPOINT_ANCHORS_001, A_ARTIMANO_KEYPOINT_MAPPING_001, A_ROBOT_BASE_FRAME_001, A_ARTIMANO_COLLISION_COVERAGE_001, A_ARTIMANO_DOF_ORDER_001, A_ROBOT_HAND_FRAME_001]
+    notes: "This adapter provides differentiable FK, independent reference FK, geometry inspection, and anchors; it does not implement MANO-to-robot retargeting or optimization."
   - id: stage3_mano_mediapipe21_adapter
     kind: repository_adapter
     title: Explicit MANO to MediaPipe-style 21 source-hand adapter
@@ -660,7 +673,6 @@ items:
     unknowns: [paper-author MANO conversion semantics, exact fingertip-anchor intent, final wrist-centered frame definition]
     assumptions: [A_MANO_MEDIAPIPE_SEMANTICS_001, A_MANO_FINGERTIP_VERTICES_001, A_HAND_FRAME_001]
     notes: "This is repository data-ingestion infrastructure, not a paper method module; Equations 1-9 and robot mapping remain unimplemented."
-
 parameter_contract:
   configs/paper/retarget.yaml:
     num_object_surface_samples: {value: 50, source: paper}

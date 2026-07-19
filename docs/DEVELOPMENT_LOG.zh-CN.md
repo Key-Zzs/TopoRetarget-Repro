@@ -15,10 +15,41 @@
 - 阶段 3 有界 source-hand adapter 完成：显式 MANO 语义到 MediaPipe 风格 21 点映射、版本化
   profile、dense/sparse regressor 路径、scene/wrist 派生视图、完整性报告、静态 PNG 与本地
   交互 viewer、合成测试和真实左右手 GRAB 验收。
+- 阶段 4 完成并保留显式假设：通用 YAML robot-hand spec/registry、严格 URDF parser、可微
+  Torch FK 与独立 NumPy FK、命名 qpos 和 limits、canonical MediaPipe-21-compatible 目标锚点、
+  分离 visual/collision geometry、Jacobian 检查、合成 fixture，以及独立加载的 Arti-MANO
+  RH/LH 验收。
 
-当前没有实现 TopoRetarget 重定向算法、Arti-MANO/机器人 FK、数值优化、Delaunay/SDF、RL/PPO
-或 baselines。阶段 3 是 source-hand adapter，不是机器人重定向，也不声称 MediaPipe detector
-accuracy；不进行全量数据集转换。
+当前没有实现 TopoRetarget 重定向算法、MANO→机器人 qpos 转换、数值优化、Delaunay/SDF、
+RL/PPO 或 baselines。阶段 3 仍是 source-hand adapter，阶段 4 是目标手运动学接口；两者都
+不是完整重定向，也不声称 MediaPipe detector accuracy；不进行全量数据集转换。
+
+## 阶段 4 实现记录
+
+目标手 contract 只定义 `P^r(q)`。`palm` 是工程 URDF base frame，外部 scene base pose 通过
+齐次变换传入。论文精确的 wrist-centered robot frame 和 base rotation parameterization 仍
+记录为 `A_ROBOT_HAND_FRAME_001`。
+
+RH/LH tracked spec 均为 28 links、27 joints、22 actuated joints、5 fixed joints，并使用对照
+两份导入 URDF 和 ManipTrans `artimano.py` 审计后的显式 22-name 顺序。共享的
+`artimano_mediapipe21` profile 复用阶段 3 semantic layout，使用 link/joint origins；多轴共点
+关节和 fixed fingertip joint origin 记录在 `A_ROBOT_KEYPOINT_ANCHORS_001` 与
+`A_ARTIMANO_KEYPOINT_MAPPING_001` 中。
+
+加载前先检查 imported asset manifest。本地证据为 upstream commit
+`a3d08cfe3c3a5868a7f057533bcaf759c5af4705`、98 个导入文件、64 个有效 mesh reference，以及
+manifest SHA-256 `c8e2c885e95cf690ec362c45e10d77cd16a60d3760efa692856617f148fe212e`。visual 和
+collision geometry 保持分离；每侧分别有 21 个 visual 和 16 个 collision instance。fixed tip
+link 在该资产中只有 visual，因此不生成 collision 替代物（`A_ARTIMANO_COLLISION_COVERAGE_001`）。
+
+合成测试覆盖 parser graph error、所有支持的 joint/geometry 类型、解析 FK、batch/device/dtype、
+base equivariance、named qpos、anchors、Jacobian finite difference、geometry 分离、registry
+加载和 validation。opt-in 本地测试分别加载真实 RH/LH URDF。核心命令为
+`toporetarget robots list|inspect|validate|fk|anchors|jacobian-check|visualize`。报告和 PNG
+放在被忽略的 `.local/reports/stage4/`，不追踪任何资产文件。
+
+下一阶段边界保持不变：没有开始 Stage 5 GRAB adapter、重定向、骨方向初始化、交互几何、
+collision query、SDF 或 PPO。
 
 有界 GRAB 读取器和真实验收记录见 [`GRAB_INSPECTION.md`](GRAB_INSPECTION.md)。这是单条明确
 选定序列的片段检查，不是全量数据集转换。

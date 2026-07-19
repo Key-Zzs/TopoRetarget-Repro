@@ -7,8 +7,9 @@ TopoRetarget-Repro 是一个非官方、独立、可追踪的
 复现仓库。项目提供与机器人无关的 HOI 数据接口、明确的坐标约定、source-hand 转换工具、
 复现审计，以及面向完整灵巧手重定向的分阶段路线。
 
-当前实现已经覆盖 canonical HOI interface 和有界 MANO→MediaPipe 风格 21 点 source-hand
-adapter，但尚未声称实现论文完整的机器人重定向优化器、RL pipeline 或论文实验结果。
+当前实现已经覆盖 canonical HOI interface、有界 MANO→MediaPipe 风格 21 点 source-hand
+adapter，以及 Stage 4 通用机器人手/Arti-MANO 目标运动学接口，但尚未声称实现论文完整的
+机器人重定向优化器、RL pipeline 或论文实验结果。
 
 ## 仓库概览
 
@@ -17,6 +18,7 @@ adapter，但尚未声称实现论文完整的机器人重定向优化器、RL p
 - 统一的、与机器人无关的 HOISequence 数据结构、scene-frame 几何和显式 SE(3) 变换；
 - 对单条 GRAB NPZ 的只读检查，以及到 canonical Zarr 的转换；
 - 显式 MANO 语义 layout 和版本化 MANO→MediaPipe21 mapping profile；
+- 通用可微 URDF 手部 FK、命名 qpos、目标锚点和 Arti-MANO 左右手检查；
 - source/object/timestamp 保留报告，以及静态和本地交互式几何 viewer；
 - 论文忠实度审计、assumption 记录和本地 Arti-MANO 资产导入支持。
 
@@ -36,7 +38,7 @@ adapter，但尚未声称实现论文完整的机器人重定向优化器、RL p
 | 1 | 论文忠实度审计 | Complete | PDF manifest、公式/表格/图追踪、assumption 和 checker 通过。 |
 | 2 | Canonical HOI schema 与坐标 | Complete，有界 | Schema、lazy Zarr、对比 viewer 和有界 GRAB 检查通过。 |
 | 3 | MANO→MediaPipe 风格 21 点 source adapter | Complete，有界 | Layout/profile、converter、报告、viewer、合成测试和有界真实 GRAB 检查通过；语义和 topology 假设仍显式保留。 |
-| 4 | Arti-MANO 机器人适配器 | TODO | 实现并验证机器人模型、关节和 link 约定。 |
+| 4 | Arti-MANO 机器人适配器 | Complete，有假设 | 通用 URDF/FK 接口、显式 MediaPipe-21-compatible 锚点、分离几何检查、左右手验收、Jacobian 检查和 CLI 通过；论文 frame/mapping 假设仍显式保留。 |
 | 5 | 完整 GRAB 数据集适配器 | TODO | 将当前单序列 reader 扩展为经过验证的数据集 adapter。 |
 | 6 | 物体采样、碰撞几何与 SDF | TODO | 实现几何 backend 和测试。 |
 | 7 | 相对骨方向初始化 | TODO | 实现并测试论文 Eq. 1–2。 |
@@ -68,7 +70,7 @@ adapter，但尚未声称实现论文完整的机器人重定向优化器、RL p
 安装当前数据和可视化 workflow 所需的完整环境：
 
 ```bash
-python -m pip install -e ".[dev,cache,viz,grab]"
+python -m pip install -e ".[dev,cache,viz,grab,robot]"
 ```
 
 只运行 core schema/test 时，可使用 python -m pip install -e ".[dev]"。
@@ -92,6 +94,8 @@ export MANIPTRANS_ROOT=/path/to/ManipTrans     # 仅 Arti-MANO 导入需要
 toporetarget --help
 toporetarget data --help
 toporetarget keypoints --help
+toporetarget robots --help
+toporetarget robots list
 toporetarget doctor paper
 ```
 
@@ -249,7 +253,57 @@ toporetarget doctor assets
 见 [docs/UPSTREAM_REFERENCES.md](docs/UPSTREAM_REFERENCES.md) 和
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-### 6. 论文追踪与复现审计
+### 6. 目标机器人手资产配置与运动学检查
+
+Stage 4 使用已经导入的 Arti-MANO 资产作为目标手。核心检查命令如下：
+
+```bash
+toporetarget robots list
+toporetarget robots inspect \
+  --robot artimano_rh \
+  --json .local/reports/stage4/artimano_rh_inspect.json
+toporetarget robots validate \
+  --robot artimano_rh \
+  --report .local/reports/stage4/artimano_rh_validation.json \
+  --csv .local/reports/stage4/artimano_rh_validation.csv
+toporetarget robots fk \
+  --robot artimano_rh --pose neutral --dtype float64 \
+  --output .local/reports/stage4/artimano_rh_neutral_fk.json
+toporetarget robots anchors \
+  --robot artimano_rh \
+  --csv .local/reports/stage4/artimano_rh_anchors.csv
+```
+
+对 `artimano_lh` 重复核心命令，以独立加载真实左手 URDF。registry list 不要求本地资产；
+inspect 和 validate 从 `--asset-root`、`ARTIMANO_ASSET_ROOT`、`.local/config.yaml` 或安全的
+本地默认路径解析资产根目录。
+
+Debug/Inspection 补充命令放在核心流程之后：
+
+```bash
+toporetarget robots jacobian-check \
+  --robot artimano_rh --pose random --seed 4 --dtype float64 \
+  --report .local/reports/stage4/artimano_rh_jacobian.json
+toporetarget robots visualize \
+  --robot artimano_rh --pose neutral --geometry visual \
+  --show-keypoints --show-skeleton --show-labels --show-base-frame \
+  --output .local/reports/stage4/artimano_rh_neutral_visual.png
+toporetarget robots visualize \
+  --robot artimano_rh --pose neutral --geometry collision \
+  --show-keypoints --show-skeleton \
+  --output .local/reports/stage4/artimano_rh_neutral_collision.png
+toporetarget robots visualize \
+  --robot artimano_rh --pose random --seed 4 --geometry both \
+  --show-keypoints --show-skeleton --show-labels --show-joint-axes \
+  --output .local/reports/stage4/artimano_rh_random_overlay.png
+```
+
+接口会报告缺失的 collision geometry，不会静默生成替代几何。Stage 4 将 `palm` 定义为工程
+URDF base frame，不选择论文中尚未确定的 wrist frame 参数化，也不执行 MANO→Arti-MANO
+重定向。详见 [docs/ROBOT_HAND_INTERFACE.md](docs/ROBOT_HAND_INTERFACE.md) 和
+[docs/ARTIMANO_ADAPTER.md](docs/ARTIMANO_ADAPTER.md)。
+
+### 7. 论文追踪与复现审计
 
 ```bash
 python scripts/check_paper_fidelity.py
@@ -261,7 +315,7 @@ toporetarget doctor paper
 [docs/PAPER_FIDELITY.yaml](docs/PAPER_FIDELITY.yaml) 和
 [docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md)。
 
-### 7. 开发验证
+### 8. 开发验证
 
 ```bash
 ruff check .
@@ -287,6 +341,9 @@ pytest -q tests/licensed_data
 - [坐标约定](docs/COORDINATE_CONVENTIONS.md)
 - [GRAB 检查](docs/GRAB_INSPECTION.md)
 - [MANO→MediaPipe21 adapter](docs/MANO_TO_MEDIAPIPE21.md)
+- [通用机器人手接口](docs/ROBOT_HAND_INTERFACE.md)
+- [Arti-MANO 目标手适配器](docs/ARTIMANO_ADAPTER.md)
+- [Stage 4 报告](docs/stages/STAGE_4_ARTIMANO_TARGET_HAND.md)
 - [论文忠实度](docs/PAPER_FIDELITY.md)
 - [数据与许可证策略](docs/LICENSE_AND_DATA_POLICY.md)
 - [开发日志](docs/DEVELOPMENT_LOG.md) / [中文开发日志](docs/DEVELOPMENT_LOG.zh-CN.md)

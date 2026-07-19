@@ -46,7 +46,7 @@ OmniRetarget dexterous adaptation follows Appendix A.2: MediaPipe keypoints repl
 keypoints, the wrist/base is optimized rather than fixed, and collision uses full hand geometry.
 No upstream repository is copied in this stage.
 
-## 8. Stage 3 adapter boundary
+## 8. Stage 3 and Stage 4 repository boundaries
 
 The paper accepts MediaPipe-style 21-point input but does not disclose a MANO-to-MediaPipe
 conversion module. Stage 3 therefore implements a repository-local, explicit source-hand adapter
@@ -56,20 +56,42 @@ tracked as `implemented_with_assumptions`, not as an implementation of Equations
 graphs, robot mapping, or retargeting optimization. See [`MANO_TO_MEDIAPIPE21.md`](MANO_TO_MEDIAPIPE21.md)
 and [`stages/STAGE_3_MANO_MEDIAPIPE21.md`](stages/STAGE_3_MANO_MEDIAPIPE21.md).
 
-## 9. Unpublished implementation details
+Stage 4 now implements the target-hand side required to evaluate `P^r(q)`: a generic strict URDF
+parser, differentiable Torch FK, independent NumPy FK, explicit named qpos order, separate visual
+and collision geometry instances, canonical MediaPipe21-compatible robot anchors, and real
+Arti-MANO RH/LH validation. It is tracked as `stage4_robot_keypoint_forward_kinematics` with status
+`implemented_with_assumptions`, not as implementation of the paper's retargeting equations. The
+engineering base is URDF root `palm`; the paper's exact robot wrist-centered orientation remains
+`A_ROBOT_HAND_FRAME_001`. See [`ROBOT_HAND_INTERFACE.md`](ROBOT_HAND_INTERFACE.md),
+[`ARTIMANO_ADAPTER.md`](ARTIMANO_ADAPTER.md), and
+[`stages/STAGE_4_ARTIMANO_TARGET_HAND.md`](stages/STAGE_4_ARTIMANO_TARGET_HAND.md).
 
-The solver, Delaunay backend/flags, SDF backend, first-frame seed, coordinate-frame details,
+## 9. Stage 4 target-hand boundary
+
+Stage 4 implements repository infrastructure for `P^r(q)`: a generic YAML/URDF robot-hand
+specification, differentiable Torch FK, an independent NumPy reference path, explicit visual and
+collision geometry instances, and MediaPipe-21-compatible Arti-MANO RH/LH joint/link anchors.
+It is validated with synthetic URDF fixtures and the locally imported Arti-MANO assets. The paper
+does not publish the target-hand anchors, qpos ordering, or exact robot wrist frame, so the adapter
+is `implemented_with_assumptions`; it does not implement source-to-robot qpos retargeting, Eq. 1-9,
+surface sampling, collision queries, SDF, or optimization. See
+[`ROBOT_HAND_INTERFACE.md`](ROBOT_HAND_INTERFACE.md), [`ARTIMANO_ADAPTER.md`](ARTIMANO_ADAPTER.md),
+and [`stages/STAGE_4_ARTIMANO_TARGET_HAND.md`](stages/STAGE_4_ARTIMANO_TARGET_HAND.md).
+
+## 10. Unpublished implementation details
+
+The solver, Delaunay backend/flags, SDF backend, first-frame seed, paper coordinate-frame details,
 ContactPose intensity threshold, robot surface sampling, tracked links, axis-point geometry,
 simulator/physics settings, low-level gains, and unlisted PPO values are explicitly registered in
 [`ASSUMPTIONS.md`](ASSUMPTIONS.md). Configuration leaves undisclosed values null.
 
-## 10. Current blockers
+## 11. Current blockers
 
 The private Pen-Spin data, Wuji deployment assets, target hand identity for Table 1, and several
 solver/geometry/RL details are unavailable from the paper. These blockers prevent result-level
 reproduction and are not silently resolved.
 
-## 11. Definition of method-complete
+## 12. Definition of method-complete
 
 Method-complete means all publicly specified method equations, configurations, constraints,
 metrics, and evaluation code are implemented and tested, with every remaining assumption

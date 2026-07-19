@@ -18,10 +18,43 @@ the root [README](../README.md). The detailed reproduction record is in
   MediaPipe-style 21 points, versioned profiles, dense/sparse regressor path, scene/wrist views,
   integrity reports, static and interactive viewers, synthetic tests, and real right/left-hand
   GRAB validation.
+- Stage 4 complete with explicit assumptions: a generic YAML robot-hand spec/registry, strict
+  URDF parser, differentiable Torch FK plus independent NumPy FK, named qpos and limits, canonical
+  MediaPipe-21-compatible target anchors, separate visual/collision geometry instances, Jacobian
+  checks, synthetic fixtures, and independently loaded Arti-MANO RH/LH validation.
 
-This repository does not implement the TopoRetarget retargeting algorithm, robot interfaces,
-Arti-MANO mapping/FK, numerical optimization, Delaunay/SDF, RL/PPO, or baselines. Stage 3 is a
-source-hand adapter and does not convert a full dataset or claim MediaPipe detector accuracy.
+This repository does not implement the TopoRetarget retargeting algorithm, MANO-to-robot qpos
+conversion, numerical optimization, Delaunay/SDF, RL/PPO, or baselines. Stage 3 remains a
+source-hand adapter and Stage 4 remains a target-hand kinematics interface; neither claims full
+retargeting or MediaPipe detector accuracy.
+
+## Stage 4 implementation record
+
+The target-hand contract is `P^r(q)` only. `palm` is the engineering URDF base frame and the
+external scene base pose is passed as a homogeneous transform. The paper's exact wrist-centered
+robot frame and base rotation parameterization remain `A_ROBOT_HAND_FRAME_001`.
+
+The tracked RH/LH specs use 28 links, 27 joints, 22 actuated joints, 5 fixed joints, and an
+explicit 22-name order audited against both imported URDFs and ManipTrans `artimano.py`. The
+shared `artimano_mediapipe21` profile reuses Stage 3's semantic layout and uses link/joint origins;
+multi-axis co-located joints and fixed fingertip joint origins are recorded under
+`A_ROBOT_KEYPOINT_ANCHORS_001` and `A_ARTIMANO_KEYPOINT_MAPPING_001`.
+
+The imported asset manifest was checked before loading. The local evidence is upstream commit
+`a3d08cfe3c3a5868a7f057533bcaf759c5af4705`, 98 imported files, 64 valid mesh references, and
+manifest SHA-256 `c8e2c885e95cf690ec362c45e10d77cd16a60d3760efa692856617f148fe212e`. Visual and
+collision geometry stay separate; each side has 21 visual and 16 collision instances. Fixed tip
+links are visual-only in this asset, so no collision replacement is generated
+(`A_ARTIMANO_COLLISION_COVERAGE_001`).
+
+Synthetic tests cover parser graph errors, all supported joint/geometry types, analytic FK,
+batch/device/dtype behavior, base equivariance, named qpos, anchors, Jacobian finite differences,
+geometry separation, registry loading, and validation. Opt-in local tests load both actual RH/LH
+URDFs. The core commands are `toporetarget robots list|inspect|validate|fk|anchors|jacobian-check|visualize`.
+Generated reports and PNGs belong under ignored `.local/reports/stage4/`; no asset file is tracked.
+
+The next stage boundary is deliberately preserved: Stage 5 GRAB adapter, retargeting, bone
+direction initialization, interaction geometry, collision queries, SDF, and PPO were not started.
 
 The bounded GRAB reader, real acceptance command, and tolerance report are documented in
 [`GRAB_INSPECTION.md`](GRAB_INSPECTION.md). This is one explicit 60-frame inspection, not a

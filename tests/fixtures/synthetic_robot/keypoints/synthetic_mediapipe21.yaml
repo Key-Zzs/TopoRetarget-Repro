@@ -1,0 +1,25 @@
+profile_id: synthetic_mediapipe21
+version: "1.0.0"
+layout_name: mediapipe21
+anchors:
+  - {semantic_name: wrist, anchor_type: link_origin, link_name: palm}
+  - {semantic_name: thumb_cmc, anchor_type: joint_origin, joint_name: joint_rev_z}
+  - {semantic_name: thumb_mcp, anchor_type: joint_origin, joint_name: joint_rev_y}
+  - {semantic_name: thumb_ip, anchor_type: joint_origin, joint_name: joint_slide}
+  - {semantic_name: thumb_tip, anchor_type: joint_origin, joint_name: joint_tip}
+  - {semantic_name: index_mcp, anchor_type: link_origin, link_name: finger1}
+  - {semantic_name: index_pip, anchor_type: link_origin, link_name: finger2}
+  - {semantic_name: index_dip, anchor_type: link_origin, link_name: slider}
+  - {semantic_name: index_tip, anchor_type: link_origin, link_name: synthetic_tip}
+  - {semantic_name: middle_mcp, anchor_type: link_origin, link_name: finger1}
+  - {semantic_name: middle_pip, anchor_type: link_origin, link_name: finger2}
+  - {semantic_name: middle_dip, anchor_type: link_origin, link_name: slider}
+  - {semantic_name: middle_tip, anchor_type: link_origin, link_name: synthetic_tip}
+  - {semantic_name: ring_mcp, anchor_type: link_origin, link_name: finger1}
+  - {semantic_name: ring_pip, anchor_type: link_origin, link_name: finger2}
+  - {semantic_name: ring_dip, anchor_type: link_origin, link_name: slider}
+  - {semantic_name: ring_tip, anchor_type: link_origin, link_name: synthetic_tip}
+  - {semantic_name: pinky_mcp, anchor_type: link_origin, link_name: finger1}
+  - {semantic_name: pinky_pip, anchor_type: link_origin, link_name: finger2}
+  - {semantic_name: pinky_dip, anchor_type: link_origin, link_name: slider}
+  - {semantic_name: pinky_tip, anchor_type: link_origin, link_name: synthetic_tip}

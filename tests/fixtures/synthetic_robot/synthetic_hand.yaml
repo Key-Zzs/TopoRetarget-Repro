@@ -1,0 +1,21 @@
+name: synthetic_hand
+version: "1.0.0"
+side: synthetic
+asset_id: synthetic
+urdf_relative_path: synthetic_hand.urdf
+base_link: palm
+semantic_keypoint_layout: mediapipe21
+keypoint_anchor_profile: synthetic_mediapipe21
+dof_order: [joint_rev_z, joint_rev_y, joint_slide]
+neutral_q: [0, 0, 0]
+expected_link_count: 5
+expected_total_joint_count: 4
+expected_actuated_joint_count: 3
+expected_fixed_joint_count: 1
+expected_tip_links: [synthetic_tip]
+visual_geometry_policy: {load_meshes: true}
+collision_geometry_policy: {load_meshes: true}
+self_collision: {supported: false}
+upstream_provenance: {repository: local_fixture, relative_asset_path: tests/fixtures/synthetic_robot}
+assumptions: []
+notes: Synthetic fixture proving that the parser is not Arti-MANO-specific.

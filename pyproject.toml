@@ -39,6 +39,11 @@ grab = [
   "smplx>=0.1.28",
   "trimesh>=4.0",
 ]
+robot = [
+  "torch>=2.0",
+  "trimesh>=4.0",
+  "matplotlib>=3.8",
+]
 
 [project.scripts]
 toporetarget = "toporetarget.cli.main:app"

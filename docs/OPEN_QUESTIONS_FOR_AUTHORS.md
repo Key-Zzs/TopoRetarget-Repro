@@ -20,6 +20,13 @@ The following questions are written as a reproducibility request. No author resp
 6. Can the 32-clip MoCap Pen-Spin dataset and Wuji deployment assets/calibration be released or
    accessed under a reproducible license (A_PRIVATE_PENSPIN_DATA_001, A_WUJI_ASSET_001)?
 
+7. For the target robot hand, are the 21 semantic anchors intended to be joint centers, link
+   origins, fingertip markers, or another published profile? Stage 4 records the Arti-MANO profile
+   explicitly as A_ROBOT_KEYPOINT_ANCHORS_001 and A_ARTIMANO_KEYPOINT_MAPPING_001.
+8. Is the URDF root/palm frame the intended paper robot hand frame, and should the fixed fingertip
+   visual spheres participate in later collision queries (A_ROBOT_BASE_FRAME_001,
+   A_ARTIMANO_COLLISION_COVERAGE_001)?
+
 ## P1 — affects numerical results
 
 1. Are the 50 object samples drawn once per object, per sequence, or per frame, and which surface

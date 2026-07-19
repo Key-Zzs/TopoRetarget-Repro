@@ -6,7 +6,7 @@
 | 1 | Paper fidelity audit | Full PDF manifest, equations/tables/figures, configs, assumptions | Fidelity checker and audit report pass | complete |
 | 2 | Canonical HOI schema and coordinate conventions | Schema, lazy storage, comparison visualization, bounded GRAB inspection | Stage 2A and bounded Stage 2B real-data acceptance pass | complete (bounded scope) |
 | 3 | MANO to MediaPipe-style 21-keypoint conversion | Explicit layout/profile registry, converter, reports, visualizations, synthetic and bounded real-GRAB validation | Scene-frame converter validated with source/object/timestamp preservation; assumptions remain explicit | complete (bounded, with assumptions) |
-| 4 | Arti-MANO robot adapter | Robot model adapter | Adapter validated | not started |
+| 4 | Generic robot-hand kinematics and Arti-MANO target adapter | RobotHandSpec/Model, strict URDF parser, differentiable/reference FK, MediaPipe21 anchors, geometry inspection, RH/LH CLI and reports | Synthetic and both real Arti-MANO sides validate; assets remain unchanged; docs and fidelity record pass | complete (with explicit assumptions) |
 | 5 | GRAB dataset adapter | Read-only GRAB adapter | GRAB samples load | not started |
 | 6 | Object surface sampling, collision geometry and SDF | Geometry backends | Geometry tests pass | not started |
 | 7 | Relative bone-direction initialization | Eq. 1-2 implementation | Initialization tests pass | not started |
