@@ -36,6 +36,7 @@ def _load_raw(
     *,
     sequence_path: Path | None,
     hand: str,
+    grab_root: Path | None,
     mano_model_root: Path | None,
     frame_range: FrameRange | None,
 ):
@@ -51,6 +52,7 @@ def _load_raw(
         adapter = GrabInspectionAdapter(
             sequence_path=sequence_path,
             mano_model_root=mano_model_root,
+            grab_root=grab_root,
             hand=hand,
         )
         return adapter.load_raw_renderable(sequence_path.name, frame_range=frame_range)
@@ -88,6 +90,7 @@ def describe(
     sequence: str = typer.Option("demo", "--sequence"),
     sequence_path: Path | None = typer.Option(None, "--sequence-path"),
     hand: str = typer.Option("right", "--hand"),
+    grab_root: Path | None = typer.Option(None, "--grab-root"),
     mano_model_root: Path | None = typer.Option(None, "--mano-model-root"),
 ) -> None:
     """Describe one sequence without scanning a dataset."""
@@ -95,11 +98,27 @@ def describe(
     if dataset == "synthetic":
         _json_print(SyntheticAdapter().describe_sequence(sequence))
         return
+    if dataset == "grab":
+        from toporetarget.data.adapters.grab_inspect import GrabInspectionAdapter
+
+        adapter = GrabInspectionAdapter(
+            sequence_path=sequence_path or "",
+            hand=hand,
+            grab_root=grab_root,
+            mano_model_root=mano_model_root,
+        )
+        try:
+            _json_print(adapter.describe_sequence(sequence))
+        except (RuntimeError, ValueError, OSError) as exc:
+            typer.echo(f"description failed: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        return
     raw = _load_raw(
         dataset,
         sequence,
         sequence_path=sequence_path,
         hand=hand,
+        grab_root=grab_root,
         mano_model_root=mano_model_root,
         frame_range=None,
     )
@@ -120,6 +139,7 @@ def convert(
     sequence: str = typer.Option("demo", "--sequence"),
     sequence_path: Path | None = typer.Option(None, "--sequence-path"),
     hand: str = typer.Option("right", "--hand"),
+    grab_root: Path | None = typer.Option(None, "--grab-root"),
     mano_model_root: Path | None = typer.Option(None, "--mano-model-root"),
     start_frame: int = typer.Option(0, "--start-frame", min=0, help="Inclusive clip start."),
     end_frame: int | None = typer.Option(None, "--end-frame", min=1, help="Exclusive clip end."),
@@ -135,6 +155,7 @@ def convert(
             sequence,
             sequence_path=sequence_path,
             hand=hand,
+            grab_root=grab_root,
             mano_model_root=mano_model_root,
             frame_range=_range(start_frame, end_frame),
         )
@@ -153,7 +174,7 @@ def convert(
                 "no_spatial_sampling": True,
             }
         )
-    except (StorageError, ValueError, OSError, typer.BadParameter) as exc:
+    except (StorageError, RuntimeError, ValueError, OSError, typer.BadParameter) as exc:
         typer.echo(f"conversion failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
@@ -202,6 +223,7 @@ def compare(
     sequence: str = typer.Option("demo", "--sequence"),
     sequence_path: Path | None = typer.Option(None, "--sequence-path"),
     hand: str = typer.Option("right", "--hand"),
+    grab_root: Path | None = typer.Option(None, "--grab-root"),
     mano_model_root: Path | None = typer.Option(None, "--mano-model-root"),
     canonical: Path = typer.Option(..., "--canonical"),
     layout: str = typer.Option("side-by-side", "--layout"),
@@ -230,15 +252,18 @@ def compare(
     """Compare a raw sequence with a separately loaded canonical cache."""
 
     try:
+        canonical_sequence = load_hoi_sequence(canonical)
+        source_start = 0 if start_frame is None else start_frame
+        source_end = canonical_sequence.num_frames if end_frame is None else end_frame
         raw = _load_raw(
             dataset,
             sequence,
             sequence_path=sequence_path,
             hand=hand,
+            grab_root=grab_root,
             mano_model_root=mano_model_root,
-            frame_range=None,
+            frame_range=FrameRange(source_start, source_end),
         )
-        canonical_sequence = load_hoi_sequence(canonical)
         result = ComparisonMetrics.compute(raw, canonical_sequence)
         if error_json is not None:
             result.write_json(error_json)

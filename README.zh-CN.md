@@ -11,10 +11,14 @@ GRAB → Arti-MANO，后续目标是支持多种 HOI 数据集以及任意 URDF/
 - 阶段 1 complete：完整 16 页论文审计、参数来源、assumption 和忠实度检查器。
 - 阶段 2A complete：统一 HOI schema、明确坐标语义、可选 Zarr 缓存、确定性合成数据、误差
   指标和无头比较可视化已实现。
-- 阶段 2B not started：真实 GRAB 检查读取器是下一步的有界任务。
+- 阶段 2B 的有界真实数据验收已完成：使用用户提供的 MANO 模型和可选 SMPL-X backend 重建
+  一条 GRAB 序列，转换为 canonical Zarr，完成 raw-to-canonical 对比，并生成首/中/末帧可视化。
 
 当前没有实现 TopoRetarget 重定向算法、机器人接口、MANO 到 MediaPipe 映射、数值优化、
 Delaunay/SDF、RL/PPO 或 baselines。阶段 2A 不进行全量数据集转换，也不依赖机器人模型。
+
+有界 GRAB 读取器、真实验收命令和误差报告见 [`docs/GRAB_INSPECTION.md`](docs/GRAB_INSPECTION.md)。
+这是单条明确选定序列的 60 帧检查，不是全量数据集转换。
 
 ## 数据与本地资产
 

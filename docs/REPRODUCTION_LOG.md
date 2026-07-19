@@ -21,8 +21,19 @@
   opt-in Zarr storage, deterministic synthetic data, comparison metrics, and Matplotlib rendering.
 - Preserved timestamps and native FPS as metadata; no temporal resampling, spatial sampling, robot
   model, source-data modification, or full-dataset conversion was introduced.
-- Stage 2A is complete and is staged as a separate Git snapshot. Stage 2B is not started in this
-  snapshot.
+- Stage 2A is complete and is staged as a separate Git snapshot. Stage 2B work remains unstaged
+  so the two delivery boundaries stay separate.
+
+## 2026-07-19 — Stage 2B
+
+- Implemented the explicit-path GRAB NPZ reader, object/PLY loader, replaceable MANO backend,
+  canonical adapter, fake-backend tests, and opt-in licensed-data test.
+- Inspected one local sequence, `cubemedium_inspect_1`, at 120 FPS. `describe` passed and confirmed
+  the selected right-hand fields and object/personalized-vtemp resources.
+- With the user-provided MANO root, converted the explicit `cubemedium_inspect_1` right-hand clip
+  `[0, 60)` at native 120 FPS through the SMPL-X package's MANO backend. Canonical Zarr, raw-to-
+  canonical side-by-side/overlay reports, and first/middle/last frame renders passed. Source hash
+  and mtime are unchanged; evidence is in ignored `.local/reports/stage2b/`.
 
 ## Reproducibility boundary
 

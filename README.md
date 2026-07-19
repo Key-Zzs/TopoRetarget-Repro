@@ -13,11 +13,17 @@ dexterous hands.
 - Stage 1 complete: complete 16-page paper audit, parameter provenance, assumptions, and fidelity checker.
 - Stage 2A complete: canonical HOI schema, explicit coordinate semantics, opt-in Zarr storage,
   deterministic synthetic data, error metrics, and headless comparison visualization.
-- Stage 2B not started: the real-data GRAB inspection adapter is the next bounded step.
+- Stage 2B complete for the bounded real-data acceptance: one GRAB sequence was reconstructed with
+  the user-provided MANO models through the optional SMPL-X backend, converted to canonical Zarr,
+  compared, and rendered at first/middle/last clip frames.
 
 This repository does not implement the TopoRetarget retargeting algorithm, robot interfaces,
 MANO-to-MediaPipe mapping, numerical optimization, Delaunay/SDF, RL/PPO, or baselines. Stage 2A
 does not convert a full dataset and has no robot dependency.
+
+The bounded GRAB reader, real acceptance command, and tolerance report are documented in
+[`docs/GRAB_INSPECTION.md`](docs/GRAB_INSPECTION.md). This is one explicit 60-frame inspection,
+not a full-dataset conversion.
 
 ## Data and local assets
 

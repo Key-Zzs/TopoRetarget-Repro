@@ -52,6 +52,9 @@ toporetarget = ["py.typed"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--strict-markers"
+markers = [
+  "licensed_data: opt-in tests that require local licensed GRAB/MANO resources",
+]
 
 [tool.ruff]
 line-length = 100
