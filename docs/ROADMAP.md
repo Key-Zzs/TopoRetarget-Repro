@@ -1,0 +1,25 @@
+# Roadmap
+
+| Stage | Objective | Major deliverables | Definition of done | Status |
+| --- | --- | --- | --- | --- |
+| 0 | Repository creation and architecture | Package, CLI, path policy, dataset discovery, Arti-MANO importer | CI-safe scaffold and local doctors pass | complete |
+| 1 | Paper fidelity audit | Full PDF manifest, equations/tables/figures, configs, assumptions | Fidelity checker and audit report pass | complete |
+| 2 | Canonical HOI schema and coordinate conventions | Schema and frame tests | Contract tested | not started |
+| 3 | MANO to MediaPipe-style 21-keypoint conversion | Converter and fixtures | Converter validated | not started |
+| 4 | Arti-MANO robot adapter | Robot model adapter | Adapter validated | not started |
+| 5 | GRAB dataset adapter | Read-only GRAB adapter | GRAB samples load | not started |
+| 6 | Object surface sampling, collision geometry and SDF | Geometry backends | Geometry tests pass | not started |
+| 7 | Relative bone-direction initialization | Eq. 1-2 implementation | Initialization tests pass | not started |
+| 8 | Shared interaction graph and Laplacian coordinates | Eq. 3-7 implementation | Graph/loss tests pass | not started |
+| 9 | Constrained final optimization with slack variables | Eq. 8-9 implementation | Constraint tests pass | not started |
+| 10 | GRAB → Arti-MANO end-to-end retargeting | Pipeline | Reproducible trajectory | not started |
+| 11 | Metrics and ContactPose evaluation | Eq. 10-12 | Metric fixtures and report | not started |
+| 12 | OakInk, DexYCB and HO-Cap adapters | Dataset adapters | Adapters validated | not started |
+| 13 | ARCTIC, OakInk2 and TACO extensions | Dataset adapters | Adapters validated | not started |
+| 14 | Arbitrary dexterous-hand plugin interface | URDF/MJCF interface | Plugin contract tested | not started |
+| 15 | Baselines and ablations | OmniRetarget, Mink, DexPilot, GeoRT | Fair baseline runs | not started |
+| 16 | Reference-tracking PPO | RL controller | Training/eval pipeline | not started |
+| 17 | Paper experiment reproduction | Tables/Figures | Result report | not started |
+| 18 | Performance optimization and v1.0 release | Packaging and benchmarks | Release criteria pass | not started |
+| 19 | Non-paper extensions | MANO cleanup, SPIDER, other extensions | Separately labeled extensions | not started |
+

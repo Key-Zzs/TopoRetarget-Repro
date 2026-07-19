@@ -1,0 +1,18 @@
+datasets:
+  grab:
+    aliases: [GRAB, grab]
+  oakink:
+    aliases: [OakInk, OAKINK, oakink]
+  oakink2:
+    aliases: [OakInk2, OakInkV2, OakInk-v2, oakink2, oakink-v2]
+  contactpose:
+    aliases: [ContactPose, contactpose]
+  taco:
+    aliases: [TACO, taco]
+  hocap:
+    aliases: [HOCap, HO-Cap, HoCap, hocap]
+  arctic:
+    aliases: [ARCTIC, arctic]
+  dexycb:
+    aliases: [DexYCB, Dex-YCB, dexycb, dex-ycb]
+

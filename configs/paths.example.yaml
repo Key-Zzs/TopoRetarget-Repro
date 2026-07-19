@@ -1,0 +1,6 @@
+# Copy to .local/config.yaml and replace placeholders with machine-local paths.
+storage_root: /path/to/Ref2Dex_storage
+maniptrans_root: /path/to/ManipTrans
+artimano_asset_root: /path/to/TopoRetarget-Repro/.local/assets/artimano
+paper_path: /path/to/TopoRetarget-Repro/docs/TopoRetarget.pdf
+
