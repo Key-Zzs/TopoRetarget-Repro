@@ -30,7 +30,10 @@ The following questions are written as a reproducibility request. No author resp
 ## P1 — affects numerical results
 
 1. Are the 50 object samples drawn once per object, per sequence, or per frame, and which surface
-   sampler/seed is used (A_OBJECT_SAMPLING_001, A_OBJECT_SAMPLING_METHOD_001)?
+   sampler/seed is used (A_OBJECT_SAMPLING_001, A_OBJECT_SAMPLING_METHOD_001,
+   A_OBJECT_SAMPLING_SEED_001, A_OBJECT_SAMPLE_TEMPORAL_REUSE_001)? The Stage 6 engineering
+   profile uses deterministic area-weighted triangles, PCG64 seed 20260720, and fixed
+   object-local face+barycentric anchors.
 2. Which Delaunay backend and flags are used, and how are duplicate/coplanar/cospherical inputs
    handled (A_DELAUNAY_BACKEND_001, A_DELAUNAY_DEGENERACY_001)?
 3. How is the first warm-start frame initialized, and how is `q_base` rotation parameterized

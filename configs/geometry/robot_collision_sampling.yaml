@@ -1,0 +1,13 @@
+profiles:
+  engineering_collision_32_per_geometry:
+    version: "1"
+    count_per_geometry: 32
+    method: area_uniform_triangles
+    seed: 4
+    source: engineering
+    paper_status: not_paper_specified
+    visual_fallback: false
+    tip_visual_fallback: false
+    assumptions:
+      - A_HAND_SURFACE_SAMPLES_001
+

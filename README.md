@@ -45,7 +45,7 @@ that stage; it does not imply full-dataset or result-level reproduction.
 | 3 | MANO → MediaPipe-style 21 source adapter | Complete, bounded | Explicit layouts/profiles, converter, reports, viewers, synthetic tests, and bounded real GRAB checks pass; semantic and topology assumptions remain explicit. |
 | 4 | Arti-MANO robot adapter | Complete, with assumptions | Generic URDF/FK interface, explicit MediaPipe-21-compatible anchors, separate geometry inspection, RH/LH validation, Jacobian checks, and CLI pass; paper frame/mapping assumptions remain explicit. |
 | 5 | Full GRAB dataset adapter | Complete, bounded; fresh semantic closeout passed | Lazy index, native single-sequence/bimanual conversion, validation, provenance, raw/binary/official semantic contacts, and interactive HOI viewer; full-batch conversion remains out of scope. |
-| 6 | Object sampling, collision geometry, and SDF | TODO | Implement geometry backends and tests. |
+| 6 | Object sampling, collision geometry, and SDF | Complete, bounded; assumptions explicit | Mesh audit, deterministic 50-point surface references, collision-only robot samples, SDF queries, probes, reports, visualizations, and bounded real-data acceptance pass; later interaction/optimization remains out of scope. |
 | 7 | Relative bone-direction initialization | TODO | Implement and test the paper's Eq. 1–2 initialization. |
 | 8 | Interaction graph and Laplacian coordinates | TODO | Implement and test the Eq. 3–7 graph/deformation terms. |
 | 9 | Constrained optimization with slack variables | TODO | Implement and test Eq. 8–9 constraints and optimization. |
@@ -75,7 +75,7 @@ Chinese roadmap is [docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md).
 Install the complete environment for the currently implemented data and visualization workflows:
 
 ```bash
-python -m pip install -e ".[dev,cache,viz,grab,robot]"
+python -m pip install -e ".[dev,cache,viz,grab,robot,geometry]"
 ```
 
 For core schema/tests without Zarr, visualization, or GRAB support, `python -m pip install -e ".[dev]"`
@@ -357,7 +357,40 @@ parameterization or perform MANO-to-Arti-MANO retargeting. See
 [`docs/ROBOT_HAND_INTERFACE.md`](docs/ROBOT_HAND_INTERFACE.md) and
 [`docs/ARTIMANO_ADAPTER.md`](docs/ARTIMANO_ADAPTER.md).
 
-### 8. Paper traceability and reproduction audit
+### 8. Inspect Object Geometry, Generate Surface References, and Validate Signed Distance
+
+This bounded geometry workflow keeps the existing canonical object-local mesh and Stage 4
+collision geometry contracts. The paper fixes the object count at 50; the sampler, seed, temporal
+reuse, normals, SDF backend, and robot collision count are explicit engineering assumptions.
+
+```bash
+toporetarget geometry inspect-mesh \
+  --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/right_f000000_f000060.zarr \
+  --object-id primary --json .local/reports/stage6/grab_object_mesh_audit.json
+toporetarget geometry sample-object \
+  --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/right_f000000_f000060.zarr \
+  --object-id primary --profile paper_strict_area_uniform \
+  --output .local/cache/geometry/object_surface/object.npz \
+  --report .local/reports/stage6/object_samples.json
+toporetarget geometry validate-samples --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/right_f000000_f000060.zarr \
+  --object-id primary --samples .local/cache/geometry/object_surface/object.npz \
+  --report .local/reports/stage6/object_samples_validation.json
+toporetarget geometry validate-sdf --shape sphere \
+  --report .local/reports/stage6/sdf_sphere_validation.json
+toporetarget geometry sample-robot --robot artimano_rh --pose neutral \
+  --profile engineering_collision_32_per_geometry \
+  --output .local/cache/geometry/robot_surface/artimano_rh.npz
+toporetarget geometry probe-collision \
+  --robot-samples .local/cache/geometry/robot_surface/artimano_rh.npz \
+  --object-shape cube --report .local/reports/stage6/synthetic_collision_probe.json
+```
+
+Debug visualizations include object first/middle/last overlays, SDF slices, and RH/LH collision
+surface samples. See [`OBJECT_GEOMETRY_AND_SAMPLING.md`](docs/OBJECT_GEOMETRY_AND_SAMPLING.md),
+[`SIGNED_DISTANCE_AND_COLLISION_QUERIES.md`](docs/SIGNED_DISTANCE_AND_COLLISION_QUERIES.md), and
+[`stages/STAGE_6_OBJECT_GEOMETRY_SDF.md`](docs/stages/STAGE_6_OBJECT_GEOMETRY_SDF.md).
+
+### 9. Paper traceability and reproduction audit
 
 Run the repository-local paper audit and inspect the machine-readable fidelity configuration:
 
@@ -371,7 +404,7 @@ The audited PDF, equation/table/figure traceability, and unresolved assumptions 
 [`docs/PAPER_FIDELITY.yaml`](docs/PAPER_FIDELITY.yaml), and
 [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md).
 
-### 9. Development validation
+### 10. Development validation
 
 ```bash
 ruff check .
@@ -402,6 +435,9 @@ pytest -q tests/licensed_data
 - [Arti-MANO target adapter](docs/ARTIMANO_ADAPTER.md)
 - [Stage 4 report](docs/stages/STAGE_4_ARTIMANO_TARGET_HAND.md)
 - [Stage 5 report](docs/stages/STAGE_5_GRAB_DATASET_ADAPTER.md)
+- [Object geometry and sampling](docs/OBJECT_GEOMETRY_AND_SAMPLING.md)
+- [Signed distance and collision queries](docs/SIGNED_DISTANCE_AND_COLLISION_QUERIES.md)
+- [Stage 6 report](docs/stages/STAGE_6_OBJECT_GEOMETRY_SDF.md)
 - [Paper fidelity](docs/PAPER_FIDELITY.md)
 - [Data and license policy](docs/LICENSE_AND_DATA_POLICY.md)
 - [Development log](docs/DEVELOPMENT_LOG.md) / [中文开发日志](docs/DEVELOPMENT_LOG.zh-CN.md)

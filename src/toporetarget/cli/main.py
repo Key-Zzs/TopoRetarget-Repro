@@ -7,6 +7,7 @@ import typer
 
 from toporetarget.cli.data import app as data_app
 from toporetarget.cli.doctor import app as doctor_app
+from toporetarget.cli.geometry import app as geometry_app
 from toporetarget.cli.keypoints import app as keypoints_app
 from toporetarget.cli.robots import app as robots_app
 from toporetarget.config.loader import load_path_config
@@ -21,6 +22,7 @@ app.add_typer(doctor_app, name="doctor")
 app.add_typer(data_app, name="data")
 app.add_typer(keypoints_app, name="keypoints")
 app.add_typer(robots_app, name="robots")
+app.add_typer(geometry_app, name="geometry")
 assets_app = typer.Typer(help="Manage local robot assets.")
 app.add_typer(assets_app, name="assets")
 

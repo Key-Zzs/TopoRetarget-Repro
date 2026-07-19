@@ -79,8 +79,8 @@ cache lacks the formal native-keypoint field; it was reported as unavailable rat
 
 The interactive smoke test covered slider, callbacks, play/pause, reference changes, visibility
 toggles, stable artists, and timer shutdown. Real native meshes use a viewer-only polygon fallback
-for oversized meshes; canonical geometry is unchanged. Stage 6 and all later geometry,
-retargeting, collision, SDF, and PPO work remain not started.
+for oversized meshes; canonical geometry is unchanged. In that Stage 5 snapshot, Stage 6 and all
+later geometry, retargeting, collision, SDF, and PPO work remained not started.
 
 The viewer also implements display-only frame stride, playback-speed and source/hand/geometry
 visibility controls, plus optional GIF/MP4 headless animation paths. A direct local Zarr store is
@@ -107,6 +107,41 @@ external MANO root is supplied explicitly. The s1 contact window reports labels 
 with no unmapped values and exact raw/binary/semantic/mapping round trips; the s7 bimanual geometry
 window validates both hands and the table. The external MANO files remain runtime inputs and were
 not copied into the repository.
+
+## Stage 6 object geometry, deterministic sampling, and signed distance
+
+Stage 6 reuses `MeshDefinition`/`RigidObjectTrack`, the existing SE(3) helpers, and the Stage 4
+collision-geometry/FK API. A read-only mesh audit records source and derived hashes, topology,
+watertightness, winding, degenerate faces, and sign reliability without repairing source data.
+
+The paper-locked object count is loaded from `configs/paper/retarget.yaml` and resolves to 50. The
+engineering profile `paper_strict_area_uniform` uses area-weighted triangle selection, square-root
+barycentric coordinates, and an explicit NumPy PCG64 seed `20260720`. Face indices and barycentric
+coordinates are retained so samples reconstruct exactly after scale changes. Anchors are sampled
+once in the object frame and transformed per frame; they are not resampled and no FPS profile is
+claimed as paper-exact. Normals are diagnostic face normals only. These unpublished choices are
+tracked as `A_OBJECT_SAMPLING_001`, `A_OBJECT_SAMPLING_METHOD_001`,
+`A_OBJECT_SAMPLING_SEED_001`, `A_OBJECT_SAMPLE_TEMPORAL_REUSE_001`, and
+`A_SURFACE_NORMAL_MODE_001`.
+
+The SDF foundation uses chunked analytic point-to-triangle closest points and generalized winding
+solid angles. `strict` rejects open/non-manifold meshes, `winding` exposes confidence and ambiguity,
+and `unsigned_only` makes signed distance unavailable instead of fabricating a positive sign. The
+repository convention is positive outside. Scene queries transform points into object-local space,
+then transform closest points and normals back using the existing rigid-frame helpers. Edge/vertex
+closest points are marked non-smooth; the local linearization stops at geometric quantities and does
+not create a q-space Jacobian.
+
+Robot samples use only `collision_geometry_instances()` from Stage 4. The explicit engineering
+profile is 32 samples per geometry, not a paper value. RH/LH Arti-MANO each expose 16 collision
+geometries and 512 samples; visual-only tip links are reported, not replaced. Pointwise collision
+probe output includes link/geometry/sample identity, sign confidence, and penetration depth, but no
+final `Q_t`, Delaunay, Laplacian, slack, or optimization.
+
+Bounded acceptance used `s7/cubemedium_inspect_1` frames `[0,60)` and local RH/LH assets. Reports and
+images are under ignored `.local/reports/stage6/`; derived sample caches are under
+`.local/cache/geometry/`. Source NPZ, mesh, canonical cache, MANO, and Arti-MANO asset hashes remain
+unchanged. Stage 7 remains not started.
 
 ## Data and local assets
 

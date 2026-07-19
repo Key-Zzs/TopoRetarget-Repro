@@ -1,0 +1,14 @@
+sign_convention: positive_outside
+surface_tolerance_m: 1.0e-8
+confidence_threshold: 0.05
+winding_threshold: 0.5
+query_chunk_size: 256
+face_chunk_size: 4096
+strict_backend: generalized_winding
+winding_backend: generalized_winding
+unsigned_fallback: unsigned_only
+not_provided:
+  backend: true
+  inside_outside_algorithm: true
+  non_watertight_strategy: true
+

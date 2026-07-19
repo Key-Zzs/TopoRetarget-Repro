@@ -1,0 +1,25 @@
+profiles:
+  paper_strict_area_uniform:
+    version: "1"
+    method: area_uniform_triangles
+    count:
+      source: configs/paper/retarget.yaml
+      key: num_object_surface_samples
+    seed: 20260720
+    rng: numpy_pcg64
+    exclude_degenerate_faces: true
+    degenerate_area_threshold: 1.0e-12
+    normal_mode: face_normal
+    assumptions:
+      - A_OBJECT_SAMPLING_METHOD_001
+      - A_OBJECT_SAMPLING_SEED_001
+      - A_OBJECT_SAMPLE_TEMPORAL_REUSE_001
+      - A_SURFACE_NORMAL_MODE_001
+    paper_locked_fields:
+      - count
+    paper_status:
+      count: specified
+      method: not_provided
+      seed: not_provided
+      temporal_reuse: not_provided
+

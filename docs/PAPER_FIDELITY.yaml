@@ -707,7 +707,49 @@ items:
       - A_GRAB_CONTACT_MAPPING_001
       - A_GRAB_TABLE_ROLE_001
       - A_GRAB_SEQUENCE_ID_001
-    notes: "Stage 5 is bounded to lazy discovery and explicit sequence conversion. Official GRAB contact_ids semantics are tracked from otaheri/GRAB tools/utils.py; downstream paper aggregation remains unspecified. Stage 6 geometry and all later retargeting/RL work are not implemented."
+    notes: "Stage 5 is bounded to lazy discovery and explicit sequence conversion. Official GRAB contact_ids semantics are tracked from otaheri/GRAB tools/utils.py; downstream paper aggregation remains unspecified. Stage 6 geometry is a separately scoped foundation; interaction graphs, optimization, and RL remain unimplemented."
+
+  - id: object_surface_sampling_foundation
+    kind: engineering_foundation
+    title: Deterministic object surface references
+    paper_section: "Sec. 3.3 and Appendix A.1"
+    pdf_page: 4
+    evidence_summary: "Stage 6 provides 50 deterministic object-local face+barycentric anchors with explicit provenance and frame transforms."
+    implementation_targets: [src/toporetarget/geometry/surface_sampling.py, src/toporetarget/geometry/object_geometry.py]
+    test_targets: [tests/unit/test_surface_sampling.py, tests/integration/test_stage6_synthetic_geometry.py]
+    status: implemented_with_assumptions
+    known_parameters: {num_object_surface_samples: 50, unit: meters}
+    unknowns: [sampling method, seed, temporal reuse schedule, normal use]
+    assumptions: [A_OBJECT_SAMPLING_001, A_OBJECT_SAMPLING_METHOD_001, A_OBJECT_SAMPLING_SEED_001, A_OBJECT_SAMPLE_TEMPORAL_REUSE_001, A_SURFACE_NORMAL_MODE_001]
+    notes: "The count is paper-locked; sampler, seed, temporal reuse, and normals are engineering assumptions and are not claimed as paper facts."
+
+  - id: signed_distance_query_foundation
+    kind: engineering_foundation
+    title: Closest-point and signed-distance query foundation
+    paper_section: "Sec. 3.4 and Appendix A.3"
+    pdf_page: 5
+    evidence_summary: "Stage 6 provides triangle closest points, positive-outside sign modes, winding confidence, normals, and local linearization data."
+    implementation_targets: [src/toporetarget/geometry/signed_distance/reference.py, src/toporetarget/geometry/collision_queries.py]
+    test_targets: [tests/unit/test_signed_distance.py, tests/unit/test_collision_queries.py]
+    status: implemented_with_assumptions
+    known_parameters: {sign_convention: positive_outside, unit: meters}
+    unknowns: [paper backend, non-watertight policy, gradient-to-q implementation]
+    assumptions: [A_SIGNED_DISTANCE_BACKEND_001, A_MESH_WATERTIGHT_POLICY_001]
+    notes: "Strict, winding, and unsigned-only modes are explicit. This does not implement Q_t, constraints, slack, or optimization."
+
+  - id: robot_collision_surface_foundation
+    kind: engineering_foundation
+    title: Collision-only robot surface samples
+    paper_section: "Appendix A.3"
+    pdf_page: 13
+    evidence_summary: "Stage 6 samples only declared URDF collision geometry and preserves link/geometry/sample provenance for pointwise probes."
+    implementation_targets: [src/toporetarget/geometry/robot_surface.py]
+    test_targets: [tests/unit/test_robot_surface_sampling.py, tests/local_assets/test_stage6_artimano_collision.py]
+    status: implemented_with_assumptions
+    known_parameters: {engineering_count_per_geometry: 32, unit: meters}
+    unknowns: [paper robot surface count, paper primitive sampling policy]
+    assumptions: [A_HAND_SURFACE_SAMPLES_001, A_ARTIMANO_COLLISION_COVERAGE_001]
+    notes: "The 32-per-geometry profile is explicitly not paper-specified; visual-only tips are reported and never synthesized."
 
 parameter_contract:
   configs/paper/retarget.yaml:

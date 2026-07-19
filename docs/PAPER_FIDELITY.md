@@ -74,36 +74,56 @@ collision geometry instances, and MediaPipe-21-compatible Arti-MANO RH/LH joint/
 It is validated with synthetic URDF fixtures and the locally imported Arti-MANO assets. The paper
 does not publish the target-hand anchors, qpos ordering, or exact robot wrist frame, so the adapter
 is `implemented_with_assumptions`; it does not implement source-to-robot qpos retargeting, Eq. 1-9,
-surface sampling, collision queries, SDF, or optimization. See
+or optimization. Stage 6 adds a separately scoped surface-sampling, collision-query, and SDF
+foundation without adding an interaction graph. See
 [`ROBOT_HAND_INTERFACE.md`](ROBOT_HAND_INTERFACE.md), [`ARTIMANO_ADAPTER.md`](ARTIMANO_ADAPTER.md),
 and [`stages/STAGE_4_ARTIMANO_TARGET_HAND.md`](stages/STAGE_4_ARTIMANO_TARGET_HAND.md).
 
-## 10. Unpublished implementation details
+## 10. Stage 6 geometry foundation
+
+Stage 6 implements three traceable engineering foundations with explicit assumptions:
+
+- `object_surface_sampling_foundation`: paper-locked `N_o=50`, deterministic area-weighted
+  triangle selection, PCG64 seed `20260720`, face+barycentric anchors, and fixed object-local
+  temporal identity. The sampler, seed, temporal schedule, and diagnostic face normals are not
+  disclosed by the paper.
+- `signed_distance_query_foundation`: exact reference point-to-triangle closest points, strict
+  watertight sign, generalized winding sign confidence, and an explicit unsigned-only mode. The
+  convention is always positive outside; unsigned values are never relabeled as signed.
+- `robot_collision_surface_foundation`: collision-only samples from the existing URDF geometry
+  API, with engineering profile `32` samples per geometry. Visual-only links and tip spheres are
+  reported, not silently synthesized.
+
+Stage 6 does not construct the final `Q_t`, Delaunay tetrahedra, Laplacian coordinates, slack
+variables, constraints, or optimizer. See
+[`stages/STAGE_6_OBJECT_GEOMETRY_SDF.md`](stages/STAGE_6_OBJECT_GEOMETRY_SDF.md).
+
+## 11. Unpublished implementation details
 
 The solver, Delaunay backend/flags, SDF backend, first-frame seed, paper coordinate-frame details,
 ContactPose intensity threshold, robot surface sampling, tracked links, axis-point geometry,
 simulator/physics settings, low-level gains, and unlisted PPO values are explicitly registered in
 [`ASSUMPTIONS.md`](ASSUMPTIONS.md). Configuration leaves undisclosed values null.
 
-## 11. Current blockers
+## 12. Current blockers
 
 The private Pen-Spin data, Wuji deployment assets, target hand identity for Table 1, and several
 solver/geometry/RL details are unavailable from the paper. These blockers prevent result-level
 reproduction and are not silently resolved.
 
-## 12. Definition of method-complete
+## 13. Definition of method-complete
 
 Method-complete means all publicly specified method equations, configurations, constraints,
 metrics, and evaluation code are implemented and tested, with every remaining assumption
 explicitly resolved or marked as a deliberate extension. This repository is not method-complete.
 
-## 12. Definition of result-complete
+## 14. Definition of result-complete
 
 Result-complete additionally requires the same datasets, private trajectories, robot assets,
 hardware, simulator, seeds, and experimental conditions needed to reproduce the reported numbers.
 This repository is not result-complete.
 
-## 13. Stage 5 dataset boundary
+## 15. Stage 5 dataset boundary
 
 The bounded GRAB dataset adapter is an engineering implementation around the paper's source-hand
 input boundary, not an additional claim about the paper's undisclosed preprocessing. Its native
@@ -111,5 +131,5 @@ time/mesh/contact preservation, lazy index, validation, and viewer are tracked a
 `dataset_adapter_grab` in [`PAPER_FIDELITY.yaml`](PAPER_FIDELITY.yaml). The official GRAB contact
 label table is now verified and versioned locally; the unresolved GRAB scene, wrist,
 personalized-template, downstream contact aggregation, table, and sequence-ID choices are listed in
-[`ASSUMPTIONS.md`](ASSUMPTIONS.md); no object sampling, interaction graph, collision/SDF,
-retargeting, or RL behavior is implied.
+[`ASSUMPTIONS.md`](ASSUMPTIONS.md); Stage 6 object sampling/SDF is a bounded engineering
+foundation, while no interaction graph, retargeting, or RL behavior is implied.

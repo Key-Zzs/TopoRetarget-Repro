@@ -71,7 +71,8 @@ vertices、source timestamps、contacts、个性化 `vtemp` 和 GRAB row-vector 
 
 交互 smoke test 覆盖 slider、callbacks、play/pause、reference、visibility toggles、artist
 数量稳定和 timer 关闭。过大原生 mesh 只在 viewer 中使用 polygon fallback，canonical geometry
-不变。Stage 6 以及后续 geometry、retargeting、collision、SDF 和 PPO 工作仍未开始。
+不变。在该 Stage 5 snapshot 中，Stage 6 以及后续 geometry、retargeting、collision、SDF 和 PPO
+工作尚未开始。
 
 viewer 还实现了只影响显示的 frame stride、播放速度、source/hand/geometry visibility controls，
 以及可选 GIF/MP4 无头动画输出。本次审计使用 direct local Zarr store 读写，仍保持标准 Zarr 格式，
@@ -94,6 +95,36 @@ legend 中显示 mapping identity。当前 closeout reports 与 semantic-enriche
 在显式提供外部 MANO root 后，bounded 真实片段的 fresh MANO-backed semantic conversion 与
 validation 已通过。s1 接触窗口报告 `[0,43,46,55]` 且无 unmapped value，raw/binary/semantic/mapping
 round-trip 全部精确；s7 双手几何窗口和 table 也通过验证。外部 MANO 文件仍只是运行时输入，未复制到仓库。
+
+## Stage 6 对象几何、确定性采样与 Signed Distance
+
+Stage 6 复用 `MeshDefinition`/`RigidObjectTrack`、现有 SE(3) helper，以及 Stage 4 的
+collision-geometry/FK API。只读 mesh audit 记录 source/derived hash、topology、watertight、
+winding、degenerate face 和 sign reliability，不修复源数据。
+
+对象点数从 `configs/paper/retarget.yaml` 读取论文锁定值 50。`paper_strict_area_uniform` 使用
+按面积加权的 triangle selection、平方根 barycentric coordinate 和显式 NumPy PCG64 seed
+`20260720`。保留 face index 与 barycentric，使 scale 变化后仍可精确重建；只在 object frame
+采样一次，再逐帧变换，不使用 FPS，也不声明 paper-exact。normals 仅为诊断用途的 face normal。
+这些未公开选择登记为 `A_OBJECT_SAMPLING_001`、`A_OBJECT_SAMPLING_METHOD_001`、
+`A_OBJECT_SAMPLING_SEED_001`、`A_OBJECT_SAMPLE_TEMPORAL_REUSE_001` 和
+`A_SURFACE_NORMAL_MODE_001`。
+
+SDF foundation 使用分块的 analytic point-to-triangle closest point 和 generalized winding
+solid angle。`strict` 拒绝 open/non-manifold mesh，`winding` 暴露 confidence/ambiguity，
+`unsigned_only` 将 signed distance 标记不可用，不伪造正号。仓库统一约定 positive outside。
+Scene query 先使用现有 frame helper 转到 object-local，再把 closest point 和 normal 转回；
+edge/vertex 最近点标记 non-smooth，local linearization 只提供几何量，不产生 q-space Jacobian。
+
+机器人采样只使用 Stage 4 `collision_geometry_instances()`。显式 engineering profile 为每个
+geometry 32 点，不是论文值。RH/LH Arti-MANO 每侧均有 16 个 collision geometry 和 512 个点；
+只有 visual 的 tip link 会报告，不会补造 collision。pointwise collision probe 包含
+link/geometry/sample identity、sign confidence 和 penetration depth，但不构造最终 `Q_t`、
+Delaunay、Laplacian、slack 或优化。
+
+有界验收使用 `s7/cubemedium_inspect_1` 的 `[0,60)` 帧和本地 RH/LH 资产。报告/图片位于被忽略的
+`.local/reports/stage6/`，derived sample cache 位于 `.local/cache/geometry/`。source NPZ、mesh、
+canonical cache、MANO 和 Arti-MANO asset hash 未变化。Stage 7 仍未开始。
 
 ## 数据与本地资产
 

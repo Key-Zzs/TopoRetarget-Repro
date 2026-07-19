@@ -44,6 +44,10 @@ robot = [
   "trimesh>=4.0",
   "matplotlib>=3.8",
 ]
+geometry = [
+  "scipy>=1.11",
+  "trimesh>=4.0",
+]
 
 [project.scripts]
 toporetarget = "toporetarget.cli.main:app"

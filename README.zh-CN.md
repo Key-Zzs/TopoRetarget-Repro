@@ -42,7 +42,7 @@ adapter，但尚未声称实现论文完整的机器人重定向优化器、RL p
 | 3 | MANO→MediaPipe 风格 21 点 source adapter | Complete，有界 | Layout/profile、converter、报告、viewer、合成测试和有界真实 GRAB 检查通过；语义和 topology 假设仍显式保留。 |
 | 4 | Arti-MANO 机器人适配器 | Complete，有假设 | 通用 URDF/FK 接口、显式 MediaPipe-21-compatible 锚点、分离几何检查、左右手验收、Jacobian 检查和 CLI 通过；论文 frame/mapping 假设仍显式保留。 |
 | 5 | 完整 GRAB 数据集适配器 | Complete，有界；fresh semantic closeout 通过 | lazy index、原生时间/网格的单序列和双手转换、validation、provenance、raw/binary/官方 semantic contacts 与交互 HOI viewer；全量转换仍不在范围内。 |
-| 6 | 物体采样、碰撞几何与 SDF | TODO | 实现几何 backend 和测试。 |
+| 6 | 物体采样、碰撞几何与 SDF | Complete，有界；假设显式 | mesh audit、确定性 50 点表面参考、仅 collision 的机器人表面采样、SDF 查询、probe、报告、可视化和有界真实数据验收通过；后续交互/优化仍不在范围内。 |
 | 7 | 相对骨方向初始化 | TODO | 实现并测试论文 Eq. 1–2。 |
 | 8 | 交互图与 Laplacian 坐标 | TODO | 实现并测试 Eq. 3–7 的图和变形项。 |
 | 9 | 带 slack 的受限优化 | TODO | 实现并测试 Eq. 8–9 的约束和优化。 |
@@ -72,7 +72,7 @@ adapter，但尚未声称实现论文完整的机器人重定向优化器、RL p
 安装当前数据和可视化 workflow 所需的完整环境：
 
 ```bash
-python -m pip install -e ".[dev,cache,viz,grab,robot]"
+python -m pip install -e ".[dev,cache,viz,grab,robot,geometry]"
 ```
 
 只运行 core schema/test 时，可使用 python -m pip install -e ".[dev]"。
@@ -347,7 +347,40 @@ URDF base frame，不选择论文中尚未确定的 wrist frame 参数化，也�
 重定向。详见 [docs/ROBOT_HAND_INTERFACE.md](docs/ROBOT_HAND_INTERFACE.md) 和
 [docs/ARTIMANO_ADAPTER.md](docs/ARTIMANO_ADAPTER.md)。
 
-### 8. 论文追踪与复现审计
+### 8. 检查对象几何、生成表面参考点并验证 Signed Distance
+
+该有界 geometry workflow 复用现有 canonical object-local mesh 和 Stage 4 collision geometry
+contract。论文固定对象点数为 50；采样器、seed、temporal reuse、normals、SDF backend 和机器
+人 collision 点数均作为显式 engineering assumption 记录。
+
+```bash
+toporetarget geometry inspect-mesh \
+  --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/right_f000000_f000060.zarr \
+  --object-id primary --json .local/reports/stage6/grab_object_mesh_audit.json
+toporetarget geometry sample-object \
+  --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/right_f000000_f000060.zarr \
+  --object-id primary --profile paper_strict_area_uniform \
+  --output .local/cache/geometry/object_surface/object.npz \
+  --report .local/reports/stage6/object_samples.json
+toporetarget geometry validate-samples --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/right_f000000_f000060.zarr \
+  --object-id primary --samples .local/cache/geometry/object_surface/object.npz \
+  --report .local/reports/stage6/object_samples_validation.json
+toporetarget geometry validate-sdf --shape sphere \
+  --report .local/reports/stage6/sdf_sphere_validation.json
+toporetarget geometry sample-robot --robot artimano_rh --pose neutral \
+  --profile engineering_collision_32_per_geometry \
+  --output .local/cache/geometry/robot_surface/artimano_rh.npz
+toporetarget geometry probe-collision \
+  --robot-samples .local/cache/geometry/robot_surface/artimano_rh.npz \
+  --object-shape cube --report .local/reports/stage6/synthetic_collision_probe.json
+```
+
+Debug visualization 包括 object first/middle/last overlay、SDF slice 和 RH/LH collision surface。
+详见 [OBJECT_GEOMETRY_AND_SAMPLING.md](docs/OBJECT_GEOMETRY_AND_SAMPLING.md)、
+[SIGNED_DISTANCE_AND_COLLISION_QUERIES.md](docs/SIGNED_DISTANCE_AND_COLLISION_QUERIES.md) 和
+[Stage 6 报告](docs/stages/STAGE_6_OBJECT_GEOMETRY_SDF.md)。
+
+### 9. 论文追踪与复现审计
 
 ```bash
 python scripts/check_paper_fidelity.py
@@ -359,7 +392,7 @@ toporetarget doctor paper
 [docs/PAPER_FIDELITY.yaml](docs/PAPER_FIDELITY.yaml) 和
 [docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md)。
 
-### 9. 开发验证
+### 10. 开发验证
 
 ```bash
 ruff check .
@@ -390,6 +423,9 @@ pytest -q tests/licensed_data
 - [Arti-MANO 目标手适配器](docs/ARTIMANO_ADAPTER.md)
 - [Stage 4 报告](docs/stages/STAGE_4_ARTIMANO_TARGET_HAND.md)
 - [Stage 5 报告](docs/stages/STAGE_5_GRAB_DATASET_ADAPTER.md)
+- [对象几何与采样](docs/OBJECT_GEOMETRY_AND_SAMPLING.md)
+- [Signed Distance 与碰撞查询](docs/SIGNED_DISTANCE_AND_COLLISION_QUERIES.md)
+- [Stage 6 报告](docs/stages/STAGE_6_OBJECT_GEOMETRY_SDF.md)
 - [论文忠实度](docs/PAPER_FIDELITY.md)
 - [数据与许可证策略](docs/LICENSE_AND_DATA_POLICY.md)
 - [开发日志](docs/DEVELOPMENT_LOG.md) / [中文开发日志](docs/DEVELOPMENT_LOG.zh-CN.md)
