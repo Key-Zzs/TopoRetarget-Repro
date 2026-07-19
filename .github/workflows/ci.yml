@@ -12,7 +12,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: python -m pip install -e ".[dev,viz,cache]"
+      - run: python -m pip install -e ".[dev,viz,cache,robot]"
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy src
