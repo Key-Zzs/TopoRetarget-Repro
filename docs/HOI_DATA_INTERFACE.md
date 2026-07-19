@@ -4,7 +4,8 @@ Schema version: `toporetarget.hoi.v1`.
 
 The interface is robot-independent. It supports one hand, bimanual sequences, multiple rigid
 objects, articulated objects, and optional contacts without requiring MANO or MediaPipe layouts.
-It loads one explicitly selected sequence and does not provide a full-dataset conversion command.
+The Stage 5 GRAB implementation adds a lazy metadata index and one explicitly selected sequence
+conversion; it still does not provide a full-dataset conversion command.
 
 ## Records
 
@@ -66,3 +67,12 @@ assert reloaded.timestamps.tolist() == sequence.timestamps.tolist()
 
 The canonical representation performs no temporal resampling, spatial/FPS sampling, MANO mesh
 sampling, object surface sampling, or robot-model work.
+
+## Stage 5 GRAB extension
+
+`GrabDatasetAdapter` preserves GRAB's source timestamps/native FPS, personalized `vtemp`, native
+MANO vertices, object-local meshes, table/support-surface geometry, and source contact arrays.
+Contact modes are `none`, `source`, `binary`, and `semantic`; semantic mode is explicitly
+unavailable until a verified GRAB label mapping is supplied. The adapter records source size,
+mtime, hashes when requested/available, model and mesh hashes, mapping profile hashes, and the
+no-resampling/no-sampling scope in `ProvenanceRecord`.

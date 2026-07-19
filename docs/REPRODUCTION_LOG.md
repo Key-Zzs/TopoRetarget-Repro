@@ -57,3 +57,22 @@ later algorithm stages have been reproduced.
   `.local/cache/hoi/grab/cubemedium_inspect_1_lh_f000000_f000010_mp21.zarr`; direct/tip checks are
   zero and scene↔wrist round-trip is floating-point precision. Added and smoke-tested the local
   interactive viewer with all display toggles and no coordinate mutation.
+
+## 2026-07-20 — Stage 5
+
+- Built the filename-first GRAB index at `.local/index/grab`: 1,335 active NPZ sequences across
+  subjects `s1`–`s10`; index construction did not load MANO models or frame arrays and did not hash
+  source files by default.
+- Implemented `GrabDatasetAdapter` with explicit right/left/both hand selection, contiguous
+  half-open frame ranges, native 120 Hz timestamps, personalized `vtemp`, native hand/object/table
+  geometry, source/binary contact modes, optional MediaPipe21, atomic Zarr output, and provenance.
+- Converted the real `s7/cubemedium_inspect_1` right-hand and bimanual clips `[0, 60)` using the
+  local GRAB root and MANO root. The canonical tracks contain native MANO16/SMPL-X joints, 778
+  vertices, scene wrist poses, object/table poses, contacts, and optional MediaPipe21.
+- Validation passed: timestamps/contact arrays/hand vertices/translation/world vertices match;
+  maximum wrist/object rotation difference is approximately `1.71e-6` degrees and round-trip
+  reconstruction is floating-point precision. The legacy Stage 2B native-keypoint comparison is
+  explicitly unavailable because that cache lacks the formal native-keypoint field.
+- Generated first/middle/last canonical and compare PNGs, a JSON/CSV validation report, index and
+  provenance reports, and an interactive viewer smoke report. No raw dataset or external model was
+  modified; all generated data remains under ignored `.local/`.

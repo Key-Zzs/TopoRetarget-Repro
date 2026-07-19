@@ -62,6 +62,8 @@ class ProvenanceRecord:
     source_sequence: str = ""
     source_file: str | None = None
     source_hash: str | None = None
+    source_size: int | None = None
+    source_mtime_ns: int | None = None
     adapter_name: str = ""
     adapter_version: str = ""
     conversion_time: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -217,6 +219,8 @@ class ContactTrack:
     valid: np.ndarray
     labels: np.ndarray | None = None
     vertex_associations: np.ndarray | None = None
+    binary: np.ndarray | None = None
+    semantic_labels: np.ndarray | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -225,6 +229,10 @@ class ContactTrack:
             self.labels = _array(self.labels)
         if self.vertex_associations is not None:
             self.vertex_associations = _array(self.vertex_associations)
+        if self.binary is not None:
+            self.binary = _array(self.binary, dtype=bool)
+        if self.semantic_labels is not None:
+            self.semantic_labels = _array(self.semantic_labels)
 
 
 @dataclass
@@ -380,6 +388,16 @@ class HOISequence:
                 contact.valid.shape[0] == t,
                 f"contact[{contact.hand_id},{contact.object_id}] time mismatch",
             )
+            if contact.labels is not None:
+                check(
+                    contact.labels.ndim >= 1 and contact.labels.shape[0] == t,
+                    f"contact[{contact.hand_id},{contact.object_id}].labels time mismatch",
+                )
+            if contact.binary is not None:
+                check(
+                    contact.binary.shape[0] == t,
+                    f"contact[{contact.hand_id},{contact.object_id}].binary time mismatch",
+                )
 
         if errors and raise_on_error:
             raise HOIValidationError("; ".join(errors))

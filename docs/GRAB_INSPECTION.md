@@ -1,4 +1,9 @@
-# Minimal GRAB inspection
+# Historical Stage 2B GRAB inspection
+
+This document records the historical one-sequence Stage 2B inspection. The production-oriented
+Stage 5 adapter, lazy index, bimanual conversion, validation, contacts, and interactive viewer are
+documented in [`GRAB_DATASET_ADAPTER.md`](GRAB_DATASET_ADAPTER.md) and
+[`GRAB_INTERACTIVE_VISUALIZATION.md`](GRAB_INTERACTIVE_VISUALIZATION.md).
 
 Stage 2B implements a bounded inspection adapter, not a full GRAB dataset adapter. Every command
 requires one explicit `.npz` sequence path; there is no subject/sequence enumeration, batch index,

@@ -8,8 +8,8 @@ TopoRetarget-Repro 是一个非官方、独立、可追踪的
 复现审计，以及面向完整灵巧手重定向的分阶段路线。
 
 当前实现已经覆盖 canonical HOI interface、有界 MANO→MediaPipe 风格 21 点 source-hand
-adapter，以及 Stage 4 通用机器人手/Arti-MANO 目标运动学接口，但尚未声称实现论文完整的
-机器人重定向优化器、RL pipeline 或论文实验结果。
+adapter、Stage 4 通用机器人手/Arti-MANO 目标运动学接口，以及有界的 Stage 5 GRAB 数据集
+adapter，但尚未声称实现论文完整的机器人重定向优化器、RL pipeline 或论文实验结果。
 
 ## 仓库概览
 
@@ -19,6 +19,8 @@ adapter，以及 Stage 4 通用机器人手/Arti-MANO 目标运动学接口，�
 - 对单条 GRAB NPZ 的只读检查，以及到 canonical Zarr 的转换；
 - 显式 MANO 语义 layout 和版本化 MANO→MediaPipe21 mapping profile；
 - 通用可微 URDF 手部 FK、命名 qpos、目标锚点和 Arti-MANO 左右手检查；
+- lazy GRAB index、保留原生时间/网格的单序列 adapter、contact modes、validation、provenance
+  和 raw/canonical 对比；
 - source/object/timestamp 保留报告，以及静态和本地交互式几何 viewer；
 - 论文忠实度审计、assumption 记录和本地 Arti-MANO 资产导入支持。
 
@@ -39,7 +41,7 @@ adapter，以及 Stage 4 通用机器人手/Arti-MANO 目标运动学接口，�
 | 2 | Canonical HOI schema 与坐标 | Complete，有界 | Schema、lazy Zarr、对比 viewer 和有界 GRAB 检查通过。 |
 | 3 | MANO→MediaPipe 风格 21 点 source adapter | Complete，有界 | Layout/profile、converter、报告、viewer、合成测试和有界真实 GRAB 检查通过；语义和 topology 假设仍显式保留。 |
 | 4 | Arti-MANO 机器人适配器 | Complete，有假设 | 通用 URDF/FK 接口、显式 MediaPipe-21-compatible 锚点、分离几何检查、左右手验收、Jacobian 检查和 CLI 通过；论文 frame/mapping 假设仍显式保留。 |
-| 5 | 完整 GRAB 数据集适配器 | TODO | 将当前单序列 reader 扩展为经过验证的数据集 adapter。 |
+| 5 | 完整 GRAB 数据集适配器 | Complete，有界且保留假设 | lazy index、原生时间/网格的单序列和双手转换、validation、provenance、contacts 与交互 HOI viewer；全量转换和 semantic contact mapping 仍不在范围内。 |
 | 6 | 物体采样、碰撞几何与 SDF | TODO | 实现几何 backend 和测试。 |
 | 7 | 相对骨方向初始化 | TODO | 实现并测试论文 Eq. 1–2。 |
 | 8 | 交互图与 Laplacian 坐标 | TODO | 实现并测试 Eq. 3–7 的图和变形项。 |
@@ -132,8 +134,9 @@ toporetarget data compare \
 
 ### 2. GRAB NPZ → canonical Zarr
 
-GRAB reader 按单条明确序列工作：读取一个 NPZ 并选择一只手，不枚举或改写整个数据集。
-生成完整序列时不要指定 --start-frame 和 --end-frame；生成片段时同时指定二者。
+历史 Stage 2B GRAB reader 按单条明确序列工作：读取一个 NPZ 并选择一只手；生产级 Stage 5
+adapter 见下文。生成完整序列时不要指定 --start-frame 和 --end-frame；
+生成片段时同时指定二者。
 
 ```bash
 export GRAB_SEQUENCE="$GRAB_ROOT/grab/<subject>/<sequence>.npz"
@@ -237,7 +240,36 @@ MediaPipe21、skeleton edges、semantic labels、object mesh 和 axes 开关；�
 timestamp 和 mapping profile ID。显示变换只使用临时数组，不修改 canonical keypoint 坐标。
 详细 viewer contract 见 [docs/MANO_TO_MEDIAPIPE21.md](docs/MANO_TO_MEDIAPIPE21.md)。
 
-### 5. Arti-MANO 资产导入
+### 5. 生产级 GRAB 数据集 adapter
+
+构建 filename-first index，在不加载帧数组的情况下查询，并在保留 source timestamps、原生
+mesh、个性化 MANO `vtemp`、object/table pose 和可选 source contacts 的前提下转换单条右手、
+左手或双手序列：
+
+```bash
+toporetarget data index --dataset grab --output .local/index/grab
+toporetarget data list --dataset grab --index .local/index/grab --subject s7 --limit 20
+toporetarget data describe --dataset grab --index .local/index/grab \
+  --sequence s7/cubemedium_inspect_1
+toporetarget data convert --dataset grab --index .local/index/grab \
+  --sequence s7/cubemedium_inspect_1 --hands both --start-frame 0 --end-frame 60 \
+  --include-table --contact-mode source --include-mediapipe21 \
+  --mano-model-root "$MANO_MODEL_ROOT" \
+  --output .local/cache/hoi/grab/s7/cubemedium_inspect_1/both_f000000_f000060.zarr
+toporetarget data validate --dataset grab --index .local/index/grab \
+  --sequence s7/cubemedium_inspect_1 \
+  --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/both_f000000_f000060.zarr \
+  --mano-model-root "$MANO_MODEL_ROOT" \
+  --report .local/reports/stage5/grab_validation.json
+```
+
+adapter 不做时间重采样、空间/物体表面采样、raw source 写入或全量转换。使用
+`toporetarget data visualize` 可进行 raw/canonical/compare、overlay 或 side-by-side、帧
+slider/键盘播放、scene/object/wrist reference 和无头 PNG 输出。详见
+[docs/GRAB_DATASET_ADAPTER.md](docs/GRAB_DATASET_ADAPTER.md) 与
+[docs/GRAB_INTERACTIVE_VISUALIZATION.md](docs/GRAB_INTERACTIVE_VISUALIZATION.md)。
+
+### 6. Arti-MANO 资产导入
 
 从单独 checkout 的 ManipTrans 导入本地 Arti-MANO 资产树：
 
@@ -253,7 +285,7 @@ toporetarget doctor assets
 见 [docs/UPSTREAM_REFERENCES.md](docs/UPSTREAM_REFERENCES.md) 和
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-### 6. 目标机器人手资产配置与运动学检查
+### 7. 目标机器人手资产配置与运动学检查
 
 Stage 4 使用已经导入的 Arti-MANO 资产作为目标手。核心检查命令如下：
 
@@ -303,7 +335,7 @@ URDF base frame，不选择论文中尚未确定的 wrist frame 参数化，也�
 重定向。详见 [docs/ROBOT_HAND_INTERFACE.md](docs/ROBOT_HAND_INTERFACE.md) 和
 [docs/ARTIMANO_ADAPTER.md](docs/ARTIMANO_ADAPTER.md)。
 
-### 7. 论文追踪与复现审计
+### 8. 论文追踪与复现审计
 
 ```bash
 python scripts/check_paper_fidelity.py
@@ -315,7 +347,7 @@ toporetarget doctor paper
 [docs/PAPER_FIDELITY.yaml](docs/PAPER_FIDELITY.yaml) 和
 [docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md)。
 
-### 8. 开发验证
+### 9. 开发验证
 
 ```bash
 ruff check .
@@ -340,10 +372,12 @@ pytest -q tests/licensed_data
 - [统一 HOI 接口](docs/HOI_DATA_INTERFACE.md)
 - [坐标约定](docs/COORDINATE_CONVENTIONS.md)
 - [GRAB 检查](docs/GRAB_INSPECTION.md)
+- [GRAB 数据集 adapter](docs/GRAB_DATASET_ADAPTER.md) / [交互可视化](docs/GRAB_INTERACTIVE_VISUALIZATION.md)
 - [MANO→MediaPipe21 adapter](docs/MANO_TO_MEDIAPIPE21.md)
 - [通用机器人手接口](docs/ROBOT_HAND_INTERFACE.md)
 - [Arti-MANO 目标手适配器](docs/ARTIMANO_ADAPTER.md)
 - [Stage 4 报告](docs/stages/STAGE_4_ARTIMANO_TARGET_HAND.md)
+- [Stage 5 报告](docs/stages/STAGE_5_GRAB_DATASET_ADAPTER.md)
 - [论文忠实度](docs/PAPER_FIDELITY.md)
 - [数据与许可证策略](docs/LICENSE_AND_DATA_POLICY.md)
 - [开发日志](docs/DEVELOPMENT_LOG.md) / [中文开发日志](docs/DEVELOPMENT_LOG.zh-CN.md)

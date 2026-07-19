@@ -1,0 +1,6 @@
+# GRAB numeric labels are preserved by Stage 5.  No semantic names are asserted
+# until an official GRAB label mapping is verified and versioned here.
+dataset: grab
+mapping_status: unavailable
+source: null
+labels: null

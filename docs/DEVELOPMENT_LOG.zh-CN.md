@@ -21,8 +21,8 @@
   RH/LH 验收。
 
 当前没有实现 TopoRetarget 重定向算法、MANO→机器人 qpos 转换、数值优化、Delaunay/SDF、
-RL/PPO 或 baselines。阶段 3 仍是 source-hand adapter，阶段 4 是目标手运动学接口；两者都
-不是完整重定向，也不声称 MediaPipe detector accuracy；不进行全量数据集转换。
+RL/PPO 或 baselines。阶段 3 仍是 source-hand adapter，阶段 4 是目标手运动学接口，阶段 5
+是有界数据 adapter；这些都不是完整重定向，也不声称 MediaPipe detector accuracy。
 
 ## 阶段 4 实现记录
 
@@ -53,6 +53,29 @@ collision query、SDF 或 PPO。
 
 有界 GRAB 读取器和真实验收记录见 [`GRAB_INSPECTION.md`](GRAB_INSPECTION.md)。这是单条明确
 选定序列的片段检查，不是全量数据集转换。
+
+## 阶段 5 实现记录
+
+阶段 5 增加 filename-first lazy GRAB index、`GrabDatasetAdapter`、source/binary contact
+modes、可选 MediaPipe21 派生、个性化 vtemp MANO 重建、原生 object/table mesh track、原子
+Zarr cache、validation JSON/CSV、raw/canonical 对比和交互式 raw/canonical viewer。验收使用的
+本地数据根目录由 discovery report/configuration 解析；index 包含 s1–s10 共 1,335 条 active
+NPZ sequence，不导入 MANO 或帧数组。机器相关根目录只保存在被忽略的
+`.local/reports/stage5/` 证据中。
+
+真实验收序列为 `s7/cubemedium_inspect_1`，原生 120 Hz，右手和双手 `[0, 60)` clip。原生手/物体
+vertices、source timestamps、contacts、个性化 `vtemp` 和 GRAB row-vector object transform
+均被保留。validation 与 raw/canonical 对比通过：timestamp/translation/world-vertex error
+为 0，最大 rotation error 约 `1.71e-6` 度。旧 Stage 2B cache 没有正式 native-keypoint 字段，
+因此 legacy native-keypoint metric 标为 unavailable，没有用替代字段冒充通过。
+
+交互 smoke test 覆盖 slider、callbacks、play/pause、reference、visibility toggles、artist
+数量稳定和 timer 关闭。过大原生 mesh 只在 viewer 中使用 polygon fallback，canonical geometry
+不变。Stage 6 以及后续 geometry、retargeting、collision、SDF 和 PPO 工作仍未开始。
+
+viewer 还实现了只影响显示的 frame stride、播放速度、source/hand/geometry visibility controls，
+以及可选 GIF/MP4 无头动画输出。本次审计使用 direct local Zarr store 读写，仍保持标准 Zarr 格式，
+以适配受管文件系统；显示操作不改变 canonical schema 或 source arrays。
 
 ## 数据与本地资产
 

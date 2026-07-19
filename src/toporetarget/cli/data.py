@@ -8,9 +8,13 @@ from pathlib import Path
 import typer
 
 from toporetarget.data.adapters.base import FrameRange
+from toporetarget.data.adapters.grab import GrabAdapterError, GrabDatasetAdapter, GrabLoadOptions
+from toporetarget.data.indexes.grab import GrabIndexError, build_grab_index, load_grab_index
 from toporetarget.data.storage import StorageError, load_hoi_sequence, save_hoi_sequence
 from toporetarget.data.synthetic import SyntheticAdapter
+from toporetarget.data.validation.grab import validate_grab_sequence
 from toporetarget.viz.comparison import ComparisonMetrics
+from toporetarget.viz.grab_viewer import GrabViewerOptions, render_grab_view
 from toporetarget.viz.matplotlib_viewer import ViewerOptions, render_comparison, show_comparison
 
 app = typer.Typer(help="Inspect and convert one explicitly selected HOI sequence.")
@@ -24,6 +28,31 @@ def _range(start_frame: int, end_frame: int | None) -> FrameRange | None:
     if start_frame == 0 and end_frame is None:
         return None
     return FrameRange(start=start_frame, end=end_frame)
+
+
+def _grab_adapter(
+    *,
+    sequence_path: Path | None = None,
+    grab_root: Path | None = None,
+    index: Path | None = None,
+    mano_model_root: Path | None = None,
+    hands: str = "auto",
+    include_table: bool = True,
+    contact_mode: str = "source",
+    include_mediapipe21: bool = True,
+) -> GrabDatasetAdapter:
+    return GrabDatasetAdapter(
+        sequence_path=sequence_path,
+        grab_root=grab_root,
+        index=index,
+        mano_model_root=mano_model_root,
+        options=GrabLoadOptions(
+            hands=hands,
+            include_table=include_table,
+            contact_mode=contact_mode,
+            include_mediapipe21=include_mediapipe21,
+        ),
+    )
 
 
 def _synthetic(sequence: str, frame_range: FrameRange | None = None):
@@ -89,6 +118,7 @@ def describe(
     dataset: str = typer.Option("synthetic", "--dataset"),
     sequence: str = typer.Option("demo", "--sequence"),
     sequence_path: Path | None = typer.Option(None, "--sequence-path"),
+    index: Path | None = typer.Option(None, "--index"),
     hand: str = typer.Option("right", "--hand"),
     grab_root: Path | None = typer.Option(None, "--grab-root"),
     mano_model_root: Path | None = typer.Option(None, "--mano-model-root"),
@@ -99,17 +129,16 @@ def describe(
         _json_print(SyntheticAdapter().describe_sequence(sequence))
         return
     if dataset == "grab":
-        from toporetarget.data.adapters.grab_inspect import GrabInspectionAdapter
-
-        adapter = GrabInspectionAdapter(
-            sequence_path=sequence_path or "",
-            hand=hand,
+        adapter = _grab_adapter(
+            sequence_path=sequence_path,
+            index=index,
             grab_root=grab_root,
             mano_model_root=mano_model_root,
+            hands=hand,
         )
         try:
-            _json_print(adapter.describe_sequence(sequence))
-        except (RuntimeError, ValueError, OSError) as exc:
+            _json_print(adapter.describe_sequence(sequence if sequence_path is None else ""))
+        except (GrabAdapterError, RuntimeError, ValueError, OSError) as exc:
             typer.echo(f"description failed: {exc}", err=True)
             raise typer.Exit(code=1) from exc
         return
@@ -138,18 +167,75 @@ def convert(
     dataset: str = typer.Option("synthetic", "--dataset"),
     sequence: str = typer.Option("demo", "--sequence"),
     sequence_path: Path | None = typer.Option(None, "--sequence-path"),
+    index: Path | None = typer.Option(None, "--index"),
     hand: str = typer.Option("right", "--hand"),
+    hands: str | None = typer.Option(None, "--hands", help="auto, right, left, or both."),
     grab_root: Path | None = typer.Option(None, "--grab-root"),
     mano_model_root: Path | None = typer.Option(None, "--mano-model-root"),
+    include_table: bool = typer.Option(True, "--include-table/--no-table"),
+    contact_mode: str = typer.Option("source", "--contact-mode"),
+    include_mediapipe21: bool = typer.Option(True, "--include-mediapipe21/--no-mediapipe21"),
     start_frame: int = typer.Option(0, "--start-frame", min=0, help="Inclusive clip start."),
     end_frame: int | None = typer.Option(None, "--end-frame", min=1, help="Exclusive clip end."),
     output: Path | None = typer.Option(
         None, "--output", help="Optional explicit Zarr cache destination."
     ),
+    force: bool = typer.Option(False, "--force", help="Replace an existing explicit cache."),
 ) -> None:
     """Convert exactly one sequence or contiguous clip; no resampling is performed."""
 
     try:
+        selected_hands = hands or hand
+        if dataset == "grab":
+            adapter = _grab_adapter(
+                sequence_path=sequence_path,
+                index=index,
+                grab_root=grab_root,
+                mano_model_root=mano_model_root,
+                hands=selected_hands,
+            )
+            if output is None:
+                canonical = adapter.load_sequence(
+                    sequence,
+                    frame_range=_range(start_frame, end_frame),
+                    options=GrabLoadOptions(
+                        hands=selected_hands,
+                        start_frame=start_frame,
+                        end_frame=end_frame,
+                        include_table=include_table,
+                        contact_mode=contact_mode,
+                        include_mediapipe21=include_mediapipe21,
+                    ),
+                )
+            else:
+                destination = adapter.create_cache(
+                    sequence,
+                    output=output,
+                    force=force,
+                    options=GrabLoadOptions(
+                        hands=selected_hands,
+                        start_frame=start_frame,
+                        end_frame=end_frame,
+                        include_table=include_table,
+                        contact_mode=contact_mode,
+                        include_mediapipe21=include_mediapipe21,
+                    ),
+                )
+                canonical = load_hoi_sequence(destination)
+            _json_print(
+                {
+                    "dataset": dataset,
+                    "sequence_id": canonical.metadata.sequence_id,
+                    "num_frames": canonical.num_frames,
+                    "native_fps": canonical.metadata.native_fps,
+                    "hands": [item.side for item in canonical.hands],
+                    "timestamps": canonical.timestamps.tolist(),
+                    "output": None if output is None else str(output),
+                    "no_temporal_resampling": True,
+                    "no_spatial_sampling": True,
+                }
+            )
+            return
         raw = _load_raw(
             dataset,
             sequence,
@@ -299,4 +385,271 @@ def compare(
         )
     except (StorageError, RuntimeError, ValueError, OSError, typer.BadParameter) as exc:
         typer.echo(f"comparison failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("index")
+def index_dataset(
+    dataset: str = typer.Option("grab", "--dataset"),
+    grab_root: Path | None = typer.Option(None, "--grab-root"),
+    output: Path = typer.Option(Path(".local/index/grab"), "--output"),
+    hash_files: bool = typer.Option(
+        False, "--hash-files", help="Opt in to source SHA-256 hashing."
+    ),
+) -> None:
+    """Build a lightweight GRAB index without MANO or frame-array loading."""
+
+    if dataset != "grab":
+        raise typer.BadParameter("only --dataset grab has an indexer")
+    try:
+        result = build_grab_index(grab_root=grab_root, output=output, hash_files=hash_files)
+    except (GrabIndexError, OSError, ValueError) as exc:
+        typer.echo(f"index failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    _json_print(
+        {
+            "index": result["index"],
+            "manifest": result["manifest"],
+            "file_count": len(result["entries"]),
+        }
+    )
+
+
+@app.command("list")
+def list_dataset(
+    dataset: str = typer.Option("grab", "--dataset"),
+    index: Path = typer.Option(Path(".local/index/grab"), "--index"),
+    subject: str | None = typer.Option(None, "--subject"),
+    object_name: str | None = typer.Option(None, "--object"),
+    action: str | None = typer.Option(None, "--action"),
+    sequence: str | None = typer.Option(None, "--sequence"),
+    contains: str | None = typer.Option(None, "--contains"),
+    limit: int = typer.Option(20, "--limit", min=1),
+    as_json: bool = typer.Option(False, "--json"),
+    as_csv: bool = typer.Option(False, "--csv"),
+) -> None:
+    """List indexed sequences with bounded output; no MANO is loaded."""
+
+    if dataset != "grab":
+        raise typer.BadParameter("only --dataset grab is indexed")
+    try:
+        entries = load_grab_index(index)
+    except (OSError, ValueError, KeyError) as exc:
+        typer.echo(
+            f"index is unavailable: {index}; run `toporetarget data index --dataset grab` ({exc})",
+            err=True,
+        )
+        raise typer.Exit(code=1) from exc
+
+    def matches(item: dict[str, object]) -> bool:
+        values = {
+            "subject": item.get("subject_id", ""),
+            "object": item.get("object_token", ""),
+            "action": item.get("action_token", ""),
+            "sequence": item.get("sequence_id", ""),
+        }
+        return all(
+            value is None or str(values[key]) == value
+            for key, value in (
+                ("subject", subject),
+                ("object", object_name),
+                ("action", action),
+                ("sequence", sequence),
+            )
+        ) and (contains is None or contains in str(item.get("sequence_id", "")))
+
+    selected = [item for item in entries if matches(item)][:limit]
+    if as_json:
+        _json_print(selected)
+    elif as_csv:
+        import csv
+        import sys
+
+        fields = [
+            "sequence_id",
+            "subject_id",
+            "object_token",
+            "action_token",
+            "repetition_token",
+            "relative_path",
+            "file_size",
+            "mtime_ns",
+            "metadata_quality",
+        ]
+        writer = csv.DictWriter(sys.stdout, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows({field: item.get(field) for field in fields} for item in selected)
+    else:
+        typer.echo("sequence_id\tsubject\tobject\taction\tframes metadata")
+        for item in selected:
+            typer.echo(
+                f"{item.get('sequence_id')}\t{item.get('subject_id')}\t{item.get('object_token')}\t{item.get('action_token')}\t{item.get('metadata_quality')}"
+            )
+        typer.echo(
+            f"showing {len(selected)} indexed sequence(s); use --json/--csv for machine output"
+        )
+
+
+@app.command("validate")
+def validate_dataset(
+    dataset: str = typer.Option("grab", "--dataset"),
+    sequence: str = typer.Option("", "--sequence"),
+    sequence_path: Path | None = typer.Option(None, "--sequence-path"),
+    index: Path | None = typer.Option(None, "--index"),
+    canonical: Path | None = typer.Option(None, "--canonical"),
+    hands: str = typer.Option("both", "--hands"),
+    mano_model_root: Path | None = typer.Option(None, "--mano-model-root"),
+    grab_root: Path | None = typer.Option(None, "--grab-root"),
+    contact_mode: str = typer.Option("source", "--contact-mode"),
+    start_frame: int = typer.Option(0, "--start-frame", min=0),
+    end_frame: int | None = typer.Option(None, "--end-frame", min=1),
+    report: Path | None = typer.Option(None, "--report"),
+    csv_output: Path | None = typer.Option(None, "--csv"),
+) -> None:
+    """Validate one selected source sequence and optional canonical cache."""
+
+    if dataset != "grab":
+        raise typer.BadParameter("only --dataset grab has formal validation")
+    try:
+        adapter = _grab_adapter(
+            sequence_path=sequence_path,
+            grab_root=grab_root,
+            index=index,
+            mano_model_root=mano_model_root,
+            hands=hands,
+            contact_mode=contact_mode,
+        )
+        if canonical is not None and end_frame is None:
+            end_frame = load_hoi_sequence(canonical).num_frames
+        loaded = adapter.load_sequence(
+            sequence,
+            options=GrabLoadOptions(
+                hands=hands,
+                contact_mode=contact_mode,
+                start_frame=start_frame,
+                end_frame=end_frame,
+            ),
+        )
+        payload = validate_grab_sequence(
+            loaded, canonical=canonical, source_path=loaded.metadata.provenance.source_file
+        )
+        if report is not None:
+            Path(report).parent.mkdir(parents=True, exist_ok=True)
+            Path(report).write_text(
+                json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8"
+            )
+        if csv_output is not None:
+            from toporetarget.data.validation.grab import GrabValidationReport
+
+            GrabValidationReport(
+                payload["status"],
+                payload["errors"],
+                payload["warnings"],
+                payload["checks"],
+                payload["metrics"],
+            ).write_csv(csv_output)
+        _json_print(payload)
+        if payload["status"] != "pass":
+            raise typer.Exit(code=1)
+    except (GrabAdapterError, StorageError, RuntimeError, ValueError, OSError) as exc:
+        typer.echo(f"validation failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("visualize")
+def visualize_dataset(
+    dataset: str = typer.Option("grab", "--dataset"),
+    sequence: str = typer.Option("", "--sequence"),
+    sequence_path: Path | None = typer.Option(None, "--sequence-path"),
+    index: Path | None = typer.Option(None, "--index"),
+    canonical: Path | None = typer.Option(None, "--canonical"),
+    mode: str = typer.Option("canonical", "--mode", help="raw, canonical, or compare"),
+    layout: str = typer.Option("overlay", "--layout"),
+    reference_frame: str = typer.Option("scene", "--reference-frame"),
+    frame: int = typer.Option(0, "--frame", min=0),
+    start_frame: int = typer.Option(0, "--start-frame", min=0),
+    end_frame: int | None = typer.Option(None, "--end-frame", min=1),
+    display_stride: int = typer.Option(1, "--display-stride", min=1),
+    hands: str = typer.Option("both", "--hands"),
+    mano_model_root: Path | None = typer.Option(None, "--mano-model-root"),
+    grab_root: Path | None = typer.Option(None, "--grab-root"),
+    contact_mode: str = typer.Option("source", "--contact-mode"),
+    show_mediapipe21: bool = typer.Option(False, "--show-mediapipe21"),
+    show_native_joints: bool = typer.Option(False, "--show-native-joints"),
+    show_mesh: bool = typer.Option(True, "--show-mesh/--hide-mesh"),
+    show_table: bool = typer.Option(False, "--show-table"),
+    show_contacts: bool = typer.Option(False, "--show-contacts"),
+    show_axes: bool = typer.Option(False, "--show-axes"),
+    interactive: bool = typer.Option(
+        False, "--interactive", "--show", help="Open the interactive slider/buttons viewer."
+    ),
+    output: Path | None = typer.Option(None, "--output"),
+) -> None:
+    """Render raw/canonical/compare GRAB scenes; interaction never changes data."""
+
+    if dataset != "grab":
+        raise typer.BadParameter("only --dataset grab has formal visualization")
+    try:
+        canonical_sequence = load_hoi_sequence(canonical) if canonical is not None else None
+        raw_sequence = None
+        if mode in {"raw", "compare"}:
+            adapter = _grab_adapter(
+                sequence_path=sequence_path,
+                grab_root=grab_root,
+                index=index,
+                mano_model_root=mano_model_root,
+                hands=hands,
+                contact_mode=contact_mode,
+                include_mediapipe21=show_mediapipe21,
+            )
+            raw_sequence = adapter.load_sequence(
+                sequence,
+                options=GrabLoadOptions(
+                    hands=hands,
+                    start_frame=start_frame,
+                    end_frame=end_frame,
+                    contact_mode=contact_mode,
+                    include_mediapipe21=show_mediapipe21,
+                ),
+            )
+        if mode == "canonical" and canonical_sequence is None:
+            raise typer.BadParameter("canonical mode requires --canonical")
+        if mode == "compare" and canonical_sequence is None:
+            raise typer.BadParameter("compare mode requires --canonical")
+        opts = GrabViewerOptions(
+            mode=mode,
+            layout=layout,
+            reference_frame=reference_frame,
+            frame=frame,
+            display_stride=display_stride,
+            show_mesh=show_mesh,
+            show_mediapipe21=show_mediapipe21,
+            show_native_joints=show_native_joints,
+            show_table=show_table,
+            show_contacts=show_contacts,
+            show_axes=show_axes,
+        )
+        viewer = render_grab_view(
+            canonical=canonical_sequence,
+            raw=raw_sequence,
+            options=opts,
+            output=output,
+            interactive=interactive,
+            start_frame=start_frame,
+            end_frame=end_frame,
+        )
+        if not interactive:
+            viewer.close()
+        _json_print(
+            {
+                "mode": mode,
+                "layout": layout,
+                "reference_frame": reference_frame,
+                "frame": viewer.frame,
+                "output": None if output is None else str(output),
+                "interactive": interactive,
+            }
+        )
+    except (GrabAdapterError, StorageError, RuntimeError, ValueError, OSError) as exc:
+        typer.echo(f"visualization failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc

@@ -25,8 +25,8 @@ the root [README](../README.md). The detailed reproduction record is in
 
 This repository does not implement the TopoRetarget retargeting algorithm, MANO-to-robot qpos
 conversion, numerical optimization, Delaunay/SDF, RL/PPO, or baselines. Stage 3 remains a
-source-hand adapter and Stage 4 remains a target-hand kinematics interface; neither claims full
-retargeting or MediaPipe detector accuracy.
+source-hand adapter, Stage 4 remains a target-hand kinematics interface, and Stage 5 remains a
+bounded data adapter; none claims full retargeting or MediaPipe detector accuracy.
 
 ## Stage 4 implementation record
 
@@ -59,6 +59,33 @@ direction initialization, interaction geometry, collision queries, SDF, and PPO 
 The bounded GRAB reader, real acceptance command, and tolerance report are documented in
 [`GRAB_INSPECTION.md`](GRAB_INSPECTION.md). This is one explicit 60-frame inspection, not a
 full-dataset conversion.
+
+## Stage 5 implementation record
+
+Stage 5 adds a filename-first lazy GRAB index, `GrabDatasetAdapter`, source/binary contact modes,
+optional MediaPipe21 derivation, personalized-vtemp MANO reconstruction, native object/table mesh
+tracks, atomic Zarr caching, validation JSON/CSV, raw/canonical comparison, and an interactive
+raw/canonical viewer. The accepted local dataset root was
+the locally configured/discovered GRAB root; the index contains 1,335 active NPZ sequences across
+subjects `s1`–`s10` and does not import MANO or frame arrays. The machine-specific root is retained
+only in ignored `.local/reports/stage5/` evidence.
+
+The real acceptance sequence was `s7/cubemedium_inspect_1`, 120 Hz, with right-hand and bimanual
+clips `[0, 60)`. Native hand/object vertices, source timestamps, contacts, personalized `vtemp`,
+and the GRAB row-vector object transform were preserved. Validation and raw/canonical comparison
+passed at zero timestamp/translation/world-vertex error and approximately `1.71e-6` degrees
+maximum rotation error. A legacy Stage 2B native-keypoint metric was unavailable because the old
+cache lacks the formal native-keypoint field; it was reported as unavailable rather than inferred.
+
+The interactive smoke test covered slider, callbacks, play/pause, reference changes, visibility
+toggles, stable artists, and timer shutdown. Real native meshes use a viewer-only polygon fallback
+for oversized meshes; canonical geometry is unchanged. Stage 6 and all later geometry,
+retargeting, collision, SDF, and PPO work remain not started.
+
+The viewer also implements display-only frame stride, playback-speed and source/hand/geometry
+visibility controls, plus optional GIF/MP4 headless animation paths. A direct local Zarr store is
+used for cache I/O so the standard Zarr format remains usable under the managed filesystem used
+for this audit; display operations do not change canonical schema or source arrays.
 
 ## Data and local assets
 

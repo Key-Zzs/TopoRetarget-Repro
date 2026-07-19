@@ -101,6 +101,92 @@ class GrabSequenceRecord:
         )
 
 
+def _slice_frames(value: Any, start: int, end: int, num_frames: int) -> np.ndarray:
+    """Select a temporal field without changing non-temporal metadata."""
+
+    array = np.asarray(value)
+    if array.ndim >= 1 and array.shape[0] == num_frames:
+        return array[start:end].copy()
+    return array.copy()
+
+
+def load_grab_auxiliary(
+    sequence_path: str | Path,
+    *,
+    frame_range: FrameRange | None = None,
+    include_table: bool = True,
+    contact_mode: str = "none",
+) -> dict[str, Any]:
+    """Load selected table/contact fields for one explicit sequence.
+
+    GRAB stores these values inside pickled dictionaries in an NPZ.  This
+    function deliberately loads them only after a sequence and frame range
+    have been selected.  ``allow_pickle=True`` is therefore restricted to
+    trusted local GRAB files; callers must not use it for arbitrary downloads.
+    """
+
+    if contact_mode not in {"none", "source", "binary", "semantic"}:
+        raise GrabParseError(f"unsupported contact mode: {contact_mode}")
+    source = Path(sequence_path).expanduser()
+    with np.load(source, allow_pickle=True) as data:
+        num_frames = int(_scalar(data, "n_frames"))
+        start, end = (0, num_frames) if frame_range is None else frame_range.resolve(num_frames)
+        result: dict[str, Any] = {"frame_range": [start, end]}
+        if include_table and "table" in data.files:
+            raw_table = _mapping(_scalar(data, "table"), "table")
+            params_value = raw_table.get("params")
+            params: dict[str, np.ndarray] = {}
+            if isinstance(params_value, dict):
+                for key, value in params_value.items():
+                    array = np.asarray(value)
+                    if array.ndim == 0 or array.shape[0] != num_frames:
+                        raise GrabParseError(
+                            f"GRAB table.params.{key} must have first dimension "
+                            f"{num_frames}, got {array.shape}"
+                        )
+                    if not np.issubdtype(array.dtype, np.number) or not np.all(np.isfinite(array)):
+                        raise GrabParseError(f"GRAB table.params.{key} must be finite numeric data")
+                    params[key] = _slice_frames(array, start, end, num_frames)
+            result["table"] = {
+                "params": params,
+                "table_mesh": raw_table.get("table_mesh"),
+            }
+        if contact_mode != "none" and "contact" in data.files:
+            raw_contact = _mapping(_scalar(data, "contact"), "contact")
+            labels: dict[str, np.ndarray] = {}
+            for key, value in raw_contact.items():
+                if key == "threshold":
+                    labels[key] = np.asarray(value).copy()
+                else:
+                    array = np.asarray(value)
+                    if array.ndim == 0 or array.shape[0] != num_frames:
+                        raise GrabParseError(
+                            f"GRAB contact.{key} must have first dimension {num_frames}, "
+                            f"got {array.shape}"
+                        )
+                    if not np.issubdtype(array.dtype, np.number) or not np.all(np.isfinite(array)):
+                        raise GrabParseError(f"GRAB contact.{key} must be finite numeric data")
+                    labels[key] = _slice_frames(array, start, end, num_frames)
+            result["contact"] = labels
+            result["contact_mode"] = contact_mode
+        return result
+
+
+def object_pose_scene(params: dict[str, np.ndarray]) -> np.ndarray:
+    """Convert official GRAB row-vector object motion to column-vector SE(3)."""
+
+    if "global_orient" not in params or "transl" not in params:
+        raise GrabParseError("GRAB object params require global_orient and transl")
+    from toporetarget.data.mano_backends.base import axis_angle_to_matrix
+
+    rotations = axis_angle_to_matrix(params["global_orient"])
+    translations = np.asarray(params["transl"], dtype=np.float64)
+    poses = np.repeat(np.eye(4, dtype=np.float64)[None, ...], translations.shape[0], axis=0)
+    poses[:, :3, :3] = np.swapaxes(rotations, -1, -2)
+    poses[:, :3, 3] = translations
+    return poses
+
+
 def _scalar(data: Any, key: str) -> Any:
     if key not in data.files:
         raise GrabParseError(f"GRAB NPZ is missing required top-level key: {key}")
@@ -316,6 +402,8 @@ __all__ = [
     "GrabParseError",
     "GrabSequenceRecord",
     "load_ply_mesh",
+    "load_grab_auxiliary",
+    "object_pose_scene",
     "read_grab_npz",
     "resolve_grab_resource",
     "resolve_grab_root",

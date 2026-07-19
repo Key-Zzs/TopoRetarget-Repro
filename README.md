@@ -8,9 +8,10 @@ It provides a robot-independent HOI data contract, explicit coordinate conventio
 conversion tools, reproducibility audits, and a staged path toward full dexterous retargeting.
 
 The repository is intentionally transparent about scope: the current implementation reaches the
-canonical HOI interface, a bounded MANO-to-MediaPipe-style-21 source adapter, and the Stage 4
-generic robot-hand/Arti-MANO target kinematics interface. It does not yet claim to implement the
-paper's complete robot retargeting optimizer, RL pipeline, or reported experimental results.
+canonical HOI interface, a bounded MANO-to-MediaPipe-style-21 source adapter, the Stage 4 generic
+robot-hand/Arti-MANO target kinematics interface, and the bounded Stage 5 GRAB dataset adapter. It
+does not yet claim to implement the paper's complete robot retargeting optimizer, RL pipeline, or
+reported experimental results.
 
 ## Overview
 
@@ -21,6 +22,8 @@ The main entry point is the `toporetarget` CLI. The code is organized around com
 - read-only inspection of one GRAB NPZ sequence and conversion to a canonical Zarr cache;
 - explicit MANO semantic layouts and versioned MANO-to-MediaPipe21 mapping profiles;
 - generic differentiable URDF hand FK, named qpos, target anchors, and Arti-MANO RH/LH inspection;
+- a lazy GRAB index, native-time/native-mesh single-sequence adapter, contact modes, validation,
+  provenance, and raw/canonical comparison;
 - source/object/timestamp preservation reports and static or interactive geometry viewers;
 - paper-fidelity auditing, assumptions tracking, and local Arti-MANO asset import support.
 
@@ -41,7 +44,7 @@ that stage; it does not imply full-dataset or result-level reproduction.
 | 2 | Canonical HOI schema and coordinates | Complete, bounded | Schema, lazy Zarr storage, comparison views, and bounded GRAB inspection pass. |
 | 3 | MANO → MediaPipe-style 21 source adapter | Complete, bounded | Explicit layouts/profiles, converter, reports, viewers, synthetic tests, and bounded real GRAB checks pass; semantic and topology assumptions remain explicit. |
 | 4 | Arti-MANO robot adapter | Complete, with assumptions | Generic URDF/FK interface, explicit MediaPipe-21-compatible anchors, separate geometry inspection, RH/LH validation, Jacobian checks, and CLI pass; paper frame/mapping assumptions remain explicit. |
-| 5 | Full GRAB dataset adapter | TODO | Extend the explicit single-sequence reader to a validated dataset adapter. |
+| 5 | Full GRAB dataset adapter | Complete, bounded with assumptions | Lazy index, native single-sequence/bimanual conversion, validation, provenance, contacts, and interactive HOI viewer; full-batch conversion and semantic contact mapping remain out of scope. |
 | 6 | Object sampling, collision geometry, and SDF | TODO | Implement geometry backends and tests. |
 | 7 | Relative bone-direction initialization | TODO | Implement and test the paper's Eq. 1–2 initialization. |
 | 8 | Interaction graph and Laplacian coordinates | TODO | Implement and test the Eq. 3–7 graph/deformation terms. |
@@ -136,8 +139,8 @@ The comparison `--show` mode is interactive; `--output` creates a headless image
 
 ### 2. One GRAB NPZ to canonical Zarr
 
-The GRAB reader is intentionally sequence-scoped. It reads one explicit NPZ and selects one hand;
-it does not enumerate or rewrite the dataset. For a full sequence, omit `--start-frame` and
+The historical Stage 2B reader is intentionally sequence-scoped. It reads one explicit NPZ and
+selects one hand; the production Stage 5 adapter is documented below. For a full sequence, omit `--start-frame` and
 `--end-frame`. For a bounded clip, provide both.
 
 ```bash
@@ -244,7 +247,36 @@ It displays frame, timestamp, and mapping profile ID. Display transforms use tem
 do not change canonical keypoint coordinates. The detailed viewer contract is in
 [`docs/MANO_TO_MEDIAPIPE21.md`](docs/MANO_TO_MEDIAPIPE21.md).
 
-### 5. Arti-MANO asset import
+### 5. Production GRAB dataset adapter
+
+Build a filename-first index, query it without loading frame arrays, and convert one right, left,
+or bimanual sequence while retaining source timestamps, native meshes, personalized MANO `vtemp`,
+object/table poses, and optional source contacts:
+
+```bash
+toporetarget data index --dataset grab --output .local/index/grab
+toporetarget data list --dataset grab --index .local/index/grab --subject s7 --limit 20
+toporetarget data describe --dataset grab --index .local/index/grab \
+  --sequence s7/cubemedium_inspect_1
+toporetarget data convert --dataset grab --index .local/index/grab \
+  --sequence s7/cubemedium_inspect_1 --hands both --start-frame 0 --end-frame 60 \
+  --include-table --contact-mode source --include-mediapipe21 \
+  --mano-model-root "$MANO_MODEL_ROOT" \
+  --output .local/cache/hoi/grab/s7/cubemedium_inspect_1/both_f000000_f000060.zarr
+toporetarget data validate --dataset grab --index .local/index/grab \
+  --sequence s7/cubemedium_inspect_1 \
+  --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/both_f000000_f000060.zarr \
+  --mano-model-root "$MANO_MODEL_ROOT" \
+  --report .local/reports/stage5/grab_validation.json
+```
+
+The adapter has no temporal resampling, spatial/object surface sampling, raw-source writes, or
+full-batch conversion. Use `toporetarget data visualize` for raw/canonical/compare modes, overlay
+or side-by-side layouts, frame slider/keyboard playback, scene/object/wrist references, and
+headless PNG output. See [`docs/GRAB_DATASET_ADAPTER.md`](docs/GRAB_DATASET_ADAPTER.md) and
+[`docs/GRAB_INTERACTIVE_VISUALIZATION.md`](docs/GRAB_INTERACTIVE_VISUALIZATION.md).
+
+### 6. Arti-MANO asset import
 
 Import only the local Arti-MANO asset tree from a separately checked-out ManipTrans source:
 
@@ -260,7 +292,7 @@ The importer records hashes and provenance in ignored local manifests. ManipTran
 not copied into this repository. See [`docs/UPSTREAM_REFERENCES.md`](docs/UPSTREAM_REFERENCES.md)
 and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
-### 6. Target Hand Asset Setup and Kinematic Inspection
+### 7. Target Hand Asset Setup and Kinematic Inspection
 
 The Stage 4 workflow uses the imported Arti-MANO assets as a target-hand model. Core inspection
 commands are:
@@ -312,7 +344,7 @@ parameterization or perform MANO-to-Arti-MANO retargeting. See
 [`docs/ROBOT_HAND_INTERFACE.md`](docs/ROBOT_HAND_INTERFACE.md) and
 [`docs/ARTIMANO_ADAPTER.md`](docs/ARTIMANO_ADAPTER.md).
 
-### 7. Paper traceability and reproduction audit
+### 8. Paper traceability and reproduction audit
 
 Run the repository-local paper audit and inspect the machine-readable fidelity configuration:
 
@@ -326,7 +358,7 @@ The audited PDF, equation/table/figure traceability, and unresolved assumptions 
 [`docs/PAPER_FIDELITY.yaml`](docs/PAPER_FIDELITY.yaml), and
 [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md).
 
-### 8. Development validation
+### 9. Development validation
 
 ```bash
 ruff check .
@@ -351,10 +383,12 @@ pytest -q tests/licensed_data
 - [Canonical HOI interface](docs/HOI_DATA_INTERFACE.md)
 - [Coordinate conventions](docs/COORDINATE_CONVENTIONS.md)
 - [GRAB inspection](docs/GRAB_INSPECTION.md)
+- [GRAB dataset adapter](docs/GRAB_DATASET_ADAPTER.md) / [interactive visualization](docs/GRAB_INTERACTIVE_VISUALIZATION.md)
 - [MANO-to-MediaPipe21 adapter](docs/MANO_TO_MEDIAPIPE21.md)
 - [Generic robot-hand interface](docs/ROBOT_HAND_INTERFACE.md)
 - [Arti-MANO target adapter](docs/ARTIMANO_ADAPTER.md)
 - [Stage 4 report](docs/stages/STAGE_4_ARTIMANO_TARGET_HAND.md)
+- [Stage 5 report](docs/stages/STAGE_5_GRAB_DATASET_ADAPTER.md)
 - [Paper fidelity](docs/PAPER_FIDELITY.md)
 - [Data and license policy](docs/LICENSE_AND_DATA_POLICY.md)
 - [Development log](docs/DEVELOPMENT_LOG.md) / [中文开发日志](docs/DEVELOPMENT_LOG.zh-CN.md)

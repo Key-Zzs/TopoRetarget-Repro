@@ -1,0 +1,22 @@
+dataset: grab
+adapter: grab_dataset_adapter
+root_layout:
+  sequence_dir: grab/<subject>/<sequence>.npz
+  object_mesh_dir: tools/object_meshes
+  table_mesh_dir: tools/object_meshes
+  mano_model_root: external/MANO
+time:
+  use_source_timestamps: true
+  preserve_native_fps: true
+  resample: false
+geometry:
+  preserve_native_hand_vertices: true
+  preserve_native_object_mesh: true
+  surface_sampling: false
+contacts:
+  modes: [none, source, binary, semantic]
+  semantic_mapping_status: unavailable
+scope:
+  lazy_index: true
+  single_sequence_conversion: true
+  full_batch_conversion: false

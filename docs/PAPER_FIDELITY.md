@@ -102,3 +102,13 @@ explicitly resolved or marked as a deliberate extension. This repository is not 
 Result-complete additionally requires the same datasets, private trajectories, robot assets,
 hardware, simulator, seeds, and experimental conditions needed to reproduce the reported numbers.
 This repository is not result-complete.
+
+## 13. Stage 5 dataset boundary
+
+The bounded GRAB dataset adapter is an engineering implementation around the paper's source-hand
+input boundary, not an additional claim about the paper's undisclosed preprocessing. Its native
+time/mesh/contact preservation, lazy index, validation, and viewer are tracked as
+`dataset_adapter_grab` in [`PAPER_FIDELITY.yaml`](PAPER_FIDELITY.yaml). The unresolved GRAB scene,
+wrist, personalized-template, contact, table, and sequence-ID choices are listed in
+[`ASSUMPTIONS.md`](ASSUMPTIONS.md); no object sampling, interaction graph, collision/SDF,
+retargeting, or RL behavior is implied.

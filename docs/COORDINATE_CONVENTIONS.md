@@ -51,3 +51,13 @@ interpolation, frame-rate conversion, or display-stride mutation is performed.
 All positions and meshes use metres, angles use radians, and time uses seconds. If quaternions are
 used at an adapter boundary, their order is `xyzw`; rotation matrices are the internal primary
 representation.
+
+## GRAB Stage 5 mapping
+
+GRAB hand and object data are interpreted in the source scene frame `S`. The official object helper
+uses row-vector `v @ R`; the adapter stores the equivalent column-vector canonical rotation as
+`R.T`, with the object mesh remaining in its local frame. The table is retained as a static
+`support_surface` track when requested and is not silently promoted to an interactable object.
+Both hands share `S` in a bimanual sequence, and no mirroring is applied to the left hand. A selected
+clip is a contiguous half-open source-frame range, and source timestamps/native FPS remain the
+temporal source of truth.

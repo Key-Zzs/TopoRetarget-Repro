@@ -7,7 +7,7 @@
 | 2 | Canonical HOI schema and coordinate conventions | Schema, lazy storage, comparison visualization, bounded GRAB inspection | Stage 2A and bounded Stage 2B real-data acceptance pass | complete (bounded scope) |
 | 3 | MANO to MediaPipe-style 21-keypoint conversion | Explicit layout/profile registry, converter, reports, visualizations, synthetic and bounded real-GRAB validation | Scene-frame converter validated with source/object/timestamp preservation; assumptions remain explicit | complete (bounded, with assumptions) |
 | 4 | Generic robot-hand kinematics and Arti-MANO target adapter | RobotHandSpec/Model, strict URDF parser, differentiable/reference FK, MediaPipe21 anchors, geometry inspection, RH/LH CLI and reports | Synthetic and both real Arti-MANO sides validate; assets remain unchanged; docs and fidelity record pass | complete (with explicit assumptions) |
-| 5 | GRAB dataset adapter | Read-only GRAB adapter | GRAB samples load | not started |
+| 5 | GRAB dataset adapter | Lazy index, native single-sequence/bimanual adapter, contacts, validation, provenance, comparison, interactive viewer | Real right/both-hand clips convert at native time, raw/canonical checks pass, and no raw source is modified | complete (bounded, with explicit assumptions) |
 | 6 | Object surface sampling, collision geometry and SDF | Geometry backends | Geometry tests pass | not started |
 | 7 | Relative bone-direction initialization | Eq. 1-2 implementation | Initialization tests pass | not started |
 | 8 | Shared interaction graph and Laplacian coordinates | Eq. 3-7 implementation | Graph/loss tests pass | not started |

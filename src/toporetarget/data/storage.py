@@ -58,6 +58,50 @@ def _require_zarr() -> Any:
     return zarr
 
 
+def _local_store(zarr: Any, path: Path, *, read_only: bool) -> Any:
+    """Return a local store whose async methods do not spawn file threads.
+
+    Zarr 3's default ``LocalStore`` delegates every read to
+    ``asyncio.to_thread``.  That is normally fine, but it can deadlock under
+    managed filesystems whose thread wrappers do not complete.  The cache
+    format itself is unchanged; this adapter only performs the same local
+    file operations synchronously inside Zarr's already-synchronous bridge.
+    """
+
+    base = getattr(getattr(zarr, "storage", None), "LocalStore", None)
+    if base is None:  # Zarr 2.x accepts a path directly.
+        return str(path)
+
+    class DirectLocalStore(base):  # type: ignore[misc, valid-type]
+        async def get(self, key: str, prototype: Any = None, byte_range: Any = None) -> Any:
+            return self.get_sync(key, prototype=prototype, byte_range=byte_range)
+
+        async def get_partial_values(self, prototype: Any, key_ranges: Any) -> list[Any]:
+            return [
+                self.get_sync(key, prototype=prototype, byte_range=byte_range)
+                for key, byte_range in key_ranges
+            ]
+
+        async def set(self, key: str, value: Any) -> None:
+            self.set_sync(key, value)
+
+        async def set_if_not_exists(self, key: str, value: Any) -> None:
+            self._ensure_open_sync()
+            self._check_writable()
+            path = self.root / key
+            if not path.exists():
+                self.set_sync(key, value)
+
+        async def delete(self, key: str) -> None:
+            self.delete_sync(key)
+
+        async def exists(self, key: str) -> bool:
+            self._ensure_open_sync()
+            return (self.root / key).is_file()
+
+    return DirectLocalStore(path, read_only=read_only)
+
+
 def _json_safe(value: Any) -> Any:
     if isinstance(value, Path):
         return {"__path__": str(value)}
@@ -124,7 +168,7 @@ def save_hoi_sequence(sequence: HOISequence, path: str | Path) -> Path:
     destination.parent.mkdir(parents=True, exist_ok=True)
     arrays: dict[str, np.ndarray] = {}
     manifest = _encode(sequence, arrays, "sequence")
-    group = zarr.open_group(str(destination), mode="w")
+    group = zarr.open_group(_local_store(zarr, destination, read_only=False), mode="w")
     group.attrs["schema_version"] = sequence.metadata.schema_version
     group.attrs["metadata_json"] = json.dumps(manifest, sort_keys=True, separators=(",", ":"))
     for name, array in arrays.items():
@@ -158,7 +202,7 @@ def load_hoi_sequence(path: str | Path) -> HOISequence:
     source = Path(path)
     if not source.exists():
         raise StorageError(f"HOI cache does not exist: {source}")
-    group = zarr.open_group(str(source), mode="r")
+    group = zarr.open_group(_local_store(zarr, source, read_only=True), mode="r")
     schema_version = group.attrs.get("schema_version")
     if schema_version != "toporetarget.hoi.v1":
         raise StorageError(f"unsupported cache schema version: {schema_version!r}")

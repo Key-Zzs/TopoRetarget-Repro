@@ -55,3 +55,7 @@ Tracked definitions are in `configs/keypoints/layouts/mediapipe21.yaml` and
 one parent per non-root point, an acyclic graph, and edge/parent agreement. Add a new YAML layout,
 give it a distinct name/version, document its source ordering and evidence, then add tests before
 using it in a mapping profile.
+
+The Stage 5 GRAB adapter reuses this registered Stage 3 converter when `--include-mediapipe21` is
+requested. The native `mano16_smplx` track remains present and is never silently reshaped into
+the 21-point semantic layout.

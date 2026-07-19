@@ -143,6 +143,14 @@ class ComparisonMetrics:
         raw_hands = {item.hand_id: item for item in raw.hands}
         canonical_hands = {item.hand_id: item for item in canonical.hands}
         common_hands = sorted(raw_hands.keys() & canonical_hands.keys())
+        if not common_hands:
+            raw_by_side = {item.side: item for item in raw.hands}
+            canonical_by_side = {item.side: item for item in canonical.hands}
+            common_sides = sorted(raw_by_side.keys() & canonical_by_side.keys())
+            if common_sides:
+                common_hands = [common_sides[0]]
+                raw_hands[common_sides[0]] = raw_by_side[common_sides[0]]
+                canonical_hands[common_sides[0]] = canonical_by_side[common_sides[0]]
         if common_hands:
             hand_first = raw_hands[common_hands[0]]
             hand_second = canonical_hands[common_hands[0]]
