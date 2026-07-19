@@ -23,3 +23,16 @@ def test_grab_index_marks_deleted_entries(tmp_path: Path) -> None:
     refreshed = build_grab_index(grab_root=root, output=tmp_path / "index")
     assert refreshed["manifest"]["deleted_count"] == 1
     assert load_grab_index(tmp_path / "index") == []
+
+
+def test_grab_index_does_not_open_npz_payloads(tmp_path: Path) -> None:
+    root = _write_fixture(tmp_path / "GRAB").parents[2]
+    opaque = root / "grab" / "s1" / "lazyprobe.npz"
+    opaque.write_bytes(b"not an npz payload; indexing only needs stat and filename")
+
+    result = build_grab_index(grab_root=root, output=tmp_path / "index")
+
+    assert {item["sequence_id"] for item in result["entries"]} == {
+        "s1/demo",
+        "s1/lazyprobe",
+    }

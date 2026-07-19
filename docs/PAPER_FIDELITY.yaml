@@ -698,7 +698,6 @@ items:
       full_batch_conversion: false
       contact_modes: [none, source, binary, semantic]
     unknowns:
-      - official semantic contact/object-part mapping
       - official wrist-frame contract
       - official table role in later interaction graphs
     assumptions:
@@ -708,7 +707,7 @@ items:
       - A_GRAB_CONTACT_MAPPING_001
       - A_GRAB_TABLE_ROLE_001
       - A_GRAB_SEQUENCE_ID_001
-    notes: "Stage 5 is bounded to lazy discovery and explicit sequence conversion; Stage 6 geometry and all later retargeting/RL work are not implemented."
+    notes: "Stage 5 is bounded to lazy discovery and explicit sequence conversion. Official GRAB contact_ids semantics are tracked from otaheri/GRAB tools/utils.py; downstream paper aggregation remains unspecified. Stage 6 geometry and all later retargeting/RL work are not implemented."
 
 parameter_contract:
   configs/paper/retarget.yaml:

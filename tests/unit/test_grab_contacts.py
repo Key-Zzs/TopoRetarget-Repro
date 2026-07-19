@@ -28,12 +28,40 @@ def test_grab_contact_modes_preserve_numeric_labels() -> None:
         mode="binary",
     )[0]
     np.testing.assert_array_equal(binary.labels, labels)
-    with pytest.raises(ContactLoadError, match="semantic"):
+    semantic = build_grab_contacts(
+        auxiliary,
+        hand_ids=["right_hand"],
+        object_id="cube",
+        object_vertex_count=3,
+        frame_count=2,
+        mode="semantic",
+    )[0]
+    np.testing.assert_array_equal(semantic.semantic_ids, labels)
+    assert semantic.semantic_mapping[21]["category"] == "left_hand"
+    assert semantic.semantic_mapping[55]["category"] == "right_hand"
+    assert semantic.metadata["fully_mapped"] is True
+
+
+def test_grab_semantic_contact_strict_and_non_strict_unknown_labels() -> None:
+    auxiliary = {"contact": {"object": np.array([[0, 56]], dtype=np.int64)}}
+    with pytest.raises(ContactLoadError, match="unmapped labels: 56"):
         build_grab_contacts(
             auxiliary,
             hand_ids=["right_hand"],
             object_id="cube",
-            object_vertex_count=3,
-            frame_count=2,
+            object_vertex_count=2,
+            frame_count=1,
             mode="semantic",
         )
+    non_strict = build_grab_contacts(
+        auxiliary,
+        hand_ids=["right_hand"],
+        object_id="cube",
+        object_vertex_count=2,
+        frame_count=1,
+        mode="semantic",
+        strict=False,
+    )[0]
+    assert non_strict.semantic_ids[0, 1] == 56
+    assert non_strict.metadata["unmapped_labels"] == [56]
+    assert non_strict.metadata["fully_mapped"] is False

@@ -493,7 +493,7 @@ class GrabDatasetAdapter(HOIDatasetAdapter):
                     frame_count=record.num_frames,
                     mode=selected.contact_mode,
                     strict=selected.strict,
-                    mapping_config=Path("configs/datasets/grab_contact_parts.yaml"),
+                    mapping_config=None,
                 )
             except ContactLoadError as exc:
                 raise GrabAdapterError(str(exc)) from exc

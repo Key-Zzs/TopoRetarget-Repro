@@ -72,7 +72,8 @@ sampling, object surface sampling, or robot-model work.
 
 `GrabDatasetAdapter` preserves GRAB's source timestamps/native FPS, personalized `vtemp`, native
 MANO vertices, object-local meshes, table/support-surface geometry, and source contact arrays.
-Contact modes are `none`, `source`, `binary`, and `semantic`; semantic mode is explicitly
-unavailable until a verified GRAB label mapping is supplied. The adapter records source size,
+Contact modes are `none`, `source`, `binary`, and `semantic`; semantic mode uses the verified
+official GRAB `contact_ids` mapping and preserves the raw labels alongside integer semantic IDs.
+The adapter records source size,
 mtime, hashes when requested/available, model and mesh hashes, mapping profile hashes, and the
 no-resampling/no-sampling scope in `ProvenanceRecord`.

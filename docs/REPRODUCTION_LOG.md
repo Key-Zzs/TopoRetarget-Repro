@@ -65,7 +65,8 @@ later algorithm stages have been reproduced.
   source files by default.
 - Implemented `GrabDatasetAdapter` with explicit right/left/both hand selection, contiguous
   half-open frame ranges, native 120 Hz timestamps, personalized `vtemp`, native hand/object/table
-  geometry, source/binary contact modes, optional MediaPipe21, atomic Zarr output, and provenance.
+  geometry, source/binary/official semantic contact modes, optional MediaPipe21, atomic Zarr output,
+  and provenance.
 - Converted the real `s7/cubemedium_inspect_1` right-hand and bimanual clips `[0, 60)` using the
   local GRAB root and MANO root. The canonical tracks contain native MANO16/SMPL-X joints, 778
   vertices, scene wrist poses, object/table poses, contacts, and optional MediaPipe21.
@@ -76,3 +77,8 @@ later algorithm stages have been reproduced.
 - Generated first/middle/last canonical and compare PNGs, a JSON/CSV validation report, index and
   provenance reports, and an interactive viewer smoke report. No raw dataset or external model was
   modified; all generated data remains under ignored `.local/`.
+- Verified the official GRAB `contact_ids` mapping and added strict/non-strict semantic conversion,
+  raw/binary/semantic Zarr round-trip checks, semantic viewer colors, and deprecated/canonical
+  `--reference-frame` CLI alias validation. Fresh MANO-backed semantic conversion and validation
+  pass for the bounded s1 contact and s7 bimanual geometry clips when the external MANO root is
+  supplied explicitly; source/object/table/model integrity remains unchanged.

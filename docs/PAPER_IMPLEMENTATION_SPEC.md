@@ -91,6 +91,14 @@ $\delta=0.002$ m are Equation 12. ContactPose attribution uses sigmoid normaliza
 unspecified threshold, nearest assignment to 20 hand bones, and 10 vertices per link. The data
 and baseline dependencies are listed in `PAPER_FIDELITY.yaml` and the reproduction notes.
 
+The bounded GRAB Stage 5 adapter is repository input infrastructure, not a module specified by the
+TopoRetarget paper. Its official GRAB `contact_ids` semantic labels, lazy index, per-sequence cache,
+and diagnostic viewer are engineering extensions at the dataset boundary; they do not alter
+Equations 1--12, the interaction graph, penetration optimization, or the RL/PPO contract. The
+adapter's fresh real-data closeout passes for the bounded clips when the external MANO model files
+are supplied explicitly; those files remain runtime assets and are not represented by a synthetic or
+neutral replacement.
+
 ## Limitations and extension boundary
 
 The paper reports weaker handling of virtual contacts. MANO-to-MediaPipe21 source adaptation is

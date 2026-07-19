@@ -61,3 +61,7 @@ uses row-vector `v @ R`; the adapter stores the equivalent column-vector canonic
 Both hands share `S` in a bimanual sequence, and no mirroring is applied to the left hand. A selected
 clip is a contiguous half-open source-frame range, and source timestamps/native FPS remain the
 temporal source of truth.
+
+GRAB contact labels are object-vertex labels in the source object mesh. The canonical contact track
+preserves those numeric labels, derives `binary = labels != 0`, and may attach the official
+`contact_ids` semantic mapping without changing geometry or frame conventions.

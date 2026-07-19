@@ -45,8 +45,8 @@ The index is a discovery/cache layer; the NPZ remains the source of truth for co
 - optional `mediapipe21`, produced by the existing versioned Stage 3 semantic converter;
 - object-local native mesh plus scene pose, and an optional `table` mesh as
   `support_surface` without treating the table as an interactable object;
-- source contact arrays, binary `labels != 0` contacts, or an explicitly unavailable semantic
-  mapping; and
+- source contact arrays, binary `labels != 0` contacts, and official semantic IDs plus a
+  versioned mapping table; and
 - source timestamps, native FPS, contiguous half-open frame selection, and provenance hashes.
 
 The adapter uses the personalized `vtemp` file referenced by each GRAB sequence when the source
@@ -73,8 +73,20 @@ toporetarget data validate --dataset grab --index .local/index/grab \
 
 Validation checks schema, source identity, frame range, timestamps, both hand sides, native
 vertices/joints, optional MediaPipe21, wrist and bone round trips, object/table poses, contacts,
-and optional raw/canonical comparison metrics. Missing semantic mappings and unavailable legacy
-metrics are reported as unavailable rather than fabricated.
+and optional raw/canonical comparison metrics. Contact validation reports raw-label, binary-mask,
+semantic-ID, mapping-hash, frame/vertex alignment, category counts, and exact Zarr round-trip
+results. The semantic mapping is the official `contact_ids` table from `otaheri/GRAB`'s
+`tools/utils.py` at commit `4dab3211fae4fc5b8eb6ab86246ccc3a42d8f611`, tracked in
+`configs/datasets/grab_contact_parts.yaml`. Strict conversion rejects labels outside 0--55;
+non-strict conversion uses semantic ID 56 (`unknown`) and records the unmapped labels.
+
+Contact modes are:
+
+- `none`: do not load contact arrays;
+- `source`: preserve numeric labels and their object-vertex association;
+- `binary`: preserve raw labels and derive `binary = labels != 0`; and
+- `semantic`: preserve raw and binary tracks, derive official integer semantic IDs, and store the
+  mapping table/provenance without duplicating a string per vertex.
 
 ## Security and scope
 
@@ -85,3 +97,19 @@ atomically at a caller-provided destination.
 
 Object surface sampling, Delaunay/Laplacian interaction geometry, collision queries, SDFs,
 MANO-to-Arti-MANO retargeting, training, and full-dataset conversion remain outside Stage 5.
+
+## Closeout evidence
+
+Stage 5 reuses the canonical Stage 2 schema/Zarr storage and the existing Stage 2/5 viewer update
+path. Indexing and conversion are lazy: index/list/metadata description do not initialize MANO or
+robot packages, and conversion loads only the explicitly selected sequence and half-open frame
+range. A per-sequence cache is optional; whole-dataset materialization is intentionally avoided
+because the source data and MANO assets are external and the bounded adapter does not require a
+full materialized mirror.
+
+The real contact/table acceptance clip is `s1/airplane_lift`, frames `[238,298)`, where the observed
+object labels are `[0,43,46,55]`; the existing `s7/cubemedium_inspect_1` `[0,60)` right/bimanual
+cache remains the geometry regression but has no contact in that range. See the ignored
+`.local/reports/stage5_closeout/` reports for source integrity and source/binary/semantic contact evidence,
+viewer callback evidence, and PNGs. Fresh MANO-backed conversion and validation now pass when the
+explicit external MANO root is supplied on the CLI; no external asset or raw GRAB file was modified.

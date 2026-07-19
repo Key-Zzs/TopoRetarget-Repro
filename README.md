@@ -44,7 +44,7 @@ that stage; it does not imply full-dataset or result-level reproduction.
 | 2 | Canonical HOI schema and coordinates | Complete, bounded | Schema, lazy Zarr storage, comparison views, and bounded GRAB inspection pass. |
 | 3 | MANO → MediaPipe-style 21 source adapter | Complete, bounded | Explicit layouts/profiles, converter, reports, viewers, synthetic tests, and bounded real GRAB checks pass; semantic and topology assumptions remain explicit. |
 | 4 | Arti-MANO robot adapter | Complete, with assumptions | Generic URDF/FK interface, explicit MediaPipe-21-compatible anchors, separate geometry inspection, RH/LH validation, Jacobian checks, and CLI pass; paper frame/mapping assumptions remain explicit. |
-| 5 | Full GRAB dataset adapter | Complete, bounded with assumptions | Lazy index, native single-sequence/bimanual conversion, validation, provenance, contacts, and interactive HOI viewer; full-batch conversion and semantic contact mapping remain out of scope. |
+| 5 | Full GRAB dataset adapter | Complete, bounded; fresh semantic closeout passed | Lazy index, native single-sequence/bimanual conversion, validation, provenance, raw/binary/official semantic contacts, and interactive HOI viewer; full-batch conversion remains out of scope. |
 | 6 | Object sampling, collision geometry, and SDF | TODO | Implement geometry backends and tests. |
 | 7 | Relative bone-direction initialization | TODO | Implement and test the paper's Eq. 1–2 initialization. |
 | 8 | Interaction graph and Laplacian coordinates | TODO | Implement and test the Eq. 3–7 graph/deformation terms. |
@@ -251,7 +251,7 @@ do not change canonical keypoint coordinates. The detailed viewer contract is in
 
 Build a filename-first index, query it without loading frame arrays, and convert one right, left,
 or bimanual sequence while retaining source timestamps, native meshes, personalized MANO `vtemp`,
-object/table poses, and optional source contacts:
+object/table poses, and source, binary, or official semantic contacts:
 
 ```bash
 toporetarget data index --dataset grab --output .local/index/grab
@@ -270,10 +270,23 @@ toporetarget data validate --dataset grab --index .local/index/grab \
   --report .local/reports/stage5/grab_validation.json
 ```
 
+Use `--contact-mode semantic` to retain the raw GRAB labels, derive the binary mask, and attach
+the verified official 0--55 body/hand mapping from `configs/datasets/grab_contact_parts.yaml`:
+
+```bash
+toporetarget data convert --dataset grab --index .local/index/grab \
+  --sequence s7/cubemedium_inspect_1 --hands both --start-frame 0 --end-frame 60 \
+  --include-table --contact-mode semantic --include-mediapipe21 \
+  --mano-model-root "$MANO_MODEL_ROOT" \
+  --output .local/cache/hoi/grab/s7/cubemedium_inspect_1/semantic_f000000_f000060.zarr
+```
+
 The adapter has no temporal resampling, spatial/object surface sampling, raw-source writes, or
 full-batch conversion. Use `toporetarget data visualize` for raw/canonical/compare modes, overlay
-or side-by-side layouts, frame slider/keyboard playback, scene/object/wrist references, and
-headless PNG output. See [`docs/GRAB_DATASET_ADAPTER.md`](docs/GRAB_DATASET_ADAPTER.md) and
+or side-by-side layouts, frame slider/keyboard playback, scene/object/wrist references, semantic
+contact colors, and headless PNG output. The canonical CLI flag is `--reference-frame`; the older
+`--reference` spelling remains a deprecated compatibility alias. See
+[`docs/GRAB_DATASET_ADAPTER.md`](docs/GRAB_DATASET_ADAPTER.md) and
 [`docs/GRAB_INTERACTIVE_VISUALIZATION.md`](docs/GRAB_INTERACTIVE_VISUALIZATION.md).
 
 ### 6. Arti-MANO asset import

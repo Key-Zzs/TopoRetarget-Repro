@@ -3,7 +3,7 @@
 本项目当前完成阶段 0（仓库创建与架构搭建）、阶段 1（论文忠实度审计）、阶段 2A（统一
 HOI 数据接口）、阶段 2B 的有界真实 GRAB 检查、阶段 3 的有界 MANO→MediaPipe-style
 21 关键点 source-hand adapter、阶段 4 的通用机器人手运动学接口与 Arti-MANO 目标手
-适配，以及阶段 5 的有界 GRAB dataset adapter。阶段 6–19 尚未开始，不能把规划内容描述
+适配，以及阶段 5 的有界 GRAB dataset adapter（fresh semantic closeout 已通过）。阶段 6–19 尚未开始，不能把规划内容描述
 为已实现算法。
 
 长期阶段依次为：

@@ -1,6 +1,69 @@
-# GRAB numeric labels are preserved by Stage 5.  No semantic names are asserted
-# until an official GRAB label mapping is verified and versioned here.
 dataset: grab
-mapping_status: unavailable
-source: null
-labels: null
+mapping_id: grab_smplx_contact_joint
+mapping_version: official-utils.py@4dab3211
+source:
+  repository: https://github.com/otaheri/GRAB
+  relative_path: tools/utils.py
+  commit: 4dab3211fae4fc5b8eb6ab86246ccc3a42d8f611
+  file_sha256: bbdae13c1c437d60d22e2e8eabbabb7c2282a47918735876383794739d38a4a7
+  extracted_at: '2026-07-20'
+no_contact_label: 0
+unknown_semantic_id: 56
+expected_label_range: [0, 55]
+labels:
+  - {id: 0, name: no_contact, category: none, side: null, is_hand: false, is_body: false, is_contact: false, source_name: no_contact, notes: official no-contact sentinel}
+  - {id: 1, name: Body, category: body, side: null, is_hand: false, is_body: true, is_contact: true, source_name: Body, notes: official GRAB SMPL-X contact label}
+  - {id: 2, name: L_Thigh, category: body, side: left, is_hand: false, is_body: true, is_contact: true, source_name: L_Thigh, notes: official GRAB SMPL-X contact label}
+  - {id: 3, name: R_Thigh, category: body, side: right, is_hand: false, is_body: true, is_contact: true, source_name: R_Thigh, notes: official GRAB SMPL-X contact label}
+  - {id: 4, name: Spine, category: body, side: null, is_hand: false, is_body: true, is_contact: true, source_name: Spine, notes: official GRAB SMPL-X contact label}
+  - {id: 5, name: L_Calf, category: body, side: left, is_hand: false, is_body: true, is_contact: true, source_name: L_Calf, notes: official GRAB SMPL-X contact label}
+  - {id: 6, name: R_Calf, category: body, side: right, is_hand: false, is_body: true, is_contact: true, source_name: R_Calf, notes: official GRAB SMPL-X contact label}
+  - {id: 7, name: Spine1, category: body, side: null, is_hand: false, is_body: true, is_contact: true, source_name: Spine1, notes: official GRAB SMPL-X contact label}
+  - {id: 8, name: L_Foot, category: body, side: left, is_hand: false, is_body: true, is_contact: true, source_name: L_Foot, notes: official GRAB SMPL-X contact label}
+  - {id: 9, name: R_Foot, category: body, side: right, is_hand: false, is_body: true, is_contact: true, source_name: R_Foot, notes: official GRAB SMPL-X contact label}
+  - {id: 10, name: Spine2, category: body, side: null, is_hand: false, is_body: true, is_contact: true, source_name: Spine2, notes: official GRAB SMPL-X contact label}
+  - {id: 11, name: L_Toes, category: body, side: left, is_hand: false, is_body: true, is_contact: true, source_name: L_Toes, notes: official GRAB SMPL-X contact label}
+  - {id: 12, name: R_Toes, category: body, side: right, is_hand: false, is_body: true, is_contact: true, source_name: R_Toes, notes: official GRAB SMPL-X contact label}
+  - {id: 13, name: Neck, category: body, side: null, is_hand: false, is_body: true, is_contact: true, source_name: Neck, notes: official GRAB SMPL-X contact label}
+  - {id: 14, name: L_Shoulder, category: body, side: left, is_hand: false, is_body: true, is_contact: true, source_name: L_Shoulder, notes: official GRAB SMPL-X contact label}
+  - {id: 15, name: R_Shoulder, category: body, side: right, is_hand: false, is_body: true, is_contact: true, source_name: R_Shoulder, notes: official GRAB SMPL-X contact label}
+  - {id: 16, name: Head, category: body, side: null, is_hand: false, is_body: true, is_contact: true, source_name: Head, notes: official GRAB SMPL-X contact label}
+  - {id: 17, name: L_UpperArm, category: body, side: left, is_hand: false, is_body: true, is_contact: true, source_name: L_UpperArm, notes: official GRAB SMPL-X contact label}
+  - {id: 18, name: R_UpperArm, category: body, side: right, is_hand: false, is_body: true, is_contact: true, source_name: R_UpperArm, notes: official GRAB SMPL-X contact label}
+  - {id: 19, name: L_ForeArm, category: body, side: left, is_hand: false, is_body: true, is_contact: true, source_name: L_ForeArm, notes: official GRAB SMPL-X contact label}
+  - {id: 20, name: R_ForeArm, category: body, side: right, is_hand: false, is_body: true, is_contact: true, source_name: R_ForeArm, notes: official GRAB SMPL-X contact label}
+  - {id: 21, name: L_Hand, category: left_hand, side: left, is_hand: true, is_body: false, is_contact: true, source_name: L_Hand, notes: official GRAB SMPL-X contact label}
+  - {id: 22, name: R_Hand, category: right_hand, side: right, is_hand: true, is_body: false, is_contact: true, source_name: R_Hand, notes: official GRAB SMPL-X contact label}
+  - {id: 23, name: Jaw, category: body, side: null, is_hand: false, is_body: true, is_contact: true, source_name: Jaw, notes: official GRAB SMPL-X contact label}
+  - {id: 24, name: L_Eye, category: body, side: left, is_hand: false, is_body: true, is_contact: true, source_name: L_Eye, notes: official GRAB SMPL-X contact label}
+  - {id: 25, name: R_Eye, category: body, side: right, is_hand: false, is_body: true, is_contact: true, source_name: R_Eye, notes: official GRAB SMPL-X contact label}
+  - {id: 26, name: L_Index1, category: left_hand, side: left, is_hand: true, is_body: false, is_contact: true, source_name: L_Index1, notes: official GRAB SMPL-X contact label}
+  - {id: 27, name: L_Index2, category: left_hand, side: left, is_hand: true, is_body: false, is_contact: true, source_name: L_Index2, notes: official GRAB SMPL-X contact label}
+  - {id: 28, name: L_Index3, category: left_hand, side: left, is_hand: true, is_body: false, is_contact: true, source_name: L_Index3, notes: official GRAB SMPL-X contact label}
+  - {id: 29, name: L_Middle1, category: left_hand, side: left, is_hand: true, is_body: false, is_contact: true, source_name: L_Middle1, notes: official GRAB SMPL-X contact label}
+  - {id: 30, name: L_Middle2, category: left_hand, side: left, is_hand: true, is_body: false, is_contact: true, source_name: L_Middle2, notes: official GRAB SMPL-X contact label}
+  - {id: 31, name: L_Middle3, category: left_hand, side: left, is_hand: true, is_body: false, is_contact: true, source_name: L_Middle3, notes: official GRAB SMPL-X contact label}
+  - {id: 32, name: L_Pinky1, category: left_hand, side: left, is_hand: true, is_body: false, is_contact: true, source_name: L_Pinky1, notes: official GRAB SMPL-X contact label}
+  - {id: 33, name: L_Pinky2, category: left_hand, side: left, is_hand: true, is_body: false, is_contact: true, source_name: L_Pinky2, notes: official GRAB SMPL-X contact label}
+  - {id: 34, name: L_Pinky3, category: left_hand, side: left, is_hand: true, is_body: false, is_contact: true, source_name: L_Pinky3, notes: official GRAB SMPL-X contact label}
+  - {id: 35, name: L_Ring1, category: left_hand, side: left, is_hand: true, is_body: false, is_contact: true, source_name: L_Ring1, notes: official GRAB SMPL-X contact label}
+  - {id: 36, name: L_Ring2, category: left_hand, side: left, is_hand: true, is_body: false, is_contact: true, source_name: L_Ring2, notes: official GRAB SMPL-X contact label}
+  - {id: 37, name: L_Ring3, category: left_hand, side: left, is_hand: true, is_body: false, is_contact: true, source_name: L_Ring3, notes: official GRAB SMPL-X contact label}
+  - {id: 38, name: L_Thumb1, category: left_hand, side: left, is_hand: true, is_body: false, is_contact: true, source_name: L_Thumb1, notes: official GRAB SMPL-X contact label}
+  - {id: 39, name: L_Thumb2, category: left_hand, side: left, is_hand: true, is_body: false, is_contact: true, source_name: L_Thumb2, notes: official GRAB SMPL-X contact label}
+  - {id: 40, name: L_Thumb3, category: left_hand, side: left, is_hand: true, is_body: false, is_contact: true, source_name: L_Thumb3, notes: official GRAB SMPL-X contact label}
+  - {id: 41, name: R_Index1, category: right_hand, side: right, is_hand: true, is_body: false, is_contact: true, source_name: R_Index1, notes: official GRAB SMPL-X contact label}
+  - {id: 42, name: R_Index2, category: right_hand, side: right, is_hand: true, is_body: false, is_contact: true, source_name: R_Index2, notes: official GRAB SMPL-X contact label}
+  - {id: 43, name: R_Index3, category: right_hand, side: right, is_hand: true, is_body: false, is_contact: true, source_name: R_Index3, notes: official GRAB SMPL-X contact label}
+  - {id: 44, name: R_Middle1, category: right_hand, side: right, is_hand: true, is_body: false, is_contact: true, source_name: R_Middle1, notes: official GRAB SMPL-X contact label}
+  - {id: 45, name: R_Middle2, category: right_hand, side: right, is_hand: true, is_body: false, is_contact: true, source_name: R_Middle2, notes: official GRAB SMPL-X contact label}
+  - {id: 46, name: R_Middle3, category: right_hand, side: right, is_hand: true, is_body: false, is_contact: true, source_name: R_Middle3, notes: official GRAB SMPL-X contact label}
+  - {id: 47, name: R_Pinky1, category: right_hand, side: right, is_hand: true, is_body: false, is_contact: true, source_name: R_Pinky1, notes: official GRAB SMPL-X contact label}
+  - {id: 48, name: R_Pinky2, category: right_hand, side: right, is_hand: true, is_body: false, is_contact: true, source_name: R_Pinky2, notes: official GRAB SMPL-X contact label}
+  - {id: 49, name: R_Pinky3, category: right_hand, side: right, is_hand: true, is_body: false, is_contact: true, source_name: R_Pinky3, notes: official GRAB SMPL-X contact label}
+  - {id: 50, name: R_Ring1, category: right_hand, side: right, is_hand: true, is_body: false, is_contact: true, source_name: R_Ring1, notes: official GRAB SMPL-X contact label}
+  - {id: 51, name: R_Ring2, category: right_hand, side: right, is_hand: true, is_body: false, is_contact: true, source_name: R_Ring2, notes: official GRAB SMPL-X contact label}
+  - {id: 52, name: R_Ring3, category: right_hand, side: right, is_hand: true, is_body: false, is_contact: true, source_name: R_Ring3, notes: official GRAB SMPL-X contact label}
+  - {id: 53, name: R_Thumb1, category: right_hand, side: right, is_hand: true, is_body: false, is_contact: true, source_name: R_Thumb1, notes: official GRAB SMPL-X contact label}
+  - {id: 54, name: R_Thumb2, category: right_hand, side: right, is_hand: true, is_body: false, is_contact: true, source_name: R_Thumb2, notes: official GRAB SMPL-X contact label}
+  - {id: 55, name: R_Thumb3, category: right_hand, side: right, is_hand: true, is_body: false, is_contact: true, source_name: R_Thumb3, notes: official GRAB SMPL-X contact label}

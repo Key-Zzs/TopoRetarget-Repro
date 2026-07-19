@@ -87,6 +87,27 @@ visibility controls, plus optional GIF/MP4 headless animation paths. A direct lo
 used for cache I/O so the standard Zarr format remains usable under the managed filesystem used
 for this audit; display operations do not change canonical schema or source arrays.
 
+## Stage 5 semantic-contact and CLI closeout
+
+The contact contract was closed against the official `otaheri/GRAB/tools/utils.py` `contact_ids`
+table at commit `4dab3211fae4fc5b8eb6ab86246ccc3a42d8f611` (source SHA-256
+`bbdae13c1c437d60d22e2e8eabbabb7c2282a47918735876383794739d38a4a7`). The tracked mapping covers
+labels `0..55`, keeps `0` as no-contact, preserves raw labels, derives `binary = labels != 0`,
+and stores official integer semantic IDs plus a versioned mapping table. Strict mode fails on
+unmapped labels; non-strict mode uses explicit ID `56` and records the loss.
+
+The visualization CLI now documents `--reference-frame`, keeps `--reference` as a deprecated alias
+with a warning, accepts equal duplicate values, and rejects conflicting values. The viewer can
+switch source/binary/semantic contact colors and reports mapping identity in the legend. Current
+closeout reports and semantic-enriched real caches are under ignored `.local/reports/stage5_closeout/`
+and `.local/cache/`.
+
+Fresh MANO-backed semantic conversion and validation now pass for the bounded real clips when the
+external MANO root is supplied explicitly. The s1 contact window reports labels `[0,43,46,55]`
+with no unmapped values and exact raw/binary/semantic/mapping round trips; the s7 bimanual geometry
+window validates both hands and the table. The external MANO files remain runtime inputs and were
+not copied into the repository.
+
 ## Data and local assets
 
 The repository does not contain GRAB, OakInk, OakInk2, ContactPose, TACO, HO-Cap, ARCTIC, DexYCB,

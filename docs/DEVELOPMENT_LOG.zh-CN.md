@@ -77,6 +77,24 @@ viewer 还实现了只影响显示的 frame stride、播放速度、source/hand/
 以及可选 GIF/MP4 无头动画输出。本次审计使用 direct local Zarr store 读写，仍保持标准 Zarr 格式，
 以适配受管文件系统；显示操作不改变 canonical schema 或 source arrays。
 
+## Stage 5 semantic contact 与 CLI 收口
+
+contact contract 已根据官方 `otaheri/GRAB/tools/utils.py` 的 `contact_ids` 表收口，来源 commit 为
+`4dab3211fae4fc5b8eb6ab86246ccc3a42d8f611`，source SHA-256 为
+`bbdae13c1c437d60d22e2e8eabbabb7c2282a47918735876383794739d38a4a7`。tracked mapping 覆盖
+`0..55`，保留 `0` 为 no-contact，保留 raw labels，派生 `binary = labels != 0`，并保存官方整数
+semantic IDs 和版本化 mapping table。strict 模式遇到未映射 label 直接失败；non-strict 模式使用
+明确的 ID `56` 并记录损失。
+
+可视化 CLI 的标准参数是 `--reference-frame`；`--reference` 保留为带 warning 的 deprecated alias，
+相同值可同时传入，不同值会显式失败。viewer 支持 source/binary/semantic contact 颜色切换，并在
+legend 中显示 mapping identity。当前 closeout reports 与 semantic-enriched real caches 位于被忽略的
+`.local/reports/stage5_closeout/` 和 `.local/cache/`。
+
+在显式提供外部 MANO root 后，bounded 真实片段的 fresh MANO-backed semantic conversion 与
+validation 已通过。s1 接触窗口报告 `[0,43,46,55]` 且无 unmapped value，raw/binary/semantic/mapping
+round-trip 全部精确；s7 双手几何窗口和 table 也通过验证。外部 MANO 文件仍只是运行时输入，未复制到仓库。
+
 ## 数据与本地资产
 
 仓库不包含 GRAB、OakInk、OakInk2、ContactPose、TACO、HO-Cap、ARCTIC、DexYCB、MANO 或

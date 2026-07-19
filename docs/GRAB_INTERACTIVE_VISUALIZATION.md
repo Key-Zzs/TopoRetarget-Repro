@@ -20,10 +20,12 @@ them.
 
 The window provides a frame slider, first/previous/next/last/play controls, playback-speed slider,
 reference-frame radio buttons, raw/canonical visibility, hand-side, mesh, skeleton, label, object,
-table, contact, axes, and error toggles. Keyboard shortcuts are `Home`, `Left`, `Right`, `End`, and
-`Space` for frame navigation and play/pause. The timer is closed explicitly when the viewer closes;
-artists are created once and updated in place so frame changes do not grow the artist list. Missing
-hand sides are shown as disabled controls in compare mode.
+table, contact, axes, and error toggles. Contact colors can be switched among `source`, `binary`,
+and `semantic`; semantic mode uses the official mapping ID/version in the cache and updates a
+discrete legend for the labels present in the current frame. Keyboard shortcuts are `Home`,
+`Left`, `Right`, `End`, and `Space` for frame navigation and play/pause. The timer is closed
+explicitly when the viewer closes; artists are created once and updated in place so frame changes
+do not grow the artist list. Missing hand sides are shown as disabled controls in compare mode.
 
 Example:
 
@@ -50,7 +52,18 @@ point cap when polygon rendering would make the GUI impractical; this display ca
 to cache or used by validation.
 
 `--reference-frame` is the documented spelling. `--reference` remains an accepted compatibility
-alias.
+alias and emits a deprecation warning. If both flags are supplied, equal values are accepted and
+different values fail explicitly.
+
+For semantic contact rendering, create a semantic cache and select the display mode separately:
+
+```bash
+toporetarget data visualize --dataset grab \
+  --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/semantic_f000000_f000060.zarr \
+  --mode canonical --reference-frame scene --show-table --show-contacts \
+  --contact-color-mode semantic \
+  --output .local/reports/stage5/semantic_contact_first.png
+```
 
 The interactive smoke test uses a deterministic synthetic sequence to exercise construction,
 callbacks, slider movement, play/pause, reference changes, visibility toggles, stable artist

@@ -53,8 +53,9 @@ The following questions are written as a reproducibility request. No author resp
    (`A_GRAB_SCENE_FRAME_001`, `A_GRAB_WRIST_FRAME_001`)?
 2. Should every sequence use its personalized `vtemp`, and is there a released rule for handling a
    missing or incompatible personalized template (`A_GRAB_PERSONALIZED_VTEMP_001`)?
-3. Is an official semantic object-part mapping available for the contact arrays, or should source
-   labels remain the only supported representation (`A_GRAB_CONTACT_MAPPING_001`)?
+3. The adapter now uses the official `otaheri/GRAB/tools/utils.py` `contact_ids` table for
+   semantic labels. Does downstream paper code intend a different aggregation of those labels
+   (`A_GRAB_CONTACT_MAPPING_001`)?
 4. Should the table be treated as a support surface in later interaction graphs, and is the
    filename-derived Stage 5 sequence ID compatible with the released manifest
    (`A_GRAB_TABLE_ROLE_001`, `A_GRAB_SEQUENCE_ID_001`)?

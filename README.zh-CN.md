@@ -41,7 +41,7 @@ adapter，但尚未声称实现论文完整的机器人重定向优化器、RL p
 | 2 | Canonical HOI schema 与坐标 | Complete，有界 | Schema、lazy Zarr、对比 viewer 和有界 GRAB 检查通过。 |
 | 3 | MANO→MediaPipe 风格 21 点 source adapter | Complete，有界 | Layout/profile、converter、报告、viewer、合成测试和有界真实 GRAB 检查通过；语义和 topology 假设仍显式保留。 |
 | 4 | Arti-MANO 机器人适配器 | Complete，有假设 | 通用 URDF/FK 接口、显式 MediaPipe-21-compatible 锚点、分离几何检查、左右手验收、Jacobian 检查和 CLI 通过；论文 frame/mapping 假设仍显式保留。 |
-| 5 | 完整 GRAB 数据集适配器 | Complete，有界且保留假设 | lazy index、原生时间/网格的单序列和双手转换、validation、provenance、contacts 与交互 HOI viewer；全量转换和 semantic contact mapping 仍不在范围内。 |
+| 5 | 完整 GRAB 数据集适配器 | Complete，有界；fresh semantic closeout 通过 | lazy index、原生时间/网格的单序列和双手转换、validation、provenance、raw/binary/官方 semantic contacts 与交互 HOI viewer；全量转换仍不在范围内。 |
 | 6 | 物体采样、碰撞几何与 SDF | TODO | 实现几何 backend 和测试。 |
 | 7 | 相对骨方向初始化 | TODO | 实现并测试论文 Eq. 1–2。 |
 | 8 | 交互图与 Laplacian 坐标 | TODO | 实现并测试 Eq. 3–7 的图和变形项。 |
@@ -243,7 +243,7 @@ timestamp 和 mapping profile ID。显示变换只使用临时数组，不修改
 ### 5. 生产级 GRAB 数据集 adapter
 
 构建 filename-first index，在不加载帧数组的情况下查询，并在保留 source timestamps、原生
-mesh、个性化 MANO `vtemp`、object/table pose 和可选 source contacts 的前提下转换单条右手、
+mesh、个性化 MANO `vtemp`、object/table pose 和 source/binary/官方 semantic contacts 的前提下转换单条右手、
 左手或双手序列：
 
 ```bash
@@ -263,9 +263,21 @@ toporetarget data validate --dataset grab --index .local/index/grab \
   --report .local/reports/stage5/grab_validation.json
 ```
 
+使用 `--contact-mode semantic` 会保留原始 GRAB label、派生 binary mask，并附加
+`configs/datasets/grab_contact_parts.yaml` 中验证过的官方 0--55 body/hand mapping：
+
+```bash
+toporetarget data convert --dataset grab --index .local/index/grab \
+  --sequence s7/cubemedium_inspect_1 --hands both --start-frame 0 --end-frame 60 \
+  --include-table --contact-mode semantic --include-mediapipe21 \
+  --mano-model-root "$MANO_MODEL_ROOT" \
+  --output .local/cache/hoi/grab/s7/cubemedium_inspect_1/semantic_f000000_f000060.zarr
+```
+
 adapter 不做时间重采样、空间/物体表面采样、raw source 写入或全量转换。使用
 `toporetarget data visualize` 可进行 raw/canonical/compare、overlay 或 side-by-side、帧
-slider/键盘播放、scene/object/wrist reference 和无头 PNG 输出。详见
+slider/键盘播放、scene/object/wrist reference、semantic contact 颜色和无头 PNG 输出。
+标准参数名是 `--reference-frame`；旧的 `--reference` 仍可用但会给出 deprecated warning。详见
 [docs/GRAB_DATASET_ADAPTER.md](docs/GRAB_DATASET_ADAPTER.md) 与
 [docs/GRAB_INTERACTIVE_VISUALIZATION.md](docs/GRAB_INTERACTIVE_VISUALIZATION.md)。
 

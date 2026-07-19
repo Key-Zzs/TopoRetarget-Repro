@@ -31,6 +31,7 @@ class GrabViewerOptions:
     show_contacts: bool = False
     show_axes: bool = False
     show_errors: bool = True
+    contact_color_mode: str = "binary"
     playback_speed: float = 1.0
     raw_color: str = "tab:blue"
     canonical_color: str = "tab:orange"
@@ -110,6 +111,8 @@ class InteractiveHOIViewer:
             raise ValueError("mode must be raw, canonical, or compare")
         if self.options.layout not in {"overlay", "side-by-side"}:
             raise ValueError("layout must be overlay or side-by-side")
+        if self.options.contact_color_mode not in {"source", "binary", "semantic"}:
+            raise ValueError("contact_color_mode must be source, binary, or semantic")
         self.canonical = canonical
         self.raw = raw
         if self.options.mode == "raw" and raw is None:
@@ -168,6 +171,8 @@ class InteractiveHOIViewer:
         self._items: list[dict[str, Any]] = []
         self._key_connection: Any = None
         self.speed_slider: Any = None
+        self.contact_mode_radio: Any = None
+        self.contact_legend: Any = None
         self._visibility_buttons: dict[str, Any] = {}
         self._build_figure()
 
@@ -185,6 +190,7 @@ class InteractiveHOIViewer:
             self.axes = [self.figure.add_subplot(111, projection="3d")]
         self._build_artists()
         self._build_controls()
+        self.contact_legend = self.figure.text(0.02, 0.91, "", fontsize=8, va="top")
         self._key_connection = self.figure.canvas.mpl_connect("key_press_event", self.on_key)
         self._set_limits()
         self.update(self.frame)
@@ -448,6 +454,14 @@ class InteractiveHOIViewer:
         )
         self.timer = self.figure.canvas.new_timer(interval=interval)
         self.timer.add_callback(self._timer_tick)
+        contact_mode_ax = self.figure.add_axes((0.86, 0.70, 0.13, 0.12))
+        modes = ("source", "binary", "semantic")
+        self.contact_mode_radio = RadioButtons(
+            contact_mode_ax,
+            modes,
+            active=modes.index(self.options.contact_color_mode),
+        )
+        self.contact_mode_radio.on_clicked(self.set_contact_color_mode)
 
     def _check_toggle(self, label: str | None) -> None:
         if label is None:
@@ -464,6 +478,64 @@ class InteractiveHOIViewer:
         key = label
         self.visibility[key] = not self.visibility[key]
         self.update(self.frame)
+
+    def set_contact_color_mode(self, value: str | None) -> None:
+        if value is None:
+            return
+        if value not in {"source", "binary", "semantic"}:
+            raise ValueError(f"unsupported contact color mode: {value}")
+        self.options.contact_color_mode = value
+        self.update(self.frame)
+
+    def _contact_colors(self, contact: Any, frame: int) -> tuple[np.ndarray, list[str]]:
+        labels = contact.labels
+        if labels is None:
+            return np.empty((0, 4), dtype=np.float64), []
+        active = (
+            np.asarray(contact.binary[frame], dtype=bool)
+            if contact.binary is not None
+            else labels[frame] != 0
+        )
+        if not np.any(active):
+            return np.empty((0, 4), dtype=np.float64), []
+        values = labels[frame][active]
+        mode = self.options.contact_color_mode
+        if mode == "binary":
+            return np.repeat(np.asarray([[1.0, 0.0, 1.0, 0.95]]), len(values), axis=0), ["contact"]
+        if mode == "source":
+            import matplotlib.pyplot as plt
+
+            upper = max(int(np.max(labels)), 1)
+            colors = plt.get_cmap("viridis")(np.asarray(values, dtype=np.float64) / upper)
+            return np.asarray(colors), [
+                f"source label {int(item)}" for item in sorted(np.unique(values))
+            ]
+        semantic = contact.semantic_ids
+        mapping = contact.semantic_mapping or {}
+        if semantic is None or not mapping:
+            raise ValueError("semantic contact colors require semantic IDs and a mapping table")
+        semantic_values = semantic[frame][active]
+        category_colors = {
+            "left_hand": (0.1, 0.45, 0.95, 0.95),
+            "right_hand": (0.95, 0.2, 0.1, 0.95),
+            "body": (0.15, 0.7, 0.25, 0.95),
+            "unknown": (0.55, 0.15, 0.75, 0.95),
+            "none": (0.5, 0.5, 0.5, 0.2),
+        }
+        colors = np.asarray(
+            [
+                category_colors.get(
+                    str(mapping.get(int(item), {}).get("category", "unknown")),
+                    category_colors["unknown"],
+                )
+                for item in semantic_values
+            ],
+            dtype=np.float64,
+        )
+        names = sorted(
+            {str(mapping.get(int(item), {}).get("name", "unknown")) for item in semantic_values}
+        )
+        return colors, names
 
     def set_playback_speed(self, value: float) -> None:
         speed = max(float(value), 0.01)
@@ -593,17 +665,38 @@ class InteractiveHOIViewer:
                         None,
                     )
                     if contact is not None:
+                        labels = contact.labels
                         active = (
-                            np.asarray(contact.binary[frame], dtype=bool)
-                            if contact.binary is not None
-                            else np.asarray(contact.labels[frame]) != 0
+                            (
+                                np.asarray(contact.binary[frame], dtype=bool)
+                                if contact.binary is not None
+                                else np.asarray(labels[frame]) != 0
+                            )
+                            if labels is not None
+                            else np.zeros(points.shape[0], dtype=bool)
                         )
                         _set_scatter(item["contacts"], points[active])
+                        colors, names = self._contact_colors(contact, frame)
+                        item["contacts"].set_color(colors)
                         item["contacts"].set_visible(
                             self.visibility["contacts"]
                             and self.visibility["object"]
                             and self.visibility[item["source"]]
                         )
+                        if self.contact_legend is not None:
+                            mode = self.options.contact_color_mode
+                            mapping_id = contact.metadata.get("mapping_id")
+                            mapping_version = contact.metadata.get("mapping_version")
+                            suffix = (
+                                f" | {mapping_id}@{mapping_version}"
+                                if mapping_id is not None
+                                else ""
+                            )
+                            detail = ", ".join(names[:8]) if names else "none"
+                            self.contact_legend.set_text(
+                                f"contacts={mode}{suffix} | "
+                                f"frame vertices={int(np.count_nonzero(active))} | {detail}"
+                            )
         if self.slider is not None and int(self.slider.val) != frame:
             self.slider.set_val(frame)
         self._set_title()
@@ -613,6 +706,19 @@ class InteractiveHOIViewer:
         values.append(
             f"reference={self.reference_frame} | display_stride={self.options.display_stride}"
         )
+        mapping = next(
+            (
+                contact
+                for _, sequence, _ in self.groups
+                for contact in sequence.contacts
+                if contact.metadata.get("mapping_id") is not None
+            ),
+            None,
+        )
+        if mapping is not None:
+            values.append(
+                f"contact_mapping={mapping.metadata.get('mapping_id')}@{mapping.metadata.get('mapping_version')}"
+            )
         self.figure.suptitle(" | ".join(values))
 
     def _timestamp(self, frame: int) -> float:

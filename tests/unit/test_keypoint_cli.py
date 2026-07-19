@@ -21,3 +21,41 @@ def test_grab_visualize_accepts_reference_compatibility_alias() -> None:
     output = result.output + getattr(result, "stderr", "")
     assert result.exit_code == 2
     assert "No such option" not in output
+    assert "deprecated" in output
+
+
+def test_grab_visualize_reference_flags_have_explicit_conflict_behavior() -> None:
+    runner = CliRunner()
+    canonical = runner.invoke(app, ["data", "visualize", "--reference-frame", "object"])
+    same = runner.invoke(
+        app,
+        [
+            "data",
+            "visualize",
+            "--reference-frame",
+            "scene",
+            "--reference",
+            "scene",
+        ],
+    )
+    conflict = runner.invoke(
+        app,
+        [
+            "data",
+            "visualize",
+            "--reference-frame",
+            "object",
+            "--reference",
+            "scene",
+        ],
+    )
+    canonical_output = canonical.output + getattr(canonical, "stderr", "")
+    same_output = same.output + getattr(same, "stderr", "")
+    conflict_output = conflict.output + getattr(conflict, "stderr", "")
+    assert canonical.exit_code == 2
+    assert "No such option" not in canonical_output
+    assert "deprecated" not in canonical_output
+    assert same.exit_code == 2
+    assert "deprecated" in same_output
+    assert conflict.exit_code == 2
+    assert "must have the same value" in conflict_output

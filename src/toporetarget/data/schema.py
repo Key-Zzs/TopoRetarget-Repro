@@ -221,6 +221,7 @@ class ContactTrack:
     vertex_associations: np.ndarray | None = None
     binary: np.ndarray | None = None
     semantic_labels: np.ndarray | None = None
+    semantic_mapping: dict[int, dict[str, Any]] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -232,7 +233,21 @@ class ContactTrack:
         if self.binary is not None:
             self.binary = _array(self.binary, dtype=bool)
         if self.semantic_labels is not None:
-            self.semantic_labels = _array(self.semantic_labels)
+            self.semantic_labels = _array(self.semantic_labels, dtype=np.int64)
+        if self.semantic_mapping is not None:
+            self.semantic_mapping = {
+                int(key): dict(value) for key, value in self.semantic_mapping.items()
+            }
+
+    @property
+    def semantic_ids(self) -> np.ndarray | None:
+        """Compatibility name for the integer semantic label track."""
+
+        return self.semantic_labels
+
+    @semantic_ids.setter
+    def semantic_ids(self, value: np.ndarray | None) -> None:
+        self.semantic_labels = None if value is None else _array(value, dtype=np.int64)
 
 
 @dataclass
@@ -398,6 +413,36 @@ class HOISequence:
                     contact.binary.shape[0] == t,
                     f"contact[{contact.hand_id},{contact.object_id}].binary time mismatch",
                 )
+                if contact.labels is not None and contact.binary.shape == contact.labels.shape:
+                    no_contact = int(contact.metadata.get("no_contact_label", 0))
+                    check(
+                        bool(np.array_equal(contact.binary, contact.labels != no_contact)),
+                        f"contact[{contact.hand_id},{contact.object_id}].binary is not "
+                        "derived from labels",
+                    )
+            if contact.semantic_labels is not None:
+                check(
+                    contact.semantic_labels.shape[0] == t,
+                    f"contact[{contact.hand_id},{contact.object_id}].semantic_labels time mismatch",
+                )
+                if (
+                    contact.labels is not None
+                    and contact.semantic_labels.shape != contact.labels.shape
+                ):
+                    errors.append(
+                        f"contact[{contact.hand_id},{contact.object_id}].semantic_labels "
+                        "shape does not match labels"
+                    )
+                check(
+                    np.issubdtype(contact.semantic_labels.dtype, np.integer),
+                    f"contact[{contact.hand_id},{contact.object_id}].semantic_labels must "
+                    "be integer",
+                )
+                if contact.semantic_mapping is None:
+                    errors.append(
+                        f"contact[{contact.hand_id},{contact.object_id}].semantic_mapping "
+                        "is missing"
+                    )
 
         if errors and raise_on_error:
             raise HOIValidationError("; ".join(errors))

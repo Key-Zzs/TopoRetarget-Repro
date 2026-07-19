@@ -565,11 +565,15 @@ def visualize_dataset(
     canonical: Path | None = typer.Option(None, "--canonical"),
     mode: str = typer.Option("canonical", "--mode", help="raw, canonical, or compare"),
     layout: str = typer.Option("overlay", "--layout"),
-    reference_frame: str = typer.Option(
-        "scene",
+    reference_frame: str | None = typer.Option(
+        None,
         "--reference-frame",
+        help="Canonical reference flag: scene, object, right-wrist, or left-wrist.",
+    ),
+    reference_alias: str | None = typer.Option(
+        None,
         "--reference",
-        help="scene, object, right-wrist, or left-wrist",
+        help="Deprecated compatibility alias for --reference-frame.",
     ),
     frame: int = typer.Option(0, "--frame", min=0),
     start_frame: int = typer.Option(0, "--start-frame", min=0),
@@ -584,6 +588,9 @@ def visualize_dataset(
     show_mesh: bool = typer.Option(True, "--show-mesh/--hide-mesh"),
     show_table: bool = typer.Option(False, "--show-table"),
     show_contacts: bool = typer.Option(False, "--show-contacts"),
+    contact_color_mode: str = typer.Option(
+        "binary", "--contact-color-mode", help="source, binary, or semantic contact colors."
+    ),
     show_axes: bool = typer.Option(False, "--show-axes"),
     interactive: bool = typer.Option(
         False, "--interactive", "--show", help="Open the interactive slider/buttons viewer."
@@ -595,6 +602,17 @@ def visualize_dataset(
     if dataset != "grab":
         raise typer.BadParameter("only --dataset grab has formal visualization")
     try:
+        if reference_alias is not None:
+            typer.echo(
+                "Warning: --reference is deprecated; use --reference-frame instead.", err=True
+            )
+            if reference_frame is not None and reference_frame != reference_alias:
+                raise typer.BadParameter(
+                    "--reference and --reference-frame must have the same value "
+                    "when both are provided"
+                )
+            reference_frame = reference_alias
+        resolved_reference_frame = reference_frame or "scene"
         canonical_sequence = load_hoi_sequence(canonical) if canonical is not None else None
         raw_sequence = None
         if mode in {"raw", "compare"}:
@@ -624,7 +642,7 @@ def visualize_dataset(
         opts = GrabViewerOptions(
             mode=mode,
             layout=layout,
-            reference_frame=reference_frame,
+            reference_frame=resolved_reference_frame,
             frame=frame,
             display_stride=display_stride,
             show_mesh=show_mesh,
@@ -633,6 +651,7 @@ def visualize_dataset(
             show_table=show_table,
             show_contacts=show_contacts,
             show_axes=show_axes,
+            contact_color_mode=contact_color_mode,
         )
         viewer = render_grab_view(
             canonical=canonical_sequence,
@@ -649,7 +668,7 @@ def visualize_dataset(
             {
                 "mode": mode,
                 "layout": layout,
-                "reference_frame": reference_frame,
+                "reference_frame": resolved_reference_frame,
                 "frame": viewer.frame,
                 "output": None if output is None else str(output),
                 "interactive": interactive,

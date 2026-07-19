@@ -108,7 +108,8 @@ This repository is not result-complete.
 The bounded GRAB dataset adapter is an engineering implementation around the paper's source-hand
 input boundary, not an additional claim about the paper's undisclosed preprocessing. Its native
 time/mesh/contact preservation, lazy index, validation, and viewer are tracked as
-`dataset_adapter_grab` in [`PAPER_FIDELITY.yaml`](PAPER_FIDELITY.yaml). The unresolved GRAB scene,
-wrist, personalized-template, contact, table, and sequence-ID choices are listed in
+`dataset_adapter_grab` in [`PAPER_FIDELITY.yaml`](PAPER_FIDELITY.yaml). The official GRAB contact
+label table is now verified and versioned locally; the unresolved GRAB scene, wrist,
+personalized-template, downstream contact aggregation, table, and sequence-ID choices are listed in
 [`ASSUMPTIONS.md`](ASSUMPTIONS.md); no object sampling, interaction graph, collision/SDF,
 retargeting, or RL behavior is implied.
