@@ -2,64 +2,266 @@
 
 [English README](README.md)
 
-TopoRetarget-Repro 是 TopoRetarget 论文的非官方、独立、可追踪复现仓库基础。初始目标是
-GRAB → Arti-MANO，后续目标是支持多种 HOI 数据集以及任意 URDF/MJCF 灵巧手。
+TopoRetarget-Repro 是一个非官方、独立、可追踪的
+[*TopoRetarget: Interaction-Preserving Retargeting for Dexterous Manipulation*](https://arxiv.org/abs/2606.16272)
+复现仓库。项目提供与机器人无关的 HOI 数据接口、明确的坐标约定、source-hand 转换工具、
+复现审计，以及面向完整灵巧手重定向的分阶段路线。
 
-## 当前状态
+当前实现已经覆盖 canonical HOI interface 和有界 MANO→MediaPipe 风格 21 点 source-hand
+adapter，但尚未声称实现论文完整的机器人重定向优化器、RL pipeline 或论文实验结果。
 
-- 阶段 0 complete：仓库脚手架、配置、只读数据集发现和本地 Arti-MANO 导入器。
-- 阶段 1 complete：完整 16 页论文审计、参数来源、assumption 和忠实度检查器。
-- 阶段 2A complete：统一 HOI schema、明确坐标语义、可选 Zarr 缓存、确定性合成数据、误差
-  指标和无头比较可视化已实现。
-- 阶段 2B 的有界真实数据验收已完成：使用用户提供的 MANO 模型和可选 SMPL-X backend 重建
-  一条 GRAB 序列，转换为 canonical Zarr，完成 raw-to-canonical 对比，并生成首/中/末帧可视化。
-- 阶段 3 的有界 source-hand adapter 已完成：显式 MANO 语义到 MediaPipe 风格 21 点映射、版本化
-  profile、dense/sparse regressor 路径、scene/wrist 派生视图、静态 PNG 与本地交互 viewer、完整性
-  报告、合成测试和真实左右手 GRAB 验收均已实现。
+## 仓库概览
 
-当前没有实现 TopoRetarget 重定向算法、Arti-MANO/机器人 FK、数值优化、Delaunay/SDF、RL/PPO
-或 baselines。阶段 3 是 source-hand adapter，不是机器人重定向，也不声称 MediaPipe detector
-accuracy；不进行全量数据集转换。
+主要入口是 toporetarget CLI。仓库按完整功能组织：
 
-有界 GRAB 读取器、真实验收命令和误差报告见 [`docs/GRAB_INSPECTION.md`](docs/GRAB_INSPECTION.md)。
-这是单条明确选定序列的 60 帧检查，不是全量数据集转换。
+- 统一的、与机器人无关的 HOISequence 数据结构、scene-frame 几何和显式 SE(3) 变换；
+- 对单条 GRAB NPZ 的只读检查，以及到 canonical Zarr 的转换；
+- 显式 MANO 语义 layout 和版本化 MANO→MediaPipe21 mapping profile；
+- source/object/timestamp 保留报告，以及静态和本地交互式几何 viewer；
+- 论文忠实度审计、assumption 记录和本地 Arti-MANO 资产导入支持。
 
-## 数据与本地资产
+仓库不分发外部数据、MANO/SMPL-X 模型、机器人资产或提取缓存。它们应放在仓库外部，
+通过 .local/ 配置。统一数据接口见
+[docs/HOI_DATA_INTERFACE.md](docs/HOI_DATA_INTERFACE.md)，坐标语义见
+[docs/COORDINATE_CONVENTIONS.md](docs/COORDINATE_CONVENTIONS.md)。
 
-仓库不包含 GRAB、OakInk、OakInk2、ContactPose、TACO、HO-Cap、ARCTIC、DexYCB、MANO 或
-SMPL-X。外部数据目录规范为：
+## TODO 与完整路线图
 
-```text
-<storage-root>/<已登记数据集 alias>/data/**
-```
+下面是完整的阶段 TODO。Complete 只表示该阶段文档中定义的范围完成，不表示全数据集或
+论文结果级复现已经完成。
 
-机器相关路径只能写入被 Git 忽略的 `.local/config.yaml`，或通过环境变量设置。可参考
-[`configs/paths.example.yaml`](configs/paths.example.yaml) 和 [`.env.example`](.env.example)。
+| 阶段 | 能力 | 状态 | 完成定义 / 后续 TODO |
+| ---: | --- | --- | --- |
+| 0 | 仓库架构与路径策略 | Complete | CLI 脚手架、配置、数据集发现和 Arti-MANO importer 通过。 |
+| 1 | 论文忠实度审计 | Complete | PDF manifest、公式/表格/图追踪、assumption 和 checker 通过。 |
+| 2 | Canonical HOI schema 与坐标 | Complete，有界 | Schema、lazy Zarr、对比 viewer 和有界 GRAB 检查通过。 |
+| 3 | MANO→MediaPipe 风格 21 点 source adapter | Complete，有界 | Layout/profile、converter、报告、viewer、合成测试和有界真实 GRAB 检查通过；语义和 topology 假设仍显式保留。 |
+| 4 | Arti-MANO 机器人适配器 | TODO | 实现并验证机器人模型、关节和 link 约定。 |
+| 5 | 完整 GRAB 数据集适配器 | TODO | 将当前单序列 reader 扩展为经过验证的数据集 adapter。 |
+| 6 | 物体采样、碰撞几何与 SDF | TODO | 实现几何 backend 和测试。 |
+| 7 | 相对骨方向初始化 | TODO | 实现并测试论文 Eq. 1–2。 |
+| 8 | 交互图与 Laplacian 坐标 | TODO | 实现并测试 Eq. 3–7 的图和变形项。 |
+| 9 | 带 slack 的受限优化 | TODO | 实现并测试 Eq. 8–9 的约束和优化。 |
+| 10 | GRAB→Arti-MANO 端到端重定向 | TODO | 生成可复现的机器人 reference trajectory。 |
+| 11 | Metrics 与 ContactPose 评估 | TODO | 实现 Eq. 10–12 指标和报告 fixture。 |
+| 12 | OakInk、DexYCB、HO-Cap adapter | TODO | 添加独立验证的数据集 adapter。 |
+| 13 | ARCTIC、OakInk2、TACO 扩展 | TODO | 添加独立验证的数据集 adapter。 |
+| 14 | 任意灵巧手 plugin interface | TODO | 测试 URDF/MJCF hand plugin contract。 |
+| 15 | Baseline 与 ablation | TODO | 添加公平的 OmniRetarget、Mink、DexPilot、GeoRT 运行。 |
+| 16 | Reference-tracking PPO | TODO | 添加 RL 训练和评估 pipeline。 |
+| 17 | 论文实验复现 | TODO | 复现 tables、figures、seeds 和结果报告。 |
+| 18 | 性能优化与 v1.0 release | TODO | 建立 benchmark、打包和 release criteria。 |
+| 19 | 非论文扩展 | TODO | 将 MANO 清理、SPIDER 等扩展单独标识。 |
 
-## 常用命令
+维护中的路线图见 [docs/ROADMAP.md](docs/ROADMAP.md)，中文路线图见
+[docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md)。
+
+## 环境配置 Quickstart
+
+### 依赖
+
+- Python 3.10–3.13
+- Git
+- 使用对应 workflow 时才需要外部数据和模型
+- 使用 --show viewer 需要图形 backend；无头 smoke test 可用 MPLBACKEND=Agg
+
+安装当前数据和可视化 workflow 所需的完整环境：
 
 ```bash
-python -m pip install -e ".[dev]"
-toporetarget --help
-toporetarget data --help
-toporetarget data make-synthetic --output .local/cache/hoi/synthetic_demo.zarr
-toporetarget data inspect --input .local/cache/hoi/synthetic_demo.zarr --frame 0
-toporetarget keypoints layouts
-toporetarget keypoints profiles
-toporetarget keypoints validate --input .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr --hand right --report .local/reports/stage3/mapping_validation.json
-toporetarget keypoints visualize --input .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr --hand right --layout mediapipe21 --view scene --start-frame 0 --end-frame 60 --show --show-source-layout --show-mesh --show-labels
-toporetarget doctor datasets --root "$REF2DEX_STORAGE_ROOT" --max-depth 4
-toporetarget assets import-artimano --source-root "$MANIPTRANS_ROOT" --destination .local/assets/artimano
-toporetarget doctor assets
-toporetarget doctor paper
-toporetarget doctor all
+python -m pip install -e ".[dev,cache,viz,grab]"
 ```
 
-dataset doctor 只读扫描 registry 允许的数据集 alias，并限制目录深度、不跟随 symlink，忽略
-未登记目录。Arti-MANO 命令把 ManipTrans 的完整 URDF/mesh 树导入 `.local/assets/artimano/`，
-该目录不会进入 Git。论文检查命令是 `python scripts/check_paper_fidelity.py`。
+只运行 core schema/test 时，可使用 python -m pip install -e ".[dev]"。
 
-## 开发检查
+### 配置本地资源
+
+不要把数据集或模型放入仓库。使用环境变量或被 Git 忽略的 .local/config.yaml：
+
+```bash
+export GRAB_ROOT=/path/to/GRAB                 # 包含 grab/ 和 tools/object_meshes/
+export MANO_MODEL_ROOT=/path/to/MANO/models    # 包含 MANO_LEFT.pkl/MANO_RIGHT.pkl
+export MANIPTRANS_ROOT=/path/to/ManipTrans     # 仅 Arti-MANO 导入需要
+```
+
+配置模板见 [configs/paths.example.yaml](configs/paths.example.yaml)，数据和许可证边界见
+[docs/LICENSE_AND_DATA_POLICY.md](docs/LICENSE_AND_DATA_POLICY.md)。
+
+### 检查安装
+
+```bash
+toporetarget --help
+toporetarget data --help
+toporetarget keypoints --help
+toporetarget doctor paper
+```
+
+## 功能 Workflow
+
+以下按完整的用户功能组织，而不是按开发阶段组织。每节先给核心脚本，再给可选的
+debug/可视化命令。
+
+### 1. Synthetic canonical HOI
+
+创建并检查确定性的 canonical sequence：
+
+```bash
+toporetarget data make-synthetic \
+  --output .local/cache/hoi/synthetic_demo.zarr \
+  --num-frames 8
+
+toporetarget data inspect \
+  --input .local/cache/hoi/synthetic_demo.zarr \
+  --frame 0
+
+toporetarget data compare \
+  --dataset synthetic \
+  --sequence demo \
+  --canonical .local/cache/hoi/synthetic_demo.zarr \
+  --layout side-by-side \
+  --frame 0 \
+  --output .local/reports/stage2a/synthetic_side_by_side.png \
+  --error-json .local/reports/stage2a/synthetic_side_by_side.json
+```
+
+帧范围是连续的半开区间：--start-frame 0 --end-frame 60 表示 0–59 帧。
+--show 是交互模式，--output 生成无头 PNG。
+
+### 2. GRAB NPZ → canonical Zarr
+
+GRAB reader 按单条明确序列工作：读取一个 NPZ 并选择一只手，不枚举或改写整个数据集。
+生成完整序列时不要指定 --start-frame 和 --end-frame；生成片段时同时指定二者。
+
+```bash
+export GRAB_SEQUENCE="$GRAB_ROOT/grab/<subject>/<sequence>.npz"
+
+toporetarget data describe \
+  --dataset grab \
+  --sequence-path "$GRAB_SEQUENCE" \
+  --grab-root "$GRAB_ROOT" \
+  --hand right \
+  --mano-model-root "$MANO_MODEL_ROOT"
+
+# 完整轨迹：不指定 --start-frame/--end-frame。
+toporetarget data convert \
+  --dataset grab \
+  --sequence-path "$GRAB_SEQUENCE" \
+  --grab-root "$GRAB_ROOT" \
+  --hand right \
+  --mano-model-root "$MANO_MODEL_ROOT" \
+  --output .local/cache/hoi/grab/sequence_rh_full.zarr
+
+# 有界检查：--end-frame 是排他的。
+toporetarget data convert \
+  --dataset grab \
+  --sequence-path "$GRAB_SEQUENCE" \
+  --grab-root "$GRAB_ROOT" \
+  --hand right \
+  --mano-model-root "$MANO_MODEL_ROOT" \
+  --start-frame 0 \
+  --end-frame 60 \
+  --output .local/cache/hoi/grab/sequence_rh_f000000_f000060.zarr
+```
+
+canonical cache 包含所选手的 MANO/source 几何、wrist pose、object state、timestamps 和
+provenance，但还没有 mediapipe21 track。raw/canonical 对比命令见
+[docs/GRAB_INSPECTION.md](docs/GRAB_INSPECTION.md)。
+
+### 3. MANO source trajectory → MediaPipe21 trajectory
+
+Stage 3 converter 读取 canonical Zarr，并写入一个带有明确 mediapipe21 track 的新缓存。
+它执行命名语义映射和显式 fingertip vertex mapping，不做 mirror、resample、smooth、recenter、
+normalize，也不修改 source track。
+
+```bash
+toporetarget keypoints layouts
+toporetarget keypoints profiles
+toporetarget keypoints describe-profile \
+  --profile mano_v1_2_smplx_to_mediapipe21
+
+toporetarget keypoints convert \
+  --input .local/cache/hoi/grab/sequence_rh_full.zarr \
+  --output .local/cache/hoi/grab/sequence_rh_full_mp21.zarr \
+  --hand right \
+  --mano-model-root "$MANO_MODEL_ROOT"
+
+toporetarget keypoints validate \
+  --input .local/cache/hoi/grab/sequence_rh_full_mp21.zarr \
+  --hand right \
+  --layout mediapipe21 \
+  --report .local/reports/stage3/sequence_rh_full_validation.json \
+  --csv .local/reports/stage3/sequence_rh_full_validation.csv
+```
+
+当前 CLI 一次处理一只手。左手重复上述两个转换命令并使用 --hand left。映射 profile 和
+assumption 见 [docs/MANO_TO_MEDIAPIPE21.md](docs/MANO_TO_MEDIAPIPE21.md)。
+
+### 4. 序列可视化与 Debug
+
+静态 PNG：
+
+```bash
+toporetarget keypoints visualize \
+  --input .local/cache/hoi/sequence_rh_full_mp21.zarr \
+  --hand right \
+  --layout mediapipe21 \
+  --view scene \
+  --frame 0 \
+  --show-source-layout \
+  --show-mesh \
+  --show-labels \
+  --output .local/reports/stage3/scene_first.png
+```
+
+本地交互 viewer：
+
+```bash
+toporetarget keypoints visualize \
+  --input .local/cache/hoi/sequence_rh_full_mp21.zarr \
+  --hand right \
+  --layout mediapipe21 \
+  --view scene \
+  --start-frame 0 \
+  --end-frame <num-frames> \
+  --show \
+  --show-source-layout \
+  --show-mesh \
+  --show-labels
+```
+
+viewer 支持 frame slider、前后帧、scene/wrist 切换，以及 MANO mesh、source MANO joints、
+MediaPipe21、skeleton edges、semantic labels、object mesh 和 axes 开关；标题显示 frame、
+timestamp 和 mapping profile ID。显示变换只使用临时数组，不修改 canonical keypoint 坐标。
+详细 viewer contract 见 [docs/MANO_TO_MEDIAPIPE21.md](docs/MANO_TO_MEDIAPIPE21.md)。
+
+### 5. Arti-MANO 资产导入
+
+从单独 checkout 的 ManipTrans 导入本地 Arti-MANO 资产树：
+
+```bash
+toporetarget assets import-artimano \
+  --source-root "$MANIPTRANS_ROOT" \
+  --destination .local/assets/artimano
+
+toporetarget doctor assets
+```
+
+导入器会把 hash 和 provenance 写入被忽略的本地 manifest，不会复制 ManipTrans Python 代码。
+见 [docs/UPSTREAM_REFERENCES.md](docs/UPSTREAM_REFERENCES.md) 和
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+### 6. 论文追踪与复现审计
+
+```bash
+python scripts/check_paper_fidelity.py
+toporetarget doctor paper
+```
+
+论文 PDF、公式/表格/图追踪和未解决假设见
+[docs/PAPER_FIDELITY.md](docs/PAPER_FIDELITY.md)、
+[docs/PAPER_FIDELITY.yaml](docs/PAPER_FIDELITY.yaml) 和
+[docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md)。
+
+### 7. 开发验证
 
 ```bash
 ruff check .
@@ -70,10 +272,58 @@ python scripts/check_paper_fidelity.py
 git diff --check
 ```
 
-路线图见 [`docs/ROADMAP.md`](docs/ROADMAP.md)，论文审计见 [`docs/PAPER_FIDELITY.md`](docs/PAPER_FIDELITY.md)，
-数据与许可证边界见 [`docs/LICENSE_AND_DATA_POLICY.md`](docs/LICENSE_AND_DATA_POLICY.md)。现有
-仓库许可证保存在 [`LICENSE`](LICENSE)；使用论文或本地 Arti-MANO 上游资产时应引用
-TopoRetarget 和 ManipTrans。
+Licensed-data 测试需要本地 GRAB/MANO 资源，并且默认不运行：
 
-统一接口见 [`docs/HOI_DATA_INTERFACE.md`](docs/HOI_DATA_INTERFACE.md)，坐标语义见
-[`docs/COORDINATE_CONVENTIONS.md`](docs/COORDINATE_CONVENTIONS.md)。
+```bash
+GRAB_SEQUENCE="$GRAB_SEQUENCE" \
+MANO_MODEL_ROOT="$MANO_MODEL_ROOT" \
+pytest -q tests/licensed_data
+```
+
+## 文档索引
+
+- [Roadmap](docs/ROADMAP.md) / [中文路线图](docs/ROADMAP.zh-CN.md)
+- [统一 HOI 接口](docs/HOI_DATA_INTERFACE.md)
+- [坐标约定](docs/COORDINATE_CONVENTIONS.md)
+- [GRAB 检查](docs/GRAB_INSPECTION.md)
+- [MANO→MediaPipe21 adapter](docs/MANO_TO_MEDIAPIPE21.md)
+- [论文忠实度](docs/PAPER_FIDELITY.md)
+- [数据与许可证策略](docs/LICENSE_AND_DATA_POLICY.md)
+- [开发日志](docs/DEVELOPMENT_LOG.md) / [中文开发日志](docs/DEVELOPMENT_LOG.zh-CN.md)
+- [贡献指南](CONTRIBUTING.md) / [第三方声明](THIRD_PARTY_NOTICES.md)
+
+## License
+
+仓库代码和文档使用 GNU General Public License v3.0，见 [LICENSE](LICENSE)。外部 GRAB、
+MANO/SMPL-X、ManipTrans、机器人资产和其他数据集继续遵循其自身许可证，仓库不重新分发。
+使用外部资源前请阅读 [docs/LICENSE_AND_DATA_POLICY.md](docs/LICENSE_AND_DATA_POLICY.md) 和
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+## Acknowledgments
+
+本仓库感谢：
+
+- [*TopoRetarget: Interaction-Preserving Retargeting for Dexterous Manipulation*](https://toporetarget2026.github.io/TopoRetarget/) 的作者；
+- [ManipTrans 项目](https://maniptrans.github.io/)，本仓库只将其作为 acquisition-side Arti-MANO 资产来源；
+- GRAB 数据集以及 MANO/SMPL-X 模型生态；
+
+使用这些资源时请保留上游 attribution 并遵守各自条款。
+
+## Citation
+
+如使用本仓库或其实现说明，请引用 TopoRetarget 论文：
+
+```bibtex
+@article{wu2026toporetarget,
+  title   = {TopoRetarget: Interaction-Preserving Retargeting for Dexterous Manipulation},
+  author  = {Wu, Jielin and Yao, Shenzhe and He, Guanqi and Liu, Xiaohan and Zeng, Zhaoqing
+             and Jiang, Xiangrui and Yang, Han and Zhang, Wentao and Zhao, Hang},
+  journal = {arXiv preprint arXiv:2606.16272},
+  year    = {2026},
+  doi     = {10.48550/arXiv.2606.16272}
+}
+```
+
+使用 GRAB、MANO/SMPL-X 或 ManipTrans 的数据、模型、资产时，也请引用相应上游项目。
+本地论文副本见 [docs/TopoRetarget.pdf](docs/TopoRetarget.pdf)，上游获取说明见
+[docs/UPSTREAM_REFERENCES.md](docs/UPSTREAM_REFERENCES.md)。
