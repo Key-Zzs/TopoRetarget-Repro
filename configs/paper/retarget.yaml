@@ -1,0 +1,43 @@
+# Values transcribed from TopoRetarget v2, Appendix A.1, Table 3 (PDF pp. 12).
+paper_locked: true
+num_object_surface_samples: 50
+lambda_interaction_mesh: 500
+distance_decay_kappa: 30
+lambda_warm_bone: 1
+lambda_refinement_bone: 0.1
+lambda_initial_temporal_smoothness: 2.5
+lambda_refinement_temporal_regularization: 2.5
+lambda_base_position: 100
+lambda_base_rotation: 1
+penetration_soft_tolerance_m: 0.001
+penetration_hard_bound_m: 0.030
+slack_penalty_weight: 100000
+
+# The paper does not disclose these implementation choices. Null is intentional.
+optimizer: null
+max_iterations: null
+convergence_tolerance: null
+line_search: null
+delaunay_flags: null
+collision_sample_count: null
+
+provenance:
+  num_object_surface_samples: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: samples}
+  lambda_interaction_mesh: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: dimensionless}
+  distance_decay_kappa: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: inverse_meters}
+  lambda_warm_bone: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: dimensionless}
+  lambda_refinement_bone: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: dimensionless}
+  lambda_initial_temporal_smoothness: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: dimensionless}
+  lambda_refinement_temporal_regularization: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: dimensionless}
+  lambda_base_position: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: dimensionless}
+  lambda_base_rotation: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: dimensionless}
+  penetration_soft_tolerance_m: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: m}
+  penetration_hard_bound_m: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: m}
+  slack_penalty_weight: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: dimensionless}
+  optimizer: {source: not_provided}
+  max_iterations: {source: not_provided}
+  convergence_tolerance: {source: not_provided}
+  line_search: {source: not_provided}
+  delaunay_flags: {source: not_provided}
+  collision_sample_count: {source: not_provided}
+

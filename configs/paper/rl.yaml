@@ -1,0 +1,82 @@
+# Appendix A.5, Tables 4-6 (PDF pp. 14-16). Null values are not provided by the paper.
+reference_lookahead_offsets: [1, 3, 5]
+
+reward:
+  object: {weight: 8.0, sigma: 0.04}
+  link_position: {weight: 1.0, sigma: 0.025}
+  joint_position: {weight: 1.0, sigma: 0.1}
+  action_smoothness: {weight: -0.01}
+
+termination:
+  timeout_seconds: 20
+  object_height_min_m: 0.06
+  object_linear_velocity_max_mps: 10
+  object_angular_velocity_max_radps: 500
+  object_position_error_max_m: 0.05
+  object_orientation_error_max_deg: 45
+  object_axis_point_error_max_m: 0.05
+
+domain_randomization:
+  joint_position_observation_noise_std_rad: 0.02
+  joint_velocity_observation_noise_std_radps: 0.05
+  object_axis_point_position_noise_std_m: 0.002
+  object_axis_point_orientation_noise_std_rad: 0.01
+  observation_delay_control_steps: [0, 2]
+  reference_reset_joint_range_rad: [-0.02, 0.02]
+  reference_reset_object_position_range_m: [-0.005, 0.005]
+  reference_reset_object_orientation_angle_rad: [-0.03, 0.03]
+  object_com_offset_m: [-0.003, 0.003]
+  robot_friction_scale: [0.7, 1.3]
+  robot_collision_geometry_scale: [0.9, 1.1]
+  object_mass_inertia_scale: [0.4, 1.6]
+  pd_stiffness_scale: [0.75, 1.5]
+  pd_stiffness_sampling: log_uniform
+  pd_damping_scale: [0.5, 2.0]
+  pd_damping_sampling: log_uniform
+  joint_damping_scale: [0.3, 3.0]
+  joint_damping_sampling: log_uniform
+  joint_armature_scale: [0.75, 1.3]
+  joint_friction_loss_scale: [0.5, 2.0]
+  encoder_bias_rad: [-0.01, 0.01]
+  robot_link_inertia_scale: [0.4, 1.5]
+  robot_link_mass_scale: [0.4, 1.5]
+  external_object_force_n: [-0.25, 0.25]
+  external_object_force_interval_s: [0.6, 1.8]
+  external_object_torque_nm: [-0.00375, 0.00375]
+
+ppo:
+  parallel_environments: 4096
+  simulation_step_s: 0.01
+  decimation: 5
+  control_frequency_hz: 20
+  reference_frequency_hz: 20
+  episode_length_s: 20
+  episode_control_steps: 400
+  rollout_control_steps: 40
+  samples_per_iteration: 163840
+  actor_hidden_layers: [512, 256, 128]
+  actor_activation: ELU
+  critic_hidden_layers: [512, 512, 256, 128]
+  critic_activation: ELU
+  observation_normalization: true
+  action_distribution: SoftplusGaussian
+  optimizer: Adam
+  learning_rate: 0.0001
+  ppo_epochs: 4
+  minibatches: 32
+  entropy_coefficient: 0.001
+  gamma: 0.99
+  gae_lambda: 0.95
+
+# Not provided in the paper; do not populate by inference.
+not_provided:
+  ppo_clip_ratio: null
+  value_loss_coefficient: null
+  max_gradient_norm: null
+  axis_point_spatial_offsets: null
+  action_residual_limits: null
+  low_level_pd_gains: null
+  tracked_link_list: null
+  simulator_name: null
+  physics_solver_settings: null
+

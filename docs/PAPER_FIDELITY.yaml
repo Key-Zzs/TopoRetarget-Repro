@@ -1,0 +1,724 @@
+paper:
+  title: "TopoRetarget: Interaction-Preserving Retargeting for Dexterous Manipulation"
+  arxiv_id: "2606.16272"
+  version: v2
+  pdf_path: docs/TopoRetarget.pdf
+  pdf_sha256: 21c06a125430854dcff0d778283963b7fe107c8dfa79e3982639a80c21b206ab
+  page_count: 16
+
+items:
+  - id: equation_1
+    kind: equation
+    title: Relative bone-direction mismatch
+    paper_section: "Sec. 3.2"
+    pdf_page: 4
+    evidence_summary: "Sum of differences between source and robot relative bone-direction pairs."
+    implementation_targets: [src/toporetarget/retarget/initialization.py]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {equation_number: 1, unit: dimensionless}
+    unknowns: [bone-pair mapping details]
+    assumptions: [A_HAND_FRAME_001]
+    notes: "The source and robot directions are expressed in their respective wrist-centered hand frames."
+  - id: equation_2
+    kind: equation
+    title: Warm-start optimization
+    paper_section: "Sec. 3.2"
+    pdf_page: 4
+    evidence_summary: "Per-frame warm start combines bone-direction matching and temporal smoothness."
+    implementation_targets: [src/toporetarget/retarget/initialization.py]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {equation_number: 2, unit: dimensionless}
+    unknowns: [first-frame initialization]
+    assumptions: [A_FIRST_FRAME_INITIALIZATION_001]
+    notes: "lambda_warm and lambda_smooth are locked in Appendix A.1 Table 3."
+  - id: equation_3
+    kind: equation
+    title: Source and robot interaction vertex sets
+    paper_section: "Sec. 3.3"
+    pdf_page: 4
+    evidence_summary: "Both graphs concatenate 21 hand keypoints with posed object surface samples."
+    implementation_targets: [src/toporetarget/geometry/interaction_mesh.py]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {equation_number: 3, hand_keypoints: 21, unit: vertices}
+    unknowns: [surface sampling algorithm, sampling reuse schedule]
+    assumptions: [A_OBJECT_SAMPLING_001, A_OBJECT_SAMPLING_METHOD_001]
+    notes: "No geometry implementation is included in Stage 0/1."
+  - id: equation_4
+    kind: equation
+    title: Shared Delaunay interaction graph
+    paper_section: "Sec. 3.3"
+    pdf_page: 4
+    evidence_summary: "Delaunay tetrahedralization is run on source vertices and its edge connectivity is reused."
+    implementation_targets: [src/toporetarget/geometry/interaction_mesh.py]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {equation_number: 4, connectivity_reuse: true, unit: graph}
+    unknowns: [Delaunay backend and degeneracy behavior]
+    assumptions: [A_DELAUNAY_BACKEND_001, A_DELAUNAY_DEGENERACY_001]
+    notes: "The graph is rebuilt when object scale or embodiment changes."
+  - id: equation_5
+    kind: equation
+    title: Distance-decay edge weights
+    paper_section: "Sec. 3.4"
+    pdf_page: 5
+    evidence_summary: "Unnormalized exponential distance weights are normalized over source-graph neighbors."
+    implementation_targets: [src/toporetarget/geometry/laplacian.py]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {equation_number: 5, distance_decay_kappa: 30, unit: inverse_meters}
+    unknowns: [zero-neighbor handling]
+    assumptions: []
+    notes: "kappa is from Appendix A.1 Table 3."
+  - id: equation_6
+    kind: equation
+    title: Weighted Laplacian coordinate
+    paper_section: "Sec. 3.4"
+    pdf_page: 5
+    evidence_summary: "Each vertex coordinate is the weighted sum of edge displacement vectors."
+    implementation_targets: [src/toporetarget/geometry/laplacian.py]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {equation_number: 6, unit: meters}
+    unknowns: [numeric precision and degenerate graph handling]
+    assumptions: []
+    notes: "Weights are computed from source vertices and reused for robot vertices."
+  - id: equation_7
+    kind: equation
+    title: Interaction-mesh energy
+    paper_section: "Sec. 3.4"
+    pdf_page: 5
+    evidence_summary: "Mean squared difference between source and robot weighted Laplacian coordinates."
+    implementation_targets: [src/toporetarget/retarget/optimization.py]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {equation_number: 7, lambda_interaction_mesh: 500, unit: dimensionless}
+    unknowns: [optimizer implementation]
+    assumptions: [A_SOLVER_001]
+    notes: "The interaction-mesh weight is locked in Appendix A.1 Table 3."
+  - id: equation_8
+    kind: equation
+    title: Final constrained optimization with slack
+    paper_section: "Sec. 3.4"
+    pdf_page: 5
+    evidence_summary: "Refinement combines interaction-mesh, bone, regularization, and slack penalties under signed-distance constraints."
+    implementation_targets: [src/toporetarget/retarget/optimization.py]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {equation_number: 8, soft_tolerance_m: 0.001, hard_bound_m: 0.030, slack_penalty: 100000, unit: mixed}
+    unknowns: [query-set construction, solver termination, joint-limit realization, signed-distance backend]
+    assumptions: [A_SOLVER_001, A_SOLVER_TERMINATION_001, A_JOINT_LIMIT_001, A_COLLISION_QUERY_SET_001, A_SIGNED_DISTANCE_BACKEND_001]
+    notes: "All three penetration values are locked in Appendix A.1 Table 3."
+  - id: equation_9
+    kind: equation
+    title: Refinement regularization
+    paper_section: "Appendix A.1"
+    pdf_page: 12
+    evidence_summary: "Temporal regularization plus floating-base translation and rotation priors."
+    implementation_targets: [src/toporetarget/retarget/optimization.py]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {equation_number: 9, lambda_reg: 2.5, lambda_base_pos: 100, lambda_base_rot: 1, unit: mixed}
+    unknowns: [base rotation parameterization]
+    assumptions: [A_BASE_PARAMETERIZATION_001]
+    notes: "The paper names q_base position and rotation but does not specify rotation coordinates."
+  - id: equation_10
+    kind: equation
+    title: Contact precision metric
+    paper_section: "Appendix A.3"
+    pdf_page: 12
+    evidence_summary: "Mean object-relative position error over ContactPose in-contact hand links."
+    implementation_targets: [src/toporetarget/metrics/contactpose.py]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {equation_number: 10, unit: meters}
+    unknowns: [ContactPose source annotation access]
+    assumptions: [A_CONTACTPOSE_THRESHOLD_001]
+    notes: "Attribution follows ContactPose's stated sigmoid, threshold, nearest-bone, and 10-vertex rule."
+  - id: equation_11
+    kind: equation
+    title: Contact alignment metric
+    paper_section: "Appendix A.3"
+    pdf_page: 13
+    evidence_summary: "Mean angular deviation between source and retargeted in-contact bone segments."
+    implementation_targets: [src/toporetarget/metrics/contactpose.py]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {equation_number: 11, unit: radians}
+    unknowns: [handling of zero-length bone segments]
+    assumptions: []
+    notes: "The reported Table 1 values are displayed in degrees."
+  - id: equation_12
+    kind: equation
+    title: Penetration depth and frame ratio
+    paper_section: "Appendix A.3"
+    pdf_page: 13
+    evidence_summary: "Maximum positive penetration depth and fraction of frames above 2 mm."
+    implementation_targets: [src/toporetarget/metrics/penetration.py]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {equation_number: 12, threshold_m: 0.002, unit: meters}
+    unknowns: [robot surface sample count, signed-distance implementation]
+    assumptions: [A_HAND_SURFACE_SAMPLES_001, A_SIGNED_DISTANCE_BACKEND_001]
+    notes: "The threshold delta is 2 mm in Appendix A.3."
+
+  - id: table_1
+    kind: table
+    title: Quantitative retargeting evaluation on ContactPose
+    paper_section: "Sec. 5.1"
+    pdf_page: 6
+    evidence_summary: "Five methods are compared on contact precision, alignment, penetration, frame ratio, and solve time."
+    implementation_targets: [docs/reproduction/table1.md, configs/paper/metrics.yaml]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {methods: [TopoRetarget, OmniRetarget, Mink, DexPilot, GeoRT], dataset: ContactPose}
+    unknowns: [target robot hand identity]
+    assumptions: [A_TABLE1_TARGET_HAND_001]
+    notes: "Table rows are transcribed in docs/reproduction/table1.md with units."
+  - id: table_2
+    kind: table
+    title: Downstream RL tracking performance
+    paper_section: "Sec. 5.2"
+    pdf_page: 7
+    evidence_summary: "Ho-cap and self-collected MoCap Pen-Spin each contain 32 clips and report success plus object pose error."
+    implementation_targets: [docs/reproduction/table2.md, configs/paper/metrics.yaml]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {clip_sets: ["Ho-cap 32 clips", "MoCap Pen-Spin 32 clips"], unit: mixed}
+    unknowns: [private Pen-Spin release and full training artifacts]
+    assumptions: [A_PRIVATE_PENSPIN_DATA_001]
+    notes: "Exact rows are transcribed in docs/reproduction/table2.md."
+  - id: table_3
+    kind: table
+    title: Selected retargeting parameter settings
+    paper_section: "Appendix A.1"
+    pdf_page: 12
+    evidence_summary: "Locked retargeting parameters used across experiments."
+    implementation_targets: [configs/paper/retarget.yaml, docs/reproduction/table3.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {rows: 13, unit: mixed}
+    unknowns: [optimizer and convergence settings]
+    assumptions: [A_SOLVER_001, A_SOLVER_TERMINATION_001]
+    notes: "Every row is represented in configs/paper/retarget.yaml or explicitly null as not provided."
+  - id: table_4
+    kind: table
+    title: Reference-tracking MDP
+    paper_section: "Appendix A.5.4"
+    pdf_page: 14
+    evidence_summary: "Reward terms, scales, and termination criteria for the reference-tracking MDP."
+    implementation_targets: [configs/paper/rl.yaml, docs/reproduction/table4.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {reward_terms: 4, termination_rules: 5, unit: mixed}
+    unknowns: [tracked link list and axis point spatial offsets]
+    assumptions: [A_RL_TRACKED_LINKS_001, A_RL_AXIS_POINTS_001]
+    notes: "The Gaussian kernel and all displayed weights/scales are transcribed."
+  - id: table_5
+    kind: table
+    title: Domain randomization ranges
+    paper_section: "Appendix A.5.5"
+    pdf_page: 15
+    evidence_summary: "Observation noise, reset, startup, and rollout randomization ranges."
+    implementation_targets: [configs/paper/rl.yaml, docs/reproduction/table5.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {rows: 22, unit: mixed}
+    unknowns: [random-number generator and exact scheduling details]
+    assumptions: []
+    notes: "Ranges and sampling modes are retained verbatim in configuration."
+  - id: table_6
+    kind: table
+    title: PPO training and network hyperparameters
+    paper_section: "Appendix A.5.6"
+    pdf_page: 16
+    evidence_summary: "Simulation, rollout, network, and PPO optimization settings."
+    implementation_targets: [configs/paper/rl.yaml, docs/reproduction/table6.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {rows: 18, unit: mixed}
+    unknowns: [clip ratio, value coefficient, and gradient norm]
+    assumptions: [A_PPO_UNLISTED_PARAMS_001, A_RL_SIMULATOR_001]
+    notes: "The PPO entries are factual configuration only; no RL code is implemented in Stage 0/1."
+
+  - id: figure_1
+    kind: figure
+    title: End-to-end pipeline
+    paper_section: "Introduction"
+    pdf_page: 1
+    evidence_summary: "Human hand-object trajectories become robot references, simulation policies, and Wuji execution."
+    implementation_targets: [docs/reproduction/figure1.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {panels: 3, unit: figure}
+    unknowns: [original source assets]
+    assumptions: []
+    notes: "No synthetic figure is generated during this audit."
+  - id: figure_2
+    kind: figure
+    title: TopoRetarget method overview
+    paper_section: "Sec. 3"
+    pdf_page: 4
+    evidence_summary: "Notation, relative bone initialization, interaction graph, and Laplacian refinement."
+    implementation_targets: [docs/reproduction/figure2.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {panels: 1, unit: figure}
+    unknowns: [original diagram assets]
+    assumptions: []
+    notes: "No synthetic figure is generated during this audit."
+  - id: figure_3
+    kind: figure
+    title: Retargeting artifacts
+    paper_section: "Sec. 5.1"
+    pdf_page: 6
+    evidence_summary: "Failure modes include contact drift, invalid grasps, penetration, misplaced non-tip contacts, and unnatural joints."
+    implementation_targets: [docs/reproduction/figure3.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {unit: figure}
+    unknowns: [source clips and renderer]
+    assumptions: []
+    notes: "No synthetic figure is generated during this audit."
+  - id: figure_4
+    kind: figure
+    title: Wuji real-world transfer
+    paper_section: "Sec. 5.2"
+    pdf_page: 7
+    evidence_summary: "Interaction meshes and corresponding zero-shot cube reorientation and pen-spinning executions."
+    implementation_targets: [docs/reproduction/figure4.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: blocked_missing_asset
+    known_parameters: {tasks: [cube_reorientation, pen_spinning], unit: figure}
+    unknowns: [Wuji URDF, hardware calibration, videos]
+    assumptions: [A_WUJI_ASSET_001]
+    notes: "The current repository has no Wuji hardware assets."
+  - id: figure_5
+    kind: figure
+    title: Scale and embodiment augmentation
+    paper_section: "Sec. 5.3"
+    pdf_page: 8
+    evidence_summary: "The same demonstration is retargeted across object scales and hand embodiments without retuning."
+    implementation_targets: [docs/reproduction/figure5.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {unit: figure}
+    unknowns: [object meshes, hand assets, and source trajectories]
+    assumptions: [A_OBJECT_SAMPLING_METHOD_001]
+    notes: "No synthetic figure is generated during this audit."
+
+  - id: section_3_1
+    kind: section
+    title: Notation Definition
+    paper_section: "Sec. 3.1"
+    pdf_page: 3
+    evidence_summary: "Defines human keypoint/object inputs and robot base/joint trajectory outputs."
+    implementation_targets: [docs/PAPER_IMPLEMENTATION_SPEC.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {hand_keypoints: 21, unit: vertices}
+    unknowns: [coordinate-frame conventions]
+    assumptions: [A_HAND_FRAME_001, A_ROBOT_HAND_FRAME_001]
+    notes: "Inputs and outputs are documented but not loaded by code in this stage."
+  - id: section_3_2
+    kind: section
+    title: Relative Bone-Direction Initialization
+    paper_section: "Sec. 3.2"
+    pdf_page: 4
+    evidence_summary: "Equations 1-2 initialize robot configuration from relative finger articulation."
+    implementation_targets: [docs/PAPER_IMPLEMENTATION_SPEC.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {equations: [1, 2], unit: mixed}
+    unknowns: [source-to-robot keypoint mapping]
+    assumptions: [A_HAND_FRAME_001, A_FIRST_FRAME_INITIALIZATION_001]
+    notes: "Numerical optimization is deferred."
+  - id: section_3_3
+    kind: section
+    title: Interaction Mesh Construction
+    paper_section: "Sec. 3.3"
+    pdf_page: 4
+    evidence_summary: "Equations 3-4 define shared source/robot vertices and Delaunay edge connectivity."
+    implementation_targets: [docs/PAPER_IMPLEMENTATION_SPEC.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {hand_keypoints: 21, object_surface_samples: 50, unit: vertices}
+    unknowns: [sampling and Delaunay implementation]
+    assumptions: [A_OBJECT_SAMPLING_001, A_OBJECT_SAMPLING_METHOD_001, A_DELAUNAY_BACKEND_001, A_DELAUNAY_DEGENERACY_001]
+    notes: "Object surface samples are configured but no mesh code is present."
+  - id: section_3_4
+    kind: section
+    title: Topology-Aware Laplacian Optimization
+    paper_section: "Sec. 3.4"
+    pdf_page: 5
+    evidence_summary: "Equations 5-8 define source-derived weights, Laplacian loss, and constrained refinement."
+    implementation_targets: [docs/PAPER_IMPLEMENTATION_SPEC.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {equations: [5, 6, 7, 8], unit: mixed}
+    unknowns: [solver, collision query set, signed-distance backend]
+    assumptions: [A_SOLVER_001, A_SOLVER_TERMINATION_001, A_COLLISION_QUERY_SET_001, A_SIGNED_DISTANCE_BACKEND_001]
+    notes: "No silent solver choice is made."
+  - id: section_4_action
+    kind: section
+    title: RL action space
+    paper_section: "Sec. 4 and Appendix A.5.1"
+    pdf_page: 5
+    evidence_summary: "Residual joint-position action is added to the active reference pose."
+    implementation_targets: [docs/PAPER_IMPLEMENTATION_SPEC.md, configs/paper/rl.yaml]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {unit: joint_position_residual}
+    unknowns: [action residual limits]
+    assumptions: []
+    notes: "Residual limits are explicitly not provided."
+  - id: section_4_observation
+    kind: section
+    title: RL observation
+    paper_section: "Sec. 4 and Appendix A.5.2"
+    pdf_page: 5
+    evidence_summary: "Proprioception, object axis points, and current/lookahead reference features."
+    implementation_targets: [docs/PAPER_IMPLEMENTATION_SPEC.md, configs/paper/rl.yaml]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {lookahead_offsets: [1, 3, 5], unit: control_steps}
+    unknowns: [six axis-point spatial offsets and tracked link list]
+    assumptions: [A_RL_AXIS_POINTS_001, A_RL_TRACKED_LINKS_001]
+    notes: "Only the offsets stated in Appendix A.5.2 are locked."
+  - id: section_4_reference_initialization
+    kind: section
+    title: Reference-state initialization
+    paper_section: "Sec. 4 and Appendix A.5.3"
+    pdf_page: 5
+    evidence_summary: "Reset samples a reference frame uniformly and initializes hand/object state from it."
+    implementation_targets: [docs/PAPER_IMPLEMENTATION_SPEC.md, configs/paper/rl.yaml]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {sampling: uniform, unit: reference_frame}
+    unknowns: [optional reset-noise scheduling]
+    assumptions: []
+    notes: "The paper says reset noise may optionally be applied."
+  - id: section_4_reward
+    kind: section
+    title: RL reward
+    paper_section: "Sec. 4 and Appendix A.5.4"
+    pdf_page: 5
+    evidence_summary: "Object, link, joint, and action-smoothness terms use a Gaussian tracking kernel."
+    implementation_targets: [docs/PAPER_IMPLEMENTATION_SPEC.md, configs/paper/rl.yaml]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {object_weight: 8.0, link_weight: 1.0, joint_weight: 1.0, smoothness_weight: -0.01, unit: mixed}
+    unknowns: [zero-history action initialization]
+    assumptions: []
+    notes: "The exact reward expressions are transcribed in the implementation spec."
+  - id: section_4_domain_randomization
+    kind: section
+    title: RL domain randomization
+    paper_section: "Sec. 4 and Appendix A.5.5"
+    pdf_page: 6
+    evidence_summary: "Randomizes observations, reset states, physical properties, gains, inertias, and external disturbances."
+    implementation_targets: [docs/PAPER_IMPLEMENTATION_SPEC.md, configs/paper/rl.yaml]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {table: 5, unit: mixed}
+    unknowns: [simulator and physics solver]
+    assumptions: [A_RL_SIMULATOR_001]
+    notes: "Ranges are configuration facts, not an implementation claim."
+  - id: appendix_a_1
+    kind: appendix
+    title: Retargeting Details
+    paper_section: "Appendix A.1"
+    pdf_page: 12
+    evidence_summary: "Equation 9 and Table 3 disclose regularization and selected retargeting parameters."
+    implementation_targets: [configs/paper/retarget.yaml, docs/reproduction/table3.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {equation: 9, table: 3, unit: mixed}
+    unknowns: [solver details]
+    assumptions: [A_SOLVER_001, A_SOLVER_TERMINATION_001]
+    notes: "No undisclosed parameter is filled by guesswork."
+  - id: appendix_a_2
+    kind: appendix
+    title: OmniRetarget Baseline
+    paper_section: "Appendix A.2"
+    pdf_page: 12
+    evidence_summary: "Specifies hand-keypoint replacement, free wrist/base optimization, and full-hand collision handling."
+    implementation_targets: [configs/paper/baselines.yaml, docs/PAPER_IMPLEMENTATION_SPEC.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {citation_index: 27, unit: baseline}
+    unknowns: [baseline source and solver details]
+    assumptions: []
+    notes: "Adaptation is recorded without copying upstream code."
+  - id: appendix_a_3
+    kind: appendix
+    title: Retargeting Metrics
+    paper_section: "Appendix A.3"
+    pdf_page: 12
+    evidence_summary: "Equations 10-12 define attribution, contact metrics, and penetration metrics."
+    implementation_targets: [configs/paper/metrics.yaml, docs/PAPER_IMPLEMENTATION_SPEC.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {contact_bones: 20, link_contact_vertices: 10, penetration_threshold_m: 0.002, unit: mixed}
+    unknowns: [contact intensity threshold]
+    assumptions: [A_CONTACTPOSE_THRESHOLD_001, A_HAND_SURFACE_SAMPLES_001]
+    notes: "The threshold remains null because the paper does not provide it."
+  - id: appendix_a_4
+    kind: appendix
+    title: Experimental Setup
+    paper_section: "Appendix A.4"
+    pdf_page: 13
+    evidence_summary: "ContactPose uses 25/28 grasps; Ho-cap and private Pen-Spin each use 32 trajectories."
+    implementation_targets: [docs/PAPER_IMPLEMENTATION_SPEC.md, docs/reproduction/table2.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: blocked_missing_asset
+    known_parameters: {contactpose_evaluated_grasps: 25, hocap_clips: 32, pen_spin_clips: 32, unit: clips_or_grasps}
+    unknowns: [private Pen-Spin dataset and exact hardware assets]
+    assumptions: [A_PRIVATE_PENSPIN_DATA_001, A_WUJI_ASSET_001]
+    notes: "Public ContactPose is referenced but not imported into the repository."
+  - id: appendix_a_5
+    kind: appendix
+    title: RL Training
+    paper_section: "Appendix A.5"
+    pdf_page: 13
+    evidence_summary: "State/action, observation, reset sampling, reward, randomization, and PPO tables are fully audited."
+    implementation_targets: [configs/paper/rl.yaml, docs/PAPER_IMPLEMENTATION_SPEC.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {tables: [4, 5, 6], unit: mixed}
+    unknowns: [simulator, tracked links, PD gains, unlisted PPO values]
+    assumptions: [A_RL_TRACKED_LINKS_001, A_RL_AXIS_POINTS_001, A_RL_SIMULATOR_001, A_RL_PD_GAINS_001, A_PPO_UNLISTED_PARAMS_001]
+    notes: "Stage 1 records the setup but does not install or implement a simulator."
+  - id: limitation_virtual_contact
+    kind: limitation
+    title: Virtual contact limitation
+    paper_section: "Sec. 7"
+    pdf_page: 8
+    evidence_summary: "The method is less effective when intended source contacts do not touch the object surface."
+    implementation_targets: [docs/ASSUMPTIONS.md, docs/PAPER_IMPLEMENTATION_SPEC.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {unit: limitation}
+    unknowns: [source-motion preprocessing method]
+    assumptions: []
+    notes: "This is a paper limitation, not a missing implementation bug."
+  - id: dataset_contactpose
+    kind: dataset
+    title: ContactPose Dataset
+    paper_section: "Sec. 5.1 and Appendix A.4"
+    pdf_page: 6
+    evidence_summary: "Used for contact precision, alignment, and penetration evaluation on 25 of 28 grasps."
+    implementation_targets: [src/toporetarget/data/contactpose.py]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: blocked_missing_asset
+    known_parameters: {evaluated_grasps: 25, total_grasps: 28, unit: grasps}
+    unknowns: [local dataset layout and licensed annotations]
+    assumptions: [A_CONTACTPOSE_THRESHOLD_001]
+    notes: "Only read-only path discovery is implemented in Stage 0."
+  - id: dataset_hocap
+    kind: dataset
+    title: Ho-cap Dataset
+    paper_section: "Sec. 5.2 and Appendix A.4"
+    pdf_page: 7
+    evidence_summary: "32 single-hand interactions are used for downstream tracking evaluation."
+    implementation_targets: [src/toporetarget/data/hocap.py]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: blocked_missing_asset
+    known_parameters: {clips: 32, unit: clips}
+    unknowns: [sample IDs and release-specific layout]
+    assumptions: []
+    notes: "No raw dataset is copied or parsed."
+  - id: dataset_pen_spin
+    kind: dataset
+    title: MoCap Pen-Spin Dataset
+    paper_section: "Sec. 5.2 and Appendix A.4"
+    pdf_page: 7
+    evidence_summary: "32 self-collected demonstrations average 12.4 seconds and contain frequent contact transitions."
+    implementation_targets: [src/toporetarget/data/pen_spin.py]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: blocked_missing_asset
+    known_parameters: {clips: 32, average_duration_s: 12.4, unit: mixed}
+    unknowns: [private data access]
+    assumptions: [A_PRIVATE_PENSPIN_DATA_001]
+    notes: "No private data is assumed to be available."
+  - id: baseline_omniretarget
+    kind: baseline
+    title: OmniRetarget
+    paper_section: "Sec. 5 and Appendix A.2"
+    pdf_page: 12
+    evidence_summary: "Dexterous adaptation details are recorded for a fair future baseline."
+    implementation_targets: [configs/paper/baselines.yaml, src/toporetarget/baselines/omniretarget.py]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {citation_index: 27, unit: baseline}
+    unknowns: [upstream code version and solver configuration]
+    assumptions: []
+    notes: "No upstream repository is copied."
+  - id: baseline_mink
+    kind: baseline
+    title: Mink
+    paper_section: "Sec. 5"
+    pdf_page: 6
+    evidence_summary: "Mink is listed as a comparison method."
+    implementation_targets: [configs/paper/baselines.yaml, src/toporetarget/baselines/mink.py]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {citation_index: 30, unit: baseline}
+    unknowns: [task configuration]
+    assumptions: []
+    notes: "Exact adaptation details are not disclosed."
+  - id: baseline_dexpilot
+    kind: baseline
+    title: DexPilot
+    paper_section: "Sec. 5"
+    pdf_page: 6
+    evidence_summary: "DexPilot is listed as a comparison method."
+    implementation_targets: [configs/paper/baselines.yaml, src/toporetarget/baselines/dexpilot.py]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {citation_index: 8, unit: baseline}
+    unknowns: [task configuration]
+    assumptions: []
+    notes: "Exact adaptation details are not disclosed."
+  - id: baseline_geort
+    kind: baseline
+    title: GeoRT
+    paper_section: "Sec. 5"
+    pdf_page: 6
+    evidence_summary: "GeoRT is listed as a comparison method."
+    implementation_targets: [configs/paper/baselines.yaml, src/toporetarget/baselines/geort.py]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {citation_index: 13, unit: baseline}
+    unknowns: [checkpoint and preprocessing configuration]
+    assumptions: []
+    notes: "Exact adaptation details are not disclosed."
+  - id: fixed_parameter_claim
+    kind: claim
+    title: Fixed parameter setting across experiments
+    paper_section: "Sec. 3.4 and Sec. 5.3"
+    pdf_page: 5
+    evidence_summary: "The paper claims one fixed parameter setting rather than extensive per-case tuning."
+    implementation_targets: [configs/paper/retarget.yaml, docs/PAPER_FIDELITY.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {paper_locked: true, unit: claim}
+    unknowns: [undisclosed solver settings]
+    assumptions: [A_SOLVER_001, A_SOLVER_TERMINATION_001]
+    notes: "Only disclosed values are locked."
+  - id: zero_shot_wuji_claim
+    kind: claim
+    title: Zero-shot Wuji transfer
+    paper_section: "Abstract and Sec. 5.2"
+    pdf_page: 1
+    evidence_summary: "The paper reports cube reorientation and pen spinning transfer to Wuji Hand."
+    implementation_targets: [docs/reproduction/figure4.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: blocked_missing_asset
+    known_parameters: {tasks: [cube_reorientation, pen_spinning], unit: claim}
+    unknowns: [Wuji hardware and deployment details]
+    assumptions: [A_WUJI_ASSET_001]
+    notes: "The claim is recorded, not independently reproduced."
+  - id: object_scale_augmentation
+    kind: claim
+    title: Object-scale augmentation
+    paper_section: "Sec. 3.3 and Sec. 5.3"
+    pdf_page: 8
+    evidence_summary: "Object surface samples and graph are rebuilt for changed object scale without retuning."
+    implementation_targets: [docs/reproduction/figure5.md, docs/PAPER_IMPLEMENTATION_SPEC.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: specified_not_implemented
+    known_parameters: {per_case_retuning: false, unit: claim}
+    unknowns: [scale factors and evaluation assets]
+    assumptions: [A_OBJECT_SAMPLING_001, A_OBJECT_SAMPLING_METHOD_001]
+    notes: "The claim remains a future experiment target."
+  - id: hand_embodiment_augmentation
+    kind: claim
+    title: Hand-embodiment augmentation
+    paper_section: "Sec. 3.3 and Sec. 5.3"
+    pdf_page: 8
+    evidence_summary: "The formulation is described as transferable across MANO, Wuji, and Leap embodiments."
+    implementation_targets: [docs/reproduction/figure5.md, docs/PAPER_IMPLEMENTATION_SPEC.md]
+    test_targets: [tests/unit/test_paper_fidelity.py]
+    status: blocked_missing_asset
+    known_parameters: {embodiments: [MANO, Wuji, Leap], per_case_retuning: false, unit: claim}
+    unknowns: [robot assets and keypoint mappings]
+    assumptions: [A_ROBOT_HAND_FRAME_001, A_WUJI_ASSET_001]
+    notes: "Only local Arti-MANO asset import infrastructure exists in Stage 0."
+
+parameter_contract:
+  configs/paper/retarget.yaml:
+    num_object_surface_samples: {value: 50, source: paper}
+    lambda_interaction_mesh: {value: 500, source: paper}
+    distance_decay_kappa: {value: 30, source: paper}
+    lambda_warm_bone: {value: 1, source: paper}
+    lambda_refinement_bone: {value: 0.1, source: paper}
+    lambda_initial_temporal_smoothness: {value: 2.5, source: paper}
+    lambda_refinement_temporal_regularization: {value: 2.5, source: paper}
+    lambda_base_position: {value: 100, source: paper}
+    lambda_base_rotation: {value: 1, source: paper}
+    penetration_soft_tolerance_m: {value: 0.001, source: paper}
+    penetration_hard_bound_m: {value: 0.03, source: paper}
+    slack_penalty_weight: {value: 100000, source: paper}
+    optimizer: {source: not_provided}
+    max_iterations: {source: not_provided}
+    convergence_tolerance: {source: not_provided}
+    line_search: {source: not_provided}
+    delaunay_flags: {source: not_provided}
+    collision_sample_count: {source: not_provided}
+  configs/paper/metrics.yaml:
+    penetration_threshold_m: {value: 0.002, source: paper}
+    contact_link_attribution.contact_intensity_sigmoid_normalization: {value: true, source: paper}
+    contact_link_attribution.threshold: {source: not_provided}
+    contact_link_attribution.nearest_assignment_to_hand_bones: {value: 20, source: paper}
+    contact_link_attribution.link_contact_min_vertices: {value: 10, source: paper}
+  configs/paper/rl.yaml:
+    reference_lookahead_offsets: {value: [1, 3, 5], source: paper}
+    reward.object.weight: {value: 8.0, source: paper}
+    reward.object.sigma: {value: 0.04, source: paper}
+    reward.link_position.weight: {value: 1.0, source: paper}
+    reward.link_position.sigma: {value: 0.025, source: paper}
+    reward.joint_position.weight: {value: 1.0, source: paper}
+    reward.joint_position.sigma: {value: 0.1, source: paper}
+    reward.action_smoothness.weight: {value: -0.01, source: paper}
+    termination.timeout_seconds: {value: 20, source: paper}
+    termination.object_height_min_m: {value: 0.06, source: paper}
+    termination.object_linear_velocity_max_mps: {value: 10, source: paper}
+    termination.object_angular_velocity_max_radps: {value: 500, source: paper}
+    termination.object_position_error_max_m: {value: 0.05, source: paper}
+    termination.object_orientation_error_max_deg: {value: 45, source: paper}
+    termination.object_axis_point_error_max_m: {value: 0.05, source: paper}
+    ppo.parallel_environments: {value: 4096, source: paper}
+    ppo.simulation_step_s: {value: 0.01, source: paper}
+    ppo.decimation: {value: 5, source: paper}
+    ppo.control_frequency_hz: {value: 20, source: paper}
+    ppo.reference_frequency_hz: {value: 20, source: paper}
+    ppo.episode_length_s: {value: 20, source: paper}
+    ppo.episode_control_steps: {value: 400, source: paper}
+    ppo.rollout_control_steps: {value: 40, source: paper}
+    ppo.samples_per_iteration: {value: 163840, source: paper}
+    ppo.actor_hidden_layers: {value: [512, 256, 128], source: paper}
+    ppo.actor_activation: {value: ELU, source: paper}
+    ppo.critic_hidden_layers: {value: [512, 512, 256, 128], source: paper}
+    ppo.critic_activation: {value: ELU, source: paper}
+    ppo.observation_normalization: {value: true, source: paper}
+    ppo.action_distribution: {value: SoftplusGaussian, source: paper}
+    ppo.optimizer: {value: Adam, source: paper}
+    ppo.learning_rate: {value: 0.0001, source: paper}
+    ppo.ppo_epochs: {value: 4, source: paper}
+    ppo.minibatches: {value: 32, source: paper}
+    ppo.entropy_coefficient: {value: 0.001, source: paper}
+    ppo.gamma: {value: 0.99, source: paper}
+    ppo.gae_lambda: {value: 0.95, source: paper}
+    not_provided.ppo_clip_ratio: {source: not_provided}
+    not_provided.value_loss_coefficient: {source: not_provided}
+    not_provided.max_gradient_norm: {source: not_provided}
+    not_provided.axis_point_spatial_offsets: {source: not_provided}
+    not_provided.action_residual_limits: {source: not_provided}
+    not_provided.low_level_pd_gains: {source: not_provided}
+    not_provided.tracked_link_list: {source: not_provided}
+    not_provided.simulator_name: {source: not_provided}
+    not_provided.physics_solver_settings: {source: not_provided}
+

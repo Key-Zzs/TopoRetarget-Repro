@@ -1,0 +1,39 @@
+baselines:
+  OmniRetarget:
+    citation_index: 27
+    paper_adaptation_description:
+      - "Keep the interaction-mesh objective and object surface sampling."
+      - "Replace humanoid source keypoints with MediaPipe hand keypoints."
+      - "Do not fix the wrist; jointly optimize wrist/base and hand joints."
+      - "Apply collision handling to the full hand geometry."
+    expected_implementation_target: src/toporetarget/baselines/omniretarget.py
+    current_status: specified_not_implemented
+    unknown_configuration: [solver_details, collision_backend, full_hand_geometry_source]
+    external_dependency_status: external_reference_required
+    hand_adaptation:
+      media_pipe_keypoints_replace_humanoid_source_keypoints: true
+      wrist_fixed: false
+      wrist_base_jointly_optimized: true
+      collision_full_hand_geometry: true
+  Mink:
+    citation_index: 30
+    paper_adaptation_description: "Python inverse kinematics baseline; exact experiment configuration is not provided."
+    expected_implementation_target: src/toporetarget/baselines/mink.py
+    current_status: specified_not_implemented
+    unknown_configuration: [task_objectives, solver_settings, collision_settings]
+    external_dependency_status: external_reference_required
+  DexPilot:
+    citation_index: 8
+    paper_adaptation_description: "Task-space teleoperation baseline adapted to the same source references and object geometry."
+    expected_implementation_target: src/toporetarget/baselines/dexpilot.py
+    current_status: specified_not_implemented
+    unknown_configuration: [objective_weights, collision_settings, temporal_settings]
+    external_dependency_status: external_reference_required
+  GeoRT:
+    citation_index: 13
+    paper_adaptation_description: "Geometric retargeting baseline evaluated with the same human references and object geometry."
+    expected_implementation_target: src/toporetarget/baselines/geort.py
+    current_status: specified_not_implemented
+    unknown_configuration: [checkpoint, normalization, hand_mapping]
+    external_dependency_status: external_reference_required
+

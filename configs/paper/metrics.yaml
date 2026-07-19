@@ -1,0 +1,34 @@
+# ContactPose attribution and metrics from Sec. 5.1 and Appendix A.3 (PDF pp. 6, 12-13).
+contact_precision:
+  unit: m
+  source: "Appendix A.3, Equation 10"
+contact_alignment:
+  unit: rad
+  source: "Appendix A.3, Equation 11"
+maximum_penetration:
+  unit: m
+  source: "Appendix A.3, Equation 12"
+penetration_threshold_m: 0.002
+penetration_frame_ratio:
+  unit: fraction
+  source: "Appendix A.3, Equation 12"
+solve_time:
+  unit: ms_per_frame
+  source: "Sec. 5.1, Table 1"
+policy_success:
+  unit: fraction
+  source: "Sec. 5.2, Table 2"
+object_position_error:
+  unit: m
+  source: "Sec. 5.2, Table 2"
+object_rotation_error:
+  unit: rad
+  source: "Sec. 5.2, Table 2"
+
+contact_link_attribution:
+  contact_intensity_sigmoid_normalization: true
+  threshold: null
+  threshold_source: not_provided
+  nearest_assignment_to_hand_bones: 20
+  link_contact_min_vertices: 10
+
