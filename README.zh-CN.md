@@ -373,10 +373,23 @@ toporetarget geometry sample-robot --robot artimano_rh --pose neutral \
 toporetarget geometry probe-collision \
   --robot-samples .local/cache/geometry/robot_surface/artimano_rh.npz \
   --object-shape cube --report .local/reports/stage6/synthetic_collision_probe.json
+
+# 可视化固定的 50 个对象采样点及其 ID/法向。
+toporetarget geometry visualize-object \
+  --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/right_f000000_f000060.zarr \
+  --object-id cubemedium \
+  --samples .local/cache/geometry/object_surface/cubemedium_samples.npz \
+  --frame 0 \
+  --output .local/reports/stage6/object_samples_frame0_ids.png \
+  --show-ids --show-normals --show-object-frame --show-scene-frame
+
+# 将 --frame 改为 29 和 59，可生成 middle/last frame overlay。
 ```
 
-Debug visualization 包括 object first/middle/last overlay、SDF slice 和 RH/LH collision surface。
-详见 [OBJECT_GEOMETRY_AND_SAMPLING.md](docs/OBJECT_GEOMETRY_AND_SAMPLING.md)、
+对象 viewer 会显示固定的 50 个 sample ID 和法向；使用 `--frame 29`、`--frame 59` 可生成
+middle/last frame overlay，这些帧复用相同的 face+barycentric identity，只改变 object pose。
+其他 debug visualization 包括 SDF slice 和 RH/LH collision surface。详见
+[OBJECT_GEOMETRY_AND_SAMPLING.md](docs/OBJECT_GEOMETRY_AND_SAMPLING.md)、
 [SIGNED_DISTANCE_AND_COLLISION_QUERIES.md](docs/SIGNED_DISTANCE_AND_COLLISION_QUERIES.md) 和
 [Stage 6 报告](docs/stages/STAGE_6_OBJECT_GEOMETRY_SDF.md)。
 

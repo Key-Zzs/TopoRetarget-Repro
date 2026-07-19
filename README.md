@@ -383,10 +383,23 @@ toporetarget geometry sample-robot --robot artimano_rh --pose neutral \
 toporetarget geometry probe-collision \
   --robot-samples .local/cache/geometry/robot_surface/artimano_rh.npz \
   --object-shape cube --report .local/reports/stage6/synthetic_collision_probe.json
+
+# Visualize the fixed 50 object samples and their IDs/normals.
+toporetarget geometry visualize-object \
+  --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/right_f000000_f000060.zarr \
+  --object-id cubemedium \
+  --samples .local/cache/geometry/object_surface/cubemedium_samples.npz \
+  --frame 0 \
+  --output .local/reports/stage6/object_samples_frame0_ids.png \
+  --show-ids --show-normals --show-object-frame --show-scene-frame
+
+# Repeat with --frame 29 and --frame 59 for middle/last-frame overlays.
 ```
 
-Debug visualizations include object first/middle/last overlays, SDF slices, and RH/LH collision
-surface samples. See [`OBJECT_GEOMETRY_AND_SAMPLING.md`](docs/OBJECT_GEOMETRY_AND_SAMPLING.md),
+The object viewer displays the fixed 50 sample IDs and normals; `--frame 29` and `--frame 59`
+produce middle/last-frame overlays using the same face+barycentric identities and only changing
+the object pose. Other debug visualizations include SDF slices and RH/LH collision surface samples.
+See [`OBJECT_GEOMETRY_AND_SAMPLING.md`](docs/OBJECT_GEOMETRY_AND_SAMPLING.md),
 [`SIGNED_DISTANCE_AND_COLLISION_QUERIES.md`](docs/SIGNED_DISTANCE_AND_COLLISION_QUERIES.md), and
 [`stages/STAGE_6_OBJECT_GEOMETRY_SDF.md`](docs/stages/STAGE_6_OBJECT_GEOMETRY_SDF.md).
 
