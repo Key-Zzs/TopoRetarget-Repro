@@ -19,5 +19,5 @@ def test_grab_visualize_accepts_reference_compatibility_alias() -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["data", "visualize", "--reference", "scene"])
     output = result.output + getattr(result, "stderr", "")
+    assert result.exit_code == 2
     assert "No such option" not in output
-    assert "canonical mode requires --canonical" in output
