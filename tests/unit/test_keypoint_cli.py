@@ -13,3 +13,10 @@ def test_keypoint_cli_lists_layouts_profiles_and_help() -> None:
     assert profiles.exit_code == 0
     assert "mano_v1_2_smplx_to_mediapipe21" in profiles.stdout
     assert help_result.exit_code == 0
+
+
+def test_grab_visualize_accepts_reference_compatibility_alias() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["data", "visualize", "--reference", "scene"])
+    assert "No such option" not in result.output
+    assert "canonical mode requires --canonical" in result.output

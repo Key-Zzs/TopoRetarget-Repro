@@ -31,7 +31,7 @@ Example:
 toporetarget data visualize --dataset grab --index .local/index/grab \
   --sequence s7/cubemedium_inspect_1 \
   --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/both_f000000_f000060.zarr \
-  --mode canonical --reference scene --show-mesh --show-contacts \
+  --mode canonical --reference-frame scene --show-mesh --show-contacts \
   --start-frame 0 --end-frame 60 --output .local/reports/stage5/canonical_first.png
 
 toporetarget data visualize --dataset grab --index .local/index/grab \
@@ -48,6 +48,9 @@ is installed, and MP4 output gives a clear ffmpeg error when ffmpeg is unavailab
 Large native meshes remain unchanged in the canonical data but use a deterministic viewer-only
 point cap when polygon rendering would make the GUI impractical; this display cap is never written
 to cache or used by validation.
+
+`--reference-frame` is the documented spelling. `--reference` remains an accepted compatibility
+alias.
 
 The interactive smoke test uses a deterministic synthetic sequence to exercise construction,
 callbacks, slider movement, play/pause, reference changes, visibility toggles, stable artist

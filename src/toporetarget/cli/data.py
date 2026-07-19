@@ -565,7 +565,12 @@ def visualize_dataset(
     canonical: Path | None = typer.Option(None, "--canonical"),
     mode: str = typer.Option("canonical", "--mode", help="raw, canonical, or compare"),
     layout: str = typer.Option("overlay", "--layout"),
-    reference_frame: str = typer.Option("scene", "--reference-frame"),
+    reference_frame: str = typer.Option(
+        "scene",
+        "--reference-frame",
+        "--reference",
+        help="scene, object, right-wrist, or left-wrist",
+    ),
     frame: int = typer.Option(0, "--frame", min=0),
     start_frame: int = typer.Option(0, "--start-frame", min=0),
     end_frame: int | None = typer.Option(None, "--end-frame", min=1),
