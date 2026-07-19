@@ -128,6 +128,9 @@ class KeypointTrack:
     valid: np.ndarray | None = None
     semantic_names: list[str] | None = None
     confidence: np.ndarray | None = None
+    frame_name: str = "S"
+    units: str = "m"
+    provenance: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.positions_scene = _array(self.positions_scene, dtype=np.float64)
@@ -353,6 +356,8 @@ class HOISequence:
                         len(track.semantic_names) == track.positions_scene.shape[1],
                         f"{prefix_k}.semantic_names length mismatch",
                     )
+                check(bool(track.frame_name), f"{prefix_k}.frame_name must be explicit")
+                check(track.units == "m", f"{prefix_k}.units must be 'm'")
 
         for obj in self.rigid_objects:
             prefix = f"object[{obj.object_id}]"

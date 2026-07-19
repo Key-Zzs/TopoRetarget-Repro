@@ -10,6 +10,11 @@ trajectory $q^o_{1:N}$, and an object mesh $M$. The output is a robot base-pose 
 $q^{base}_{1:N}$ and robot joint trajectory $q^\theta_{1:N}$. Exact source/robot frame conventions
 remain assumptions `A_HAND_FRAME_001` and `A_ROBOT_HAND_FRAME_001`.
 
+The repository now has a bounded source-hand adapter before this paper input boundary:
+`mano16_smplx`/MANO geometry → explicit `mediapipe21` semantics. It preserves scene-frame data and
+records `A_MANO_MEDIAPIPE_SEMANTICS_001`, `A_MANO_FINGERTIP_VERTICES_001`, and the mapping-profile
+hash. This adapter is repository infrastructure, not a conversion method disclosed by the paper.
+
 ## Initialization
 
 For each non-terminal finger keypoint, form a unit bone direction in each wrist-centered hand
@@ -84,7 +89,7 @@ and baseline dependencies are listed in `PAPER_FIDELITY.yaml` and the reproducti
 
 ## Limitations and extension boundary
 
-The paper reports weaker handling of virtual contacts. MANO loading, dataset adapters, Delaunay,
-SDF, optimization, RL/PPO, baseline code, and non-paper extensions are intentionally outside
-Stage 0/1. No module in this repository pretends that those algorithms are already implemented.
-
+The paper reports weaker handling of virtual contacts. MANO-to-MediaPipe21 source adaptation is
+implemented only as the bounded Stage 3 adapter. Arti-MANO, robot mapping/FK, Delaunay, SDF,
+optimization, RL/PPO, baseline code, and non-paper extensions remain intentionally outside Stage 3.
+No module in this repository pretends that those algorithms are already implemented.

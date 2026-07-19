@@ -6,6 +6,9 @@ Each identifier is referenced from `docs/PAPER_FIDELITY.yaml` where it affects t
 | ID | Category | Impact | Provisional handling | Evidence | Status | Resolution criteria |
 | --- | --- | --- | --- | --- | --- | --- |
 | A_HAND_FRAME_001 | coordinate convention | P0 | Keep frame conversion blocked; document wrist-centered wording only. | Sec. 3.2, Eq. 1 | pending_author_confirmation | Author-provided source wrist-centered frame definition. |
+| A_MANO_MEDIAPIPE_SEMANTICS_001 | source-hand adapter | P1 | Map audited MANO named joints to MediaPipe-style names, including thumb CMC/MCP/IP as an explicit semantic approximation. | Stage 3 MANO layout/profile audit | implemented_with_assumptions | Author/source-data documentation of the intended MANO-to-MediaPipe joint semantics. |
+| A_MANO_FINGERTIP_VERTICES_001 | source-hand adapter | P1 | Use installed-smplx MANO tip anchors 744/320/443/554/671 for the audited 778-vertex model; retain differing ManipTrans candidates in the audit. | `smplx.vertex_ids`, ManipTrans `grab_dataset_dexhand.py`, neutral/real local geometry checks | implemented_with_assumptions | Confirm the intended MANO topology and fingertip-anchor profile for every model release. |
+| A_MANO_BACKEND_LAYOUT_001 | source-hand adapter | P1 | Treat current SMPL-X output as audited `mano16_smplx`; do not infer semantics from shape alone. | Stage 2B cache and installed SMPL-X/MANO source inspection | implemented_with_assumptions | Public named joint-order contract for the backend output. |
 | A_ROBOT_HAND_FRAME_001 | coordinate convention | P0 | Keep robot-frame mapping blocked. | Sec. 3.1-3.2 | pending_author_confirmation | Author-provided robot wrist/base frame convention. |
 | A_BASE_PARAMETERIZATION_001 | optimization variable | P1 | Do not choose Euler, axis-angle, or quaternion. | Appendix A.1, Eq. 9 | pending_author_confirmation | Exact `q_base` rotation coordinates and constraints. |
 | A_FIRST_FRAME_INITIALIZATION_001 | initialization | P1 | Require an explicit first-frame seed before implementation. | Sec. 3.2, Eq. 2 | pending_author_confirmation | First-frame warm-start rule or released code. |
@@ -28,4 +31,3 @@ Each identifier is referenced from `docs/PAPER_FIDELITY.yaml` where it affects t
 | A_PPO_UNLISTED_PARAMS_001 | RL optimization | P1 | Keep clip/value/gradient values null. | Appendix A.5.6 | not_provided | Full PPO configuration or released training code. |
 | A_PRIVATE_PENSPIN_DATA_001 | dataset | P0 | Treat self-collected Pen-Spin data as unavailable. | Appendix A.4 | blocked | Author release or access procedure for 32 clips. |
 | A_WUJI_ASSET_001 | hardware | P0 | Record transfer claim; do not claim hardware reproduction. | Sec. 5.2, Fig. 4 | blocked_missing_asset | Wuji URDF, calibration, controller, and deployment assets. |
-

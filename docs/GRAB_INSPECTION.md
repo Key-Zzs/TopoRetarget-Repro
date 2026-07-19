@@ -82,3 +82,8 @@ hand vertex/keypoint, wrist translation, object translation/world-vertex, and ti
 zero; maximum rotation error is approximately `1.71e-6` degrees, from floating-point SE(3)
 comparison. Source hash and mtime are unchanged. This remains a one-sequence, 60-frame inspection,
 not a full GRAB conversion or a claim that later retargeting stages are complete.
+
+Stage 3 consumes this Stage 2B cache as an immutable source and writes a separate cache with an
+explicit `mediapipe21` track. It does not overwrite the inspection cache or the GRAB NPZ. See
+[`MANO_TO_MEDIAPIPE21.md`](MANO_TO_MEDIAPIPE21.md) for the profile and
+`toporetarget keypoints convert` for the bounded conversion command.

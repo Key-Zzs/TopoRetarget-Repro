@@ -33,6 +33,7 @@ from toporetarget.data.schema import (
     RigidObjectTrack,
     SequenceMetadata,
 )
+from toporetarget.keypoints.registry import get_layout
 
 
 class GrabAdapterError(RuntimeError):
@@ -283,10 +284,14 @@ class GrabInspectionAdapter(HOIDatasetAdapter):
         keypoints: dict[str, KeypointTrack] = {}
         if render.joints_scene is not None:
             layout = render.keypoint_layout or "mano_native"
+            semantic_names = None
+            if layout in {"mano16_smplx", "mano16"}:
+                semantic_names = list(get_layout("mano16_smplx").semantic_names)
             keypoints[layout] = KeypointTrack(
                 render.joints_scene,
                 layout_name=layout,
                 valid=np.ones(render.joints_scene.shape[:2], dtype=bool),
+                semantic_names=semantic_names,
             )
         hand = HandTrack(
             hand_id=f"hand_{self.hand_side[0]}",

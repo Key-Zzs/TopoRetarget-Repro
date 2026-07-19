@@ -1,0 +1,58 @@
+name: mano16_smplx
+version: "1.0.0"
+description: The 16 MANO joints emitted by the installed smplx MANO backend and the legacy Stage 2B cache.
+aliases: [mano16]
+units: m
+coordinate_frame: scene
+wrist_index: 0
+names:
+  - wrist
+  - index_mcp
+  - index_pip
+  - index_dip
+  - middle_mcp
+  - middle_pip
+  - middle_dip
+  - pinky_mcp
+  - pinky_pip
+  - pinky_dip
+  - ring_mcp
+  - ring_pip
+  - ring_dip
+  - thumb_cmc
+  - thumb_mcp
+  - thumb_ip
+parents:
+  - null
+  - 0
+  - 1
+  - 2
+  - 0
+  - 4
+  - 5
+  - 0
+  - 7
+  - 8
+  - 0
+  - 10
+  - 11
+  - 0
+  - 13
+  - 14
+edges:
+  - [0, 1]
+  - [1, 2]
+  - [2, 3]
+  - [0, 4]
+  - [4, 5]
+  - [5, 6]
+  - [0, 7]
+  - [7, 8]
+  - [8, 9]
+  - [0, 10]
+  - [10, 11]
+  - [11, 12]
+  - [0, 13]
+  - [13, 14]
+  - [14, 15]
+fingertip_indices: []

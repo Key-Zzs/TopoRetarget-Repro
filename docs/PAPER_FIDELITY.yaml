@@ -647,6 +647,19 @@ items:
     unknowns: [robot assets and keypoint mappings]
     assumptions: [A_ROBOT_HAND_FRAME_001, A_WUJI_ASSET_001]
     notes: "Only local Arti-MANO asset import infrastructure exists in Stage 0."
+  - id: stage3_mano_mediapipe21_adapter
+    kind: repository_adapter
+    title: Explicit MANO to MediaPipe-style 21 source-hand adapter
+    paper_section: "Sec. 3.1 input boundary"
+    pdf_page: 3
+    evidence_summary: "The paper accepts MediaPipe-style 21 keypoints but does not disclose a MANO conversion module."
+    implementation_targets: [src/toporetarget/keypoints/mano_to_mediapipe.py, configs/keypoints/mappings/mano_v1_2_smplx_to_mediapipe21.yaml, docs/MANO_TO_MEDIAPIPE21.md]
+    test_targets: [tests/unit/test_mano_mediapipe_mapping.py, tests/integration/test_stage3_synthetic_conversion.py]
+    status: implemented_with_assumptions
+    known_parameters: {target_layout: mediapipe21, point_count: 21, source_frame: scene, unit: meters}
+    unknowns: [paper-author MANO conversion semantics, exact fingertip-anchor intent, final wrist-centered frame definition]
+    assumptions: [A_MANO_MEDIAPIPE_SEMANTICS_001, A_MANO_FINGERTIP_VERTICES_001, A_HAND_FRAME_001]
+    notes: "This is repository data-ingestion infrastructure, not a paper method module; Equations 1-9 and robot mapping remain unimplemented."
 
 parameter_contract:
   configs/paper/retarget.yaml:
@@ -721,4 +734,3 @@ parameter_contract:
     not_provided.tracked_link_list: {source: not_provided}
     not_provided.simulator_name: {source: not_provided}
     not_provided.physics_solver_settings: {source: not_provided}
-

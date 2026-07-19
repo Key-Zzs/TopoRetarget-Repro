@@ -1,0 +1,77 @@
+profile_id: mano_v1_2_smplx_to_mediapipe21
+version: "1.0.0"
+source_model: MANO
+source_model_version: v1.2
+expected_vertex_count: 778
+source_joint_layout: mano16_smplx
+target_layout: mediapipe21
+mapping_mode: joint_map_plus_tip_vertices
+joint_mapping:
+  wrist: wrist
+  thumb_cmc: thumb_cmc
+  thumb_mcp: thumb_mcp
+  thumb_ip: thumb_ip
+  index_mcp: index_mcp
+  index_pip: index_pip
+  index_dip: index_dip
+  middle_mcp: middle_mcp
+  middle_pip: middle_pip
+  middle_dip: middle_dip
+  ring_mcp: ring_mcp
+  ring_pip: ring_pip
+  ring_dip: ring_dip
+  pinky_mcp: pinky_mcp
+  pinky_pip: pinky_pip
+  pinky_dip: pinky_dip
+fingertip_mapping:
+  thumb_tip:
+    source_type: vertex
+    vertex_index: 744
+    source_evidence: installed smplx 0.1.28 smplx.vertex_ids VERTEX_IDS[mano][thumb]
+    compatible_topology: MANO v1.2, 778 vertices, current model hash audited locally
+    side_applicability: left and right with their corresponding MANO model file
+    verification_status: selected_after_neutral_and_real_clip_audit
+  index_tip:
+    source_type: vertex
+    vertex_index: 320
+    source_evidence: installed smplx 0.1.28 smplx.vertex_ids VERTEX_IDS[mano][index]
+    compatible_topology: MANO v1.2, 778 vertices, current model hash audited locally
+    side_applicability: left and right with their corresponding MANO model file
+    verification_status: selected_after_neutral_and_real_clip_audit
+  middle_tip:
+    source_type: vertex
+    vertex_index: 443
+    source_evidence: installed smplx 0.1.28 smplx.vertex_ids VERTEX_IDS[mano][middle]
+    compatible_topology: MANO v1.2, 778 vertices, current model hash audited locally
+    side_applicability: left and right with their corresponding MANO model file
+    verification_status: selected_after_neutral_and_real_clip_audit
+  ring_tip:
+    source_type: vertex
+    vertex_index: 554
+    source_evidence: installed smplx 0.1.28 smplx.vertex_ids VERTEX_IDS[mano][ring]
+    compatible_topology: MANO v1.2, 778 vertices, current model hash audited locally
+    side_applicability: left and right with their corresponding MANO model file
+    verification_status: selected_after_neutral_and_real_clip_audit
+  pinky_tip:
+    source_type: vertex
+    vertex_index: 671
+    source_evidence: installed smplx 0.1.28 smplx.vertex_ids VERTEX_IDS[mano][pinky]
+    compatible_topology: MANO v1.2, 778 vertices, current model hash audited locally
+    side_applicability: left and right with their corresponding MANO model file
+    verification_status: selected_after_neutral_and_real_clip_audit
+semantic_notes:
+  - MANO thumb_cmc/mcp/ip names are a semantic approximation of the MediaPipe thumb chain.
+  - The target layout is MediaPipe-style semantics only; it is not detector output.
+assumptions:
+  - A_MANO_MEDIAPIPE_SEMANTICS_001
+  - A_MANO_FINGERTIP_VERTICES_001
+  - A_HAND_FRAME_001
+provenance:
+  installed_backend: smplx 0.1.28
+  current_backend_source: src/toporetarget/data/mano_backends/smplx_backend.py
+  installed_tip_source: smplx.vertex_ids.VERTEX_IDS[mano]
+  candidate_maniptrans_tip_source: main/dataset/grab_dataset_dexhand.py
+verification:
+  status: local_real_grab_and_synthetic_geometry_verified
+  external_ground_truth: false
+  notes: Selected anchors are current smplx anchors; ManipTrans candidates remain in the local audit report because they differ.

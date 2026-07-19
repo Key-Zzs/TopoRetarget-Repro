@@ -39,3 +39,21 @@
 
 This log does not claim that numerical results, private Pen-Spin data, Wuji hardware transfer, or
 later algorithm stages have been reproduced.
+
+## 2026-07-19 — Stage 3
+
+- Audited the existing real `cubemedium_inspect_1` right-hand cache: `mano16`, `[60,16,3]`,
+  778 vertices, 120 FPS, and the Stage 2B MANO translation-based wrist pose.
+- Compared installed `smplx` fingertip candidates with the local ManipTrans candidates on MANO
+  neutral geometry and the real clip. Selected installed-smplx anchors in a versioned profile and
+  retained the discrepancy in `.local/reports/stage3/mapping_sources.json`.
+- Implemented explicit layout/profile registries, semantic joint conversion, dense/sparse regressor
+  conversion, scene/wrist APIs, CLI validation, reports, and scene/wrist visualizations.
+- Converted the bounded real clip to `.local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr`.
+  Direct copy metrics are zero; round-trip is floating-point precision; source/object/timing
+  integrity is preserved. MANO joint 0 versus the stored wrist-pose origin is `0.08606943 m` and
+  remains documented under `A_HAND_FRAME_001`.
+- Repeated the adapter on the real left-hand `[0,10)` clip and wrote
+  `.local/cache/hoi/grab/cubemedium_inspect_1_lh_f000000_f000010_mp21.zarr`; direct/tip checks are
+  zero and scene↔wrist round-trip is floating-point precision. Added and smoke-tested the local
+  interactive viewer with all display toggles and no coordinate mutation.

@@ -37,6 +37,13 @@ vertices remain in `O` and object pose is stored as `T^S_O`. This preserves wris
 scene/object motion, and bimanual relationships. A wrist-relative-only cache would lose those
 relationships and cannot be reconstructed without the original wrist pose.
 
+For Stage 3, `mediapipe21.positions_scene` is the primary `[T,21,3]` track. A derived wrist view is
+computed as `inverse(T^S_H) @ P_scene`, and the inverse operation reconstructs scene points at
+floating-point precision. The current Stage 2B `T^S_H` origin is preserved; for the audited real
+GRAB clip its stored MANO translation is about `0.08606943 m` from MANO joint 0. This is reported
+as `A_HAND_FRAME_001` and is not silently corrected by moving the wrist pose or recentering the
+scene track.
+
 Single-hand sequences still retain `S`; the interface does not force them into a right-wrist frame.
 `native_fps` is metadata only. Timestamps are seconds and are the temporal source of truth; no
 interpolation, frame-rate conversion, or display-stride mutation is performed.

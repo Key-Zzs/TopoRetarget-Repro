@@ -13,9 +13,13 @@ GRAB → Arti-MANO，后续目标是支持多种 HOI 数据集以及任意 URDF/
   指标和无头比较可视化已实现。
 - 阶段 2B 的有界真实数据验收已完成：使用用户提供的 MANO 模型和可选 SMPL-X backend 重建
   一条 GRAB 序列，转换为 canonical Zarr，完成 raw-to-canonical 对比，并生成首/中/末帧可视化。
+- 阶段 3 的有界 source-hand adapter 已完成：显式 MANO 语义到 MediaPipe 风格 21 点映射、版本化
+  profile、dense/sparse regressor 路径、scene/wrist 派生视图、静态 PNG 与本地交互 viewer、完整性
+  报告、合成测试和真实左右手 GRAB 验收均已实现。
 
-当前没有实现 TopoRetarget 重定向算法、机器人接口、MANO 到 MediaPipe 映射、数值优化、
-Delaunay/SDF、RL/PPO 或 baselines。阶段 2A 不进行全量数据集转换，也不依赖机器人模型。
+当前没有实现 TopoRetarget 重定向算法、Arti-MANO/机器人 FK、数值优化、Delaunay/SDF、RL/PPO
+或 baselines。阶段 3 是 source-hand adapter，不是机器人重定向，也不声称 MediaPipe detector
+accuracy；不进行全量数据集转换。
 
 有界 GRAB 读取器、真实验收命令和误差报告见 [`docs/GRAB_INSPECTION.md`](docs/GRAB_INSPECTION.md)。
 这是单条明确选定序列的 60 帧检查，不是全量数据集转换。
@@ -40,6 +44,10 @@ toporetarget --help
 toporetarget data --help
 toporetarget data make-synthetic --output .local/cache/hoi/synthetic_demo.zarr
 toporetarget data inspect --input .local/cache/hoi/synthetic_demo.zarr --frame 0
+toporetarget keypoints layouts
+toporetarget keypoints profiles
+toporetarget keypoints validate --input .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr --hand right --report .local/reports/stage3/mapping_validation.json
+toporetarget keypoints visualize --input .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr --hand right --layout mediapipe21 --view scene --start-frame 0 --end-frame 60 --show --show-source-layout --show-mesh --show-labels
 toporetarget doctor datasets --root "$REF2DEX_STORAGE_ROOT" --max-depth 4
 toporetarget assets import-artimano --source-root "$MANIPTRANS_ROOT" --destination .local/assets/artimano
 toporetarget doctor assets

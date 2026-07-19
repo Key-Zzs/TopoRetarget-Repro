@@ -16,10 +16,14 @@ dexterous hands.
 - Stage 2B complete for the bounded real-data acceptance: one GRAB sequence was reconstructed with
   the user-provided MANO models through the optional SMPL-X backend, converted to canonical Zarr,
   compared, and rendered at first/middle/last clip frames.
+- Stage 3 complete for the bounded source-hand adapter: explicit MANO semantic mapping to
+  MediaPipe-style 21 points, versioned profiles, dense/sparse regressor path, scene/wrist views,
+  integrity reports, static and interactive viewers, synthetic tests, and real right/left-hand
+  GRAB validation.
 
 This repository does not implement the TopoRetarget retargeting algorithm, robot interfaces,
-MANO-to-MediaPipe mapping, numerical optimization, Delaunay/SDF, RL/PPO, or baselines. Stage 2A
-does not convert a full dataset and has no robot dependency.
+Arti-MANO mapping/FK, numerical optimization, Delaunay/SDF, RL/PPO, or baselines. Stage 3 is a
+source-hand adapter and does not convert a full dataset or claim MediaPipe detector accuracy.
 
 The bounded GRAB reader, real acceptance command, and tolerance report are documented in
 [`docs/GRAB_INSPECTION.md`](docs/GRAB_INSPECTION.md). This is one explicit 60-frame inspection,
@@ -45,6 +49,11 @@ toporetarget --help
 toporetarget data --help
 toporetarget data make-synthetic --output .local/cache/hoi/synthetic_demo.zarr
 toporetarget data inspect --input .local/cache/hoi/synthetic_demo.zarr --frame 0
+toporetarget keypoints layouts
+toporetarget keypoints profiles
+toporetarget keypoints validate --input .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr --hand right --report .local/reports/stage3/mapping_validation.json
+toporetarget keypoints visualize --input .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr --hand right --view scene --frame 0 --show-source-layout --show-mesh --show-labels --output .local/reports/stage3/scene_mapping_first.png
+toporetarget keypoints visualize --input .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr --hand right --layout mediapipe21 --view scene --start-frame 0 --end-frame 60 --show --show-source-layout --show-mesh --show-labels
 toporetarget doctor datasets --root "$REF2DEX_STORAGE_ROOT" --max-depth 4
 toporetarget assets import-artimano --source-root "$MANIPTRANS_ROOT" --destination .local/assets/artimano
 toporetarget doctor assets

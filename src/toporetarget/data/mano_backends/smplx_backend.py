@@ -131,9 +131,9 @@ class SmplxManoBackend:
             None
             if joints_array is None
             else (
-                "mano21"
+                "mano21_smplx"
                 if joints_array.shape[1] == 21
-                else "mano16"
+                else "mano16_smplx"
                 if joints_array.shape[1] == 16
                 else "mano_native"
             )

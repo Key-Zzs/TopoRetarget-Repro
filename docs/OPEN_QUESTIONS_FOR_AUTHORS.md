@@ -6,14 +6,18 @@ The following questions are written as a reproducibility request. No author resp
 
 1. Could you provide the precise source and robot wrist-centered frame definitions and the
    source-to-robot MediaPipe keypoint mapping (A_HAND_FRAME_001, A_ROBOT_HAND_FRAME_001)?
-2. Which optimizer, variable parameterization, joint-limit implementation, termination criteria,
+2. Is there an intended MANO-to-MediaPipe21 semantic and fingertip-anchor profile, including the
+   MANO topology/model release? The current adapter records this as A_MANO_MEDIAPIPE_SEMANTICS_001
+   and A_MANO_FINGERTIP_VERTICES_001 because the paper accepts MediaPipe-style inputs but does not
+   disclose a MANO conversion.
+3. Which optimizer, variable parameterization, joint-limit implementation, termination criteria,
    line search, and collision-query set are used for Eq. 8 (A_SOLVER_001,
    A_SOLVER_TERMINATION_001, A_JOINT_LIMIT_001, A_COLLISION_QUERY_SET_001)?
-3. Which signed-distance implementation and gradient convention are used for penetration
+4. Which signed-distance implementation and gradient convention are used for penetration
    constraints (A_SIGNED_DISTANCE_BACKEND_001)?
-4. What simulator, version, physics solver, and actuator model were used for Tables 4–6
+5. What simulator, version, physics solver, and actuator model were used for Tables 4–6
    (A_RL_SIMULATOR_001)?
-5. Can the 32-clip MoCap Pen-Spin dataset and Wuji deployment assets/calibration be released or
+6. Can the 32-clip MoCap Pen-Spin dataset and Wuji deployment assets/calibration be released or
    accessed under a reproducible license (A_PRIVATE_PENSPIN_DATA_001, A_WUJI_ASSET_001)?
 
 ## P1 — affects numerical results
@@ -40,4 +44,3 @@ The following questions are written as a reproducibility request. No author resp
 1. Which exact source assets and rendering scripts generated Figures 1–5?
 2. Which release/version of each baseline was used, including Mink, OmniRetarget, DexPilot, and
    GeoRT?
-

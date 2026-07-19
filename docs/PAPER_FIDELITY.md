@@ -46,28 +46,37 @@ OmniRetarget dexterous adaptation follows Appendix A.2: MediaPipe keypoints repl
 keypoints, the wrist/base is optimized rather than fixed, and collision uses full hand geometry.
 No upstream repository is copied in this stage.
 
-## 8. Unpublished implementation details
+## 8. Stage 3 adapter boundary
+
+The paper accepts MediaPipe-style 21-point input but does not disclose a MANO-to-MediaPipe
+conversion module. Stage 3 therefore implements a repository-local, explicit source-hand adapter
+with assumptions: named MANO joints plus audited 778-vertex tip anchors become scene-frame
+`mediapipe21`; the original source track and all object/timestamp data remain available. This is
+tracked as `implemented_with_assumptions`, not as an implementation of Equations 1–9, interaction
+graphs, robot mapping, or retargeting optimization. See [`MANO_TO_MEDIAPIPE21.md`](MANO_TO_MEDIAPIPE21.md)
+and [`stages/STAGE_3_MANO_MEDIAPIPE21.md`](stages/STAGE_3_MANO_MEDIAPIPE21.md).
+
+## 9. Unpublished implementation details
 
 The solver, Delaunay backend/flags, SDF backend, first-frame seed, coordinate-frame details,
 ContactPose intensity threshold, robot surface sampling, tracked links, axis-point geometry,
 simulator/physics settings, low-level gains, and unlisted PPO values are explicitly registered in
 [`ASSUMPTIONS.md`](ASSUMPTIONS.md). Configuration leaves undisclosed values null.
 
-## 9. Current blockers
+## 10. Current blockers
 
 The private Pen-Spin data, Wuji deployment assets, target hand identity for Table 1, and several
 solver/geometry/RL details are unavailable from the paper. These blockers prevent result-level
 reproduction and are not silently resolved.
 
-## 10. Definition of method-complete
+## 11. Definition of method-complete
 
 Method-complete means all publicly specified method equations, configurations, constraints,
 metrics, and evaluation code are implemented and tested, with every remaining assumption
 explicitly resolved or marked as a deliberate extension. This repository is not method-complete.
 
-## 11. Definition of result-complete
+## 12. Definition of result-complete
 
 Result-complete additionally requires the same datasets, private trajectories, robot assets,
 hardware, simulator, seeds, and experimental conditions needed to reproduce the reported numbers.
 This repository is not result-complete.
-

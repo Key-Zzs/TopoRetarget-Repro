@@ -1,13 +1,13 @@
 # 路线图
 
 本项目当前完成阶段 0（仓库创建与架构搭建）、阶段 1（论文忠实度审计）、阶段 2A（统一
-HOI 数据接口）和阶段 2B 的有界真实 GRAB 检查。阶段 3–19 尚未开始，不能把规划内容描述为
-已实现算法。
+HOI 数据接口）、阶段 2B 的有界真实 GRAB 检查，以及阶段 3 的有界 MANO→MediaPipe-style
+21 关键点 source-hand adapter。阶段 4–19 尚未开始，不能把规划内容描述为已实现算法。
 
 长期阶段依次为：
 
 0. 仓库创建与架构搭建；1. 论文忠实度审计；2. canonical HOI schema 与坐标约定；3. MANO
-   到 MediaPipe 风格 21 点；4. Arti-MANO 适配器；5. GRAB 适配器；6. 物体表面采样、碰撞
+   到 MediaPipe 风格 21 点（有界完成，保留显式假设）；4. Arti-MANO 适配器；5. GRAB 适配器；6. 物体表面采样、碰撞
    几何与 SDF；7. 相对骨方向初始化；8. 共享交互图与 Laplacian 坐标；9. 带 slack 的受限
    优化；10. GRAB→Arti-MANO 端到端重定向；11. 指标与 ContactPose；12. OakInk、DexYCB、
    HO-Cap；13. ARCTIC、OakInk2、TACO；14. 任意灵巧手 URDF/MJCF 插件；15. baseline 与消融；

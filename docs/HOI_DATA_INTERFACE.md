@@ -21,9 +21,19 @@ It loads one explicitly selected sequence and does not provide a full-dataset co
 | `ArticulatedObjectTrack` | part meshes, part poses, parent/child structure, articulation metadata | one `ArticulatedPartTrack` per part | metres/radians |
 | `ContactTrack` | hand/object IDs, source representation, validity and optional labels/associations | adapter-defined arrays | source-defined |
 
-`layout_name` is explicit (`mano16`, `mano21`, `mediapipe21`, or `dataset_native`); no layout is
-silently reshaped or relabeled. Missing contacts are represented by an empty `contacts` list, not
-by fabricated zeros.
+`layout_name` is explicit (`mano16_smplx` with legacy alias `mano16`, `mediapipe21`, or a named
+dataset-native layout); no layout is silently reshaped or relabeled. `KeypointTrack` also records
+its frame, units, and conversion provenance. Missing contacts are represented by an empty
+`contacts` list, not by fabricated zeros.
+
+## Stage 3 target track
+
+The Stage 3 adapter adds `hands[*].keypoint_tracks["mediapipe21"]` with scene-frame primary data,
+`[T,21,3]` positions, metre units, fixed semantic names, and an explicit profile hash. It keeps
+the original MANO track and all object, mesh, wrist-pose, timestamp, FPS, parameter, and contact
+fields. Wrist-frame points are derived temporarily with the stored wrist pose; they are not a
+second canonical source of truth. `mediapipe21` describes semantic compatibility only and does
+not imply a MediaPipe detector dependency or prediction accuracy.
 
 Validation checks time dimensions, finite and strictly increasing timestamps, proper SE(3), metre
 mesh units, integer triangle faces, valid hand sides, and finite valid entries. Invalid masked
