@@ -129,11 +129,11 @@ def save_warm_start(
                 else:
                     group.create_array(name, data=data, chunks=chunks, overwrite=True)
             except AttributeError:  # zarr 2.x
-                create_dataset = getattr(group, "create_dataset")
+                legacy_group: Any = group
                 if chunks is None:
-                    create_dataset(name, data=data, overwrite=True)
+                    legacy_group.create_dataset(name, data=data, overwrite=True)
                 else:
-                    create_dataset(name, data=data, chunks=chunks, overwrite=True)
+                    legacy_group.create_dataset(name, data=data, chunks=chunks, overwrite=True)
         (temporary / "metadata.json").write_text(
             _json_metadata(trajectory.metadata), encoding="utf-8"
         )
