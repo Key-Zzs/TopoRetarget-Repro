@@ -27,6 +27,11 @@ The following questions are written as a reproducibility request. No author resp
    visual spheres participate in later collision queries (A_ROBOT_BASE_FRAME_001,
    A_ARTIMANO_COLLISION_COVERAGE_001)?
 
+9. What are the exact source and robot wrist-frame axes, and does “wrist-centered” remove only
+   translation or also the wrist rotation (A_BONE_DIRECTION_FRAME_001)?
+10. Which directed bone edges and adjacent pairs define $A_B$, and are wrist-to-MCP edges included
+    (A_BONE_PAIR_SET_001)?
+
 ## P1 — affects numerical results
 
 1. Are the 50 object samples drawn once per object, per sequence, or per frame, and which surface
@@ -38,8 +43,14 @@ The following questions are written as a reproducibility request. No author resp
    handled (A_DELAUNAY_BACKEND_001, A_DELAUNAY_DEGENERACY_001)?
 3. How is the first warm-start frame initialized, and how is `q_base` rotation parameterized
    (A_FIRST_FRAME_INITIALIZATION_001, A_BASE_PARAMETERIZATION_001)?
-4. What robot hand and asset version produced Table 1 (A_TABLE1_TARGET_HAND_001)?
-5. What are the exact ContactPose intensity threshold, robot surface sample count, six object
+4. For the displayed warm-start objective, should the base be optimized despite local-frame
+   non-observability, and how should the scene base seed be calibrated from the hand frames
+   (A_WARMSTART_BASE_OBSERVABILITY_001, A_BASE_SEED_ALIGNMENT_001)?
+5. Are raw joint radians, direct URDF bounds, native-frame temporal terms, and no $Δt$ normalization
+   intended for Eq. (2) (A_WARMSTART_COORDINATES_001, A_WARMSTART_JOINT_LIMITS_001,
+   A_WARMSTART_TIME_DISCRETIZATION_001)?
+6. What robot hand and asset version produced Table 1 (A_TABLE1_TARGET_HAND_001)?
+7. What are the exact ContactPose intensity threshold, robot surface sample count, six object
    axis-point construction, and tracked-link list (A_CONTACTPOSE_THRESHOLD_001,
    A_HAND_SURFACE_SAMPLES_001, A_RL_AXIS_POINTS_001, A_RL_TRACKED_LINKS_001)?
 

@@ -87,6 +87,13 @@ own rotation. Profiles include provenance, assumptions, and a stable profile has
 layout name, coordinate source, robot/side, profile ID/version/hash, URDF hash, and asset-manifest
 hash. The tensor-returning methods remain available for direct differentiable use.
 
+Stage 7 consumes `RobotHandModel.keypoints_base()` as differentiable
+MediaPipe-21 anchors, its 22 raw-radian `dof_order`, and its URDF lower/upper
+bounds. The canonical robot wrist frame is derived from those anchors with the
+same explicit frame profile as the source; it is not assumed to equal the URDF
+`palm` axes. The resulting base seed is produced after qpos optimization and is
+stored separately in the warm-start artifact.
+
 ## Geometry and extension
 
 Visual and collision geometry are separate instance lists. Each instance records the link, kind,

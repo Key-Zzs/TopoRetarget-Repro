@@ -9,9 +9,10 @@ conversion tools, reproducibility audits, and a staged path toward full dexterou
 
 The repository is intentionally transparent about scope: the current implementation reaches the
 canonical HOI interface, a bounded MANO-to-MediaPipe-style-21 source adapter, the Stage 4 generic
-robot-hand/Arti-MANO target kinematics interface, and the bounded Stage 5 GRAB dataset adapter. It
-does not yet claim to implement the paper's complete robot retargeting optimizer, RL pipeline, or
-reported experimental results.
+robot-hand/Arti-MANO target kinematics interface, the bounded Stage 5 GRAB dataset adapter, and a
+Stage 7 relative-bone-direction warm-start trajectory. Stage 7 is complete with explicit paper
+assumptions; it is not the paper's complete interaction-aware optimizer, RL pipeline, or reported
+experimental result.
 
 ## Overview
 
@@ -25,6 +26,8 @@ The main entry point is the `toporetarget` CLI. The code is organized around com
 - a lazy GRAB index, native-time/native-mesh single-sequence adapter, contact modes, validation,
   provenance, and raw/canonical comparison;
 - source/object/timestamp preservation reports and static or interactive geometry viewers;
+- relative bone-direction Eq. (1), sequential Eq. (2) qpos warm starts, base observability reports,
+  canonical-frame alignment, and independent `toporetarget.warm_start.v1` artifacts;
 - paper-fidelity auditing, assumptions tracking, and local Arti-MANO asset import support.
 
 External datasets, MANO/SMPL-X models, robot assets, and extraction caches are not distributed with
@@ -46,7 +49,7 @@ that stage; it does not imply full-dataset or result-level reproduction.
 | 4 | Arti-MANO robot adapter | Complete, with assumptions | Generic URDF/FK interface, explicit MediaPipe-21-compatible anchors, separate geometry inspection, RH/LH validation, Jacobian checks, and CLI pass; paper frame/mapping assumptions remain explicit. |
 | 5 | Full GRAB dataset adapter | Complete, bounded; fresh semantic closeout passed | Lazy index, native single-sequence/bimanual conversion, validation, provenance, raw/binary/official semantic contacts, and interactive HOI viewer; full-batch conversion remains out of scope. |
 | 6 | Object sampling, collision geometry, and SDF | Complete, bounded; assumptions explicit | Mesh audit, deterministic 50-point surface references, collision-only robot samples, SDF queries, probes, reports, visualizations, and bounded real-data acceptance pass; later interaction/optimization remains out of scope. |
-| 7 | Relative bone-direction initialization | TODO | Implement and test the paper's Eq. 1–2 initialization. |
+| 7 | Relative bone-direction initialization | Complete, with assumptions | 20-bone/15-pair Eq. 1, sequential bounded Eq. 2, frame audit, RH/LH acceptance, artifacts, validation, and visual diagnostics pass. |
 | 8 | Interaction graph and Laplacian coordinates | TODO | Implement and test the Eq. 3–7 graph/deformation terms. |
 | 9 | Constrained optimization with slack variables | TODO | Implement and test Eq. 8–9 constraints and optimization. |
 | 10 | GRAB → Arti-MANO end-to-end retargeting | TODO | Produce a reproducible robot reference trajectory. |
@@ -75,7 +78,7 @@ Chinese roadmap is [docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md).
 Install the complete environment for the currently implemented data and visualization workflows:
 
 ```bash
-python -m pip install -e ".[dev,cache,viz,grab,robot,geometry]"
+python -m pip install -e ".[dev,cache,viz,grab,robot,geometry,retarget]"
 ```
 
 For core schema/tests without Zarr, visualization, or GRAB support, `python -m pip install -e ".[dev]"`
@@ -110,6 +113,80 @@ toporetarget doctor paper
 
 The sections below are organized by complete user-facing capabilities rather than by development
 stage. Each section starts with the core scripts/commands and then gives optional diagnostics.
+
+### Generate and Validate Relative Bone-Direction Warm Starts
+
+Stage 7 consumes a canonical MediaPipe-21 cache and writes a separate bounded
+initialization artifact. It does not read Stage 6 samples or SDF values as an
+optimization target.
+
+```bash
+GRAB_CACHE=.local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr
+WARM_START=.local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr
+
+toporetarget retarget inspect-bones \
+  --canonical "$GRAB_CACHE" --hand right --frame 0 \
+  --frame-profile canonical_keypoint_wrist_v1 \
+  --bone-profile mediapipe21_full_finger_chain_v1 \
+  --json .local/reports/stage7/source_bone_features_right.json \
+  --csv .local/reports/stage7/source_bone_features_right.csv
+
+toporetarget retarget compare-frame-profiles \
+  --canonical "$GRAB_CACHE" --hand right --robot artimano_rh --frame 0 \
+  --report .local/reports/stage7/frame_profile_comparison.json
+
+toporetarget retarget warm-start \
+  --canonical "$GRAB_CACHE" --hand right --robot artimano_rh \
+  --start-frame 0 --end-frame 60 \
+  --frame-profile canonical_keypoint_wrist_v1 \
+  --bone-profile mediapipe21_full_finger_chain_v1 \
+  --solver-profile paper_repro_scipy_trf --output "$WARM_START"
+
+toporetarget retarget validate-warm-start \
+  --canonical "$GRAB_CACHE" --warm-start "$WARM_START" \
+  --report .local/reports/stage7/artimano_rh_validation.json \
+  --csv .local/reports/stage7/artimano_rh_validation.csv
+```
+
+For debugging, use `visualize-warm-start` with `--view scene` or
+`--view local-hand`, `--show-directions`, `--show-residuals`, and
+`--show-hand-frames`. See
+[`docs/RELATIVE_BONE_DIRECTION_INITIALIZATION.md`](docs/RELATIVE_BONE_DIRECTION_INITIALIZATION.md)
+and [`docs/WARM_START_OPTIMIZATION.md`](docs/WARM_START_OPTIMIZATION.md).
+
+The interactive viewer reuses the same scene/local layers and accepts the same display flags:
+
+```bash
+toporetarget retarget visualize-warm-start \
+  --canonical "$GRAB_CACHE" --warm-start "$WARM_START" \
+  --view scene --start-frame 0 --end-frame 60 --interactive \
+  --show-source-hand --show-robot-hand \
+  --show-source-skeleton --show-robot-skeleton \
+  --show-hand-frames --show-labels --show-residuals \
+  --show-object-context
+```
+
+For the static first/middle/last-frame diagnostics, change `--frame` and `--output` as follows:
+
+```bash
+# Scene overlay: source/robot keypoints, skeleton, frames, residuals, object context.
+toporetarget retarget visualize-warm-start \
+  --canonical "$GRAB_CACHE" --warm-start "$WARM_START" \
+  --view scene --frame 0 \
+  --show-hand-frames --show-labels --show-residuals --show-object-context \
+  --output .local/reports/stage7/scene_first.png
+
+# Local wrist-centered overlay with bone directions and adjacent features.
+toporetarget retarget visualize-warm-start \
+  --canonical "$GRAB_CACHE" --warm-start "$WARM_START" \
+  --view local-hand --frame 0 \
+  --show-directions --show-adjacent-features --show-labels --show-residuals \
+  --output .local/reports/stage7/local_first.png
+```
+
+Use `--frame 30` and `--frame 59` for middle/last frames. In the interactive window, all
+keypoint/skeleton/frame/label/residual fonts resize with the window; `--show-object-context` is
+display-only and does not enter the warm-start objective.
 
 ### 1. Synthetic canonical HOI workflow
 

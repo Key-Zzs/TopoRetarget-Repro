@@ -1,0 +1,13 @@
+profile_id: mediapipe21_full_finger_chain_v1
+version: "1.0.0"
+layout_name: mediapipe21
+include_wrist_to_mcp: true
+fingers:
+  thumb: [wrist, thumb_cmc, thumb_mcp, thumb_ip, thumb_tip]
+  index: [wrist, index_mcp, index_pip, index_dip, index_tip]
+  middle: [wrist, middle_mcp, middle_pip, middle_dip, middle_tip]
+  ring: [wrist, ring_mcp, ring_pip, ring_dip, ring_tip]
+  pinky: [wrist, pinky_mcp, pinky_pip, pinky_dip, pinky_tip]
+pairing: consecutive_within_finger
+assumptions: [A_BONE_PAIR_SET_001]
+notes: "Full directed finger chains: 20 bones and 15 adjacent pairs."

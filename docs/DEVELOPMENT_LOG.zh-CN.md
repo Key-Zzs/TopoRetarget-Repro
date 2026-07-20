@@ -124,7 +124,44 @@ Delaunay、Laplacian、slack 或优化。
 
 有界验收使用 `s7/cubemedium_inspect_1` 的 `[0,60)` 帧和本地 RH/LH 资产。报告/图片位于被忽略的
 `.local/reports/stage6/`，derived sample cache 位于 `.local/cache/geometry/`。source NPZ、mesh、
-canonical cache、MANO 和 Arti-MANO asset hash 未变化。Stage 7 仍未开始。
+canonical cache、MANO 和 Arti-MANO asset hash 未变化。Stage 7 已完成并保留显式假设；Stage 8 仍未开始。
+
+## Stage 7：相对骨方向 Warm Start（2026-07-20）
+
+编辑前先验证 Stage 6 closeout：提交为 `8c5b1c7`，index/worktree clean，中英文 Stage 6 文档已
+完成。Stage 7 复用现有 canonical `mediapipe21` scene track、Stage 4 可微 Arti-MANO FK/anchors，
+并写入独立的 warm-start Zarr artifact。优化不读取 Stage 6 object samples、SDF、Delaunay、
+Laplacian、碰撞查询或 PPO 模块。
+
+默认 frame profile 是 `canonical_keypoint_wrist_v1`：wrist 原点、middle-MCP longitudinal 轴、
+经过 Gram-Schmidt 的 index-minus-pinky lateral 轴，以及叉乘得到的第三轴由 source/robot 共同使用。
+translation-centered scene-axis profile 作为有界 observability 对比保留。两个 profile 的 strict
+模式均显式拒绝退化帧，并保留 RH/LH 语义顺序；不会把 GRAB stored wrist pose 静默当作 Arti-MANO
+palm frame。
+
+默认 bone profile 是五条完整手指链、20 根 directed bones、15 个同手指相邻 pair；phalange-only
+诊断 profile 是 15 根骨和 10 个 pair。单位方向和不再次归一化的相邻差分支持 batch 与 autograd。
+Eq. (1) 使用精确 sum，不是 mean、夹角 loss、绝对方向 loss 或骨长加权 loss。
+
+Eq. (2) 使用 raw 22-joint radians；`lambda_warm=1`、`lambda_smooth=2.5` 从 paper config 读取。
+第一帧用 neutral q 且不使用 temporal residual，后续帧只使用上一帧成功的 warm-start q。solver
+是 float64 Torch-autograd Jacobian + SciPy TRF，并直接使用 URDF bounds。artifact 自行计算 paper
+objective，不把 SciPy 的 half-cost 当作论文目标；strict 失败会报告 frame/status 并终止。
+
+local direction objective 使 base translation 不可观，默认 local profile 同时消除了 base rotation
+可观性。因此 solver 只优化 q_theta，同时记录 qpos Jacobian singular values/rank 和 synthetic base
+Jacobians。求解后使用显式的、非论文已公开的
+`T^S_B=T^S_Hs(T^B_Hr(q))^-1` 生成 base seed，并将对齐误差写入 artifact 和 validation report。
+
+有界真实验收使用 `s7/cubemedium_inspect_1`、`[0,60)`、native 120 FPS 和本地 Arti-MANO RH/LH 资产。
+RH 使用 `cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr`；LH 使用 Stage 5 已存在的
+`semantic_left_f000000_f000060.zarr`。两侧均生成 60 帧、22-D qpos 的
+`toporetarget.warm_start.v1`，solver 全部成功、逐帧 total objective 不增加、FK/base frame 对齐
+通过、source cache hash 匹配。artifact 和报告/图片位于被忽略的 `.local/`。
+
+新增测试覆盖 20/15 与 15/10 topology、RH/LH frame 语义、刚体不变性、translation-centered 诊断、
+strict 退化、精确 Eq. (1) sum、Torch float32/float64 autograd、Eq. (2) residual scaling、base
+不可观和 artifact round-trip。Stage 7 状态是 `implemented_with_assumptions`；Stage 8 仍未开始。
 
 ## 数据与本地资产
 

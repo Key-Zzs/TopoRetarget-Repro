@@ -141,7 +141,49 @@ final `Q_t`, Delaunay, Laplacian, slack, or optimization.
 Bounded acceptance used `s7/cubemedium_inspect_1` frames `[0,60)` and local RH/LH assets. Reports and
 images are under ignored `.local/reports/stage6/`; derived sample caches are under
 `.local/cache/geometry/`. Source NPZ, mesh, canonical cache, MANO, and Arti-MANO asset hashes remain
-unchanged. Stage 7 remains not started.
+unchanged. Stage 7 is now complete with explicit assumptions; Stage 8 remains not started.
+
+## Stage 7 — relative bone-direction warm starts (2026-07-20)
+
+Stage 6 closeout was verified before editing: commit `8c5b1c7`, clean index/worktree, and bilingual
+Stage 6 documentation complete. Stage 7 uses the existing canonical `mediapipe21` scene track, the
+Stage 4 differentiable Arti-MANO FK/anchors, and a separate warm-start Zarr artifact. It does not
+consume Stage 6 object samples, SDF values, Delaunay, Laplacian, collision-query, or PPO modules.
+
+The selected default frame profile is `canonical_keypoint_wrist_v1`. Its wrist origin, middle-MCP
+longitudinal axis, Gram-Schmidt index-minus-pinky lateral axis, and cross-product third axis are
+shared by source and robot. A translation-centered scene-axis profile is retained for a bounded
+observability comparison. Both profiles reject explicit degeneracies in strict mode and preserve
+RH/LH semantic ordering; stored GRAB wrist poses are not equated with the Arti-MANO palm frame.
+
+The default semantic bone profile has five full chains, 20 directed bones, and 15 consecutive
+within-finger pairs. A phalange-only diagnostic has 15 bones and 10 pairs. Unit directions and
+un-normalized adjacent differences are differentiable and batch-capable. Eq. (1) reports an exact
+sum, not a mean, angle loss, absolute-direction loss, or bone-length-weighted loss.
+
+Eq. (2) uses raw 22-joint radians. `lambda_warm=1` and `lambda_smooth=2.5` are read from the paper
+config. Frame zero starts at neutral q with no temporal residual; subsequent frames use only the
+previous successful warm-start q. SciPy TRF with direct URDF bounds and a Torch-autograd float64
+Jacobian is the explicit engineering solver. Paper objective values are recomputed instead of
+copying SciPy's half-cost. Strict failures stop with a frame/status message.
+
+The local direction objective makes base translation unobservable and, for the default local
+profile, removes base rotation observability as well. The implementation therefore optimizes q_theta
+only and records qpos Jacobian singular values/rank plus synthetic base Jacobians. After solving,
+the explicit non-paper base seed is `T^S_B=T^S_Hs(T^B_Hr(q))^-1`; alignment errors are stored in
+the artifact and validation report.
+
+The bounded real acceptance used `s7/cubemedium_inspect_1`, `[0,60)`, native 120 FPS, and local
+Arti-MANO RH/LH assets. RH input was `cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr`; LH used
+the existing Stage 5 semantic left-hand clip `semantic_left_f000000_f000060.zarr`. Both produced
+60-frame `toporetarget.warm_start.v1` artifacts with 22-D qpos, successful bound-constrained solves,
+non-increasing per-frame total objective, exact FK/base-frame alignment, and source-cache hash
+matches. The artifacts and report/images are under ignored `.local/` paths.
+
+Tests added coverage for 20/15 and 15/10 topology, RH/LH frame semantics, rigid invariance,
+translation-centered diagnostics, strict degeneracy, exact Eq. (1) sum, Torch float32/float64
+autograd, Eq. (2) residual scaling, base non-observability, and artifact round-trip. Stage 7 is
+`implemented_with_assumptions`; Stage 8 remains not started.
 
 ## Data and local assets
 

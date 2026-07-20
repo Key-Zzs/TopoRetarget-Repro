@@ -47,6 +47,11 @@ does not change mathematical frame handedness.
 joints 1–3. The legacy Stage 2B cache label `mano16` is an explicit alias for this audited
 source layout; it is not renamed to `mediapipe21`.
 
+Stage 7 reuses this semantic order without scattering integer indices. Its full
+finger-chain profile produces 20 directed edges and 15 consecutive within-finger
+pairs; the phalange-only profile produces 15 edges and 10 pairs for a bounded
+diagnostic comparison. Both are configured under `configs/retarget/bones/`.
+
 ## Configuration and extension
 
 Tracked definitions are in `configs/keypoints/layouts/mediapipe21.yaml` and

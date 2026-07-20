@@ -1,0 +1,13 @@
+profile_id: mediapipe21_phalange_only_diagnostic
+version: "1.0.0"
+layout_name: mediapipe21
+include_wrist_to_mcp: false
+fingers:
+  thumb: [thumb_cmc, thumb_mcp, thumb_ip, thumb_tip]
+  index: [index_mcp, index_pip, index_dip, index_tip]
+  middle: [middle_mcp, middle_pip, middle_dip, middle_tip]
+  ring: [ring_mcp, ring_pip, ring_dip, ring_tip]
+  pinky: [pinky_mcp, pinky_pip, pinky_dip, pinky_tip]
+pairing: consecutive_within_finger
+assumptions: [A_BONE_PAIR_SET_001]
+notes: "Diagnostic phalange-only interpretation: 15 bones and 10 adjacent pairs."

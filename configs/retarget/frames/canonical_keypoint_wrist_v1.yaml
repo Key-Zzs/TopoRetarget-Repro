@@ -1,0 +1,20 @@
+profile_id: canonical_keypoint_wrist_v1
+version: "1.0.0"
+strategy: canonical_keypoint_wrist
+layout_name: mediapipe21
+zero_length_threshold_m: 1.0e-10
+strict: true
+axes:
+  origin: wrist
+  longitudinal: wrist_to_middle_mcp
+  lateral: index_mcp_minus_pinky_mcp
+  right_handed_third_axis: lateral_cross_longitudinal
+  columns: [thumbward, forward, palm_normal]
+side_rule:
+  left: same_anatomical_semantics
+  right: same_anatomical_semantics
+assumptions: [A_HAND_FRAME_001, A_BONE_DIRECTION_FRAME_001]
+notes: >-
+  The axes are derived from the same semantic MediaPipe-21 points for source and
+  robot. This is an implementation assumption because the paper does not publish
+  the wrist-frame axes.

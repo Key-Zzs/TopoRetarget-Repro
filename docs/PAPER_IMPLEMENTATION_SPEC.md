@@ -32,6 +32,16 @@ $$\tilde q^r_t=\arg\min_q\;\lambda_{warm}E_{bone}(q)+\lambda_{smooth}\|q-\tilde 
 
 The first-frame seed, keypoint mapping, and optimizer are not provided.
 
+## Stage 7 implementation boundary
+
+The repository implements the Eq. (1)-Eq. (2) initialization as
+`toporetarget.retarget`. The default profile uses semantic full finger chains,
+local keypoint-derived frames, qpos-only optimization, neutral first-frame
+initialization, URDF bounds, native contiguous time, and a post-solver base seed.
+These details are assumptions, not paper-exact claims. The independent artifact
+schema is `toporetarget.warm_start.v1`; it is intended as input to a future
+interaction-aware stage.
+
 ## Interaction mesh
 
 At each frame, concatenate the 21 human/robot hand points with $N_o=50$ object surface samples:

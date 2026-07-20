@@ -9,7 +9,7 @@
 | 4 | Generic robot-hand kinematics and Arti-MANO target adapter | RobotHandSpec/Model, strict URDF parser, differentiable/reference FK, MediaPipe21 anchors, geometry inspection, RH/LH CLI and reports | Synthetic and both real Arti-MANO sides validate; assets remain unchanged; docs and fidelity record pass | complete (with explicit assumptions) |
 | 5 | GRAB dataset adapter | Lazy index, native single-sequence/bimanual adapter, contacts, validation, provenance, comparison, interactive viewer | Real right/both-hand clips convert at native time, raw/canonical checks pass, and no raw source is modified | complete (bounded); fresh semantic closeout passed |
 | 6 | Object surface sampling, collision geometry and SDF | Mesh audit, deterministic 50-point anchors, collision-only robot samples, closest-point/SDF backends, probes, reports, visualizations | Synthetic/default checks, bounded GRAB object, RH/LH Arti-MANO, source integrity, and fidelity pass; later graph/optimization remains out of scope | complete (bounded, with assumptions) |
-| 7 | Relative bone-direction initialization | Eq. 1-2 implementation | Initialization tests pass | not started |
+| 7 | Relative bone-direction initialization | Eq. 1-2 implementation, frame audit, sequential warm-start artifact | Public/default tests, bounded RH/LH real acceptance, validation, visualization, and fidelity pass | complete (with explicit assumptions) |
 | 8 | Shared interaction graph and Laplacian coordinates | Eq. 3-7 implementation | Graph/loss tests pass | not started |
 | 9 | Constrained final optimization with slack variables | Eq. 8-9 implementation | Constraint tests pass | not started |
 | 10 | GRAB → Arti-MANO end-to-end retargeting | Pipeline | Reproducible trajectory | not started |

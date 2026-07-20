@@ -4,7 +4,8 @@
 HOI 数据接口）、阶段 2B 的有界真实 GRAB 检查、阶段 3 的有界 MANO→MediaPipe-style
 21 关键点 source-hand adapter、阶段 4 的通用机器人手运动学接口与 Arti-MANO 目标手
 适配，以及阶段 5 的有界 GRAB dataset adapter（fresh semantic closeout 已通过）。阶段 6 已完成有界
-geometry foundation（保留显式假设）；阶段 7–19 尚未开始，不能把规划内容描述为已实现算法。
+geometry foundation（保留显式假设）；阶段 7 已完成有界相对骨方向 warm-start（保留显式假设）；
+阶段 8–19 尚未开始，不能把规划内容描述为已实现算法。
 
 长期阶段依次为：
 

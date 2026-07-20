@@ -65,3 +65,15 @@ temporal source of truth.
 GRAB contact labels are object-vertex labels in the source object mesh. The canonical contact track
 preserves those numeric labels, derives `binary = labels != 0`, and may attach the official
 `contact_ids` semantic mapping without changing geometry or frame conventions.
+
+## Stage 7 canonical hand frames
+
+Stage 7 does not reinterpret the stored GRAB `wrist_pose_scene` as an Arti-MANO
+palm frame. Its default `canonical_keypoint_wrist_v1` derives both source and
+robot hand frames from semantic MediaPipe-21 anchors: wrist origin, the
+wrist-to-middle-MCP longitudinal axis, the index-MCP-minus-pinky-MCP lateral
+axis after Gram-Schmidt, and their right-handed cross-product third axis. The
+transform columns are local axes in scene/base coordinates and row points map to
+local coordinates with `(p-origin) @ R`. The translation-centered scene-axes
+profile is diagnostic only. See `A_HAND_FRAME_001`, `A_ROBOT_HAND_FRAME_001`,
+and `A_BONE_DIRECTION_FRAME_001`.

@@ -15,7 +15,8 @@ baselines are not implemented in this stage.
 
 ## 3. Equation-to-code traceability
 
-Equations 1–2 map to future warm-start code, Equations 3–7 to future interaction-graph and
+Equations 1–2 map to `src/toporetarget/retarget/` and are implemented with explicit assumptions;
+Equations 3–7 remain future interaction-graph and
 Laplacian code, Equation 8 to future constrained refinement, Equation 9 to regularization, and
 Equations 10–12 to future ContactPose and penetration metrics. Each entry records its PDF page,
 known values, unknowns, assumptions, and future implementation/test targets in the YAML manifest.
@@ -79,7 +80,18 @@ foundation without adding an interaction graph. See
 [`ROBOT_HAND_INTERFACE.md`](ROBOT_HAND_INTERFACE.md), [`ARTIMANO_ADAPTER.md`](ARTIMANO_ADAPTER.md),
 and [`stages/STAGE_4_ARTIMANO_TARGET_HAND.md`](stages/STAGE_4_ARTIMANO_TARGET_HAND.md).
 
-## 10. Stage 6 geometry foundation
+## Stage 7 warm-start boundary
+
+Stage 7 implements the displayed Eq. (1) adjacent-direction residual and Eq. (2) sequential
+objective. Its assumptions are the 20-bone/15-pair semantic profile,
+`canonical_keypoint_wrist_v1`, raw 22-joint radians, neutral first frame, previous-frame temporal
+reference, direct URDF bounds, float64 SciPy TRF with Torch-autograd Jacobian, and a post-solver
+canonical-frame base seed. The local direction objective's base observability is measured rather
+than hidden. These choices are not presented as paper-exact facts. The independent artifact is
+`toporetarget.warm_start.v1`; it is an initialization output, not final retargeting. See
+[`stages/STAGE_7_BONE_DIRECTION_WARM_START.md`](stages/STAGE_7_BONE_DIRECTION_WARM_START.md).
+
+## 11. Stage 6 geometry foundation
 
 Stage 6 implements three traceable engineering foundations with explicit assumptions:
 

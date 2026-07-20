@@ -43,7 +43,7 @@ adapter，但尚未声称实现论文完整的机器人重定向优化器、RL p
 | 4 | Arti-MANO 机器人适配器 | Complete，有假设 | 通用 URDF/FK 接口、显式 MediaPipe-21-compatible 锚点、分离几何检查、左右手验收、Jacobian 检查和 CLI 通过；论文 frame/mapping 假设仍显式保留。 |
 | 5 | 完整 GRAB 数据集适配器 | Complete，有界；fresh semantic closeout 通过 | lazy index、原生时间/网格的单序列和双手转换、validation、provenance、raw/binary/官方 semantic contacts 与交互 HOI viewer；全量转换仍不在范围内。 |
 | 6 | 物体采样、碰撞几何与 SDF | Complete，有界；假设显式 | mesh audit、确定性 50 点表面参考、仅 collision 的机器人表面采样、SDF 查询、probe、报告、可视化和有界真实数据验收通过；后续交互/优化仍不在范围内。 |
-| 7 | 相对骨方向初始化 | TODO | 实现并测试论文 Eq. 1–2。 |
+| 7 | 相对骨方向初始化 | Complete，有假设 | 20-bone/15-pair Eq. 1、时序有界 Eq. 2、frame 审计、RH/LH 验收、artifact、验证和可视化通过。 |
 | 8 | 交互图与 Laplacian 坐标 | TODO | 实现并测试 Eq. 3–7 的图和变形项。 |
 | 9 | 带 slack 的受限优化 | TODO | 实现并测试 Eq. 8–9 的约束和优化。 |
 | 10 | GRAB→Arti-MANO 端到端重定向 | TODO | 生成可复现的机器人 reference trajectory。 |
@@ -72,7 +72,7 @@ adapter，但尚未声称实现论文完整的机器人重定向优化器、RL p
 安装当前数据和可视化 workflow 所需的完整环境：
 
 ```bash
-python -m pip install -e ".[dev,cache,viz,grab,robot,geometry]"
+python -m pip install -e ".[dev,cache,viz,grab,robot,geometry,retarget]"
 ```
 
 只运行 core schema/test 时，可使用 python -m pip install -e ".[dev]"。
@@ -105,6 +105,78 @@ toporetarget doctor paper
 
 以下按完整的用户功能组织，而不是按开发阶段组织。每节先给核心脚本，再给可选的
 debug/可视化命令。
+
+### 生成并验证相对骨方向 Warm Start
+
+Stage 7 读取 canonical MediaPipe-21 cache，并写入独立的初始化 artifact。
+优化目标不读取 Stage 6 surface samples 或 SDF。
+
+```bash
+GRAB_CACHE=.local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr
+WARM_START=.local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr
+
+toporetarget retarget inspect-bones \
+  --canonical "$GRAB_CACHE" --hand right --frame 0 \
+  --frame-profile canonical_keypoint_wrist_v1 \
+  --bone-profile mediapipe21_full_finger_chain_v1 \
+  --json .local/reports/stage7/source_bone_features_right.json \
+  --csv .local/reports/stage7/source_bone_features_right.csv
+
+toporetarget retarget compare-frame-profiles \
+  --canonical "$GRAB_CACHE" --hand right --robot artimano_rh --frame 0 \
+  --report .local/reports/stage7/frame_profile_comparison.json
+
+toporetarget retarget warm-start \
+  --canonical "$GRAB_CACHE" --hand right --robot artimano_rh \
+  --start-frame 0 --end-frame 60 \
+  --frame-profile canonical_keypoint_wrist_v1 \
+  --bone-profile mediapipe21_full_finger_chain_v1 \
+  --solver-profile paper_repro_scipy_trf --output "$WARM_START"
+
+toporetarget retarget validate-warm-start \
+  --canonical "$GRAB_CACHE" --warm-start "$WARM_START" \
+  --report .local/reports/stage7/artimano_rh_validation.json \
+  --csv .local/reports/stage7/artimano_rh_validation.csv
+```
+
+调试时可使用 `visualize-warm-start` 的 `--view scene` 或 `--view local-hand`，
+并打开 `--show-directions`、`--show-residuals`、`--show-hand-frames`。详细公式见
+[`docs/RELATIVE_BONE_DIRECTION_INITIALIZATION.md`](docs/RELATIVE_BONE_DIRECTION_INITIALIZATION.md)
+和 [`docs/WARM_START_OPTIMIZATION.md`](docs/WARM_START_OPTIMIZATION.md)。
+
+交互 viewer 现在复用相同的 scene/local 图层，也支持这些显示参数：
+
+```bash
+toporetarget retarget visualize-warm-start \
+  --canonical "$GRAB_CACHE" --warm-start "$WARM_START" \
+  --view scene --start-frame 0 --end-frame 60 --interactive \
+  --show-source-hand --show-robot-hand \
+  --show-source-skeleton --show-robot-skeleton \
+  --show-hand-frames --show-labels --show-residuals \
+  --show-object-context
+```
+
+如需生成 first/middle/last 静态诊断图，只需修改 `--frame` 和 `--output`：
+
+```bash
+# Scene overlay：source/robot keypoints、skeleton、frame、residual 和 object context。
+toporetarget retarget visualize-warm-start \
+  --canonical "$GRAB_CACHE" --warm-start "$WARM_START" \
+  --view scene --frame 0 \
+  --show-hand-frames --show-labels --show-residuals --show-object-context \
+  --output .local/reports/stage7/scene_first.png
+
+# Local wrist-centered overlay：骨方向和 adjacent features。
+toporetarget retarget visualize-warm-start \
+  --canonical "$GRAB_CACHE" --warm-start "$WARM_START" \
+  --view local-hand --frame 0 \
+  --show-directions --show-adjacent-features --show-labels --show-residuals \
+  --output .local/reports/stage7/local_first.png
+```
+
+将 `--frame` 改为 `30` 和 `59` 可生成 middle/last 图。交互窗口中的 keypoint、skeleton、
+frame、label、residual 字体会随窗口缩放；`--show-object-context` 只用于显示，不会进入
+warm-start 优化目标。
 
 ### 1. Synthetic canonical HOI
 

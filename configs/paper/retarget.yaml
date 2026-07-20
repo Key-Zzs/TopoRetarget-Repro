@@ -3,9 +3,11 @@ paper_locked: true
 num_object_surface_samples: 50
 lambda_interaction_mesh: 500
 distance_decay_kappa: 30
-lambda_warm_bone: 1
+lambda_warm: &lambda_warm 1
+lambda_warm_bone: *lambda_warm
 lambda_refinement_bone: 0.1
-lambda_initial_temporal_smoothness: 2.5
+lambda_smooth: &lambda_smooth 2.5
+lambda_initial_temporal_smoothness: *lambda_smooth
 lambda_refinement_temporal_regularization: 2.5
 lambda_base_position: 100
 lambda_base_rotation: 1
@@ -26,8 +28,10 @@ provenance:
   lambda_interaction_mesh: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: dimensionless}
   distance_decay_kappa: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: inverse_meters}
   lambda_warm_bone: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: dimensionless}
+  lambda_warm: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: dimensionless}
   lambda_refinement_bone: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: dimensionless}
   lambda_initial_temporal_smoothness: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: dimensionless}
+  lambda_smooth: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: dimensionless}
   lambda_refinement_temporal_regularization: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: dimensionless}
   lambda_base_position: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: dimensionless}
   lambda_base_rotation: {paper_section: "Appendix A.1", paper_page: 12, equation_or_table: "Table 3", unit: dimensionless}
@@ -40,4 +44,3 @@ provenance:
   line_search: {source: not_provided}
   delaunay_flags: {source: not_provided}
   collision_sample_count: {source: not_provided}
-

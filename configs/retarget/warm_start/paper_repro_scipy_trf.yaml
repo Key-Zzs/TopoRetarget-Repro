@@ -1,0 +1,16 @@
+profile_id: paper_repro_scipy_trf
+version: "1.0.0"
+backend: scipy.optimize.least_squares
+method: trf
+dtype: float64
+max_nfev: 250
+ftol: 1.0e-12
+xtol: 1.0e-12
+gtol: 1.0e-12
+jacobian_mode: torch_autograd
+sequential: true
+strict_failure_policy: fail_fast
+first_frame_profile: neutral
+paper_weights_source: configs/paper/retarget.yaml
+finite_difference_epsilon: 1.0e-6
+assumptions: [A_WARMSTART_SOLVER_001, A_FIRST_FRAME_INITIALIZATION_001]

@@ -1,0 +1,16 @@
+profile_id: translation_centered_scene_axes
+version: "1.0.0"
+strategy: translation_centered_scene_axes
+layout_name: mediapipe21
+zero_length_threshold_m: 1.0e-10
+strict: true
+axes:
+  origin: wrist
+  rotation: identity_scene_axes
+side_rule:
+  left: scene_axes
+  right: scene_axes
+assumptions: [A_BONE_DIRECTION_FRAME_001]
+notes: >-
+  Diagnostic interpretation: only wrist translation is removed; directions stay
+  in scene axes. It is not the default solver profile.

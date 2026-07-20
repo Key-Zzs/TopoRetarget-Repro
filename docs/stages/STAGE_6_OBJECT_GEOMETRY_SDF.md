@@ -51,5 +51,7 @@ paper-fidelity checker, default suite, bounded real object validation, RH/LH col
 source-integrity check, and required visual artifacts pass. A real mesh that cannot provide a strict
 sign is reported as `real_mesh_sign_limitation`; it is never silently repaired or relabeled.
 
-Stage 7 remains not started.
-
+Stage 7 is documented separately in
+[`STAGE_7_BONE_DIRECTION_WARM_START.md`](STAGE_7_BONE_DIRECTION_WARM_START.md). Its bounded
+relative-bone-direction warm-start path does not consume this Stage 6 object geometry or SDF
+output; Stage 8 and later interaction/refinement work remain not started.

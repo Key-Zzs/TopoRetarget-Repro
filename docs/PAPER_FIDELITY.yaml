@@ -13,26 +13,26 @@ items:
     paper_section: "Sec. 3.2"
     pdf_page: 4
     evidence_summary: "Sum of differences between source and robot relative bone-direction pairs."
-    implementation_targets: [src/toporetarget/retarget/initialization.py]
-    test_targets: [tests/unit/test_paper_fidelity.py]
-    status: specified_not_implemented
-    known_parameters: {equation_number: 1, unit: dimensionless}
-    unknowns: [bone-pair mapping details]
-    assumptions: [A_HAND_FRAME_001]
-    notes: "The source and robot directions are expressed in their respective wrist-centered hand frames."
+    implementation_targets: [src/toporetarget/retarget/frames.py, src/toporetarget/retarget/bones.py, src/toporetarget/retarget/objectives.py]
+    test_targets: [tests/unit/test_stage7_bone_direction.py]
+    status: implemented_with_assumptions
+    known_parameters: {equation_number: 1, unit: dimensionless, directed_bones: 20, adjacent_pairs: 15}
+    unknowns: [wrist-frame axes, bone-pair mapping details, wrist-to-MCP scope]
+    assumptions: [A_HAND_FRAME_001, A_BONE_DIRECTION_FRAME_001, A_BONE_PAIR_SET_001, A_ZERO_LENGTH_BONE_POLICY_001]
+    notes: "Exact adjacent-direction residual and sum objective are implemented; unpublished frame and topology details remain explicit."
   - id: equation_2
     kind: equation
     title: Warm-start optimization
     paper_section: "Sec. 3.2"
     pdf_page: 4
     evidence_summary: "Per-frame warm start combines bone-direction matching and temporal smoothness."
-    implementation_targets: [src/toporetarget/retarget/initialization.py]
-    test_targets: [tests/unit/test_paper_fidelity.py]
-    status: specified_not_implemented
+    implementation_targets: [src/toporetarget/retarget/objectives.py, src/toporetarget/retarget/solver.py, src/toporetarget/retarget/pipeline.py]
+    test_targets: [tests/unit/test_stage7_warm_start.py]
+    status: implemented_with_assumptions
     known_parameters: {equation_number: 2, unit: dimensionless}
-    unknowns: [first-frame initialization]
-    assumptions: [A_FIRST_FRAME_INITIALIZATION_001]
-    notes: "lambda_warm and lambda_smooth are locked in Appendix A.1 Table 3."
+    unknowns: [first-frame initialization, q/base parameterization, optimizer, bounds, time scaling]
+    assumptions: [A_FIRST_FRAME_INITIALIZATION_001, A_WARMSTART_BASE_OBSERVABILITY_001, A_BASE_SEED_ALIGNMENT_001, A_WARMSTART_COORDINATES_001, A_WARMSTART_SOLVER_001, A_WARMSTART_JOINT_LIMITS_001, A_WARMSTART_TIME_DISCRETIZATION_001]
+    notes: "lambda_warm and lambda_smooth are loaded from the paper config; remaining solver and base details are engineering assumptions."
   - id: equation_3
     kind: equation
     title: Source and robot interaction vertex sets
@@ -757,8 +757,10 @@ parameter_contract:
     lambda_interaction_mesh: {value: 500, source: paper}
     distance_decay_kappa: {value: 30, source: paper}
     lambda_warm_bone: {value: 1, source: paper}
+    lambda_warm: {value: 1, source: paper}
     lambda_refinement_bone: {value: 0.1, source: paper}
     lambda_initial_temporal_smoothness: {value: 2.5, source: paper}
+    lambda_smooth: {value: 2.5, source: paper}
     lambda_refinement_temporal_regularization: {value: 2.5, source: paper}
     lambda_base_position: {value: 100, source: paper}
     lambda_base_rotation: {value: 1, source: paper}
