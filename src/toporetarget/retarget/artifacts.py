@@ -118,13 +118,22 @@ def save_warm_start(
         group.attrs["metadata_json"] = _json_metadata(trajectory.metadata)
         for name, array in trajectory.arrays.items():
             data = np.asarray(array)
-            chunks = None if data.ndim == 0 else (min(32, data.shape[0]),) + data.shape[1:]
-            try:
-                group.create_array(name, data=data, chunks=chunks, overwrite=True)
-            except AttributeError:  # zarr 2.x
-                group.create_dataset(  # type: ignore[attr-defined]
-                    name, data=data, chunks=chunks, overwrite=True
+            chunks: tuple[int, ...] | None = None
+            if data.ndim > 0:
+                chunks = (min(32, int(data.shape[0])),) + tuple(
+                    int(size) for size in data.shape[1:]
                 )
+            try:
+                if chunks is None:
+                    group.create_array(name, data=data, overwrite=True)
+                else:
+                    group.create_array(name, data=data, chunks=chunks, overwrite=True)
+            except AttributeError:  # zarr 2.x
+                create_dataset = getattr(group, "create_dataset")
+                if chunks is None:
+                    create_dataset(name, data=data, overwrite=True)
+                else:
+                    create_dataset(name, data=data, chunks=chunks, overwrite=True)
         (temporary / "metadata.json").write_text(
             _json_metadata(trajectory.metadata), encoding="utf-8"
         )
