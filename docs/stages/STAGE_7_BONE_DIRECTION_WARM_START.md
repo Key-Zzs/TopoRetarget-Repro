@@ -35,4 +35,5 @@ native 120 FPS, and local Arti-MANO RH/LH assets. Definition of Done requires
 20 bones/15 pairs, strict frame invariance, Jacobian agreement, bounded
 sequential solves, exact base-frame alignment, artifact round-trip, source
 integrity, bilingual documentation, and paper-fidelity status
-`implemented_with_assumptions`. Stage 8 has not started.
+`implemented_with_assumptions`. Stage 8 now consumes the artifact read-only for bounded Eq. (7)
+evaluation; it does not modify the warm-start trajectory.

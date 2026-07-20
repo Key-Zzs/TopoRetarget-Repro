@@ -48,14 +48,17 @@ At each frame, concatenate the 21 human/robot hand points with $N_o=50$ object s
 
 $$V^s_t=[P^h_t;O_t],\qquad V^r_t(q)=[P^r_t(q);O_t].$$
 
-Run Delaunay tetrahedralization on $V^s_t$ and retain its edge connectivity for both graphs. For
-each edge, compute source-derived weights:
+Run one source-side Delaunay tetrahedralization on $V^s_t$ and retain its edge connectivity for
+both graphs. The bounded implementation uses non-incremental `scipy.spatial.Delaunay` with the
+explicit `Qbb Qc Qz Q12` profile and a centroid/bounding-box-diagonal conditioning transform
+only for Qhull. For each directed edge, compute source-derived weights:
 
-$$\tilde w_{ij,t}=\exp(-\kappa\|v^s_{i,t}-v^s_{j,t}\|_2),\qquad
+$$\tilde w_{ij,t}=\exp(-\kappa\|v^s_{i,t}-v^s_{j,t}\|_2^2),\qquad
 w_{ij,t}=\frac{\tilde w_{ij,t}}{\sum_{j'\in\mathcal N_t(i)}\tilde w_{ij',t}},$$
 
 with $\kappa=30$. The paper does not disclose the surface sampler, seed, Delaunay backend,
-degeneracy policy, or zero-neighbor handling.
+degeneracy policy, or zero-neighbor handling; these remain explicit assumptions in
+`docs/ASSUMPTIONS.md`.
 
 ## Laplacian refinement
 
@@ -65,7 +68,11 @@ $$\Delta_t(V)_i=\sum_{j\in\mathcal N_t(i)}w_{ij,t}(v_i-v_j).$$
 
 The interaction-mesh loss is:
 
-$$E_{IM}(q)=\frac{1}{N_v}\sum_{i=1}^{N_v}\|\Delta_t(V^r_t(q))_i-\Delta_t(V^s_t)_i\|_2^2.$$
+$$E_{IM}(q)=\frac{1}{71}\sum_{i=1}^{71}\|\Delta_t(V^r_t(q))_i-\Delta_t(V^s_t)_i\|_2^2.$$
+
+Stage 8 evaluates this expression on frozen Stage 7 qpos/base values. It reuses the exact source
+edges, source weights, and 50 object points; it records qpos Jacobians and bounded base
+perturbation diagnostics, but does not mutate qpos/base or invoke Eq. 8.
 
 The final constrained problem is Equation 8: minimize the interaction-mesh, bone, regularization,
 and slack terms subject to signed-distance soft/hard bounds. Appendix A.1 expands regularization:
@@ -114,6 +121,7 @@ neutral replacement.
 The paper reports weaker handling of virtual contacts. MANO-to-MediaPipe21 source adaptation is
 implemented as the bounded Stage 3 adapter, and Arti-MANO robot mapping/FK is implemented only as
 the bounded Stage 4 target-hand interface; it does not convert MANO/MediaPipe points to robot qpos.
-Delaunay, SDF, optimization, RL/PPO, baseline code,
-and non-paper extensions remain intentionally outside these stages.
+Delaunay and Laplacian graph construction are now implemented for the bounded Stage 8 scope;
+SDF, optimization, RL/PPO, baseline code, and non-paper extensions remain intentionally outside
+these stages.
 No module in this repository pretends that those algorithms are already implemented.

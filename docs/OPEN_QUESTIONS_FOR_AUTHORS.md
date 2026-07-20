@@ -34,6 +34,26 @@ The following questions are written as a reproducibility request. No author resp
 
 ## P1 — affects numerical results
 
+## Stage 8 graph and loss
+
+The bounded implementation records provisional answers for the following questions so they are
+not hidden in code: Delaunay uses SciPy/Qhull `Qbb Qc Qz Q12` with centroid/bounding-box-diagonal
+conditioning, strict duplicate/coplanar/zero-volume rejection, no edge filtering, and source-only
+connectivity/weights reused for robot evaluation. Please confirm or replace these assumptions:
+
+1. Which Delaunay backend, Qhull flags, numerical conditioning, and degeneracy policy were used
+   for the paper's Eq. (4) (`A_DELAUNAY_BACKEND_001`, `A_DELAUNAY_OPTIONS_001`,
+   `A_DELAUNAY_DEGENERACY_001`)?
+2. Is the graph exactly the complete tetrahedron-edge set, and should topology be rebuilt per
+   frame/object scale or cached under another schedule (`A_INTERACTION_EDGE_FILTERING_001`,
+   `A_INTERACTION_GRAPH_REBUILD_001`)?
+3. Is Eq. (7) the unweighted mean over exactly 71 vertices, and how should the Appendix
+   `lambda_IM=500` enter before Eq. (8)? The Stage 8 evaluator stores the raw mean and leaves
+   lambda/optimization to Stage 9.
+4. What full base/joint parameterization and derivative convention should be used for the final
+   optimizer? Stage 8 only reports frozen-qpos Jacobians and bounded base perturbation diagnostics
+   (`A_INTERACTION_BASE_DIFFERENTIABILITY_001`).
+
 1. Are the 50 object samples drawn once per object, per sequence, or per frame, and which surface
    sampler/seed is used (A_OBJECT_SAMPLING_001, A_OBJECT_SAMPLING_METHOD_001,
    A_OBJECT_SAMPLING_SEED_001, A_OBJECT_SAMPLE_TEMPORAL_REUSE_001)? The Stage 6 engineering

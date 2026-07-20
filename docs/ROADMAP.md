@@ -10,7 +10,7 @@
 | 5 | GRAB dataset adapter | Lazy index, native single-sequence/bimanual adapter, contacts, validation, provenance, comparison, interactive viewer | Real right/both-hand clips convert at native time, raw/canonical checks pass, and no raw source is modified | complete (bounded); fresh semantic closeout passed |
 | 6 | Object surface sampling, collision geometry and SDF | Mesh audit, deterministic 50-point anchors, collision-only robot samples, closest-point/SDF backends, probes, reports, visualizations | Synthetic/default checks, bounded GRAB object, RH/LH Arti-MANO, source integrity, and fidelity pass; later graph/optimization remains out of scope | complete (bounded, with assumptions) |
 | 7 | Relative bone-direction initialization | Eq. 1-2 implementation, frame audit, sequential warm-start artifact | Public/default tests, bounded RH/LH real acceptance, validation, visualization, and fidelity pass | complete (with explicit assumptions) |
-| 8 | Shared interaction graph and Laplacian coordinates | Eq. 3-7 implementation | Graph/loss tests pass | not started |
+| 8 | Shared interaction graph and Laplacian coordinates | Eq. 3-7 implementation, source-only artifacts, RH/LH reports and views | Graph/loss tests, source integrity, identity/Jacobian checks, and bounded 60-frame acceptance pass; Eq. 8-9 remains out of scope | complete (bounded, with explicit assumptions) |
 | 9 | Constrained final optimization with slack variables | Eq. 8-9 implementation | Constraint tests pass | not started |
 | 10 | GRAB → Arti-MANO end-to-end retargeting | Pipeline | Reproducible trajectory | not started |
 | 11 | Metrics and ContactPose evaluation | Eq. 10-12 | Metric fixtures and report | not started |

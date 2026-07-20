@@ -4,6 +4,14 @@ Stage 6 keeps every object mesh in its canonical object-local frame `O`. The exi
 `MeshDefinition` and `RigidObjectTrack` remain the single source of truth: `mesh.vertices_local`
 are object-frame vertices and `pose_scene` is `T^S_O`.
 
+## Stage 8 consumer boundary
+
+Stage 8 consumes the audited 50-point `paper_strict_area_uniform` artifact as fixed
+face+barycentric anchors. It transforms those anchors by the canonical object pose into
+scene frame `S`, concatenates them after the 21 hand points, and never resamples them per
+frame. Sampling, mesh, and topology hashes are checked before graph construction. SDF and
+collision geometry remain Stage 6/9 interfaces and are not interaction-loss inputs.
+
 ## Audit
 
 `toporetarget geometry inspect-mesh` performs a read-only audit. It reports finite vertices,
@@ -57,4 +65,3 @@ toporetarget geometry validate-samples --canonical "$GRAB_CACHE" --object-id pri
 The object viewer reuses the repository Matplotlib conventions and can show mesh, 50 samples,
 normals, IDs, object/scene frames, and a selected frame. It is a diagnostic viewer, not a new
 canonical-data representation.
-

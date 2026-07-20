@@ -82,3 +82,7 @@ toporetarget retarget validate-warm-start \
 
 The artifact is an initialization trajectory for a future interaction-aware
 stage, not a final TopoRetarget reference and not a physical-feasibility claim.
+
+Stage 8 reads this artifact without modifying qpos or base pose. Its source graph,
+directed weights, and object samples are separate derived artifacts; Eq. (7) evaluation
+does not start the Stage 9 optimizer.

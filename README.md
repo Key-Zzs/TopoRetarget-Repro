@@ -9,10 +9,10 @@ conversion tools, reproducibility audits, and a staged path toward full dexterou
 
 The repository is intentionally transparent about scope: the current implementation reaches the
 canonical HOI interface, a bounded MANO-to-MediaPipe-style-21 source adapter, the Stage 4 generic
-robot-hand/Arti-MANO target kinematics interface, the bounded Stage 5 GRAB dataset adapter, and a
-Stage 7 relative-bone-direction warm-start trajectory. Stage 7 is complete with explicit paper
-assumptions; it is not the paper's complete interaction-aware optimizer, RL pipeline, or reported
-experimental result.
+robot-hand/Arti-MANO target kinematics interface, the bounded Stage 5 GRAB dataset adapter, a
+Stage 7 relative-bone-direction warm-start trajectory, and the bounded Stage 8 source interaction
+graph/Laplacian loss. Stages 7-8 are complete with explicit paper assumptions; the repository still
+does not claim the paper's constrained optimizer, RL pipeline, or reported experimental result.
 
 ## Overview
 
@@ -28,6 +28,8 @@ The main entry point is the `toporetarget` CLI. The code is organized around com
 - source/object/timestamp preservation reports and static or interactive geometry viewers;
 - relative bone-direction Eq. (1), sequential Eq. (2) qpos warm starts, base observability reports,
   canonical-frame alignment, and independent `toporetarget.warm_start.v1` artifacts;
+- source-only Eq. (3)-(7) interaction graphs with fixed 21+50 vertices, source-derived directed
+  weights, shared Laplacians, frozen warm-start evaluation, qpos Jacobians, and RH/LH bounded reports;
 - paper-fidelity auditing, assumptions tracking, and local Arti-MANO asset import support.
 
 External datasets, MANO/SMPL-X models, robot assets, and extraction caches are not distributed with
@@ -50,7 +52,7 @@ that stage; it does not imply full-dataset or result-level reproduction.
 | 5 | Full GRAB dataset adapter | Complete, bounded; fresh semantic closeout passed | Lazy index, native single-sequence/bimanual conversion, validation, provenance, raw/binary/official semantic contacts, and interactive HOI viewer; full-batch conversion remains out of scope. |
 | 6 | Object sampling, collision geometry, and SDF | Complete, bounded; assumptions explicit | Mesh audit, deterministic 50-point surface references, collision-only robot samples, SDF queries, probes, reports, visualizations, and bounded real-data acceptance pass; later interaction/optimization remains out of scope. |
 | 7 | Relative bone-direction initialization | Complete, with assumptions | 20-bone/15-pair Eq. 1, sequential bounded Eq. 2, frame audit, RH/LH acceptance, artifacts, validation, and visual diagnostics pass. |
-| 8 | Interaction graph and Laplacian coordinates | TODO | Implement and test the Eq. 3–7 graph/deformation terms. |
+| 8 | Interaction graph and Laplacian coordinates | Complete, bounded; assumptions explicit | Source-only Eq. 3–7 graph/loss, RH/LH artifacts, identity/Jacobian validation, reports, and views pass. Eq. 8–9 remains Stage 9. |
 | 9 | Constrained optimization with slack variables | TODO | Implement and test Eq. 8–9 constraints and optimization. |
 | 10 | GRAB → Arti-MANO end-to-end retargeting | TODO | Produce a reproducible robot reference trajectory. |
 | 11 | Metrics and ContactPose evaluation | TODO | Implement Eq. 10–12 metrics and report fixtures. |
@@ -187,6 +189,39 @@ toporetarget retarget visualize-warm-start \
 Use `--frame 30` and `--frame 59` for middle/last frames. In the interactive window, all
 keypoint/skeleton/frame/label/residual fonts resize with the window; `--show-object-context` is
 display-only and does not enter the warm-start objective.
+
+### Stage 8. Build and validate the shared interaction graph
+
+Stage 8 consumes the Stage 7 warm start and Stage 6 50-point sample artifact as separate,
+hash-checked inputs. It builds source-only graph artifacts, then evaluates the frozen Eq. (7)
+loss on the robot with the exact same connectivity and directed weights:
+
+```bash
+toporetarget retarget audit-interaction-inputs \
+  --right-canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
+  --left-canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/semantic_left_f000000_f000060.zarr \
+  --right-warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --left-warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_left_artimano_lh.zarr \
+  --object-samples .local/cache/geometry/object_surface/cubemedium_samples.npz \
+  --report .local/reports/stage8/input_audit.json
+
+toporetarget retarget build-interaction-graph \
+  --canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
+  --hand right --object-samples .local/cache/geometry/object_surface/cubemedium_samples.npz \
+  --output .local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right.zarr \
+  --report .local/reports/stage8/rh_graph_build.json
+
+toporetarget retarget evaluate-interaction \
+  --graph .local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right.zarr \
+  --warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --robot artimano_rh \
+  --output .local/cache/retarget/interaction_evaluation/s7_cubemedium_inspect_1_right_artimano_rh.zarr
+```
+
+See [`docs/INTERACTION_GRAPH.md`](docs/INTERACTION_GRAPH.md),
+[`docs/LAPLACIAN_INTERACTION_LOSS.md`](docs/LAPLACIAN_INTERACTION_LOSS.md), and the
+[`Stage 8 report`](docs/stages/STAGE_8_INTERACTION_GRAPH_LAPLACIAN.md). Eq. (8)-(9), slack,
+SDF/collision penalties, and optimization remain Stage 9.
 
 ### 1. Synthetic canonical HOI workflow
 
@@ -528,6 +563,11 @@ pytest -q tests/licensed_data
 - [Object geometry and sampling](docs/OBJECT_GEOMETRY_AND_SAMPLING.md)
 - [Signed distance and collision queries](docs/SIGNED_DISTANCE_AND_COLLISION_QUERIES.md)
 - [Stage 6 report](docs/stages/STAGE_6_OBJECT_GEOMETRY_SDF.md)
+- [Interaction graph](docs/INTERACTION_GRAPH.md) / [中文交互图](docs/INTERACTION_GRAPH.zh-CN.md)
+- [Laplacian interaction loss](docs/LAPLACIAN_INTERACTION_LOSS.md) /
+  [中文 Laplacian loss](docs/LAPLACIAN_INTERACTION_LOSS.zh-CN.md)
+- [Stage 8 report](docs/stages/STAGE_8_INTERACTION_GRAPH_LAPLACIAN.md) /
+  [中文 Stage 8 报告](docs/stages/STAGE_8_INTERACTION_GRAPH_LAPLACIAN.zh-CN.md)
 - [Paper fidelity](docs/PAPER_FIDELITY.md)
 - [Data and license policy](docs/LICENSE_AND_DATA_POLICY.md)
 - [Development log](docs/DEVELOPMENT_LOG.md) / [中文开发日志](docs/DEVELOPMENT_LOG.zh-CN.md)

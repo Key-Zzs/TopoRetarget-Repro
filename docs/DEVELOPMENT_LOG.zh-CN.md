@@ -124,7 +124,8 @@ Delaunay、Laplacian、slack 或优化。
 
 有界验收使用 `s7/cubemedium_inspect_1` 的 `[0,60)` 帧和本地 RH/LH 资产。报告/图片位于被忽略的
 `.local/reports/stage6/`，derived sample cache 位于 `.local/cache/geometry/`。source NPZ、mesh、
-canonical cache、MANO 和 Arti-MANO asset hash 未变化。Stage 7 已完成并保留显式假设；Stage 8 仍未开始。
+canonical cache、MANO 和 Arti-MANO asset hash 未变化。在这个 Stage 8 之前的 snapshot 中，Stage 7
+已完成并保留显式假设；后续 Stage 8 closeout 见下文。
 
 ## Stage 7：相对骨方向 Warm Start（2026-07-20）
 
@@ -161,7 +162,27 @@ RH 使用 `cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr`；LH 使用 Stage 
 
 新增测试覆盖 20/15 与 15/10 topology、RH/LH frame 语义、刚体不变性、translation-centered 诊断、
 strict 退化、精确 Eq. (1) sum、Torch float32/float64 autograd、Eq. (2) residual scaling、base
-不可观和 artifact round-trip。Stage 7 状态是 `implemented_with_assumptions`；Stage 8 仍未开始。
+不可观和 artifact round-trip。Stage 7 状态是 `implemented_with_assumptions`；Stage 8 随后完成有界 closeout。
+
+## Stage 8：Source Interaction Graph 与 Laplacian Loss（2026-07-20）
+
+Stage 8 新增独立的 source-only interaction graph artifact 和冻结的 Eq. (7) evaluation
+artifact。RH/LH 两条 bounded clip 各使用 60 帧、21 个 canonical MediaPipe-21 source 点和
+固定的 Stage 6 50 点 object sample artifact。每个 source frame 只运行一次显式的
+non-incremental SciPy/Qhull Delaunay（`Qbb Qc Qz Q12`），随后将完整唯一 tetrahedron edge
+和 source-derived directed weight 复用于 robot FK。strict profile 仅在 Qhull 输入上使用
+centroid/bounding-box-diagonal conditioning；source vertex、volume、distance 和 weight 仍
+全部保留米制 scene frame。
+
+Eq. (6) 使用可微 Torch sparse scatter Laplacian，Eq. (7) 严格按 71 个 vertex 的 mean squared
+residual 计算。evaluation 只读取 Stage 7 qpos/base，不修改它们，保留 object point identity，
+输出 qpos Jacobian 和有界 base diagnostic，并记录 robot-side Delaunay、optimization、SDF
+和 collision access 均为 0/false。Eq. (8)-(9)、slack、碰撞约束和 RL 仍未实现。
+
+RH/LH graph/evaluation validation、identity/scaled-residual oracle、topology-over-time、
+object-scale diagnostic、input/source-integrity audit、unit tests 以及静态和交互式可视化
+smoke test 均写入被忽略的 `.local/`。Stage 8 状态为 `implemented_with_assumptions`；没有修改
+Stage 6/7 artifact 或 source hash，也没有执行 git commit/push/tag。
 
 ## 数据与本地资产
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -13,6 +14,7 @@ from typing import Any
 
 import numpy as np
 
+from toporetarget.data.storage import _async_group_async
 from toporetarget.utils.hashing import sha256_tree
 
 WARM_START_SCHEMA_VERSION = "toporetarget.warm_start.v1"
@@ -156,9 +158,7 @@ def load_warm_start(path: str | Path) -> WarmStartTrajectory:
     try:
         import zarr
 
-        from toporetarget.data.storage import _local_store
-
-        group = zarr.open_group(_local_store(zarr, source, read_only=True), mode="r")
+        group = asyncio.run(_async_group_async(zarr, source, mode="r"))
     except ImportError as exc:  # pragma: no cover
         raise WarmStartArtifactError("warm-start artifacts require zarr") from exc
     version = group.attrs.get("schema_version")
@@ -173,8 +173,16 @@ def load_warm_start(path: str | Path) -> WarmStartTrajectory:
     metadata = json.loads(raw if isinstance(raw, str) else str(raw))
     if not isinstance(metadata, dict):
         raise WarmStartArtifactError("warm-start metadata is not a mapping")
-    names = list(group.array_keys())
-    arrays = {name: np.asarray(group[name]) for name in names}
+
+    async def read_arrays() -> dict[str, np.ndarray]:
+        names = [name async for name in group.array_keys()]
+        result: dict[str, np.ndarray] = {}
+        for name in names:
+            array = await group.getitem(name)
+            result[name] = np.asarray(await array.getitem(slice(None)))
+        return result
+
+    arrays = asyncio.run(read_arrays())
     result = WarmStartTrajectory(metadata, arrays)
     return result.validate()
 

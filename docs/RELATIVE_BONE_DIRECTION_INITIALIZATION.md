@@ -4,6 +4,10 @@ Stage 7 implements the paper's Eq. (1) feature and exposes it as an initializati
 trajectory. It does not implement object-relative positioning, interaction graphs,
 Laplacian coordinates, collision queries, or final retargeting.
 
+Stage 8 consumes the resulting warm-start artifact only as a frozen evaluation input. It
+does not alter the Stage 7 qpos/base trajectory; see
+[`stages/STAGE_8_INTERACTION_GRAPH_LAPLACIAN.md`](stages/STAGE_8_INTERACTION_GRAPH_LAPLACIAN.md).
+
 ## Features
 
 The default profile `mediapipe21_full_finger_chain_v1` constructs five directed

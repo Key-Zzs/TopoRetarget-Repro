@@ -51,6 +51,7 @@ geometry = [
 retarget = [
   "scipy>=1.11",
   "torch>=2.0",
+  "zarr>=2.16",
 ]
 
 [project.scripts]

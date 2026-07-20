@@ -1,0 +1,18 @@
+profile_id: strict_scipy_qhull_v1
+version: "1.0.0"
+backend: scipy.spatial.Delaunay
+dimension: 3
+incremental: false
+# SciPy 1.18 documents this as the default for three dimensions; it is kept
+# explicit so a future SciPy default change cannot silently change topology.
+qhull_options: "Qbb Qc Qz Q12"
+# Uniform scene-frame translation and scale used only for Qhull numerics.
+normalization: centroid_bbox_diagonal
+volume_tolerance: 1.0e-24
+near_degenerate_tolerance: 1.0e-18
+near_duplicate_relative: 1.0e-10
+jitter: false
+assumptions:
+  - A_DELAUNAY_BACKEND_001
+  - A_DELAUNAY_OPTIONS_001
+  - A_DELAUNAY_DEGENERACY_001

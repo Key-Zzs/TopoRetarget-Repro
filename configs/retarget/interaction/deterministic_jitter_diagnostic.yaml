@@ -1,0 +1,18 @@
+profile_id: deterministic_jitter_diagnostic
+version: "1.0.0"
+backend: scipy.spatial.Delaunay
+dimension: 3
+incremental: false
+qhull_options: "Qbb Qc Qz Q12"
+normalization: centroid_bbox_diagonal
+volume_tolerance: 1.0e-24
+near_degenerate_tolerance: 1.0e-18
+near_duplicate_relative: 1.0e-10
+jitter: true
+jitter_seed: 20260720
+jitter_relative: 1.0e-12
+assumptions:
+  - A_DELAUNAY_BACKEND_001
+  - A_DELAUNAY_OPTIONS_001
+  - A_DELAUNAY_DEGENERACY_001
+  - diagnostic_only_not_paper_strict

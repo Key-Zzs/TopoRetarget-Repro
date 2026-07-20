@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -102,6 +103,51 @@ def _local_store(zarr: Any, path: Path, *, read_only: bool) -> Any:
     return DirectLocalStore(path, read_only=read_only)
 
 
+ZarrMode = Literal["r", "r+", "a", "w", "w-"]
+
+
+async def _async_group_async(zarr: Any, path: Path, *, mode: ZarrMode) -> Any:
+    """Open Zarr 3 through its async API.
+
+    The synchronous Zarr 3 bridge can stall on this Python 3.13 workstation
+    even for a small local store.  The repository's local store already
+    provides synchronous file methods, so running the async API directly is
+    deterministic and keeps the cache format unchanged.  Zarr 2 falls back
+    to its regular synchronous API.
+    """
+
+    if not hasattr(getattr(zarr, "api", None), "asynchronous"):
+        return zarr.open_group(_local_store(zarr, path, read_only=mode == "r"), mode=mode)
+    from zarr.api.asynchronous import open_group as async_open_group
+
+    return await async_open_group(_local_store(zarr, path, read_only=mode == "r"), mode=mode)
+
+
+def _async_group(zarr: Any, path: Path, *, mode: ZarrMode) -> Any:
+    return asyncio.run(_async_group_async(zarr, path, mode=mode))
+
+
+class _AsyncReadableGroup:
+    """Minimal synchronous adapter for eager manifest decoding."""
+
+    def __init__(self, group: Any, arrays: dict[str, np.ndarray] | None = None) -> None:
+        self.group = group
+        self.arrays = arrays
+
+    def __getitem__(self, key: str) -> np.ndarray:
+        if self.arrays is not None:
+            try:
+                return self.arrays[key]
+            except KeyError as exc:
+                raise KeyError(key) from exc
+
+        async def read_once() -> np.ndarray:
+            array = await self.group.getitem(key)
+            return np.asarray(await array.getitem(slice(None)))
+
+        return asyncio.run(read_once())
+
+
 def _json_safe(value: Any) -> Any:
     if isinstance(value, Path):
         return {"__path__": str(value)}
@@ -168,17 +214,22 @@ def save_hoi_sequence(sequence: HOISequence, path: str | Path) -> Path:
     destination.parent.mkdir(parents=True, exist_ok=True)
     arrays: dict[str, np.ndarray] = {}
     manifest = _encode(sequence, arrays, "sequence")
-    group = zarr.open_group(_local_store(zarr, destination, read_only=False), mode="w")
-    group.attrs["schema_version"] = sequence.metadata.schema_version
-    group.attrs["metadata_json"] = json.dumps(manifest, sort_keys=True, separators=(",", ":"))
-    for name, array in arrays.items():
-        data = np.asarray(array)
-        dataset_name = f"arrays/{name}"
-        chunks = _chunks(data)
-        try:
-            group.create_array(dataset_name, data=data, chunks=chunks, overwrite=True)
-        except AttributeError:  # zarr 2.x
-            group.create_dataset(dataset_name, data=data, chunks=chunks, overwrite=True)
+
+    async def write_once() -> None:
+        group = await _async_group_async(zarr, destination, mode="w")
+        await group.update_attributes(
+            {
+                "schema_version": sequence.metadata.schema_version,
+                "metadata_json": json.dumps(manifest, sort_keys=True, separators=(",", ":")),
+            }
+        )
+        for name, array in arrays.items():
+            data = np.asarray(array)
+            dataset_name = f"arrays/{name}"
+            chunks = _chunks(data)
+            await group.create_array(dataset_name, data=data, chunks=chunks, overwrite=True)
+
+    asyncio.run(write_once())
     (destination / "metadata.json").write_text(
         json.dumps(
             {
@@ -202,7 +253,7 @@ def load_hoi_sequence(path: str | Path) -> HOISequence:
     source = Path(path)
     if not source.exists():
         raise StorageError(f"HOI cache does not exist: {source}")
-    group = zarr.open_group(_local_store(zarr, source, read_only=True), mode="r")
+    group = _async_group(zarr, source, mode="r")
     schema_version = group.attrs.get("schema_version")
     if schema_version != "toporetarget.hoi.v1":
         raise StorageError(f"unsupported cache schema version: {schema_version!r}")
@@ -213,7 +264,7 @@ def load_hoi_sequence(path: str | Path) -> HOISequence:
             raise StorageError(f"cache has no metadata manifest: {source}")
         manifest_json = json.loads(metadata_file.read_text(encoding="utf-8"))["manifest"]
     manifest = json.loads(manifest_json) if isinstance(manifest_json, str) else manifest_json
-    result = _decode(manifest, group)
+    result = _decode(manifest, _AsyncReadableGroup(group))
     if not isinstance(result, HOISequence):
         raise StorageError("cache manifest root is not HOISequence")
     result.validate()

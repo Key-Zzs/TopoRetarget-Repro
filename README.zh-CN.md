@@ -8,8 +8,9 @@ TopoRetarget-Repro 是一个非官方、独立、可追踪的
 复现审计，以及面向完整灵巧手重定向的分阶段路线。
 
 当前实现已经覆盖 canonical HOI interface、有界 MANO→MediaPipe 风格 21 点 source-hand
-adapter、Stage 4 通用机器人手/Arti-MANO 目标运动学接口，以及有界的 Stage 5 GRAB 数据集
-adapter，但尚未声称实现论文完整的机器人重定向优化器、RL pipeline 或论文实验结果。
+adapter、Stage 4 通用机器人手/Arti-MANO 目标运动学接口、有界的 Stage 5 GRAB 数据集
+adapter，以及有界的 Stage 8 source-only interaction graph/Laplacian loss，但仍未声称实现论文
+完整的机器人重定向优化器、RL pipeline 或论文实验结果。
 
 ## 仓库概览
 
@@ -44,7 +45,7 @@ adapter，但尚未声称实现论文完整的机器人重定向优化器、RL p
 | 5 | 完整 GRAB 数据集适配器 | Complete，有界；fresh semantic closeout 通过 | lazy index、原生时间/网格的单序列和双手转换、validation、provenance、raw/binary/官方 semantic contacts 与交互 HOI viewer；全量转换仍不在范围内。 |
 | 6 | 物体采样、碰撞几何与 SDF | Complete，有界；假设显式 | mesh audit、确定性 50 点表面参考、仅 collision 的机器人表面采样、SDF 查询、probe、报告、可视化和有界真实数据验收通过；后续交互/优化仍不在范围内。 |
 | 7 | 相对骨方向初始化 | Complete，有假设 | 20-bone/15-pair Eq. 1、时序有界 Eq. 2、frame 审计、RH/LH 验收、artifact、验证和可视化通过。 |
-| 8 | 交互图与 Laplacian 坐标 | TODO | 实现并测试 Eq. 3–7 的图和变形项。 |
+| 8 | 交互图与 Laplacian 坐标 | Complete，有界；假设显式 | source-only Eq. 3–7 图/loss、RH/LH artifact、identity/Jacobian 验证、报告和可视化通过；Eq. 8–9 仍属于 Stage 9。 |
 | 9 | 带 slack 的受限优化 | TODO | 实现并测试 Eq. 8–9 的约束和优化。 |
 | 10 | GRAB→Arti-MANO 端到端重定向 | TODO | 生成可复现的机器人 reference trajectory。 |
 | 11 | Metrics 与 ContactPose 评估 | TODO | 实现 Eq. 10–12 指标和报告 fixture。 |
@@ -155,6 +156,26 @@ toporetarget retarget visualize-warm-start \
   --show-hand-frames --show-labels --show-residuals \
   --show-object-context
 ```
+
+### Stage 8：构建并验证共享交互图
+
+Stage 8 将 Stage 7 warm start 和 Stage 6 的 50 点 sample artifact 作为独立、带 hash 检查的输入。
+先构建 source-only graph，再用完全相同的 connectivity 和 directed weights 在 robot FK 上冻结评估 Eq. (7)：
+
+```bash
+toporetarget retarget audit-interaction-inputs \
+  --right-canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
+  --left-canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/semantic_left_f000000_f000060.zarr \
+  --right-warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --left-warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_left_artimano_lh.zarr \
+  --object-samples .local/cache/geometry/object_surface/cubemedium_samples.npz \
+  --report .local/reports/stage8/input_audit.json
+```
+
+完整 graph/evaluation 命令与边界见 [`docs/INTERACTION_GRAPH.md`](docs/INTERACTION_GRAPH.md)、
+[`docs/LAPLACIAN_INTERACTION_LOSS.md`](docs/LAPLACIAN_INTERACTION_LOSS.md) 和
+[`docs/stages/STAGE_8_INTERACTION_GRAPH_LAPLACIAN.md`](docs/stages/STAGE_8_INTERACTION_GRAPH_LAPLACIAN.md)。
+Eq. (8)-(9)、slack、SDF/collision penalty 和 optimization 仍属于 Stage 9。
 
 如需生成 first/middle/last 静态诊断图，只需修改 `--frame` 和 `--output`：
 
@@ -511,6 +532,11 @@ pytest -q tests/licensed_data
 - [对象几何与采样](docs/OBJECT_GEOMETRY_AND_SAMPLING.md)
 - [Signed Distance 与碰撞查询](docs/SIGNED_DISTANCE_AND_COLLISION_QUERIES.md)
 - [Stage 6 报告](docs/stages/STAGE_6_OBJECT_GEOMETRY_SDF.md)
+- [Interaction graph](docs/INTERACTION_GRAPH.md) / [中文交互图](docs/INTERACTION_GRAPH.zh-CN.md)
+- [Laplacian interaction loss](docs/LAPLACIAN_INTERACTION_LOSS.md) /
+  [中文 Laplacian loss](docs/LAPLACIAN_INTERACTION_LOSS.zh-CN.md)
+- [Stage 8 报告](docs/stages/STAGE_8_INTERACTION_GRAPH_LAPLACIAN.md) /
+  [中文 Stage 8 报告](docs/stages/STAGE_8_INTERACTION_GRAPH_LAPLACIAN.zh-CN.md)
 - [论文忠实度](docs/PAPER_FIDELITY.md)
 - [数据与许可证策略](docs/LICENSE_AND_DATA_POLICY.md)
 - [开发日志](docs/DEVELOPMENT_LOG.md) / [中文开发日志](docs/DEVELOPMENT_LOG.zh-CN.md)

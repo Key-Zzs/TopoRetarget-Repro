@@ -13,6 +13,7 @@ import typer
 
 from toporetarget.data.storage import StorageError, load_hoi_sequence
 from toporetarget.geometry.se3 import pose_rotation_error, pose_translation_error
+from toporetarget.geometry.surface_sampling import SurfaceSampleSet
 from toporetarget.retarget.alignment import observability_report
 from toporetarget.retarget.artifacts import (
     WarmStartArtifactError,
@@ -21,7 +22,35 @@ from toporetarget.retarget.artifacts import (
     save_warm_start,
 )
 from toporetarget.retarget.bones import extract_bone_features, load_bone_profile
+from toporetarget.retarget.delaunay import load_delaunay_profile
 from toporetarget.retarget.frames import FrameDegeneracyError, load_frame_profile
+from toporetarget.retarget.interaction_artifacts import (
+    InteractionArtifactError,
+    interaction_artifact_hash,
+    load_interaction_evaluation,
+    load_interaction_graph,
+    save_interaction_evaluation,
+    save_interaction_graph,
+)
+from toporetarget.retarget.interaction_evaluation import evaluate_interaction_graph
+from toporetarget.retarget.interaction_graph import (
+    build_source_interaction_graph,
+    load_paper_kappa,
+)
+from toporetarget.retarget.interaction_reports import (
+    build_input_audit,
+    compare_object_scales,
+    topology_over_time,
+)
+from toporetarget.retarget.interaction_validation import (
+    validate_interaction_evaluation,
+    validate_interaction_graph,
+    write_validation_reports,
+)
+from toporetarget.retarget.interaction_visualization import (
+    launch_interaction_viewer,
+    render_interaction_frame,
+)
 from toporetarget.retarget.pipeline import build_warm_start_trajectory
 from toporetarget.retarget.solver import WarmStartSolveError, load_solver_profile
 from toporetarget.robots.artimano import load_artimano_model
@@ -496,6 +525,390 @@ def visualize_warm_start(
         )
     except (StorageError, ValueError, OSError, RuntimeError, WarmStartArtifactError) as exc:
         typer.echo(f"visualize-warm-start failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("build-interaction-graph")
+def build_interaction_graph(
+    canonical: Path = typer.Option(..., "--canonical"),
+    hand: str = typer.Option("right", "--hand"),
+    object_id: str = typer.Option("primary", "--object-id"),
+    object_samples: Path = typer.Option(..., "--object-samples"),
+    delaunay_profile: str = typer.Option("strict_scipy_qhull_v1", "--delaunay-profile"),
+    start_frame: int = typer.Option(0, "--start-frame", min=0),
+    end_frame: int | None = typer.Option(None, "--end-frame", min=1),
+    output: Path = typer.Option(..., "--output"),
+    report: Path | None = typer.Option(None, "--report"),
+    force: bool = typer.Option(False, "--force"),
+) -> None:
+    """Build source-only Eq. (3)-(6) graphs; no robot or warm-start is loaded."""
+
+    try:
+        sequence = load_hoi_sequence(canonical)
+        stop_frame = sequence.num_frames if end_frame is None else end_frame
+        if start_frame < 0 or stop_frame <= start_frame or stop_frame > sequence.num_frames:
+            raise typer.BadParameter(
+                f"invalid frame range [{start_frame},{stop_frame}) for {sequence.num_frames} frames"
+            )
+        hand_id = _resolve_hand(sequence, hand)
+        samples = SurfaceSampleSet.load(object_samples)
+        profile = load_delaunay_profile(delaunay_profile)
+        selected = list(range(start_frame, stop_frame))
+        graph = build_source_interaction_graph(
+            sequence,
+            hand_id,
+            object_id,
+            samples,
+            source_cache=canonical,
+            object_sample_path=object_samples,
+            delaunay_profile=profile,
+            kappa=load_paper_kappa(),
+            frame_indices=selected,
+        )
+        save_interaction_graph(graph, output, force=force)
+        result = {
+            "status": "pass",
+            "output": str(output),
+            "artifact_hash": interaction_artifact_hash(output),
+            "schema_version": graph.schema_version,
+            "metadata": graph.metadata,
+            "topology_over_time": topology_over_time(graph),
+        }
+        _json_write(result, report)
+        if report is None:
+            _json_write(result, None)
+    except (
+        StorageError,
+        ValueError,
+        OSError,
+        RuntimeError,
+        InteractionArtifactError,
+    ) as exc:
+        typer.echo(f"build-interaction-graph failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("audit-interaction-inputs")
+def audit_interaction_inputs(
+    right_canonical: Path = typer.Option(..., "--right-canonical"),
+    left_canonical: Path = typer.Option(..., "--left-canonical"),
+    right_warm_start: Path = typer.Option(..., "--right-warm-start"),
+    left_warm_start: Path = typer.Option(..., "--left-warm-start"),
+    object_samples: Path = typer.Option(..., "--object-samples"),
+    report: Path = typer.Option(..., "--report"),
+    asset_root: Path | None = typer.Option(None, "--asset-root"),
+) -> None:
+    """Audit Stage 6/7 inputs and robot assets without building a graph."""
+
+    try:
+        result = build_input_audit(
+            [
+                {"canonical": right_canonical, "warm_start": right_warm_start, "hand_id": "hand_r"},
+                {
+                    "canonical": left_canonical,
+                    "warm_start": left_warm_start,
+                    "hand_id": "left_hand",
+                },
+            ],
+            object_samples,
+            asset_root=asset_root,
+        )
+        _json_write(result, report)
+        _json_write(result, None)
+        if not result["all_compatibility_checks_pass"]:
+            raise typer.Exit(code=1)
+    except (ValueError, OSError, RuntimeError, WarmStartArtifactError) as exc:
+        typer.echo(f"audit-interaction-inputs failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("inspect-interaction-graph")
+def inspect_interaction_graph(
+    graph: Path = typer.Option(..., "--graph"),
+    frame: int = typer.Option(0, "--frame", min=0),
+    json_report: Path | None = typer.Option(None, "--json"),
+    csv_report: Path | None = typer.Option(None, "--csv"),
+) -> None:
+    """Inspect one saved graph frame and its directed weights."""
+
+    try:
+        trajectory = load_interaction_graph(graph)
+        if frame >= trajectory.frame_count:
+            raise typer.BadParameter("frame is outside interaction graph")
+        item = trajectory.frames[frame]
+        payload = {
+            "frame": int(trajectory.frame_indices[frame]),
+            "vertices": item.source_vertices.tolist(),
+            "simplices": item.simplices.tolist(),
+            "edges": [
+                {"edge_id": i, "indices": edge.tolist(), "category": _edge_category(edge)}
+                for i, edge in enumerate(item.edges)
+            ],
+            "directed_source_index": item.directed_source_index.tolist(),
+            "directed_destination_index": item.directed_destination_index.tolist(),
+            "weights": item.weights.tolist(),
+            "row_sums": item.directed.row_sums.tolist(),
+            "statistics": item.statistics,
+            "graph_hash": item.graph_hash,
+        }
+        _json_write(payload, json_report)
+        if csv_report is not None:
+            csv_report.parent.mkdir(parents=True, exist_ok=True)
+            with csv_report.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(
+                    ["edge_id", "source", "destination", "category", "weight", "distance_squared"]
+                )
+                for edge_id, (source, destination, weight, distance) in enumerate(
+                    zip(
+                        item.directed_source_index,
+                        item.directed_destination_index,
+                        item.weights,
+                        item.source_distance_squared,
+                        strict=True,
+                    )
+                ):
+                    writer.writerow(
+                        [
+                            edge_id,
+                            int(source),
+                            int(destination),
+                            _edge_category((source, destination)),
+                            weight,
+                            distance,
+                        ]
+                    )
+        if json_report is None:
+            _json_write(payload, None)
+    except (ValueError, OSError, RuntimeError, InteractionArtifactError) as exc:
+        typer.echo(f"inspect-interaction-graph failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+def _edge_category(edge: Any) -> str:
+    first, second = (int(value) for value in edge)
+    if first < 21 and second < 21:
+        return "hand-hand"
+    if (first < 21) != (second < 21):
+        return "hand-object"
+    return "object-object"
+
+
+@app.command("validate-interaction-graph")
+def validate_interaction_graph_command(
+    canonical: Path = typer.Option(..., "--canonical"),
+    object_samples: Path = typer.Option(..., "--object-samples"),
+    graph: Path = typer.Option(..., "--graph"),
+    report: Path = typer.Option(..., "--report"),
+    csv_report: Path | None = typer.Option(None, "--csv"),
+) -> None:
+    """Validate graph vertices, source hashes, connectivity, and weights."""
+
+    try:
+        trajectory = load_interaction_graph(graph)
+        samples = SurfaceSampleSet.load(object_samples)
+        result = validate_interaction_graph(
+            trajectory, canonical, samples, sample_path=object_samples
+        )
+        if csv_report is None:
+            csv_report = report.with_suffix(".csv")
+        write_validation_reports(result, report, csv_report)
+        _json_write(result, None)
+        if not result["all_frames_valid"]:
+            raise typer.Exit(code=1)
+    except (ValueError, OSError, RuntimeError, InteractionArtifactError) as exc:
+        typer.echo(f"validate-interaction-graph failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("evaluate-interaction")
+def evaluate_interaction_command(
+    graph: Path = typer.Option(..., "--graph"),
+    warm_start: Path = typer.Option(..., "--warm-start"),
+    robot: str = typer.Option("artimano_rh", "--robot"),
+    output: Path = typer.Option(..., "--output"),
+    asset_root: Path | None = typer.Option(None, "--asset-root"),
+    force: bool = typer.Option(False, "--force"),
+    no_jacobian: bool = typer.Option(False, "--no-jacobian"),
+) -> None:
+    """Evaluate Eq. (7) on Stage 7 qpos/base without optimization."""
+
+    try:
+        graph_trajectory = load_interaction_graph(graph)
+        warm = load_warm_start(warm_start)
+        model = _load_robot(robot, asset_root)
+        evaluation = evaluate_interaction_graph(
+            graph_trajectory,
+            warm,
+            model,
+            graph_artifact_hash=interaction_artifact_hash(graph),
+            warm_start_artifact_hash=artifact_hash(warm_start),
+        )
+        save_interaction_evaluation(evaluation, output, force=force)
+        result = {
+            "status": "pass",
+            "output": str(output),
+            "artifact_hash": interaction_artifact_hash(output),
+            "metadata": evaluation.metadata,
+            "e_im": {
+                "min": float(np.min(evaluation.e_im)),
+                "mean": float(np.mean(evaluation.e_im)),
+                "max": float(np.max(evaluation.e_im)),
+            },
+        }
+        _json_write(result, None)
+    except (
+        ValueError,
+        OSError,
+        RuntimeError,
+        WarmStartArtifactError,
+        InteractionArtifactError,
+    ) as exc:
+        typer.echo(f"evaluate-interaction failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("validate-interaction")
+def validate_interaction_command(
+    graph: Path = typer.Option(..., "--graph"),
+    evaluation: Path = typer.Option(..., "--evaluation"),
+    report: Path = typer.Option(..., "--report"),
+    csv_report: Path | None = typer.Option(None, "--csv"),
+    warm_start: Path | None = typer.Option(None, "--warm-start"),
+) -> None:
+    """Validate Eq. (7), scaled residuals, identity oracle, and frozen qpos."""
+
+    try:
+        graph_trajectory = load_interaction_graph(graph)
+        evaluation_trajectory = load_interaction_evaluation(evaluation)
+        result = validate_interaction_evaluation(
+            graph_trajectory, evaluation_trajectory, warm_start=warm_start
+        )
+        if csv_report is None:
+            csv_report = report.with_suffix(".csv")
+        write_validation_reports(result, report, csv_report)
+        _json_write(result, None)
+        if not result["all_frames_valid"]:
+            raise typer.Exit(code=1)
+    except (ValueError, OSError, RuntimeError, InteractionArtifactError) as exc:
+        typer.echo(f"validate-interaction failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("visualize-interaction")
+def visualize_interaction_command(
+    graph: Path = typer.Option(..., "--graph"),
+    mode: str = typer.Option("source", "--mode"),
+    evaluation: Path | None = typer.Option(None, "--evaluation"),
+    layout: str = typer.Option("single", "--layout"),
+    frame: int = typer.Option(0, "--frame", min=0),
+    start_frame: int = typer.Option(0, "--start-frame", min=0),
+    end_frame: int | None = typer.Option(None, "--end-frame", min=1),
+    show_laplacian: bool = typer.Option(False, "--show-laplacian"),
+    show_residuals: bool = typer.Option(False, "--show-residuals"),
+    show_contributions: bool = typer.Option(False, "--show-contributions"),
+    show_labels: bool = typer.Option(False, "--show-labels"),
+    show_hand_hand_edges: bool = typer.Option(
+        True, "--show-hand-hand-edges/--hide-hand-hand-edges"
+    ),
+    show_hand_object_edges: bool = typer.Option(
+        True, "--show-hand-object-edges/--hide-hand-object-edges"
+    ),
+    show_object_object_edges: bool = typer.Option(
+        True, "--show-object-object-edges/--hide-object-object-edges"
+    ),
+    output: Path | None = typer.Option(None, "--output"),
+    interactive: bool = typer.Option(False, "--interactive"),
+    report: Path | None = typer.Option(None, "--report"),
+) -> None:
+    """Render source/shared graph, Laplacians, and Eq. (7) residual diagnostics."""
+
+    try:
+        graph_trajectory = load_interaction_graph(graph)
+        evaluation_trajectory = (
+            None if evaluation is None else load_interaction_evaluation(evaluation)
+        )
+        if interactive:
+            result = launch_interaction_viewer(
+                graph_trajectory,
+                evaluation=evaluation_trajectory,
+                start_frame=start_frame,
+                end_frame=end_frame,
+                mode=mode,
+                show_laplacian=show_laplacian,
+                show_residuals=show_residuals,
+                show_contributions=show_contributions,
+            )
+        else:
+            result = render_interaction_frame(
+                graph_trajectory,
+                evaluation=evaluation_trajectory,
+                frame=frame,
+                mode=mode,
+                layout=layout,
+                output=output,
+                show_hand_hand_edges=show_hand_hand_edges,
+                show_hand_object_edges=show_hand_object_edges,
+                show_object_object_edges=show_object_object_edges,
+                show_laplacian=show_laplacian,
+                show_residuals=show_residuals,
+                show_contributions=show_contributions,
+                show_labels=show_labels,
+            )
+        _json_write(result, report)
+        if report is None:
+            _json_write(result, None)
+    except (ValueError, OSError, RuntimeError, InteractionArtifactError) as exc:
+        typer.echo(f"visualize-interaction failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("compare-object-scales")
+def compare_object_scales_command(
+    canonical: Path = typer.Option(..., "--canonical"),
+    hand: str = typer.Option("right", "--hand"),
+    object_id: str = typer.Option("primary", "--object-id"),
+    object_samples: Path = typer.Option(..., "--object-samples"),
+    scales: list[float] = typer.Option([0.6, 1.0, 1.4], "--scales"),
+    frame: int = typer.Option(0, "--frame", min=0),
+    report: Path = typer.Option(..., "--report"),
+    output: Path | None = typer.Option(None, "--output"),
+    delaunay_profile: str = typer.Option("strict_scipy_qhull_v1", "--delaunay-profile"),
+) -> None:
+    """Run graph-only object scale diagnostics; no retargeting is performed."""
+
+    try:
+        sequence = load_hoi_sequence(canonical)
+        hand_id = _resolve_hand(sequence, hand)
+        samples = SurfaceSampleSet.load(object_samples)
+        profile = load_delaunay_profile(delaunay_profile)
+        result = compare_object_scales(
+            sequence,
+            hand_id,
+            samples,
+            profile,
+            list(scales),
+            frame=frame,
+            object_id=object_id,
+            kappa=load_paper_kappa(),
+        )
+        _json_write(result, report)
+        if output is not None:
+            graph = build_source_interaction_graph(
+                sequence,
+                hand_id,
+                object_id,
+                samples,
+                source_cache=canonical,
+                object_sample_path=object_samples,
+                delaunay_profile=profile,
+                kappa=load_paper_kappa(),
+                frame_indices=[frame],
+            )
+            render_interaction_frame(graph, frame=0, mode="source", output=output)
+        _json_write(result, None)
+    except (ValueError, OSError, RuntimeError, InteractionArtifactError) as exc:
+        typer.echo(f"compare-object-scales failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
 

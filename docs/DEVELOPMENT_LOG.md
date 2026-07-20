@@ -141,7 +141,8 @@ final `Q_t`, Delaunay, Laplacian, slack, or optimization.
 Bounded acceptance used `s7/cubemedium_inspect_1` frames `[0,60)` and local RH/LH assets. Reports and
 images are under ignored `.local/reports/stage6/`; derived sample caches are under
 `.local/cache/geometry/`. Source NPZ, mesh, canonical cache, MANO, and Arti-MANO asset hashes remain
-unchanged. Stage 7 is now complete with explicit assumptions; Stage 8 remains not started.
+unchanged. Stage 7 was complete with explicit assumptions at this pre-Stage-8 snapshot; the
+subsequent Stage 8 closeout is recorded below.
 
 ## Stage 7 — relative bone-direction warm starts (2026-07-20)
 
@@ -183,7 +184,29 @@ matches. The artifacts and report/images are under ignored `.local/` paths.
 Tests added coverage for 20/15 and 15/10 topology, RH/LH frame semantics, rigid invariance,
 translation-centered diagnostics, strict degeneracy, exact Eq. (1) sum, Torch float32/float64
 autograd, Eq. (2) residual scaling, base non-observability, and artifact round-trip. Stage 7 is
-`implemented_with_assumptions`; Stage 8 remains not started.
+`implemented_with_assumptions`; Stage 8 was the next bounded closeout.
+
+## Stage 8 — source interaction graphs and Laplacian loss (2026-07-20)
+
+Stage 8 adds a separate source-only interaction graph artifact and a frozen Eq. (7)
+evaluation artifact. Each bounded RH/LH clip uses 60 frames, 21 canonical MediaPipe-21
+source points, and the fixed 50-point Stage 6 object sample artifact. One explicit
+non-incremental SciPy/Qhull Delaunay call is made per source frame with `Qbb Qc Qz Q12`;
+its unique tetrahedron edges and source-derived directed weights are reused by robot FK.
+The strict profile uses centroid/bounding-box-diagonal conditioning only for Qhull, while
+all source vertices, volumes, distances, and weights remain in metres.
+
+Eq. (6) is implemented with a differentiable Torch sparse scatter Laplacian and Eq. (7)
+is the exact mean squared residual divided by 71. Evaluation reads Stage 7 qpos/base,
+keeps them unchanged, preserves object point identity, emits qpos Jacobians and bounded
+base diagnostics, and records zero robot-side Delaunay, optimization, SDF, and collision
+access. Eq. (8)-(9), slack, collision constraints, and RL remain unimplemented.
+
+Real RH/LH graph/evaluation validation, identity and scaled-residual oracles, topology
+over-time, object-scale diagnostics, input/source-integrity audits, unit tests, and static
+plus interactive visualization smoke tests are stored under ignored `.local/` paths. The
+Stage 8 status is `implemented_with_assumptions`; no Stage 6/7 artifact or source hash was
+modified, and no git commit/push/tag was performed.
 
 ## Data and local assets
 

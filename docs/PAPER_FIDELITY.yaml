@@ -39,38 +39,38 @@ items:
     paper_section: "Sec. 3.3"
     pdf_page: 4
     evidence_summary: "Both graphs concatenate 21 hand keypoints with posed object surface samples."
-    implementation_targets: [src/toporetarget/geometry/interaction_mesh.py]
-    test_targets: [tests/unit/test_paper_fidelity.py]
-    status: specified_not_implemented
+    implementation_targets: [src/toporetarget/retarget/interaction_graph.py, src/toporetarget/geometry/surface_sampling.py]
+    test_targets: [tests/unit/test_stage8_interaction.py]
+    status: implemented_with_assumptions
     known_parameters: {equation_number: 3, hand_keypoints: 21, unit: vertices}
     unknowns: [surface sampling algorithm, sampling reuse schedule]
     assumptions: [A_OBJECT_SAMPLING_001, A_OBJECT_SAMPLING_METHOD_001]
-    notes: "No geometry implementation is included in Stage 0/1."
+    notes: "Stage 8 reuses the audited Stage 6 object-local face+barycentric anchors and concatenates them with canonical source hand points."
   - id: equation_4
     kind: equation
     title: Shared Delaunay interaction graph
     paper_section: "Sec. 3.3"
     pdf_page: 4
     evidence_summary: "Delaunay tetrahedralization is run on source vertices and its edge connectivity is reused."
-    implementation_targets: [src/toporetarget/geometry/interaction_mesh.py]
-    test_targets: [tests/unit/test_paper_fidelity.py]
-    status: specified_not_implemented
+    implementation_targets: [src/toporetarget/retarget/delaunay.py, src/toporetarget/retarget/interaction_graph.py]
+    test_targets: [tests/unit/test_stage8_interaction.py]
+    status: implemented_with_assumptions
     known_parameters: {equation_number: 4, connectivity_reuse: true, unit: graph}
     unknowns: [Delaunay backend and degeneracy behavior]
-    assumptions: [A_DELAUNAY_BACKEND_001, A_DELAUNAY_DEGENERACY_001]
-    notes: "The graph is rebuilt when object scale or embodiment changes."
+    assumptions: [A_DELAUNAY_BACKEND_001, A_DELAUNAY_OPTIONS_001, A_DELAUNAY_DEGENERACY_001, A_INTERACTION_EDGE_FILTERING_001, A_INTERACTION_GRAPH_FRAME_001, A_INTERACTION_GRAPH_REBUILD_001]
+    notes: "Source-only SciPy/Qhull connectivity is cached and reused for the robot evaluation; graph rebuild is explicit for changed source geometry or object scale."
   - id: equation_5
     kind: equation
     title: Distance-decay edge weights
     paper_section: "Sec. 3.4"
     pdf_page: 5
     evidence_summary: "Unnormalized exponential distance weights are normalized over source-graph neighbors."
-    implementation_targets: [src/toporetarget/geometry/laplacian.py]
-    test_targets: [tests/unit/test_paper_fidelity.py]
-    status: specified_not_implemented
+    implementation_targets: [src/toporetarget/retarget/graph_weights.py]
+    test_targets: [tests/unit/test_stage8_interaction.py]
+    status: implemented_with_assumptions
     known_parameters: {equation_number: 5, distance_decay_kappa: 30, unit: inverse_meters}
     unknowns: [zero-neighbor handling]
-    assumptions: []
+    assumptions: [A_LAPLACIAN_WEIGHT_NUMERICS_001]
     notes: "kappa is from Appendix A.1 Table 3."
   - id: equation_6
     kind: equation
@@ -78,9 +78,9 @@ items:
     paper_section: "Sec. 3.4"
     pdf_page: 5
     evidence_summary: "Each vertex coordinate is the weighted sum of edge displacement vectors."
-    implementation_targets: [src/toporetarget/geometry/laplacian.py]
-    test_targets: [tests/unit/test_paper_fidelity.py]
-    status: specified_not_implemented
+    implementation_targets: [src/toporetarget/retarget/laplacian.py]
+    test_targets: [tests/unit/test_stage8_interaction.py]
+    status: implemented_with_assumptions
     known_parameters: {equation_number: 6, unit: meters}
     unknowns: [numeric precision and degenerate graph handling]
     assumptions: []
@@ -91,13 +91,13 @@ items:
     paper_section: "Sec. 3.4"
     pdf_page: 5
     evidence_summary: "Mean squared difference between source and robot weighted Laplacian coordinates."
-    implementation_targets: [src/toporetarget/retarget/optimization.py]
-    test_targets: [tests/unit/test_paper_fidelity.py]
-    status: specified_not_implemented
+    implementation_targets: [src/toporetarget/retarget/interaction_objective.py, src/toporetarget/retarget/interaction_evaluation.py]
+    test_targets: [tests/unit/test_stage8_interaction.py]
+    status: implemented_with_assumptions
     known_parameters: {equation_number: 7, lambda_interaction_mesh: 500, unit: dimensionless}
     unknowns: [optimizer implementation]
-    assumptions: [A_SOLVER_001]
-    notes: "The interaction-mesh weight is locked in Appendix A.1 Table 3."
+    assumptions: [A_INTERACTION_BASE_DIFFERENTIABILITY_001]
+    notes: "The fixed graph loss is evaluated as the exact mean squared Eq. (6) residual over 71 vertices. No Eq. 8 optimization or lambda multiplication is executed in Stage 8."
   - id: equation_8
     kind: equation
     title: Final constrained optimization with slack

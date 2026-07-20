@@ -54,4 +54,4 @@ sign is reported as `real_mesh_sign_limitation`; it is never silently repaired o
 Stage 7 is documented separately in
 [`STAGE_7_BONE_DIRECTION_WARM_START.md`](STAGE_7_BONE_DIRECTION_WARM_START.md). Its bounded
 relative-bone-direction warm-start path does not consume this Stage 6 object geometry or SDF
-output; Stage 8 and later interaction/refinement work remain not started.
+output; Stage 8 consumes this artifact only through its hash-checked 21+50 source graph boundary.
