@@ -10,6 +10,7 @@ import numpy as np
 from toporetarget.data.schema import HOISequence
 from toporetarget.geometry.se3 import object_to_scene, scene_to_wrist
 from toporetarget.keypoints.registry import get_layout
+from toporetarget.viz.responsive_fonts import install_responsive_font_scaling
 
 
 def render_keypoint_view(
@@ -158,6 +159,7 @@ def launch_interactive_keypoint_viewer(
         "show_object_mesh": bool(show_object_mesh),
         "show_axes": bool(show_axes),
     }
+    responsive_apply: Any = None
 
     def _display_points(points_scene: np.ndarray, frame: int) -> np.ndarray:
         values = np.asarray(points_scene[frame], dtype=np.float64)
@@ -294,6 +296,8 @@ def launch_interactive_keypoint_viewer(
         handles, labels = axes.get_legend_handles_labels()
         if handles:
             axes.legend(loc="upper left", bbox_to_anchor=(1.02, 1.0))
+        if responsive_apply is not None:
+            responsive_apply()
         figure.canvas.draw_idle()
 
     slider_axes = figure.add_axes((0.16, 0.13, 0.56, 0.035))
@@ -375,7 +379,12 @@ def launch_interactive_keypoint_viewer(
     view_buttons.on_clicked(_set_view)
     toggle_buttons.on_clicked(_toggle)
     _draw(start_frame)
-    plt.show()
+    resize_connection, responsive_apply = install_responsive_font_scaling(figure)
+    responsive_apply()
+    try:
+        plt.show()
+    finally:
+        figure.canvas.mpl_disconnect(resize_connection)
 
 
 __all__ = ["launch_interactive_keypoint_viewer", "render_keypoint_view"]

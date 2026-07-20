@@ -7,6 +7,8 @@ from typing import Any
 
 import numpy as np
 
+from toporetarget.viz.responsive_fonts import install_responsive_font_scaling
+
 from .object_geometry import scene_samples_for_frame
 from .robot_surface import RobotSurfaceSampleSet
 from .signed_distance.reference import ReferenceSignedDistanceBackend
@@ -106,7 +108,11 @@ def render_object_samples(
         figure.savefig(destination, dpi=140, bbox_inches="tight")
         plt.close(figure)
         return destination
-    plt.show()
+    connection, _ = install_responsive_font_scaling(figure)
+    try:
+        plt.show()
+    finally:
+        figure.canvas.mpl_disconnect(connection)
     return None
 
 
@@ -159,7 +165,11 @@ def render_sdf_slice(
         figure.savefig(destination, dpi=140, bbox_inches="tight")
         plt.close(figure)
         return destination
-    plt.show()
+    connection, _ = install_responsive_font_scaling(figure)
+    try:
+        plt.show()
+    finally:
+        figure.canvas.mpl_disconnect(connection)
     return None
 
 
@@ -210,7 +220,11 @@ def render_robot_surface(
         figure.savefig(destination, dpi=140, bbox_inches="tight")
         plt.close(figure)
         return destination
-    plt.show()
+    connection, _ = install_responsive_font_scaling(figure)
+    try:
+        plt.show()
+    finally:
+        figure.canvas.mpl_disconnect(connection)
     return None
 
 

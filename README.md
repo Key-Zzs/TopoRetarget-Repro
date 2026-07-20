@@ -118,6 +118,10 @@ toporetarget doctor paper
 The sections below are organized by complete user-facing capabilities rather than by development
 stage. Each section starts with the core scripts/commands and then gives optional diagnostics.
 
+Every `--interactive`/`--show` Matplotlib window in this repository installs the same responsive
+font handler: titles, axis labels, ticks, legends, annotations, frame labels, and widget labels
+scale with the window area. Static PNG/PDF output is unchanged.
+
 ### Generate and Validate Relative Bone-Direction Warm Starts
 
 Stage 7 consumes a canonical MediaPipe-21 cache and writes a separate bounded
@@ -220,6 +224,19 @@ toporetarget retarget evaluate-interaction \
   --output .local/cache/retarget/interaction_evaluation/s7_cubemedium_inspect_1_right_artimano_rh.zarr
 ```
 
+Interactive graph inspection (use `--mode source` and omit `--evaluation` to inspect only the
+source graph):
+
+```bash
+toporetarget retarget visualize-interaction \
+  --graph .local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right.zarr \
+  --mode compare \
+  --evaluation .local/cache/retarget/interaction_evaluation/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --start-frame 0 --end-frame 60 --interactive \
+  --show-laplacian --show-residuals --show-contributions \
+  --report .local/reports/stage8/rh_interactive_viewer.json
+```
+
 See [`docs/INTERACTION_GRAPH.md`](docs/INTERACTION_GRAPH.md),
 [`docs/LAPLACIAN_INTERACTION_LOSS.md`](docs/LAPLACIAN_INTERACTION_LOSS.md), and the
 [`Stage 8 report`](docs/stages/STAGE_8_INTERACTION_GRAPH_LAPLACIAN.md).
@@ -269,6 +286,16 @@ toporetarget retarget visualize-refinement \
   --graph .local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right.zarr \
   --final .local/cache/retarget/final/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
   --robot artimano_rh --frame 0 --output .local/reports/stage9/scene_first.png
+
+# Interactive bounded clip; omit --output because the window is live.
+toporetarget retarget visualize-refinement \
+  --canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
+  --warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --graph .local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right.zarr \
+  --final .local/cache/retarget/final/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --robot artimano_rh --start-frame 0 --end-frame 60 --interactive \
+  --show-labels --show-frames --show-collision-samples --show-query-set \
+  --show-penetrations --show-slack --report .local/reports/stage9/rh_interactive_viewer.json
 ```
 
 The full reference and solver comparison commands are documented in
@@ -280,6 +307,83 @@ with zero penetration; adaptive/full comparison used 16/512 queries at frames `0
 Detailed metrics, hashes, Jacobian checks, solver comparisons, and visual reports are in the
 ignored `.local/reports/stage9/` directory. This closes Stage 9 only; Stage 10, RL, physics,
 ContactPose, and baseline reproduction remain TODO.
+
+#### Visualize the entire trajectory
+
+The existing `f000000_f000060` inputs and final artifacts contain only the half-open range
+`[0,60)`. `visualize-refinement` cannot recover omitted frames. To view the whole source sequence,
+first create one full canonical artifact, then run Stages 7–9 without frame bounds. This RH flow
+reuses the existing Stage 6 object and collision-surface artifacts read-only; replace `right`/
+`artimano_rh` with `left`/`artimano_lh` for the LH flow.
+
+```bash
+export FULL_CANONICAL=.local/cache/hoi/grab/s7/cubemedium_inspect_1/both_full_mp21.zarr
+export OBJECT_SAMPLES=.local/cache/geometry/object_surface/cubemedium_samples.npz
+export RH_WARM_FULL=.local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh_full.zarr
+export RH_GRAPH_FULL=.local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right_full.zarr
+export RH_EVAL_FULL=.local/cache/retarget/interaction_evaluation/s7_cubemedium_inspect_1_right_full.zarr
+export RH_FINAL_FULL=.local/cache/retarget/final/s7_cubemedium_inspect_1_right_artimano_rh_full.zarr
+export RH_SURFACE=.local/cache/geometry/robot_surface/artimano_rh_neutral.npz
+
+# 1. Convert and validate all frames. Omitting both frame flags means the full sequence.
+toporetarget data convert --dataset grab --index .local/index/grab \
+  --sequence s7/cubemedium_inspect_1 --hands both \
+  --include-table --contact-mode semantic --include-mediapipe21 \
+  --mano-model-root "$MANO_MODEL_ROOT" --output "$FULL_CANONICAL" --force
+toporetarget data validate --dataset grab --index .local/index/grab \
+  --sequence s7/cubemedium_inspect_1 --canonical "$FULL_CANONICAL" \
+  --mano-model-root "$MANO_MODEL_ROOT" \
+  --report .local/reports/stage5/grab_full_validation.json
+toporetarget geometry validate-samples --canonical "$FULL_CANONICAL" \
+  --object-id primary --samples "$OBJECT_SAMPLES" \
+  --report .local/reports/stage6/full_object_samples_validation.json
+
+# 2. Stage 7 full warm start.
+toporetarget retarget warm-start --canonical "$FULL_CANONICAL" \
+  --hand right --robot artimano_rh \
+  --frame-profile canonical_keypoint_wrist_v1 \
+  --bone-profile mediapipe21_full_finger_chain_v1 \
+  --solver-profile paper_repro_scipy_trf --output "$RH_WARM_FULL" --force
+
+# 3. Stage 8 full graph and frozen Eq. (7) evaluation.
+toporetarget retarget build-interaction-graph --canonical "$FULL_CANONICAL" \
+  --hand right --object-samples "$OBJECT_SAMPLES" \
+  --output "$RH_GRAPH_FULL" --report .local/reports/stage8/rh_full_graph_build.json --force
+toporetarget retarget evaluate-interaction --graph "$RH_GRAPH_FULL" \
+  --warm-start "$RH_WARM_FULL" --robot artimano_rh \
+  --output "$RH_EVAL_FULL" --force
+
+# 4. Stage 9 sequential full refinement, validation, and independent collision audit.
+toporetarget retarget refine --canonical "$FULL_CANONICAL" \
+  --warm-start "$RH_WARM_FULL" --graph "$RH_GRAPH_FULL" --robot artimano_rh \
+  --query-profile adaptive_active_set_v1 --coordinate-profile local_seed_delta_v1 \
+  --solver-profile scipy_slsqp_active_set_v1 --collision-samples "$RH_SURFACE" \
+  --output "$RH_FINAL_FULL" --force
+toporetarget retarget validate-refinement --canonical "$FULL_CANONICAL" \
+  --warm-start "$RH_WARM_FULL" --graph "$RH_GRAPH_FULL" --final "$RH_FINAL_FULL" \
+  --robot artimano_rh --collision-samples "$RH_SURFACE" \
+  --report .local/reports/stage9/rh_full_validation.json
+toporetarget retarget audit-penetration --canonical "$FULL_CANONICAL" \
+  --warm-start "$RH_WARM_FULL" --final "$RH_FINAL_FULL" --robot artimano_rh \
+  --collision-samples "$RH_SURFACE" \
+  --report .local/reports/stage9/rh_full_surface_audit.json
+
+# 5. The viewer defaults to every frame in the final artifact when bounds are omitted.
+toporetarget retarget visualize-refinement --canonical "$FULL_CANONICAL" \
+  --warm-start "$RH_WARM_FULL" --graph "$RH_GRAPH_FULL" --final "$RH_FINAL_FULL" \
+  --robot artimano_rh --interactive --show-labels --show-frames \
+  --show-collision-samples --show-query-set --show-penetrations --show-slack
+```
+
+The indexed `s7/cubemedium_inspect_1` sequence has 951 frames at 120 FPS; the bounded clip is only
+frames 0–59. The 60-frame RH/LH bounded run took about 20 minutes per side on this workstation, so
+the full Stage 9 solve is roughly 5 h 17 min per side (about 10 h 34 min for both), excluding
+conversion and upstream stages. This is only a linear estimate; inspect per-frame diagnostics.
+The viewer does not run the solver: it only reads the final artifact. If the hand and object are still far
+apart after this process, inspect the canonical scene overlay and the final viewer's object,
+collision-sample, query-set, penetration, and slack layers. Do not enlarge the viewer bounds or
+alter object poses/samples to manufacture a collision; a large positive SDF and zero penetration
+mean the current source trajectory simply contains no collision at that frame.
 
 ### 1. Synthetic canonical HOI workflow
 
@@ -302,6 +406,16 @@ toporetarget data compare \
   --frame 0 \
   --output .local/reports/stage2a/synthetic_side_by_side.png \
   --error-json .local/reports/stage2a/synthetic_side_by_side.json
+```
+
+Interactive comparison window:
+
+```bash
+toporetarget data compare \
+  --dataset synthetic --sequence demo \
+  --canonical .local/cache/hoi/synthetic_demo.zarr \
+  --layout side-by-side --start-frame 0 --end-frame 8 --show \
+  --show-keypoints --show-mesh --show-scene-frame --show-object-frame
 ```
 
 Frame ranges are contiguous and half-open: `--start-frame 0 --end-frame 60` means frames 0–59.
@@ -459,6 +573,16 @@ contact colors, and headless PNG output. The canonical CLI flag is `--reference-
 [`docs/GRAB_DATASET_ADAPTER.md`](docs/GRAB_DATASET_ADAPTER.md) and
 [`docs/GRAB_INTERACTIVE_VISUALIZATION.md`](docs/GRAB_INTERACTIVE_VISUALIZATION.md).
 
+For an interactive canonical-scene check of the bounded clip:
+
+```bash
+toporetarget data visualize --dataset grab --index .local/index/grab \
+  --sequence s7/cubemedium_inspect_1 \
+  --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/both_f000000_f000060.zarr \
+  --mode canonical --reference-frame scene --start-frame 0 --end-frame 60 \
+  --interactive --show-mediapipe21 --show-mesh --show-table --show-contacts --show-axes
+```
+
 ### 6. Arti-MANO asset import
 
 Import only the local Arti-MANO asset tree from a separately checked-out ManipTrans source:
@@ -521,6 +645,9 @@ toporetarget robots visualize \
   --output .local/reports/stage4/artimano_rh_random_overlay.png
 ```
 
+To open the same neutral collision view locally, replace `--output ...png` with `--show`; its
+window text also scales responsively.
+
 The interface reports missing collision geometry and does not synthesize it. It defines `palm` as
 the engineering URDF base frame; it does not choose the paper's unresolved wrist-frame
 parameterization or perform MANO-to-Arti-MANO retargeting. See
@@ -564,6 +691,17 @@ toporetarget geometry visualize-object \
   --show-ids --show-normals --show-object-frame --show-scene-frame
 
 # Repeat with --frame 29 and --frame 59 for middle/last-frame overlays.
+
+# Static SDF slice and collision-surface diagnostics.
+toporetarget geometry visualize-sdf \
+  --shape sphere --slice-axis z --slice-value 0 \
+  --output .local/reports/stage6/sdf_sphere_slice_z0.png
+toporetarget geometry visualize-robot-surface \
+  --robot artimano_rh --pose neutral \
+  --profile engineering_collision_32_per_geometry \
+  --samples .local/cache/geometry/robot_surface/artimano_rh_neutral.npz \
+  --output .local/reports/stage6/artimano_rh_collision_surface.png \
+  --show-sample-normals
 ```
 
 The object viewer displays the fixed 50 sample IDs and normals; `--frame 29` and `--frame 59`

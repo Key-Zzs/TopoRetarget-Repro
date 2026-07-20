@@ -10,6 +10,7 @@ import numpy as np
 from toporetarget.data.schema import HOISequence
 from toporetarget.geometry.se3 import object_to_scene
 from toporetarget.keypoints.registry import get_layout
+from toporetarget.viz.responsive_fonts import install_responsive_font_scaling
 
 from .artifacts import WarmStartTrajectory
 
@@ -83,13 +84,6 @@ def _frame_points(
 def _set_visibility(artists: list[Any], visible: bool) -> None:
     for artist in artists:
         artist.set_visible(visible)
-
-
-def _responsive_font_scale(figure: Any) -> float:
-    """Return a bounded font scale derived from the current canvas size."""
-
-    width, height = figure.canvas.get_width_height()
-    return float(np.clip(min(width / 900.0, height / 800.0), 0.65, 2.5))
 
 
 def _set_vector_segments(
@@ -295,7 +289,11 @@ def render_warm_start_frame(
         result.parent.mkdir(parents=True, exist_ok=True)
         figure.savefig(result, dpi=180)
     if show:
-        plt.show()
+        connection, _ = install_responsive_font_scaling(figure)
+        try:
+            plt.show()
+        finally:
+            figure.canvas.mpl_disconnect(connection)
     plt.close(figure)
     return result
 
@@ -401,6 +399,7 @@ def launch_warm_start_viewer(
         for index, name in enumerate(layout.semantic_names)
     ]
     stable_artists.extend(labels)
+    responsive_apply: Any = None
 
     source_frame_lines = [
         axis.plot([], [], [], color=color, linewidth=1.1)[0]
@@ -551,35 +550,15 @@ def launch_warm_start_viewer(
             f"Ebone={trajectory.arrays['ebone'][frame]:.5g} | "
             f"total={trajectory.arrays['total_objective'][frame]:.5g}"
         )
+        if responsive_apply is not None:
+            responsive_apply()
         figure.canvas.draw_idle()
 
     slider.on_changed(update)
     update(start)
-    legend = axis.legend()
-
-    def apply_font_scale() -> None:
-        scale = _responsive_font_scale(figure)
-        axis.title.set_fontsize(11.0 * scale)
-        axis.xaxis.label.set_fontsize(9.0 * scale)
-        axis.yaxis.label.set_fontsize(9.0 * scale)
-        axis.zaxis.label.set_fontsize(9.0 * scale)
-        for tick in axis.get_xticklabels() + axis.get_yticklabels() + axis.get_zticklabels():
-            tick.set_fontsize(7.0 * scale)
-        for text in labels:
-            text.set_fontsize(6.0 * scale)
-        for text in legend.get_texts():
-            text.set_fontsize(8.0 * scale)
-        slider.label.set_fontsize(8.0 * scale)
-        slider.valtext.set_fontsize(8.0 * scale)
-        for tick in slider.ax.get_xticklabels() + slider.ax.get_yticklabels():
-            tick.set_fontsize(7.0 * scale)
-
-    def on_resize(_event: Any) -> None:
-        apply_font_scale()
-        figure.canvas.draw_idle()
-
-    resize_connection = figure.canvas.mpl_connect("resize_event", on_resize)
-    apply_font_scale()
+    axis.legend()
+    resize_connection, responsive_apply = install_responsive_font_scaling(figure)
+    responsive_apply()
     try:
         plt.show()
     finally:

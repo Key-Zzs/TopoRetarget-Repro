@@ -12,6 +12,7 @@ import numpy as np
 from toporetarget.data.schema import HOISequence
 from toporetarget.geometry.se3 import object_to_scene
 from toporetarget.viz.errors import ComparisonResult
+from toporetarget.viz.responsive_fonts import install_responsive_font_scaling
 
 
 @dataclass
@@ -270,7 +271,11 @@ def render_comparison(
             raise RuntimeError(
                 "--show requires a local GUI display; use --output for headless rendering"
             )
-        plt.show()
+        resize_connection, _ = install_responsive_font_scaling(figure)
+        try:
+            plt.show()
+        finally:
+            figure.canvas.mpl_disconnect(resize_connection)
     return figure
 
 
@@ -311,7 +316,12 @@ def show_comparison(
         del new_figure
 
     slider.on_changed(update)
-    plt.show()
+    resize_connection, responsive_apply = install_responsive_font_scaling(figure)
+    responsive_apply()
+    try:
+        plt.show()
+    finally:
+        figure.canvas.mpl_disconnect(resize_connection)
     return figure
 
 

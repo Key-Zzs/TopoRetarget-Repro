@@ -7,6 +7,8 @@ from typing import Any
 
 import numpy as np
 
+from toporetarget.viz.responsive_fonts import install_responsive_font_scaling
+
 from .interaction_evaluation import InteractionEvaluationTrajectory
 from .interaction_graph import InteractionGraphTrajectory
 
@@ -265,6 +267,7 @@ def launch_interaction_viewer(
         "contributions": show_contributions,
         "playing": False,
     }
+    responsive_apply: Any = None
 
     def draw(current_frame: int) -> None:
         for item in axes:
@@ -372,6 +375,8 @@ def launch_interaction_viewer(
                         normalize=False,
                         alpha=0.7,
                     )
+        if responsive_apply is not None:
+            responsive_apply()
         figure.canvas.draw_idle()
 
     draw(frame)
@@ -434,7 +439,13 @@ def launch_interaction_viewer(
         slider,
         timer,
     ]
-    plt.show(block=False)
+    resize_connection, responsive_apply = install_responsive_font_scaling(figure)
+    responsive_apply()
+    try:
+        plt.show(block=False)
+    except Exception:
+        figure.canvas.mpl_disconnect(resize_connection)
+        raise
     return {
         "interactive": True,
         "frame_range": [start_frame, stop],

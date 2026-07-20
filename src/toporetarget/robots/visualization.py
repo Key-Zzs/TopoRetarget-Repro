@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 
 from toporetarget.keypoints.registry import get_layout
+from toporetarget.viz.responsive_fonts import install_responsive_font_scaling
 
 from .base import RobotHandModel
 from .urdf.geometry import RobotGeometryInstance
@@ -143,7 +144,11 @@ def render_robot_hand(
         result.parent.mkdir(parents=True, exist_ok=True)
         figure.savefig(result, dpi=180)
     if show:
-        plt.show()
+        connection, _ = install_responsive_font_scaling(figure)
+        try:
+            plt.show()
+        finally:
+            figure.canvas.mpl_disconnect(connection)
     plt.close(figure)
     return result
 

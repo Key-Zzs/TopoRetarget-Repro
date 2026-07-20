@@ -12,6 +12,7 @@ import numpy as np
 
 from toporetarget.data.schema import HOISequence
 from toporetarget.geometry.se3 import object_to_scene, scene_to_object, scene_to_wrist
+from toporetarget.viz.responsive_fonts import install_responsive_font_scaling
 
 
 @dataclass
@@ -170,6 +171,8 @@ class InteractiveHOIViewer:
         self.artists: list[Any] = []
         self._items: list[dict[str, Any]] = []
         self._key_connection: Any = None
+        self._font_connection: Any = None
+        self._font_apply: Any = None
         self.speed_slider: Any = None
         self.contact_mode_radio: Any = None
         self.contact_legend: Any = None
@@ -191,6 +194,7 @@ class InteractiveHOIViewer:
         self._build_artists()
         self._build_controls()
         self.contact_legend = self.figure.text(0.02, 0.91, "", fontsize=8, va="top")
+        self._font_connection, self._font_apply = install_responsive_font_scaling(self.figure)
         self._key_connection = self.figure.canvas.mpl_connect("key_press_event", self.on_key)
         self._set_limits()
         self.update(self.frame)
@@ -700,6 +704,9 @@ class InteractiveHOIViewer:
         if self.slider is not None and int(self.slider.val) != frame:
             self.slider.set_val(frame)
         self._set_title()
+        if self._font_apply is not None:
+            self._font_apply()
+        self.figure.canvas.draw_idle()
 
     def _set_title(self) -> None:
         values = [f"frame {self.frame} | t={self._timestamp(self.frame):.6f}s"]
@@ -881,6 +888,8 @@ class InteractiveHOIViewer:
             self.timer.stop()
         if self.figure is not None:
             self.figure.canvas.mpl_disconnect(self._key_connection)
+            if self._font_connection is not None:
+                self.figure.canvas.mpl_disconnect(self._font_connection)
             _mpl().close(self.figure)
 
 

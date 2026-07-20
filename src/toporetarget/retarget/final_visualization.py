@@ -15,6 +15,7 @@ import numpy as np
 
 from toporetarget.geometry.se3 import transform_points
 from toporetarget.keypoints.registry import get_layout
+from toporetarget.viz.responsive_fonts import install_responsive_font_scaling
 
 from .artifacts import WarmStartTrajectory
 from .final_refinement import (
@@ -196,7 +197,11 @@ def render_refinement_frame(
         destination.parent.mkdir(parents=True, exist_ok=True)
         figure.savefig(destination, dpi=150)
     if show:
-        plt.show()
+        connection, _ = install_responsive_font_scaling(figure)
+        try:
+            plt.show()
+        finally:
+            figure.canvas.mpl_disconnect(connection)
     else:
         plt.close(figure)
     return {
@@ -247,6 +252,7 @@ def launch_refinement_viewer(*args: Any, **kwargs: Any) -> dict[str, Any]:
         "closest": bool(kwargs.pop("show_closest", False)),
         "playing": False,
     }
+    responsive_apply: Any = None
     current = {"frame": start}
     layout = get_layout("mediapipe21")
 
@@ -369,6 +375,8 @@ def launch_refinement_viewer(*args: Any, **kwargs: Any) -> dict[str, Any]:
         axis.set_title(title)
         axis.view_init(elev=22, azim=-65)
         axis.legend(loc="upper right", fontsize="small")
+        if responsive_apply is not None:
+            responsive_apply()
         figure.canvas.draw_idle()
 
     slider_axis = figure.add_axes((0.18, 0.08, 0.64, 0.035))
@@ -431,11 +439,16 @@ def launch_refinement_viewer(*args: Any, **kwargs: Any) -> dict[str, Any]:
     timer.start()
     figure.canvas.mpl_connect("close_event", lambda _event: timer.stop())
     figure._stage9_widgets = (buttons, toggle, slider, timer)  # type: ignore[attr-defined]
+    resize_connection, responsive_apply = install_responsive_font_scaling(figure)
+    responsive_apply()
     draw(start)
-    if show:
-        plt.show()
-    else:
-        plt.close(figure)
+    try:
+        if show:
+            plt.show()
+        else:
+            plt.close(figure)
+    finally:
+        figure.canvas.mpl_disconnect(resize_connection)
     return {
         "interactive": True,
         "frame_range": [start, stop],

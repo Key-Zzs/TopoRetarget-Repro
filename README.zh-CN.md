@@ -107,6 +107,9 @@ toporetarget doctor paper
 以下按完整的用户功能组织，而不是按开发阶段组织。每节先给核心脚本，再给可选的
 debug/可视化命令。
 
+仓库中所有 `--interactive`/`--show` Matplotlib 窗口都使用统一的响应式字体处理：标题、坐标轴
+标签、刻度、图例、注释、帧标签和控件标签会随窗口面积放大或缩小；静态 PNG/PDF 输出不变。
+
 ### 生成并验证相对骨方向 Warm Start
 
 Stage 7 读取 canonical MediaPipe-21 cache，并写入独立的初始化 artifact。
@@ -177,6 +180,19 @@ toporetarget retarget audit-interaction-inputs \
 [`docs/stages/STAGE_8_INTERACTION_GRAPH_LAPLACIAN.md`](docs/stages/STAGE_8_INTERACTION_GRAPH_LAPLACIAN.md)。
 Eq. (8)-(9)、slack、SDF/collision penalty 和 optimization 由下一个 Stage 9 workflow 完成。
 
+交互检查 graph、Laplacian、residual 和 contribution（只查看 source graph 时使用 `--mode source`
+并省略 `--evaluation`）：
+
+```bash
+toporetarget retarget visualize-interaction \
+  --graph .local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right.zarr \
+  --mode compare \
+  --evaluation .local/cache/retarget/interaction_evaluation/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --start-frame 0 --end-frame 60 --interactive \
+  --show-laplacian --show-residuals --show-contributions \
+  --report .local/reports/stage8/rh_interactive_viewer.json
+```
+
 ### Stage 9：生成并验证保交互的最终机器人参考轨迹
 
 Stage 9 使用冻结的 Stage 7 warm start、Stage 8 graph 和 Stage 6 collision-surface artifact，
@@ -224,6 +240,94 @@ physics、ContactPose 和 baselines 不在本阶段。
 comparison 和可视化报告位于被忽略的 `.local/reports/stage9/`；这只关闭 Stage 9，Stage 10、RL、
 physics、ContactPose 和 baseline reproduction 仍是 TODO。
 
+Stage 9 有界 clip 的交互查看（不使用 `--output`）：
+
+```bash
+toporetarget retarget visualize-refinement \
+  --canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
+  --warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --graph .local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right.zarr \
+  --final .local/cache/retarget/final/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --robot artimano_rh --start-frame 0 --end-frame 60 --interactive \
+  --show-labels --show-frames --show-collision-samples --show-query-set \
+  --show-penetrations --show-slack --report .local/reports/stage9/rh_interactive_viewer.json
+```
+
+#### 查看整条轨迹
+
+现有 `f000000_f000060` 输入和 final artifact 只有半开区间 `[0,60)`；`visualize-refinement` 无法
+恢复没有转换、没有优化的帧。要查看完整源序列，先生成一个 full canonical artifact，再在 Stage 7–9
+中省略帧范围参数。下面是 RH 的完整流程；LH 将 `right`/`artimano_rh` 替换为
+`left`/`artimano_lh`，并使用对应的 collision-surface artifact。流程只读复用现有 Stage 6
+object 和 collision-surface artifact。
+
+```bash
+export FULL_CANONICAL=.local/cache/hoi/grab/s7/cubemedium_inspect_1/both_full_mp21.zarr
+export OBJECT_SAMPLES=.local/cache/geometry/object_surface/cubemedium_samples.npz
+export RH_WARM_FULL=.local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh_full.zarr
+export RH_GRAPH_FULL=.local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right_full.zarr
+export RH_EVAL_FULL=.local/cache/retarget/interaction_evaluation/s7_cubemedium_inspect_1_right_full.zarr
+export RH_FINAL_FULL=.local/cache/retarget/final/s7_cubemedium_inspect_1_right_artimano_rh_full.zarr
+export RH_SURFACE=.local/cache/geometry/robot_surface/artimano_rh_neutral.npz
+
+# 1. 转换并验证所有帧。省略两个 frame 参数即表示完整序列。
+toporetarget data convert --dataset grab --index .local/index/grab \
+  --sequence s7/cubemedium_inspect_1 --hands both \
+  --include-table --contact-mode semantic --include-mediapipe21 \
+  --mano-model-root "$MANO_MODEL_ROOT" --output "$FULL_CANONICAL" --force
+toporetarget data validate --dataset grab --index .local/index/grab \
+  --sequence s7/cubemedium_inspect_1 --canonical "$FULL_CANONICAL" \
+  --mano-model-root "$MANO_MODEL_ROOT" \
+  --report .local/reports/stage5/grab_full_validation.json
+toporetarget geometry validate-samples --canonical "$FULL_CANONICAL" \
+  --object-id primary --samples "$OBJECT_SAMPLES" \
+  --report .local/reports/stage6/full_object_samples_validation.json
+
+# 2. Stage 7 完整 warm start。
+toporetarget retarget warm-start --canonical "$FULL_CANONICAL" \
+  --hand right --robot artimano_rh \
+  --frame-profile canonical_keypoint_wrist_v1 \
+  --bone-profile mediapipe21_full_finger_chain_v1 \
+  --solver-profile paper_repro_scipy_trf --output "$RH_WARM_FULL" --force
+
+# 3. Stage 8 完整 graph 和冻结的 Eq. (7) evaluation。
+toporetarget retarget build-interaction-graph --canonical "$FULL_CANONICAL" \
+  --hand right --object-samples "$OBJECT_SAMPLES" \
+  --output "$RH_GRAPH_FULL" --report .local/reports/stage8/rh_full_graph_build.json --force
+toporetarget retarget evaluate-interaction --graph "$RH_GRAPH_FULL" \
+  --warm-start "$RH_WARM_FULL" --robot artimano_rh \
+  --output "$RH_EVAL_FULL" --force
+
+# 4. Stage 9 顺序执行完整 refinement、validation 和独立碰撞审计。
+toporetarget retarget refine --canonical "$FULL_CANONICAL" \
+  --warm-start "$RH_WARM_FULL" --graph "$RH_GRAPH_FULL" --robot artimano_rh \
+  --query-profile adaptive_active_set_v1 --coordinate-profile local_seed_delta_v1 \
+  --solver-profile scipy_slsqp_active_set_v1 --collision-samples "$RH_SURFACE" \
+  --output "$RH_FINAL_FULL" --force
+toporetarget retarget validate-refinement --canonical "$FULL_CANONICAL" \
+  --warm-start "$RH_WARM_FULL" --graph "$RH_GRAPH_FULL" --final "$RH_FINAL_FULL" \
+  --robot artimano_rh --collision-samples "$RH_SURFACE" \
+  --report .local/reports/stage9/rh_full_validation.json
+toporetarget retarget audit-penetration --canonical "$FULL_CANONICAL" \
+  --warm-start "$RH_WARM_FULL" --final "$RH_FINAL_FULL" --robot artimano_rh \
+  --collision-samples "$RH_SURFACE" \
+  --report .local/reports/stage9/rh_full_surface_audit.json
+
+# 5. 省略范围时，viewer 默认读取 final artifact 的全部帧。
+toporetarget retarget visualize-refinement --canonical "$FULL_CANONICAL" \
+  --warm-start "$RH_WARM_FULL" --graph "$RH_GRAPH_FULL" --final "$RH_FINAL_FULL" \
+  --robot artimano_rh --interactive --show-labels --show-frames \
+  --show-collision-samples --show-query-set --show-penetrations --show-slack
+```
+
+索引中的 `s7/cubemedium_inspect_1` 一共有 951 帧、120 FPS；当前有界 clip 只有 0–59 帧。当前工作站上
+有界的 60 帧 RH/LH 运行每侧约 20 分钟，因此完整 Stage 9 粗略需要每侧 5 小时 17 分钟、两侧约
+10 小时 34 分钟，不含转换和上游阶段。这只是线性估计，应以逐帧诊断为准。viewer 不会再次运行
+solver，只读取 final artifact。如果完整流程后手和物体仍然
+相距很远，应检查 canonical scene overlay，以及 final viewer 中的 object、collision-sample、query-set、
+penetration 和 slack 图层。不要靠扩大 viewer 范围或改 object pose/sample 人为制造碰撞；较大的正 SDF
+和零 penetration 表示该源轨迹在该帧确实没有碰撞。
+
 如需生成 first/middle/last 静态诊断图，只需修改 `--frame` 和 `--output`：
 
 ```bash
@@ -267,6 +371,16 @@ toporetarget data compare \
   --frame 0 \
   --output .local/reports/stage2a/synthetic_side_by_side.png \
   --error-json .local/reports/stage2a/synthetic_side_by_side.json
+```
+
+交互式 comparison 窗口：
+
+```bash
+toporetarget data compare \
+  --dataset synthetic --sequence demo \
+  --canonical .local/cache/hoi/synthetic_demo.zarr \
+  --layout side-by-side --start-frame 0 --end-frame 8 --show \
+  --show-keypoints --show-mesh --show-scene-frame --show-object-frame
 ```
 
 帧范围是连续的半开区间：--start-frame 0 --end-frame 60 表示 0–59 帧。
@@ -421,6 +535,16 @@ slider/键盘播放、scene/object/wrist reference、semantic contact 颜色和�
 [docs/GRAB_DATASET_ADAPTER.md](docs/GRAB_DATASET_ADAPTER.md) 与
 [docs/GRAB_INTERACTIVE_VISUALIZATION.md](docs/GRAB_INTERACTIVE_VISUALIZATION.md)。
 
+对有界 clip 打开 canonical scene 的交互检查：
+
+```bash
+toporetarget data visualize --dataset grab --index .local/index/grab \
+  --sequence s7/cubemedium_inspect_1 \
+  --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/both_f000000_f000060.zarr \
+  --mode canonical --reference-frame scene --start-frame 0 --end-frame 60 \
+  --interactive --show-mediapipe21 --show-mesh --show-table --show-contacts --show-axes
+```
+
 ### 6. Arti-MANO 资产导入
 
 从单独 checkout 的 ManipTrans 导入本地 Arti-MANO 资产树：
@@ -482,6 +606,9 @@ toporetarget robots visualize \
   --output .local/reports/stage4/artimano_rh_random_overlay.png
 ```
 
+要在本地打开同一 neutral collision 窗口，将 `--output ...png` 替换为 `--show`；窗口文字同样会
+随窗口响应式缩放。
+
 接口会报告缺失的 collision geometry，不会静默生成替代几何。Stage 4 将 `palm` 定义为工程
 URDF base frame，不选择论文中尚未确定的 wrist frame 参数化，也不执行 MANO→Arti-MANO
 重定向。详见 [docs/ROBOT_HAND_INTERFACE.md](docs/ROBOT_HAND_INTERFACE.md) 和
@@ -524,6 +651,17 @@ toporetarget geometry visualize-object \
   --show-ids --show-normals --show-object-frame --show-scene-frame
 
 # 将 --frame 改为 29 和 59，可生成 middle/last frame overlay。
+
+# SDF slice 和机器人 collision surface 的静态诊断图。
+toporetarget geometry visualize-sdf \
+  --shape sphere --slice-axis z --slice-value 0 \
+  --output .local/reports/stage6/sdf_sphere_slice_z0.png
+toporetarget geometry visualize-robot-surface \
+  --robot artimano_rh --pose neutral \
+  --profile engineering_collision_32_per_geometry \
+  --samples .local/cache/geometry/robot_surface/artimano_rh_neutral.npz \
+  --output .local/reports/stage6/artimano_rh_collision_surface.png \
+  --show-sample-normals
 ```
 
 对象 viewer 会显示固定的 50 个 sample ID 和法向；使用 `--frame 29`、`--frame 59` 可生成
