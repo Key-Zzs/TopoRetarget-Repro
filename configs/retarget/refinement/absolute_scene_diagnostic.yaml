@@ -1,0 +1,10 @@
+profile_id: absolute_scene_diagnostic
+version: "1.0.0"
+base_parameterization: absolute_scene_pose_diagnostic_only
+base_prior_reference: absolute_scene_origin_diagnostic_only
+previous_state_mapping: not_used
+first_frame_policy: not_used
+rotation_vector_units: radians
+translation_units: meters
+assumptions:
+  - A_REFINEMENT_DIAGNOSTIC_PROFILE_001

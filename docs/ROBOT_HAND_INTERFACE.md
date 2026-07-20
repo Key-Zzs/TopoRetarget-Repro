@@ -106,4 +106,5 @@ an asset resolver entry if needed. The generic parser and FK code must not gain 
 names. A synthetic YAML-only hand and fixture exercise this boundary in the public tests.
 
 No MANO-to-robot qpos conversion, bone-direction initialization, loss, inverse kinematics, or
-optimization is part of this interface.
+optimization is part of this Stage 4 interface. The separate Stage 9 refinement consumes its
+collision geometry and FK through the documented final-refinement path.

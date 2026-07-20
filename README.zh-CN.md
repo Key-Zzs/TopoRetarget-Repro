@@ -9,8 +9,8 @@ TopoRetarget-Repro 是一个非官方、独立、可追踪的
 
 当前实现已经覆盖 canonical HOI interface、有界 MANO→MediaPipe 风格 21 点 source-hand
 adapter、Stage 4 通用机器人手/Arti-MANO 目标运动学接口、有界的 Stage 5 GRAB 数据集
-adapter，以及有界的 Stage 8 source-only interaction graph/Laplacian loss，但仍未声称实现论文
-完整的机器人重定向优化器、RL pipeline 或论文实验结果。
+adapter、Stage 8 source-only interaction graph/Laplacian loss，以及有界的 Stage 9
+Eq. (8)-(9) final refinement；仍未声称实现 RL pipeline 或论文实验结果。
 
 ## 仓库概览
 
@@ -46,7 +46,7 @@ adapter，以及有界的 Stage 8 source-only interaction graph/Laplacian loss�
 | 6 | 物体采样、碰撞几何与 SDF | Complete，有界；假设显式 | mesh audit、确定性 50 点表面参考、仅 collision 的机器人表面采样、SDF 查询、probe、报告、可视化和有界真实数据验收通过；后续交互/优化仍不在范围内。 |
 | 7 | 相对骨方向初始化 | Complete，有假设 | 20-bone/15-pair Eq. 1、时序有界 Eq. 2、frame 审计、RH/LH 验收、artifact、验证和可视化通过。 |
 | 8 | 交互图与 Laplacian 坐标 | Complete，有界；假设显式 | source-only Eq. 3–7 图/loss、RH/LH artifact、identity/Jacobian 验证、报告和可视化通过；Eq. 8–9 仍属于 Stage 9。 |
-| 9 | 带 slack 的受限优化 | TODO | 实现并测试 Eq. 8–9 的约束和优化。 |
+| 9 | 带 slack 的受限优化 | Complete，有界；假设显式 | Eq. 8–9 final refinement、full/adaptive QuerySet、slack、独立 full-surface audit、RH/LH artifact、CLI、测试和可视化通过；不包含 Stage 10。 |
 | 10 | GRAB→Arti-MANO 端到端重定向 | TODO | 生成可复现的机器人 reference trajectory。 |
 | 11 | Metrics 与 ContactPose 评估 | TODO | 实现 Eq. 10–12 指标和报告 fixture。 |
 | 12 | OakInk、DexYCB、HO-Cap adapter | TODO | 添加独立验证的数据集 adapter。 |
@@ -175,7 +175,54 @@ toporetarget retarget audit-interaction-inputs \
 完整 graph/evaluation 命令与边界见 [`docs/INTERACTION_GRAPH.md`](docs/INTERACTION_GRAPH.md)、
 [`docs/LAPLACIAN_INTERACTION_LOSS.md`](docs/LAPLACIAN_INTERACTION_LOSS.md) 和
 [`docs/stages/STAGE_8_INTERACTION_GRAPH_LAPLACIAN.md`](docs/stages/STAGE_8_INTERACTION_GRAPH_LAPLACIAN.md)。
-Eq. (8)-(9)、slack、SDF/collision penalty 和 optimization 仍属于 Stage 9。
+Eq. (8)-(9)、slack、SDF/collision penalty 和 optimization 由下一个 Stage 9 workflow 完成。
+
+### Stage 9：生成并验证保交互的最终机器人参考轨迹
+
+Stage 9 使用冻结的 Stage 7 warm start、Stage 8 graph 和 Stage 6 collision-surface artifact，
+在显式 local seed-delta 坐标中运行 SLSQP。约束使用 positive-outside signed distance、每个
+query 的 slack、单调扩展的 adaptive QuerySet，并用独立的 512 点 full-surface reference audit
+验收；solver-only convex-hull backend 只有在与 Stage 6 reference backend probe 一致后才启用。
+
+```bash
+toporetarget retarget inspect-query-set \
+  --canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
+  --warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --robot artimano_rh --frame 0 --query-profile adaptive_active_set_v1 \
+  --json .local/reports/stage9/rh_query_set_frame0.json
+
+toporetarget retarget refine \
+  --canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
+  --warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --graph .local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right.zarr \
+  --robot artimano_rh --start-frame 0 --end-frame 60 \
+  --output .local/cache/retarget/final/s7_cubemedium_inspect_1_right_artimano_rh.zarr
+
+toporetarget retarget validate-refinement \
+  --canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
+  --warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --final .local/cache/retarget/final/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --report .local/reports/stage9/rh_validation.json \
+  --csv .local/reports/stage9/rh_validation.csv
+
+toporetarget retarget audit-penetration \
+  --canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
+  --warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --final .local/cache/retarget/final/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --robot artimano_rh --report .local/reports/stage9/rh_full_surface_audit.json
+```
+
+完整参数、失败策略、RH/LH 命令和验收边界见
+[`docs/stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md`](docs/stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md)、
+[`docs/FINAL_REFINEMENT_OPTIMIZATION.md`](docs/FINAL_REFINEMENT_OPTIMIZATION.md) 和
+[`docs/COLLISION_QUERY_SET_AND_SLACK.md`](docs/COLLISION_QUERY_SET_AND_SLACK.md)。Stage 10、RL、
+physics、ContactPose 和 baselines 不在本阶段。
+
+当前 `[0,60)` RH/LH 有界 closeout 已通过 full-surface validation 和 full-artifact determinism。
+最小 full signed distance 为 RH `0.623582905 m`、LH `0.641271031 m`，两侧 penetration 均为 0；
+`0/29/59` 三帧 adaptive/full 分别使用 16/512 个 query。详细 metrics、hash、Jacobian、solver
+comparison 和可视化报告位于被忽略的 `.local/reports/stage9/`；这只关闭 Stage 9，Stage 10、RL、
+physics、ContactPose 和 baseline reproduction 仍是 TODO。
 
 如需生成 first/middle/last 静态诊断图，只需修改 `--frame` 和 `--output`：
 

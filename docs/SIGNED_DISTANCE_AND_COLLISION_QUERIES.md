@@ -65,3 +65,7 @@ For non-watertight GRAB meshes, use `winding` for confidence diagnostics or `uns
 closest-point diagnostics. Do not treat either as a reliable strict penetration sign without a
 mesh audit supporting it.
 
+Stage 9 uses this strict positive-outside reference contract for its final constrained
+interaction-preserving refinement and independent full-surface audit. Its QuerySet/slack policy is
+documented in [COLLISION_QUERY_SET_AND_SLACK.md](COLLISION_QUERY_SET_AND_SLACK.md); Stage 6
+sampling and SDF inputs remain read-only.

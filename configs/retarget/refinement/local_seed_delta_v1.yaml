@@ -1,0 +1,14 @@
+profile_id: local_seed_delta_v1
+version: "1.0.0"
+base_parameterization: scene_local_seed_delta_exp_left
+base_prior_reference: seed_delta
+previous_state_mapping: previous_final_remapped_to_current_seed
+first_frame_policy: warm_start_zero_delta_no_temporal
+rotation_vector_units: radians
+translation_units: meters
+assumptions:
+  - A_REFINEMENT_BASE_PARAMETERIZATION_001
+  - A_REFINEMENT_BASE_PRIOR_REFERENCE_001
+  - A_REFINEMENT_FIRST_FRAME_001
+  - A_REFINEMENT_COORDINATE_SCALING_001
+  - A_REFINEMENT_TIME_DISCRETIZATION_001

@@ -1,0 +1,9 @@
+profile_id: full_collision_surface_reference_v1
+version: "1.0.0"
+mode: full
+active_margin_m: 0.010
+max_active_set_rounds: 1
+paper_status: not_paper_specified
+assumptions:
+  - A_REFINEMENT_QUERY_SET_001
+  - A_REFINEMENT_HAND_SURFACE_SAMPLES_001

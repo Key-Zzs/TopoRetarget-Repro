@@ -15,10 +15,10 @@ baselines are not implemented in this stage.
 
 ## 3. Equation-to-code traceability
 
-Equations 1–2 map to `src/toporetarget/retarget/` and are implemented with explicit assumptions;
-Equations 3–7 remain future interaction-graph and
-Laplacian code, Equation 8 to future constrained refinement, Equation 9 to regularization, and
-Equations 10–12 to future ContactPose and penetration metrics. Each entry records its PDF page,
+Equations 1–9 map to `src/toporetarget/retarget/` and are implemented with explicit assumptions;
+Equations 3–7 provide the frozen interaction graph/Laplacian term, and Equations 8–9 provide the
+bounded constrained final refinement. Equations 10–12 remain future ContactPose and penetration
+metrics. Each entry records its PDF page,
 known values, unknowns, assumptions, and future implementation/test targets in the YAML manifest.
 
 ## 4. Table-to-config traceability
@@ -117,25 +117,37 @@ ContactPose intensity threshold, robot surface sampling, tracked links, axis-poi
 simulator/physics settings, low-level gains, and unlisted PPO values are explicitly registered in
 [`ASSUMPTIONS.md`](ASSUMPTIONS.md). Configuration leaves undisclosed values null.
 
-## 12. Current blockers
+## Stage 9 final-refinement boundary
+
+Stage 9 implements the paper's Eq. (8)-(9) objective and signed-distance/slack constraint contract
+for the bounded RH/LH `s7/cubemedium_inspect_1`, `[0,60)` acceptance window. It uses explicit local
+seed-delta coordinates, sequential warm-started solves, full and adaptive collision QuerySets,
+float64 SLSQP, and an independent Stage 6 reference SDF audit over all 512 robot collision samples.
+The optimizer, QuerySet construction, collision sample density, derivative policy, and termination
+values are not disclosed by the paper and remain tracked as `implemented_with_assumptions`; this is
+not a claim of result-level reproduction or Stage 10 end-to-end completion. See
+[`FINAL_REFINEMENT_OPTIMIZATION.md`](FINAL_REFINEMENT_OPTIMIZATION.md) and
+[`stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md`](stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md).
+
+## 13. Current blockers
 
 The private Pen-Spin data, Wuji deployment assets, target hand identity for Table 1, and several
 solver/geometry/RL details are unavailable from the paper. These blockers prevent result-level
 reproduction and are not silently resolved.
 
-## 13. Definition of method-complete
+## 14. Definition of method-complete
 
 Method-complete means all publicly specified method equations, configurations, constraints,
 metrics, and evaluation code are implemented and tested, with every remaining assumption
 explicitly resolved or marked as a deliberate extension. This repository is not method-complete.
 
-## 14. Definition of result-complete
+## 15. Definition of result-complete
 
 Result-complete additionally requires the same datasets, private trajectories, robot assets,
 hardware, simulator, seeds, and experimental conditions needed to reproduce the reported numbers.
 This repository is not result-complete.
 
-## 15. Stage 5 dataset boundary
+## 16. Stage 5 dataset boundary
 
 The bounded GRAB dataset adapter is an engineering implementation around the paper's source-hand
 input boundary, not an additional claim about the paper's undisclosed preprocessing. Its native

@@ -121,7 +121,7 @@ neutral replacement.
 The paper reports weaker handling of virtual contacts. MANO-to-MediaPipe21 source adaptation is
 implemented as the bounded Stage 3 adapter, and Arti-MANO robot mapping/FK is implemented only as
 the bounded Stage 4 target-hand interface; it does not convert MANO/MediaPipe points to robot qpos.
-Delaunay and Laplacian graph construction are now implemented for the bounded Stage 8 scope;
-SDF, optimization, RL/PPO, baseline code, and non-paper extensions remain intentionally outside
-these stages.
+Delaunay and Laplacian graph construction are now implemented for the bounded Stage 8 scope, and
+the bounded Stage 9 SDF-constrained refinement is implemented with explicit assumptions. RL/PPO,
+baseline code, and non-paper extensions remain intentionally outside these stages.
 No module in this repository pretends that those algorithms are already implemented.

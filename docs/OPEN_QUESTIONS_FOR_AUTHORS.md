@@ -15,6 +15,9 @@ The following questions are written as a reproducibility request. No author resp
    A_SOLVER_TERMINATION_001, A_JOINT_LIMIT_001, A_COLLISION_QUERY_SET_001)?
 4. Which signed-distance implementation and gradient convention are used for penetration
    constraints (A_SIGNED_DISTANCE_BACKEND_001)?
+   Stage 9 records a strict positive-outside reference backend, a validated convex-hull solver-only
+   acceleration, outward-normal point Jacobians, and central-difference fallback as explicit
+   engineering assumptions; these do not claim to be author-confirmed.
 5. What simulator, version, physics solver, and actuator model were used for Tables 4–6
    (A_RL_SIMULATOR_001)?
 6. Can the 32-clip MoCap Pen-Spin dataset and Wuji deployment assets/calibration be released or
@@ -52,7 +55,9 @@ connectivity/weights reused for robot evaluation. Please confirm or replace thes
    lambda/optimization to Stage 9.
 4. What full base/joint parameterization and derivative convention should be used for the final
    optimizer? Stage 8 only reports frozen-qpos Jacobians and bounded base perturbation diagnostics
-   (`A_INTERACTION_BASE_DIFFERENTIABILITY_001`).
+   (`A_INTERACTION_BASE_DIFFERENTIABILITY_001`). Stage 9 currently uses the separate
+   `A_REFINEMENT_BASE_PARAMETERIZATION_001`, `A_REFINEMENT_SDF_BACKEND_001`, and
+   `A_SDF_CONSTRAINT_JACOBIAN_001` assumptions.
 
 1. Are the 50 object samples drawn once per object, per sequence, or per frame, and which surface
    sampler/seed is used (A_OBJECT_SAMPLING_001, A_OBJECT_SAMPLING_METHOD_001,

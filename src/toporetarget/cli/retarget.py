@@ -1,4 +1,4 @@
-"""Stage 7 relative-bone-direction inspection, solving, validation, and views."""
+"""Stage 7/8/9 retargeting inspection, solving, validation, and views."""
 
 from __future__ import annotations
 
@@ -23,6 +23,26 @@ from toporetarget.retarget.artifacts import (
 )
 from toporetarget.retarget.bones import extract_bone_features, load_bone_profile
 from toporetarget.retarget.delaunay import load_delaunay_profile
+from toporetarget.retarget.final_refinement import (
+    ACTIVE_QUERY_PROFILE_ID,
+    FULL_QUERY_PROFILE_ID,
+    FULL_SOLVER_PROFILE_ID,
+    SOLVER_PROFILE_ID,
+    CollisionQueryProfile,
+    RefinementCoordinateProfile,
+    RefinementSolverProfile,
+    build_final_trajectory,
+    build_query_set,
+    dynamic_collision_points_numpy,
+    final_artifact_hash,
+    load_final_trajectory,
+    load_robot_surface_samples,
+    save_final_trajectory,
+)
+from toporetarget.retarget.final_visualization import (
+    launch_refinement_viewer,
+    render_refinement_frame,
+)
 from toporetarget.retarget.frames import FrameDegeneracyError, load_frame_profile
 from toporetarget.retarget.interaction_artifacts import (
     InteractionArtifactError,
@@ -56,7 +76,7 @@ from toporetarget.retarget.solver import WarmStartSolveError, load_solver_profil
 from toporetarget.robots.artimano import load_artimano_model
 from toporetarget.utils.hashing import sha256_tree
 
-app = typer.Typer(help="Stage 7 relative bone-direction and sequential warm-start tools.")
+app = typer.Typer(help="Stage 7-9 retargeting tools.")
 
 
 def _json_write(value: Any, path: Path | None) -> None:
@@ -262,6 +282,7 @@ def warm_start(
     robot: str = typer.Option("artimano_rh", "--robot"),
     start_frame: int = typer.Option(0, "--start-frame", min=0),
     end_frame: int | None = typer.Option(None, "--end-frame", min=1),
+    resume_from: Path | None = typer.Option(None, "--resume-from"),
     frame_profile: str = typer.Option("canonical_keypoint_wrist_v1", "--frame-profile"),
     bone_profile: str = typer.Option("mediapipe21_full_finger_chain_v1", "--bone-profile"),
     solver_profile: str = typer.Option("paper_repro_scipy_trf", "--solver-profile"),
@@ -909,6 +930,568 @@ def compare_object_scales_command(
         _json_write(result, None)
     except (ValueError, OSError, RuntimeError, InteractionArtifactError) as exc:
         typer.echo(f"compare-object-scales failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+def _default_collision_samples(robot: str) -> Path:
+    root = Path(__file__).resolve().parents[3]
+    return root / ".local" / "cache" / "geometry" / "robot_surface" / f"{robot}_neutral.npz"
+
+
+def _object_for_graph(sequence: Any, object_id: str) -> Any:
+    if object_id in {"primary", "object"}:
+        if not sequence.rigid_objects:
+            raise ValueError("canonical sequence has no rigid object")
+        return sequence.rigid_objects[0]
+    return sequence.rigid_object(object_id)
+
+
+def _refinement_components(
+    canonical: Path,
+    warm_start: Path,
+    graph: Path,
+    robot: str,
+    collision_samples: Path | None,
+    asset_root: Path | None,
+) -> tuple[Any, Any, Any, Any, Any, Any]:
+    sequence = load_hoi_sequence(canonical)
+    warm = load_warm_start(warm_start)
+    graph_trajectory = load_interaction_graph(graph)
+    model = _load_robot(robot, asset_root)
+    surface = load_robot_surface_samples(collision_samples or _default_collision_samples(robot))
+    return sequence, warm, graph_trajectory, model, surface, collision_samples
+
+
+@app.command("inspect-query-set")
+def inspect_query_set_command(
+    canonical: Path = typer.Option(..., "--canonical"),
+    warm_start: Path = typer.Option(..., "--warm-start"),
+    robot: str = typer.Option("artimano_rh", "--robot"),
+    collision_samples: Path | None = typer.Option(None, "--collision-samples"),
+    object_id: str = typer.Option("primary", "--object-id"),
+    frame: int = typer.Option(0, "--frame", min=0),
+    query_profile: str = typer.Option(ACTIVE_QUERY_PROFILE_ID, "--query-profile"),
+    json_report: Path | None = typer.Option(None, "--json"),
+    csv_report: Path | None = typer.Option(None, "--csv"),
+    asset_root: Path | None = typer.Option(None, "--asset-root"),
+) -> None:
+    try:
+        sequence = load_hoi_sequence(canonical)
+        warm = load_warm_start(warm_start)
+        model = _load_robot(robot, asset_root)
+        surface = load_robot_surface_samples(collision_samples or _default_collision_samples(robot))
+        if frame >= warm.frame_count:
+            raise typer.BadParameter("frame is outside warm-start artifact")
+        obj = _object_for_graph(sequence, object_id)
+        from toporetarget.geometry.signed_distance.reference import build_signed_distance_backend
+
+        backend = build_signed_distance_backend(
+            obj.mesh.vertices_local, obj.mesh.faces, sign_mode="strict"
+        )
+        points = dynamic_collision_points_numpy(
+            model, surface, warm.arrays["qpos"][frame], warm.arrays["base_pose_scene"][frame]
+        )
+        result = backend.query_scene(points, obj.pose_scene.pose_scene[frame])
+        profile = CollisionQueryProfile.load(query_profile)
+        query = build_query_set(result.signed_distance, surface.geometry_ids, profile)
+        report = {
+            "status": "pass",
+            "canonical": str(canonical),
+            "warm_start": str(warm_start),
+            "robot": robot,
+            "object_id": obj.object_id,
+            "frame": frame,
+            "total_collision_samples": int(len(points)),
+            "initial_query_count": query.count,
+            "per_link_counts": {
+                str(name): int(
+                    np.count_nonzero(
+                        np.isin(query.sample_ids, np.flatnonzero(surface.link_names == name))
+                    )
+                )
+                for name in sorted(set(surface.link_names.tolist()))
+            },
+            "queries": [
+                {
+                    "sample_id": int(sample_id),
+                    "link_name": str(surface.link_names[sample_id]),
+                    "geometry_id": str(surface.geometry_ids[sample_id]),
+                    "initial_signed_distance_m": float(result.signed_distance[sample_id]),
+                    "active_set_round": int(round_value),
+                    "inclusion_reason": reason,
+                }
+                for sample_id, round_value, reason in zip(
+                    query.sample_ids, query.active_round, query.inclusion_reasons, strict=True
+                )
+            ],
+            "min_distance_m": float(np.min(result.signed_distance)),
+            "max_distance_m": float(np.max(result.signed_distance)),
+            "sign_valid": bool(np.all(result.sign_valid)),
+            "query_hash": query.query_hash,
+            "profile": profile.as_dict(),
+        }
+        _json_write(report, json_report)
+        if csv_report is not None:
+            csv_report.parent.mkdir(parents=True, exist_ok=True)
+            with csv_report.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(
+                    ["sample_id", "link_name", "geometry_id", "signed_distance_m", "reason"]
+                )
+                for sample_id, reason in zip(
+                    query.sample_ids, query.inclusion_reasons, strict=True
+                ):
+                    writer.writerow(
+                        [
+                            sample_id,
+                            surface.link_names[sample_id],
+                            surface.geometry_ids[sample_id],
+                            result.signed_distance[sample_id],
+                            reason,
+                        ]
+                    )
+    except (StorageError, ValueError, OSError, RuntimeError, WarmStartArtifactError) as exc:
+        typer.echo(f"inspect-query-set failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("compare-query-profiles")
+def compare_query_profiles_command(
+    canonical: Path = typer.Option(..., "--canonical"),
+    warm_start: Path = typer.Option(..., "--warm-start"),
+    graph: Path = typer.Option(..., "--graph"),
+    robot: str = typer.Option("artimano_rh", "--robot"),
+    collision_samples: Path | None = typer.Option(None, "--collision-samples"),
+    frames: list[int] = typer.Option([0, 29, 59], "--frames"),
+    report: Path = typer.Option(..., "--report"),
+    asset_root: Path | None = typer.Option(None, "--asset-root"),
+) -> None:
+    try:
+        sequence, warm, graph_trajectory, model, surface, _ = _refinement_components(
+            canonical, warm_start, graph, robot, collision_samples, asset_root
+        )
+        from toporetarget.geometry.signed_distance.reference import build_signed_distance_backend
+
+        obj = _object_for_graph(sequence, str(graph_trajectory.metadata["object_id"]))
+        sdf = build_signed_distance_backend(
+            obj.mesh.vertices_local, obj.mesh.faces, sign_mode="strict"
+        )
+        profiles = [
+            CollisionQueryProfile.load(FULL_QUERY_PROFILE_ID),
+            CollisionQueryProfile.load(ACTIVE_QUERY_PROFILE_ID),
+        ]
+        output: dict[str, Any] = {"canonical": str(canonical), "frames": {}}
+        for frame in frames:
+            if frame < 0 or frame >= warm.frame_count:
+                continue
+            points = dynamic_collision_points_numpy(
+                model, surface, warm.arrays["qpos"][frame], warm.arrays["base_pose_scene"][frame]
+            )
+            distances = sdf.query_scene(points, obj.pose_scene.pose_scene[frame]).signed_distance
+            output["frames"][str(frame)] = {
+                profile.profile_id: {
+                    "query_count": build_query_set(distances, surface.geometry_ids, profile).count,
+                    "min_distance_m": float(np.min(distances)),
+                }
+                for profile in profiles
+            }
+        _json_write(output, report)
+    except (StorageError, ValueError, OSError, RuntimeError, WarmStartArtifactError) as exc:
+        typer.echo(f"compare-query-profiles failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("refine")
+def refine_command(
+    canonical: Path = typer.Option(..., "--canonical"),
+    warm_start: Path = typer.Option(..., "--warm-start"),
+    graph: Path = typer.Option(..., "--graph"),
+    robot: str = typer.Option("artimano_rh", "--robot"),
+    collision_samples: Path | None = typer.Option(None, "--collision-samples"),
+    query_profile: str = typer.Option(ACTIVE_QUERY_PROFILE_ID, "--query-profile"),
+    coordinate_profile: str = typer.Option("local_seed_delta_v1", "--coordinate-profile"),
+    solver_profile: str = typer.Option(SOLVER_PROFILE_ID, "--solver-profile"),
+    start_frame: int = typer.Option(0, "--start-frame", min=0),
+    end_frame: int | None = typer.Option(None, "--end-frame", min=1),
+    resume_from: Path | None = typer.Option(None, "--resume-from"),
+    output: Path = typer.Option(..., "--output"),
+    asset_root: Path | None = typer.Option(None, "--asset-root"),
+    force: bool = typer.Option(False, "--force"),
+) -> None:
+    try:
+        sequence, warm, graph_trajectory, model, surface, _ = _refinement_components(
+            canonical, warm_start, graph, robot, collision_samples, asset_root
+        )
+        initial_previous = None
+        if resume_from is not None:
+            previous = load_final_trajectory(resume_from)
+            if start_frame <= 0 or int(previous.arrays["frame_indices"][-1]) != start_frame - 1:
+                raise ValueError("--resume-from must end at start_frame - 1")
+            initial_previous = (
+                previous.arrays["base_pose_scene"][-1],
+                previous.arrays["qpos"][-1],
+            )
+        trajectory, diagnostics = build_final_trajectory(
+            sequence,
+            warm,
+            graph_trajectory,
+            model,
+            surface,
+            load_frame_profile("canonical_keypoint_wrist_v1"),
+            load_bone_profile("mediapipe21_full_finger_chain_v1"),
+            RefinementCoordinateProfile.load(coordinate_profile),
+            CollisionQueryProfile.load(query_profile),
+            RefinementSolverProfile.load(solver_profile),
+            start_frame=start_frame,
+            end_frame=end_frame,
+            initial_previous=initial_previous,
+            warm_artifact_hash=artifact_hash(warm_start),
+            graph_artifact_hash=interaction_artifact_hash(graph),
+        )
+        trajectory.metadata["artifact_hash"] = final_artifact_hash(trajectory)
+        save_final_trajectory(trajectory, output, force=force)
+        _json_write(
+            {
+                "status": "pass",
+                "output": str(output),
+                "artifact_hash": trajectory.metadata["artifact_hash"],
+                "metadata": trajectory.metadata,
+                "diagnostics": diagnostics,
+            },
+            None,
+        )
+    except (
+        StorageError,
+        ValueError,
+        OSError,
+        RuntimeError,
+        WarmStartArtifactError,
+        InteractionArtifactError,
+    ) as exc:
+        typer.echo(f"refine failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+def _validation_payload(
+    canonical: Path,
+    warm_start: Path,
+    graph_path: Path | None,
+    final_path: Path,
+    robot: str,
+    collision_samples: Path | None,
+    asset_root: Path | None,
+) -> dict[str, Any]:
+    sequence = load_hoi_sequence(canonical)
+    warm = load_warm_start(warm_start)
+    final = load_final_trajectory(final_path)
+    graph = None if graph_path is None else load_interaction_graph(graph_path)
+    model = _load_robot(robot, asset_root)
+    surface = load_robot_surface_samples(collision_samples or _default_collision_samples(robot))
+    obj = _object_for_graph(sequence, str(final.metadata["object_id"]))
+    from toporetarget.geometry.signed_distance.reference import build_signed_distance_backend
+
+    sdf = build_signed_distance_backend(obj.mesh.vertices_local, obj.mesh.faces, sign_mode="strict")
+    reference_mesh_hash = sdf.mesh_hash
+    lower, upper = model.joint_lower, model.joint_upper
+    frame_results: list[dict[str, Any]] = []
+    for index, global_frame in enumerate(final.arrays["frame_indices"].tolist()):
+        points = dynamic_collision_points_numpy(
+            model, surface, final.arrays["qpos"][index], final.arrays["base_pose_scene"][index]
+        )
+        result = sdf.query_scene(points, obj.pose_scene.pose_scene[int(global_frame)])
+        q0 = int(final.arrays["query_offsets"][index])
+        q1 = int(final.arrays["query_offsets"][index + 1])
+        ids = final.arrays["query_ids_concat"][q0:q1]
+        s0 = int(final.arrays["slack_offsets"][index])
+        s1 = int(final.arrays["slack_offsets"][index + 1])
+        slack = final.arrays["slack_concat"][s0:s1]
+        hard = result.signed_distance[ids] + 0.030
+        soft = result.signed_distance[ids] + slack + 0.001
+        unqueried = np.setdiff1d(np.arange(len(points)), ids, assume_unique=True)
+        frame_results.append(
+            {
+                "frame": int(global_frame),
+                "solver_success": bool(final.arrays["solver_success"][index]),
+                "qpos_bounds_pass": bool(
+                    np.all(final.arrays["qpos"][index] >= lower - 1e-10)
+                    and np.all(final.arrays["qpos"][index] <= upper + 1e-10)
+                ),
+                "min_hard_residual_m": float(np.min(hard)),
+                "min_soft_residual_m": float(np.min(soft)),
+                "full_min_signed_distance_m": float(np.min(result.signed_distance)),
+                "full_max_penetration_m": float(max(0.0, -np.min(result.signed_distance))),
+                "unqueried_soft_violation_count": int(
+                    np.count_nonzero(result.signed_distance[unqueried] < -0.001 - 1e-6)
+                ),
+                "query_count": int(len(ids)),
+                "max_slack_m": float(np.max(slack, initial=0.0)),
+            }
+        )
+    graph_hash = interaction_artifact_hash(graph_path) if graph_path is not None else None
+    passed = bool(
+        len(frame_results) == final.frame_count
+        and all(item["solver_success"] and item["qpos_bounds_pass"] for item in frame_results)
+        and bool(np.all(final.arrays["active_set_converged"]))
+        and all(
+            item["min_hard_residual_m"] >= -1e-6 and item["min_soft_residual_m"] >= -1e-6
+            for item in frame_results
+        )
+        and all(item["full_min_signed_distance_m"] >= -0.030 - 1e-6 for item in frame_results)
+        and all(item["unqueried_soft_violation_count"] == 0 for item in frame_results)
+        and final.metadata.get("source_canonical_hash")
+        in {None, warm.metadata.get("source_cache_hash")}
+        and final.metadata.get("warm_start_artifact_hash") in {None, artifact_hash(warm_start)}
+        and (graph is None or final.metadata.get("graph_artifact_hash") in {None, graph_hash})
+        and final.metadata.get("object_mesh_hash") == reference_mesh_hash
+        and final.metadata.get("collision_surface_profile_hash") == surface.profile.profile_hash
+    )
+    source_hash_match = final.metadata.get("source_canonical_hash") in {
+        None,
+        warm.metadata.get("source_cache_hash"),
+    }
+    warm_hash_match = final.metadata.get("warm_start_artifact_hash") in {
+        None,
+        artifact_hash(warm_start),
+    }
+    graph_hash_match = graph is None or final.metadata.get("graph_artifact_hash") in {
+        None,
+        graph_hash,
+    }
+    return {
+        "status": "pass" if passed else "fail",
+        "pass": passed,
+        "final": str(final_path),
+        "frame_count": final.frame_count,
+        "frames": frame_results,
+        "source_hash_match": source_hash_match,
+        "warm_start_hash_match": warm_hash_match,
+        "graph_hash_match": graph_hash_match,
+        "object_mesh_hash_match": final.metadata.get("object_mesh_hash") == reference_mesh_hash,
+        "collision_surface_profile_hash_match": final.metadata.get("collision_surface_profile_hash")
+        == surface.profile.profile_hash,
+        "artifact_schema": final.schema_version,
+    }
+
+
+@app.command("validate-refinement")
+def validate_refinement_command(
+    canonical: Path = typer.Option(..., "--canonical"),
+    warm_start: Path = typer.Option(..., "--warm-start"),
+    graph: Path = typer.Option(..., "--graph"),
+    final: Path = typer.Option(..., "--final"),
+    robot: str = typer.Option("artimano_rh", "--robot"),
+    collision_samples: Path | None = typer.Option(None, "--collision-samples"),
+    report: Path = typer.Option(..., "--report"),
+    csv_report: Path | None = typer.Option(None, "--csv"),
+    asset_root: Path | None = typer.Option(None, "--asset-root"),
+) -> None:
+    try:
+        value = _validation_payload(
+            canonical, warm_start, graph, final, robot, collision_samples, asset_root
+        )
+        _json_write(value, report)
+        if csv_report is not None:
+            csv_report.parent.mkdir(parents=True, exist_ok=True)
+            with csv_report.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=sorted(value["frames"][0]))
+                writer.writeheader()
+                writer.writerows(value["frames"])
+        _json_write(value, None)
+        if not value["pass"]:
+            raise typer.Exit(code=1)
+    except (StorageError, ValueError, OSError, RuntimeError, WarmStartArtifactError) as exc:
+        typer.echo(f"validate-refinement failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("audit-penetration")
+def audit_penetration_command(
+    canonical: Path = typer.Option(..., "--canonical"),
+    final: Path = typer.Option(..., "--final"),
+    robot: str = typer.Option("artimano_rh", "--robot"),
+    collision_samples: Path | None = typer.Option(None, "--collision-samples"),
+    report: Path = typer.Option(..., "--report"),
+    csv_report: Path | None = typer.Option(None, "--csv"),
+    warm_start: Path | None = typer.Option(None, "--warm-start"),
+    asset_root: Path | None = typer.Option(None, "--asset-root"),
+) -> None:
+    try:
+        if warm_start is None:
+            raise typer.BadParameter(
+                "audit-penetration requires --warm-start for source provenance"
+            )
+        value = _validation_payload(
+            canonical, warm_start, None, final, robot, collision_samples, asset_root
+        )
+        _json_write(value, report)
+        if csv_report is not None:
+            csv_report.parent.mkdir(parents=True, exist_ok=True)
+            with csv_report.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=sorted(value["frames"][0]))
+                writer.writeheader()
+                writer.writerows(value["frames"])
+        _json_write(value, None)
+        if not value["pass"]:
+            raise typer.Exit(code=1)
+    except (StorageError, ValueError, OSError, RuntimeError, WarmStartArtifactError) as exc:
+        typer.echo(f"audit-penetration failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("compare-solvers")
+def compare_solvers_command(
+    canonical: Path = typer.Option(..., "--canonical"),
+    warm_start: Path = typer.Option(..., "--warm-start"),
+    graph: Path = typer.Option(..., "--graph"),
+    robot: str = typer.Option("artimano_rh", "--robot"),
+    collision_samples: Path | None = typer.Option(None, "--collision-samples"),
+    frames: list[int] = typer.Option([0, 29, 59], "--frames"),
+    report: Path = typer.Option(..., "--report"),
+    asset_root: Path | None = typer.Option(None, "--asset-root"),
+) -> None:
+    try:
+        sequence, warm, graph_trajectory, model, surface, _ = _refinement_components(
+            canonical, warm_start, graph, robot, collision_samples, asset_root
+        )
+        values: list[dict[str, Any]] = []
+        for frame in frames:
+            if frame >= warm.frame_count:
+                continue
+            row: dict[str, Any] = {"frame": frame}
+            for query_id, solver_id in (
+                (ACTIVE_QUERY_PROFILE_ID, SOLVER_PROFILE_ID),
+                (FULL_QUERY_PROFILE_ID, FULL_SOLVER_PROFILE_ID),
+            ):
+                started = __import__("time").perf_counter()
+                trajectory, _ = build_final_trajectory(
+                    sequence,
+                    warm,
+                    graph_trajectory,
+                    model,
+                    surface,
+                    load_frame_profile("canonical_keypoint_wrist_v1"),
+                    load_bone_profile("mediapipe21_full_finger_chain_v1"),
+                    RefinementCoordinateProfile.load("local_seed_delta_v1"),
+                    CollisionQueryProfile.load(query_id),
+                    RefinementSolverProfile.load(solver_id),
+                    start_frame=frame,
+                    end_frame=frame + 1,
+                    warm_artifact_hash=artifact_hash(warm_start),
+                    graph_artifact_hash=interaction_artifact_hash(graph),
+                )
+                row[query_id] = {
+                    "query_count": int(trajectory.arrays["query_offsets"][1]),
+                    "total_objective": float(trajectory.arrays["total_objective"][0]),
+                    "runtime_s": __import__("time").perf_counter() - started,
+                    "min_full_signed_distance_m": float(
+                        trajectory.arrays["min_full_signed_distance"][0]
+                    ),
+                }
+            values.append(row)
+        _json_write({"frames": values}, report)
+    except (
+        StorageError,
+        ValueError,
+        OSError,
+        RuntimeError,
+        WarmStartArtifactError,
+        InteractionArtifactError,
+    ) as exc:
+        typer.echo(f"compare-solvers failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("visualize-refinement")
+def visualize_refinement_command(
+    canonical: Path = typer.Option(..., "--canonical"),
+    warm_start: Path = typer.Option(..., "--warm-start"),
+    graph: Path = typer.Option(..., "--graph"),
+    final: Path = typer.Option(..., "--final"),
+    robot: str = typer.Option("artimano_rh", "--robot"),
+    frame: int = typer.Option(0, "--frame", min=0),
+    start_frame: int = typer.Option(0, "--start-frame", min=0),
+    end_frame: int | None = typer.Option(None, "--end-frame", min=1),
+    output: Path | None = typer.Option(None, "--output"),
+    interactive: bool = typer.Option(False, "--interactive"),
+    report: Path | None = typer.Option(None, "--report"),
+    collision_samples: Path | None = typer.Option(None, "--collision-samples"),
+    asset_root: Path | None = typer.Option(None, "--asset-root"),
+    show_source_hand: bool = typer.Option(True, "--show-source-hand/--hide-source-hand"),
+    show_warm_start: bool = typer.Option(True, "--show-warm-start/--hide-warm-start"),
+    show_final: bool = typer.Option(True, "--show-final/--hide-final"),
+    show_object: bool = typer.Option(True, "--show-object/--hide-object"),
+    show_interaction_edges: bool = typer.Option(
+        True, "--show-interaction-edges/--hide-interaction-edges"
+    ),
+    show_collision_samples: bool = typer.Option(
+        True, "--show-collision-samples/--hide-collision-samples"
+    ),
+    show_query_set: bool = typer.Option(True, "--show-query-set/--hide-query-set"),
+    show_penetrations: bool = typer.Option(True, "--show-penetrations/--hide-penetrations"),
+    show_slack: bool = typer.Option(True, "--show-slack/--hide-slack"),
+    show_labels: bool = typer.Option(False, "--show-labels"),
+    show_frames: bool = typer.Option(False, "--show-frames"),
+    show_objective: bool = typer.Option(True, "--show-objective/--hide-objective"),
+    show_closest: bool = typer.Option(False, "--show-closest"),
+) -> None:
+    try:
+        sequence, warm, graph_trajectory, model, surface, _ = _refinement_components(
+            canonical, warm_start, graph, robot, collision_samples, asset_root
+        )
+        artifact = load_final_trajectory(final)
+        display_options = {
+            "show_source_hand": show_source_hand,
+            "show_warm_start": show_warm_start,
+            "show_final": show_final,
+            "show_object": show_object,
+            "show_interaction_edges": show_interaction_edges,
+            "show_collision_samples": show_collision_samples,
+            "show_query_set": show_query_set,
+            "show_penetrations": show_penetrations,
+            "show_slack": show_slack,
+            "show_labels": show_labels,
+            "show_frames": show_frames,
+            "show_objective": show_objective,
+            "show_closest": show_closest,
+        }
+        if interactive:
+            value = launch_refinement_viewer(
+                sequence,
+                warm,
+                graph_trajectory,
+                artifact,
+                model,
+                surface,
+                start_frame=start_frame,
+                end_frame=end_frame,
+                show=True,
+                **display_options,
+            )
+        else:
+            value = render_refinement_frame(
+                sequence,
+                warm,
+                graph_trajectory,
+                artifact,
+                model,
+                surface,
+                frame=frame,
+                output=output,
+                show=False,
+                **display_options,
+            )
+        _json_write(value, report)
+        if report is None:
+            _json_write(value, None)
+    except (
+        StorageError,
+        ValueError,
+        OSError,
+        RuntimeError,
+        WarmStartArtifactError,
+        InteractionArtifactError,
+    ) as exc:
+        typer.echo(f"visualize-refinement failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
 

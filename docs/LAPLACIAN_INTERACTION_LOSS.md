@@ -37,4 +37,6 @@ agreement for bounded qpos Jacobian probes.
 
 This document deliberately stops at Eq. (7). The paper's lambda weighting,
 slack variables, signed-distance constraints, collision query set, and final
-constrained optimization are not silently folded into this Stage 8 evaluator.
+constrained optimization are implemented only in the separate bounded Stage 9
+workflow; they are not silently folded into this Stage 8 evaluator. See
+[FINAL_REFINEMENT_OPTIMIZATION.md](FINAL_REFINEMENT_OPTIMIZATION.md).

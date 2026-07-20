@@ -104,26 +104,26 @@ items:
     paper_section: "Sec. 3.4"
     pdf_page: 5
     evidence_summary: "Refinement combines interaction-mesh, bone, regularization, and slack penalties under signed-distance constraints."
-    implementation_targets: [src/toporetarget/retarget/optimization.py]
-    test_targets: [tests/unit/test_paper_fidelity.py]
-    status: specified_not_implemented
+    implementation_targets: [src/toporetarget/retarget/final_refinement.py, src/toporetarget/cli/retarget.py]
+    test_targets: [tests/unit/test_stage9_refinement.py]
+    status: implemented_with_assumptions
     known_parameters: {equation_number: 8, soft_tolerance_m: 0.001, hard_bound_m: 0.030, slack_penalty: 100000, unit: mixed}
     unknowns: [query-set construction, solver termination, joint-limit realization, signed-distance backend]
-    assumptions: [A_SOLVER_001, A_SOLVER_TERMINATION_001, A_JOINT_LIMIT_001, A_COLLISION_QUERY_SET_001, A_SIGNED_DISTANCE_BACKEND_001]
-    notes: "All three penetration values are locked in Appendix A.1 Table 3."
+    assumptions: [A_REFINEMENT_SOLVER_001, A_REFINEMENT_SOLVER_TOLERANCES_001, A_REFINEMENT_QUERY_SET_001, A_COLLISION_ACTIVE_MARGIN_001, A_SDF_CONSTRAINT_JACOBIAN_001]
+    notes: "Paper weights and constraint signs are locked; solver, Q_t, and derivative details are explicit engineering assumptions."
   - id: equation_9
     kind: equation
     title: Refinement regularization
     paper_section: "Appendix A.1"
     pdf_page: 12
     evidence_summary: "Temporal regularization plus floating-base translation and rotation priors."
-    implementation_targets: [src/toporetarget/retarget/optimization.py]
-    test_targets: [tests/unit/test_paper_fidelity.py]
-    status: specified_not_implemented
+    implementation_targets: [src/toporetarget/retarget/final_refinement.py, configs/retarget/refinement/local_seed_delta_v1.yaml]
+    test_targets: [tests/unit/test_stage9_refinement.py]
+    status: implemented_with_assumptions
     known_parameters: {equation_number: 9, lambda_reg: 2.5, lambda_base_pos: 100, lambda_base_rot: 1, unit: mixed}
-    unknowns: [base rotation parameterization]
-    assumptions: [A_BASE_PARAMETERIZATION_001]
-    notes: "The paper names q_base position and rotation but does not specify rotation coordinates."
+    unknowns: [base rotation parameterization, previous-state coordinate mapping, first-frame policy]
+    assumptions: [A_REFINEMENT_BASE_PARAMETERIZATION_001, A_REFINEMENT_BASE_PRIOR_REFERENCE_001, A_REFINEMENT_FIRST_FRAME_001, A_REFINEMENT_COORDINATE_SCALING_001, A_REFINEMENT_TIME_DISCRETIZATION_001]
+    notes: "The paper names q_base position and rotation but does not specify rotation coordinates or the Eq. 9 reference origin."
   - id: equation_10
     kind: equation
     title: Contact precision metric

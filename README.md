@@ -10,9 +10,10 @@ conversion tools, reproducibility audits, and a staged path toward full dexterou
 The repository is intentionally transparent about scope: the current implementation reaches the
 canonical HOI interface, a bounded MANO-to-MediaPipe-style-21 source adapter, the Stage 4 generic
 robot-hand/Arti-MANO target kinematics interface, the bounded Stage 5 GRAB dataset adapter, a
-Stage 7 relative-bone-direction warm-start trajectory, and the bounded Stage 8 source interaction
-graph/Laplacian loss. Stages 7-8 are complete with explicit paper assumptions; the repository still
-does not claim the paper's constrained optimizer, RL pipeline, or reported experimental result.
+Stage 7 relative-bone-direction warm-start trajectory, the bounded Stage 8 source interaction
+graph/Laplacian loss, and the bounded Stage 9 Eq. (8)-(9) final refinement. Stages 7-9 are complete
+with explicit paper assumptions; the repository still does not claim the paper's RL pipeline or
+reported experimental result.
 
 ## Overview
 
@@ -53,7 +54,7 @@ that stage; it does not imply full-dataset or result-level reproduction.
 | 6 | Object sampling, collision geometry, and SDF | Complete, bounded; assumptions explicit | Mesh audit, deterministic 50-point surface references, collision-only robot samples, SDF queries, probes, reports, visualizations, and bounded real-data acceptance pass; later interaction/optimization remains out of scope. |
 | 7 | Relative bone-direction initialization | Complete, with assumptions | 20-bone/15-pair Eq. 1, sequential bounded Eq. 2, frame audit, RH/LH acceptance, artifacts, validation, and visual diagnostics pass. |
 | 8 | Interaction graph and Laplacian coordinates | Complete, bounded; assumptions explicit | Source-only Eq. 3–7 graph/loss, RH/LH artifacts, identity/Jacobian validation, reports, and views pass. Eq. 8–9 remains Stage 9. |
-| 9 | Constrained optimization with slack variables | TODO | Implement and test Eq. 8–9 constraints and optimization. |
+| 9 | Constrained optimization with slack variables | Complete, bounded; assumptions explicit | Eq. 8–9 final refinement, full/adaptive collision QuerySet, slack, independent full-surface audit, RH/LH bounded trajectory artifacts, CLI, tests, and views pass; no Stage 10 behavior is included. |
 | 10 | GRAB → Arti-MANO end-to-end retargeting | TODO | Produce a reproducible robot reference trajectory. |
 | 11 | Metrics and ContactPose evaluation | TODO | Implement Eq. 10–12 metrics and report fixtures. |
 | 12 | OakInk, DexYCB, and HO-Cap adapters | TODO | Add independently validated dataset adapters. |
@@ -76,6 +77,7 @@ Chinese roadmap is [docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md).
 - Git
 - External data/models only when using the corresponding workflows
 - A graphical backend for `--show` viewers; `MPLBACKEND=Agg` is suitable for headless smoke tests
+- SciPy for the Stage 7/9 numerical solvers
 
 Install the complete environment for the currently implemented data and visualization workflows:
 
@@ -220,8 +222,64 @@ toporetarget retarget evaluate-interaction \
 
 See [`docs/INTERACTION_GRAPH.md`](docs/INTERACTION_GRAPH.md),
 [`docs/LAPLACIAN_INTERACTION_LOSS.md`](docs/LAPLACIAN_INTERACTION_LOSS.md), and the
-[`Stage 8 report`](docs/stages/STAGE_8_INTERACTION_GRAPH_LAPLACIAN.md). Eq. (8)-(9), slack,
-SDF/collision penalties, and optimization remain Stage 9.
+[`Stage 8 report`](docs/stages/STAGE_8_INTERACTION_GRAPH_LAPLACIAN.md).
+
+### Stage 9. Generate and Validate Final Interaction-Preserving Robot References
+
+Stage 9 consumes the frozen Stage 7 warm-start, Stage 8 graph, and Stage 6 collision-surface
+artifacts. It evaluates Eq. (8)–(9) in explicit local seed-delta coordinates with SLSQP,
+positive-outside SDF hard/soft constraints, per-sample slack variables, monotonic adaptive
+QuerySets, and an independent full-surface audit. The solver-only convex-hull acceleration is
+accepted only after probe comparison with the Stage 6 reference backend; acceptance remains
+reference-backend based.
+
+```bash
+toporetarget retarget inspect-query-set \
+  --canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
+  --warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --robot artimano_rh --frame 0 --query-profile adaptive_active_set_v1 \
+  --json .local/reports/stage9/rh_query_set_frame0.json
+
+toporetarget retarget refine \
+  --canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
+  --warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --graph .local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right.zarr \
+  --robot artimano_rh --query-profile adaptive_active_set_v1 \
+  --coordinate-profile local_seed_delta_v1 \
+  --solver-profile scipy_slsqp_active_set_v1 --start-frame 0 --end-frame 60 \
+  --output .local/cache/retarget/final/s7_cubemedium_inspect_1_right_artimano_rh.zarr
+
+toporetarget retarget validate-refinement \
+  --canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
+  --warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --graph .local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right.zarr \
+  --final .local/cache/retarget/final/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --report .local/reports/stage9/rh_validation.json \
+  --csv .local/reports/stage9/rh_validation.csv
+
+toporetarget retarget audit-penetration \
+  --canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
+  --warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --final .local/cache/retarget/final/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --robot artimano_rh --report .local/reports/stage9/rh_full_surface_audit.json
+
+toporetarget retarget visualize-refinement \
+  --canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
+  --warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --graph .local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right.zarr \
+  --final .local/cache/retarget/final/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
+  --robot artimano_rh --frame 0 --output .local/reports/stage9/scene_first.png
+```
+
+The full reference and solver comparison commands are documented in
+[`docs/stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md`](docs/stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md).
+
+The bounded RH/LH closeout on frames `[0,60)` passed full-surface validation and full-artifact
+determinism. Minimum full signed distance was `0.623582905 m` (RH) and `0.641271031 m` (LH),
+with zero penetration; adaptive/full comparison used 16/512 queries at frames `0/29/59`.
+Detailed metrics, hashes, Jacobian checks, solver comparisons, and visual reports are in the
+ignored `.local/reports/stage9/` directory. This closes Stage 9 only; Stage 10, RL, physics,
+ContactPose, and baseline reproduction remain TODO.
 
 ### 1. Synthetic canonical HOI workflow
 

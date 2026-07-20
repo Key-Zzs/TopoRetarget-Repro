@@ -52,5 +52,6 @@ toporetarget retarget build-interaction-graph \
 Stage 8 evaluation loads this artifact and the Stage 7 warm-start artifact,
 reuses its exact connectivity and weights, and never mutates qpos/base. Eq. (7)
 is evaluated as the mean squared Eq. (6) residual over 71 vertices. Constrained
-optimization, slack, SDF/collision penalties, and Eq. (8)-(9) remain Stage 9
-work.
+optimization, slack, SDF/collision penalties, and Eq. (8)-(9) are implemented in
+the bounded Stage 9 workflow documented in
+[stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md](stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md).

@@ -1,0 +1,11 @@
+profile_id: adaptive_active_set_v1
+version: "1.0.0"
+mode: adaptive
+active_margin_m: 0.010
+max_active_set_rounds: 5
+paper_status: not_paper_specified
+assumptions:
+  - A_REFINEMENT_QUERY_SET_001
+  - A_COLLISION_ACTIVE_MARGIN_001
+  - A_COLLISION_ACTIVE_SET_REFINEMENT_001
+  - A_REFINEMENT_HAND_SURFACE_SAMPLES_001

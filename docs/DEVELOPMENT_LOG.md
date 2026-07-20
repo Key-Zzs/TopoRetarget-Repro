@@ -261,3 +261,37 @@ See [`ROADMAP.md`](ROADMAP.md), [`PAPER_FIDELITY.md`](PAPER_FIDELITY.md), and
 boundaries. The canonical interface is documented in
 [`HOI_DATA_INTERFACE.md`](HOI_DATA_INTERFACE.md) and coordinate semantics in
 [`COORDINATE_CONVENTIONS.md`](COORDINATE_CONVENTIONS.md).
+
+## Stage 9 — final constrained interaction-preserving refinement (2026-07-20)
+
+Stage 9 implements the bounded Eq. (8)-(9) refinement on the existing RH/LH
+`s7/cubemedium_inspect_1` 60-frame inputs. The solver consumes the frozen Stage 7 warm start,
+Stage 8 graph, Stage 6 cubemedium mesh, and immutable 512-point robot collision surface. It uses
+explicit local seed-delta coordinates, previous-final remapping, paper weights from
+`configs/paper/retarget.yaml`, positive-outside reference SDF constraints, per-query slack, and
+independent full-surface audits.
+
+Full and adaptive QuerySet profiles are deterministic and hash-recorded. The adaptive profile
+starts with penetration/10 mm/nearest-per-geometry samples and monotonically adds full-surface
+violations. The solver is float64 SLSQP with Torch-autograd objective and hybrid SDF constraint
+Jacobians. A convex-hull solver backend is used only after probe comparison to the Stage 6
+reference backend; acceptance always uses the reference backend.
+
+Implementation issues closed during this stage were zero-angle SO(3) gradient NaNs, incorrect
+geometry-sample slicing, strict reference-vs-solver SDF separation, and async Zarr array
+creation/loading. The engineering profile records `maxiter=30`, `ftol=1e-7`, and fail-fast status
+handling because the paper does not disclose optimizer details. Stage 9 remains
+`implemented_with_assumptions`; Stage 10, RL, physics, ContactPose, and baseline behavior were
+not started. All generated outputs and pre-stage snapshots remain under ignored `.local/`; no git
+add/commit/push was performed.
+
+The final closeout reran the complete `[0,60)` range for both hands. RH reached minimum full
+signed distance `0.623582905 m`, zero penetration, maximum slack `2.137e-6 m`, mean/p95 solve
+time `20.146/22.435 s`; LH reached `0.641271031 m`, zero penetration, maximum slack
+`5.096e-7 m`, mean/p95 `19.214/20.853 s`. Both independent validation reports passed, and
+all 47 non-time arrays matched exactly between the original and full rerun artifacts for each
+hand. At frames `0/29/59`, adaptive used 16 queries versus 512 for full reference; the largest
+observed differences were `8.20e-6 m` in minimum full SDF and `8.77e-10` in objective value.
+Jacobian checks passed for RH/LH with constraint max errors below `2.03e-10` and no finite-difference
+fallbacks. Reports are under `.local/reports/stage9/`; the known canonical `metadata.json` Zarr
+sidecar warning is pre-existing and does not modify source artifacts.

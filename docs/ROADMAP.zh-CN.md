@@ -5,7 +5,8 @@ HOI 数据接口）、阶段 2B 的有界真实 GRAB 检查、阶段 3 的有界
 21 关键点 source-hand adapter、阶段 4 的通用机器人手运动学接口与 Arti-MANO 目标手
 适配，以及阶段 5 的有界 GRAB dataset adapter（fresh semantic closeout 已通过）。阶段 6 已完成有界
 geometry foundation（保留显式假设）；阶段 7 已完成有界相对骨方向 warm-start（保留显式假设）；
-阶段 8 已完成有界 source-only 交互图和 Laplacian loss（保留显式假设）；阶段 9–19 尚未开始，不能把规划内容描述为已实现算法。
+阶段 8 已完成有界 source-only 交互图和 Laplacian loss，阶段 9 已完成有界 Eq. (8)-(9)
+final refinement（均保留显式假设）；阶段 10–19 尚未开始，不能把规划内容描述为已实现算法。
 
 长期阶段依次为：
 
@@ -16,5 +17,7 @@ geometry foundation（保留显式假设）；阶段 7 已完成有界相对骨�
    HO-Cap；13. ARCTIC、OakInk2、TACO；14. 任意灵巧手 URDF/MJCF 插件；15. baseline 与消融；
    16. reference-tracking PPO；17. 论文实验；18. 性能优化与 v1.0；19. MANO 清理、SPIDER
    等非论文扩展。
+
+阶段 9 的详细边界见 `stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md`。
 
 每阶段的 objective、major deliverables、definition of done 和 status 以英文路线图为准。

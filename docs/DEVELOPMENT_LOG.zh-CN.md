@@ -234,3 +234,32 @@ git diff --check
 数据与许可证边界见 [`LICENSE_AND_DATA_POLICY.md`](LICENSE_AND_DATA_POLICY.md)。统一接口见
 [`HOI_DATA_INTERFACE.md`](HOI_DATA_INTERFACE.md)，坐标语义见
 [`COORDINATE_CONVENTIONS.md`](COORDINATE_CONVENTIONS.md)。
+
+## Stage 9：最终保交互约束 refinement（2026-07-20）
+
+Stage 9 在现有 RH/LH `s7/cubemedium_inspect_1` 60 帧输入上实现有界的 Eq. (8)-(9)。solver
+读取冻结的 Stage 7 warm start、Stage 8 graph、Stage 6 cubemedium mesh 和不可变的 512 点
+robot collision surface。实现使用显式 local seed-delta 坐标、previous-final 到当前 seed 的
+时序 remap、`configs/paper/retarget.yaml` 中的 paper weights、positive-outside reference SDF、
+每个 query 的 slack，以及独立 full-surface audit。
+
+Full/adaptive QuerySet profile 是确定性的并写入 hash。adaptive profile 从 penetration、10 mm
+margin 和每个 geometry 最近点开始，并单调加入 full-surface violation。solver 是 float64 SLSQP，
+目标函数使用 Torch autograd，SDF constraint Jacobian 使用 hybrid 策略。convex-hull solver backend
+只有在与 Stage 6 reference backend probe 对比通过后才使用；最终验收始终使用 reference backend。
+
+本阶段修复了零角度 SO(3) 梯度 NaN、geometry sample slice 错误、solver/reference SDF 混用和
+async Zarr array 创建/读取问题。engineering profile 记录 `maxiter=30`、`ftol=1e-7` 和 fail-fast，
+因为论文没有公开 optimizer 细节。Stage 9 仍是 `implemented_with_assumptions`；Stage 10、RL、
+physics、ContactPose 和 baseline 未启动。所有输出和 pre-stage snapshot 留在被忽略的 `.local/`，
+没有执行 git add/commit/push。
+
+最终 closeout 对 RH/LH 都重新运行了完整的 `[0,60)`。RH 的最小 full signed distance 为
+`0.623582905 m`、penetration 为 0、最大 slack 为 `2.137e-6 m`，平均/p95 solve time 为
+`20.146/22.435 s`；LH 分别为 `0.641271031 m`、0、`5.096e-7 m` 和 `19.214/20.853 s`。
+两侧 independent validation 都通过；每侧 original 与 full rerun artifact 的 47 个非时间数组
+都完全一致。`0/29/59` 三帧中 adaptive 使用 16 个 query，full reference 使用 512 个 query；
+最大差异为最小 full SDF `8.20e-6 m`、objective `8.77e-10`。RH/LH Jacobian 检查通过，
+constraint 最大误差低于 `2.03e-10` 且没有 finite-difference fallback。报告位于
+`.local/reports/stage9/`；已知的 canonical `metadata.json` Zarr sidecar warning 是既有输入
+侧车，不会修改 source artifact。

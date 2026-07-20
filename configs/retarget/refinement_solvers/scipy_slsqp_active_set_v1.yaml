@@ -1,0 +1,18 @@
+profile_id: scipy_slsqp_active_set_v1
+version: "1.0.0"
+backend: scipy.optimize.minimize
+method: SLSQP
+dtype: float64
+maxiter: 30
+ftol: 1.0e-7
+constraint_tolerance: 1.0e-6
+finite_difference_epsilon: 1.0e-6
+disp: false
+strict_failure_policy: fail_fast
+sdf_backend: convex_hull_exact_solver_only
+sdf_probe_count: 32
+sdf_cross_validation_tolerance_m: 1.0e-8
+assumptions:
+  - A_REFINEMENT_SOLVER_001
+  - A_REFINEMENT_SOLVER_TOLERANCES_001
+  - A_REFINEMENT_SDF_BACKEND_001
