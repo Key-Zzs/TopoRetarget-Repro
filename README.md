@@ -398,6 +398,24 @@ warm-start, and final meshes; the page also provides frame playback, orbit/zoom 
 object context points, and per-frame refinement metrics. This is a visual inspection aid and
 does not replace the numeric Stage 9/10 gates.
 
+The same page also contains the frozen Stage 8 interaction graph and Laplacian diagnostics.
+Select a mode in the page, or choose the initial mode at generation time:
+
+```bash
+toporetarget workflow visualize-mesh \
+  --run .local/runs/stage10_reference_runtime/s1__airplane_lift__right__artimano_rh__f000240_f000300/manifest.json \
+  --mode combined \
+  --output .local/runs/stage10_reference_runtime/s1__airplane_lift__right__artimano_rh__f000240_f000300/review/trajectory_combined.html
+```
+
+Available modes are `mesh`, `full-graph`, `figure4-style`, `laplacian-diagnostic`, and
+`combined`; every mode keeps the source/warm-start/final mesh layers visible. Figure-4-style defaults to hand-object edges only; edge threshold/top-k,
+display weights, residual target/scope, scalar heat, vector arrows, labels, and
+source/warm/final graph states are controlled in the sidebar. The graph and object samples are
+read from the accepted Stage 8 artifacts; this viewer never rebuilds or modifies them.
+The complete explanation of the extra graph points/lines, residual overlays, sidebar controls,
+and review semantics is in [`docs/INTERACTION_MESH_VISUALIZATION.md`](docs/INTERACTION_MESH_VISUALIZATION.md).
+
 #### Visualize the entire trajectory
 
 The existing `f000000_f000060` inputs and final artifacts contain only the half-open range

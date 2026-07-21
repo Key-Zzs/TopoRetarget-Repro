@@ -413,3 +413,19 @@ excluding `solve_time_s` and documented metadata. The final status remains
 `STAGE9_2_COMPLETE_REFERENCE_RUNTIME`; the preferred single-frame gate is not
 met, while the explicitly accepted reference-runtime Stage 10 milestone is
 complete.
+
+## Stage 10.x interaction-mesh HTML visualization (2026-07-21)
+
+Extended the manifest-driven mesh viewer with five switchable modes: `mesh`,
+`full-graph`, `figure4-style`, `laplacian-diagnostic`, and `combined`. The page
+keeps source/warm-start/final meshes visible in every mode, reuses the accepted Stage 8 graph/evaluation artifacts, and preserves the 21 hand +
+50 object vertex contract and frozen directed weights, and computes final
+Laplacian residuals in memory for diagnostics only. It adds edge category,
+threshold/top-k, residual target/scope, scalar/vector, labels, and state-layer
+controls. No solver, graph rebuild, or input-artifact write is performed.
+
+The accepted `s1/airplane_lift` right-hand `[240,300)` run generated all five
+HTML variants and passed headless Chrome smoke checks. Artifact content hashes
+and mtimes were unchanged across generation. The viewer is an inspection aid;
+formal interaction, collision, continuity, bounds, solver, and provenance gates
+remain authoritative. No git add, commit, or push was performed.

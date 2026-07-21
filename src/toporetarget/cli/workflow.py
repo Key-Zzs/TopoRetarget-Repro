@@ -542,6 +542,11 @@ def visualize_command(
 @app.command("visualize-mesh")
 def visualize_mesh_command(
     run: Path = typer.Option(..., "--run"),
+    mode: str = typer.Option(
+        "mesh",
+        "--mode",
+        help="mesh, full-graph, figure4-style, laplacian-diagnostic, or combined",
+    ),
     output: Path | None = typer.Option(None, "--output"),
     start_frame: int | None = typer.Option(None, "--start-frame", min=0),
     end_frame: int | None = typer.Option(None, "--end-frame", min=1),
@@ -560,6 +565,7 @@ def visualize_mesh_command(
         result = render_mesh_html(
             run,
             output=output,
+            mode=mode,
             start_frame=start_frame,
             end_frame=end_frame,
             max_object_points=max_object_points,

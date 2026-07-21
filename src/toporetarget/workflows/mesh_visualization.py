@@ -16,14 +16,19 @@ import numpy as np
 from toporetarget.data.storage import load_hoi_sequence
 from toporetarget.geometry.se3 import transform_points
 from toporetarget.retarget.artifacts import load_warm_start
+from toporetarget.retarget.delaunay import edge_category
 from toporetarget.retarget.final_refinement import load_final_trajectory
+from toporetarget.retarget.laplacian import laplacian_numpy
 from toporetarget.robots.registry import get_robot_registry
 from toporetarget.robots.visualization import _primitive_mesh
 
 from .schema import read_json
 
 HTML_SCHEMA_VERSION = "toporetarget.mesh_viewer.v1"
+INTERACTION_HTML_SCHEMA_VERSION = "toporetarget.interaction_mesh_viewer.v1"
 _DEFAULT_MAX_OBJECT_POINTS = 1200
+_GRAPH_STATE_COLORS = {"source": "#3b82f6", "warm": "#f59e0b", "final": "#22c55e"}
+_EDGE_CATEGORY_CODES = {"hand-hand": 0, "hand-object": 1, "object-object": 2}
 
 
 def _rounded(value: Any, digits: int = 6) -> Any:
@@ -163,6 +168,174 @@ def _metrics(final: Any, warm: Any, source_indices: np.ndarray) -> dict[str, Any
         frames.append(item)
     result["frames"] = frames
     return result
+
+
+def _edge_category_codes(edges: np.ndarray) -> np.ndarray:
+    """Classify the frozen Stage 8 undirected edges for HTML filtering."""
+
+    value = np.asarray(edges, dtype=np.int64)
+    if value.ndim != 2 or value.shape[1:] != (2,):
+        raise ValueError(f"edges must have shape [E,2], got {value.shape}")
+    return np.asarray([_EDGE_CATEGORY_CODES[edge_category(edge)] for edge in value], dtype=np.int8)
+
+
+def _visual_undirected_weights(directed: Any, edges: np.ndarray) -> np.ndarray:
+    """Return mean(w_ij,w_ji) for display only; optimization weights stay directed."""
+
+    source = np.asarray(directed.source_index, dtype=np.int64)
+    destination = np.asarray(directed.destination_index, dtype=np.int64)
+    weights = np.asarray(directed.weights, dtype=np.float64)
+    pair_values: dict[tuple[int, int], list[float]] = {}
+    for first, second, weight in zip(source, destination, weights, strict=True):
+        pair_values.setdefault(tuple(sorted((int(first), int(second)))), []).append(float(weight))
+    result = []
+    for first, second in np.asarray(edges, dtype=np.int64):
+        values = pair_values.get((int(first), int(second)), [])
+        if len(values) != 2:
+            raise ValueError(f"Stage 8 directed graph does not contain two weights for {(first, second)}")
+        result.append(float(np.mean(values)))
+    return np.asarray(result, dtype=np.float64)
+
+
+def _filter_edge_indices(
+    edges: np.ndarray,
+    categories: np.ndarray,
+    weights: np.ndarray,
+    *,
+    threshold: float = 0.0,
+    top_k: int = 0,
+    hand_object_only: bool = False,
+) -> np.ndarray:
+    """Select graph edges for drawing without changing the stored graph."""
+
+    if threshold < 0:
+        raise ValueError("edge weight threshold must be non-negative")
+    if top_k < 0:
+        raise ValueError("top-k edges must be non-negative")
+    mask = np.asarray(weights) >= float(threshold)
+    if hand_object_only:
+        mask &= np.asarray(categories) == _EDGE_CATEGORY_CODES["hand-object"]
+    selected = np.flatnonzero(mask)
+    if top_k > 0 and len(selected) > top_k:
+        order = np.argsort(-np.asarray(weights)[selected], kind="stable")
+        selected = selected[order[:top_k]]
+    return selected.astype(np.int64, copy=False)
+
+
+def _residual_summary(residual: np.ndarray, vertex_metadata: list[dict[str, Any]]) -> dict[str, Any]:
+    value = np.asarray(residual, dtype=np.float64)
+    if value.shape != (71, 3):
+        raise ValueError(f"residual must have shape [71,3], got {value.shape}")
+    norms = np.linalg.norm(value, axis=1)
+    hand = norms[:21]
+    obj = norms[21:]
+    order = np.argsort(-norms, kind="stable")
+    top = []
+    for index in order[:5]:
+        metadata = vertex_metadata[int(index)] if int(index) < len(vertex_metadata) else {}
+        top.append(
+            {
+                "vertex_id": int(index),
+                "name": metadata.get("semantic_name", metadata.get("sample_id", index)),
+                "norm": float(norms[index]),
+            }
+        )
+    return {
+        "max": float(np.max(norms)),
+        "mean": float(np.mean(norms)),
+        "hand_mean": float(np.mean(hand)),
+        "object_mean": float(np.mean(obj)),
+        "top": top,
+    }
+
+
+def _display_source_indices(final: Any, manifest: dict[str, Any], frame_count: int) -> np.ndarray:
+    values = np.asarray(final.arrays.get("source_frame_indices", []), dtype=np.int64)
+    if values.shape == (frame_count,):
+        return values
+    start = int(manifest.get("selected_frame_range", [0, frame_count])[0])
+    return np.arange(frame_count, dtype=np.int64) + start
+
+
+def _interaction_payload(
+    graph: Any,
+    evaluation: Any,
+    final_keypoints: np.ndarray,
+    display_source_indices: np.ndarray,
+    frame_indices: np.ndarray,
+) -> dict[str, Any]:
+    """Serialize the fixed Stage 8 graph and Stage 8/9 states for the browser."""
+
+    graph.validate()
+    evaluation.validate()
+    if graph.frame_count != evaluation.frame_count or graph.frame_count != len(final_keypoints):
+        raise ValueError("graph, evaluation, and final trajectory frame counts differ")
+    if not np.array_equal(graph.source_vertices[:, 21:], evaluation.robot_vertices[:, 21:]):
+        raise ValueError("Stage 8 object sample identity changed between graph and evaluation")
+    final_vertices = np.concatenate(
+        [np.asarray(final_keypoints, dtype=np.float64), graph.source_vertices[:, 21:]], axis=1
+    )
+    final_residuals: list[np.ndarray] = []
+    graph_frames: list[dict[str, Any]] = []
+    source_summaries: list[dict[str, Any]] = []
+    warm_summaries: list[dict[str, Any]] = []
+    final_summaries: list[dict[str, Any]] = []
+    metadata = graph.source_vertex_metadata
+    for index in frame_indices.tolist():
+        edges = np.asarray(graph.edge_frames[index], dtype=np.int64)
+        categories = _edge_category_codes(edges)
+        weights = _visual_undirected_weights(graph.directed_frames[index], edges)
+        final_residual = laplacian_numpy(
+            final_vertices[index],
+            graph.directed_frames[index].source_index,
+            graph.directed_frames[index].destination_index,
+            graph.directed_frames[index].weights,
+        ) - graph.source_laplacian[index]
+        final_residuals.append(final_residual)
+        graph_frames.append(
+            {
+                "local_frame": int(index),
+                "source_frame": int(display_source_indices[index]),
+                "edges": edges.tolist(),
+                "categories": categories.tolist(),
+                "weights": _rounded(weights),
+                "graph_hash": graph.graph_hashes[index],
+                "stats": graph.frame_statistics[index],
+            }
+        )
+        source_zero = np.zeros((71, 3), dtype=np.float64)
+        source_summaries.append(_residual_summary(source_zero, metadata))
+        warm_summaries.append(_residual_summary(evaluation.residual[index], metadata))
+        final_summaries.append(_residual_summary(final_residual, metadata))
+    selected = np.asarray(frame_indices, dtype=np.int64)
+    return {
+        "vertex_count": 71,
+        "hand_vertex_count": 21,
+        "object_vertex_count": 50,
+        "vertex_metadata": metadata,
+        "vertices": {
+            "source": _rounded(graph.source_vertices[selected]),
+            "warm": _rounded(evaluation.robot_vertices[selected]),
+            "final": _rounded(final_vertices[selected]),
+        },
+        "frames": graph_frames,
+        "residuals": {
+            "source": _rounded(np.zeros((len(selected), 71, 3), dtype=np.float64)),
+            "warm": _rounded(evaluation.residual[selected]),
+            "final": _rounded(np.asarray(final_residuals)),
+        },
+        "residual_summaries": {
+            "source": source_summaries,
+            "warm": warm_summaries,
+            "final": final_summaries,
+        },
+        "source_graph_artifact_hash": graph.artifact_hash,
+        "evaluation_artifact_hash": evaluation.artifact_hash,
+        "shared_connectivity": True,
+        "shared_weights": True,
+        "object_sample_identity": "graph.source_vertices[:,21:] reused for source/warm/final",
+        "visual_weight_assumption": "w_vis(i,j)=0.5*(w_ij+w_ji); directed Stage 8 weights are unchanged",
+    }
 
 
 def _apply_transform(vertices: np.ndarray, transforms: np.ndarray) -> np.ndarray:
@@ -343,6 +516,7 @@ def render_mesh_html(
     manifest_path: str | Path,
     *,
     output: str | Path | None = None,
+    mode: str = "mesh",
     start_frame: int | None = None,
     end_frame: int | None = None,
     max_object_points: int = _DEFAULT_MAX_OBJECT_POINTS,
@@ -350,6 +524,20 @@ def render_mesh_html(
     open_browser: bool = False,
 ) -> dict[str, Any]:
     """Build one self-contained HTML viewer from a Stage 10 manifest."""
+
+    # Keep the historical public entry point while using the unified viewer.
+    from .interaction_html import render_interaction_mesh_html
+
+    return render_interaction_mesh_html(
+        manifest_path,
+        output=output,
+        mode=mode,
+        start_frame=start_frame,
+        end_frame=end_frame,
+        max_object_points=max_object_points,
+        asset_root=asset_root,
+        open_browser=open_browser,
+    )
 
     if max_object_points <= 0:
         raise ValueError("max_object_points must be positive")

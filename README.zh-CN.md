@@ -317,6 +317,23 @@ toporetarget workflow visualize-mesh \
 mesh；页面支持逐帧播放、旋转/缩放、object 上下文点云和逐帧 refinement 指标。它只是可视化检查工具，
 不能替代 Stage 9/10 的数值 gate。
 
+同一个页面还包含冻结的 Stage 8 interaction graph 和 Laplacian 诊断。可以在页面下拉框中切换，
+也可以在生成时指定初始模式：
+
+```bash
+toporetarget workflow visualize-mesh \
+  --run .local/runs/stage10_reference_runtime/s1__airplane_lift__right__artimano_rh__f000240_f000300/manifest.json \
+  --mode combined \
+  --output .local/runs/stage10_reference_runtime/s1__airplane_lift__right__artimano_rh__f000240_f000300/review/trajectory_combined.html
+```
+
+可用模式为 `mesh`、`full-graph`、`figure4-style`、`laplacian-diagnostic` 和 `combined`；所有模式都会保留 source/warm-start/final mesh。
+`figure4-style` 默认只显示 hand-object 边；侧栏还可控制 edge threshold/top-k、权重显示方式、
+residual target/scope、标量热度、向量箭头、labels 以及 source/warm/final graph 状态。图结构和
+object samples 均直接读取已接受的 Stage 8 artifact；该 viewer 不重建也不修改它们。
+HTML 中额外点/线、residual 叠加层、右侧面板各选项及查看方法的完整说明见
+[`docs/INTERACTION_MESH_VISUALIZATION.md`](docs/INTERACTION_MESH_VISUALIZATION.md)。
+
 Stage 9 有界 clip 的交互查看（不使用 `--output`）：
 
 ```bash

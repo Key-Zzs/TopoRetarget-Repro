@@ -361,3 +361,17 @@ reference validation 通过，最大 signed-distance error 为 `2.50e-16 m`。�
 `solve_time_s` 与文档规定的 metadata 后，全部持久化数组 exact equal。最终状态仍为
 `STAGE9_2_COMPLETE_REFERENCE_RUNTIME`；preferred single-frame gate 未通过，但用户明确
 接受的 reference-runtime Stage 10 bounded milestone 已完成。
+
+## Stage 10.x interaction-mesh HTML 可视化（2026-07-21）
+
+在 manifest 驱动的 mesh viewer 中增加了五个可切换模式：`mesh`、`full-graph`、
+`figure4-style`、`laplacian-diagnostic` 和 `combined`；所有模式都保留 source/warm-start/final mesh。页面直接复用已接受的 Stage 8
+graph/evaluation artifact，保持 21 个 hand 点 + 50 个 object 点的 vertex contract 和冻结的
+有向权重，并仅在内存中计算 final Laplacian residual 供诊断使用。新增 edge category、
+threshold/top-k、residual target/scope、scalar/vector、labels 和 state-layer 控制；不运行
+solver、不重建 graph，也不写入输入 artifact。
+
+已对接受的 `s1/airplane_lift` 右手 `[240,300)` run 生成五种 HTML，并通过 headless Chrome
+smoke。生成前后 artifact content hash 与 mtime 均未变化。该 viewer 只是检查工具；正式的
+interaction、collision、continuity、bounds、solver 和 provenance gate 仍以数值报告为准。
+本阶段没有执行 git add、commit 或 push。

@@ -58,3 +58,43 @@ The exported `toporetarget.robot_reference.v1` contains timestamps, native frame
 indices, qpos, scene base poses, robot keypoints/link poses, object poses, and
 content/provenance hashes. It is an offline reference artifact, not a hardware
 command stream.
+
+## Interaction-mesh HTML viewer
+
+`visualize-mesh` writes a self-contained HTML page from the accepted manifest. It
+loads the canonical source mesh, warm-start and final robot visual meshes, the
+frozen Stage 8 graph/evaluation artifacts, and the final keypoints. It does not
+invoke a solver, rebuild Delaunay connectivity, recompute Stage 8 weights, or
+write any input artifact.
+
+```bash
+toporetarget workflow visualize-mesh \
+  --run .local/runs/stage10_reference_runtime/s1__airplane_lift__right__artimano_rh__f000240_f000300/manifest.json \
+  --mode combined \
+  --interactive
+```
+
+The page supports five initial modes, all switchable without regenerating data:
+
+| Mode | Display | Default purpose |
+| --- | --- | --- |
+| `mesh` | source, warm-start, final meshes and object context | inspect pose/mesh alignment |
+| `full-graph` | the same meshes plus all graph states and HH/HO/OO edges | inspect frozen connectivity |
+| `figure4-style` | the same meshes plus graph states with hand-object edges emphasized | inspect interaction structure |
+| `laplacian-diagnostic` | the same meshes plus graph and residual scalar/vector diagnostics | locate deformation mismatch |
+| `combined` | mesh layers, graph, and residual diagnostics | side-by-side review |
+
+The graph contains the 21 hand vertices followed by 50 Stage 6 object samples.
+The source/warm/final states share the exact saved connectivity and object-point
+identity. Directed Stage 8 weights are preserved; only the display line weight is
+`w_vis(i,j) = (w_ij + w_ji) / 2`. Final residuals are read-only diagnostics using
+the frozen directed graph weights. The sidebar can filter by category, threshold,
+top-k, hand-object-only, residual target/scope, scalar/vector display, and labels.
+
+The viewer reports `max`, mean, hand mean, object mean, and top residual vertices.
+These are diagnostic values, not an acceptance gate. Judge retarget quality with
+the Stage 9/10 numeric reports as well: interaction objective/residual, collision
+and penetration, temporal continuity, joint/base limits, solver acceptance, and
+the required artifact/provenance checks. See
+[`INTERACTION_MESH_VISUALIZATION.md`](INTERACTION_MESH_VISUALIZATION.md) for the
+full interpretation and recommended review procedure.
