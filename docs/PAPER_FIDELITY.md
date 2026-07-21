@@ -129,6 +129,15 @@ not a claim of result-level reproduction or Stage 10 end-to-end completion. See
 [`FINAL_REFINEMENT_OPTIMIZATION.md`](FINAL_REFINEMENT_OPTIMIZATION.md) and
 [`stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md`](stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md).
 
+## Stage 10 workflow boundary
+
+Stage 10 adds only the bounded orchestration/provenance layer that composes the implemented source,
+interaction, and refinement stages into an inspectable robot reference trajectory. Its contact-window
+thresholds, cache policy, final sanity warning, and human-review gate are engineering assumptions; they
+do not change Equations 1–9. A real contact-rich solve and human review are still required before the
+workflow can be called accepted. Equations 10–12, ContactPose evaluation, RL, physics, and baselines
+remain explicitly unimplemented.
+
 ## 13. Current blockers
 
 The private Pen-Spin data, Wuji deployment assets, target hand identity for Table 1, and several

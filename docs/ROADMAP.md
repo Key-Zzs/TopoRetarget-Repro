@@ -12,7 +12,7 @@
 | 7 | Relative bone-direction initialization | Eq. 1-2 implementation, frame audit, sequential warm-start artifact | Public/default tests, bounded RH/LH real acceptance, validation, visualization, and fidelity pass | complete (with explicit assumptions) |
 | 8 | Shared interaction graph and Laplacian coordinates | Eq. 3-7 implementation, source-only artifacts, RH/LH reports and views | Graph/loss tests, source integrity, identity/Jacobian checks, and bounded 60-frame acceptance pass; Eq. 8-9 remains out of scope | complete (bounded, with explicit assumptions) |
 | 9 | Constrained final optimization with slack variables | Eq. 8-9 implementation, QuerySets/slack, RH/LH bounded artifacts, independent audit | Constraint, determinism, source-integrity, and bounded 60-frame acceptance pass; assumptions remain explicit | complete (bounded, with explicit assumptions) |
-| 10 | GRAB → Arti-MANO end-to-end retargeting | Pipeline | Reproducible trajectory | not started |
+| 10 | GRAB → Arti-MANO end-to-end retargeting | Resumable bounded DAG, contact-window selector, provenance, review, reference export | Implementation and focused tests pass; bounded contact-rich run solves and receives human acceptance | implemented; real acceptance blocked at Stage 9 solver convergence |
 | 11 | Metrics and ContactPose evaluation | Eq. 10-12 | Metric fixtures and report | not started |
 | 12 | OakInk, DexYCB and HO-Cap adapters | Dataset adapters | Adapters validated | not started |
 | 13 | ARCTIC, OakInk2 and TACO extensions | Dataset adapters | Adapters validated | not started |

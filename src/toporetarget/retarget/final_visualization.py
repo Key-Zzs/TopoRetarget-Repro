@@ -46,6 +46,22 @@ def _limits(values: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return center - half, center + half
 
 
+def _view_transform(points: np.ndarray, object_pose: np.ndarray, view: str) -> np.ndarray:
+    if view == "scene":
+        return points
+    if view == "object":
+        return transform_points(np.linalg.inv(object_pose), points)
+    raise ValueError("view must be scene or object")
+
+
+def _view_directions(vectors: np.ndarray, object_pose: np.ndarray, view: str) -> np.ndarray:
+    if view == "scene":
+        return vectors
+    if view == "object":
+        return vectors @ np.linalg.inv(object_pose)[:3, :3]
+    raise ValueError("view must be scene or object")
+
+
 def render_refinement_frame(
     sequence: Any,
     warm: WarmStartTrajectory,
@@ -69,8 +85,11 @@ def render_refinement_frame(
     show_frames: bool = False,
     show_objective: bool = True,
     show_closest: bool = False,
+    view: str = "scene",
     show: bool = False,
 ) -> dict[str, Any]:
+    if view not in {"scene", "object"}:
+        raise ValueError("view must be scene or object")
     if frame < 0 or frame >= final.frame_count:
         raise ValueError(f"frame {frame} outside final artifact")
     plt = _pyplot(output, show)
@@ -88,10 +107,8 @@ def render_refinement_frame(
     )
     final_points = np.asarray(final.arrays["robot_keypoints_scene"][frame])
     obj = sequence.rigid_object(str(final.metadata["object_id"]))
-    object_vertices = transform_points(
-        obj.pose_scene.pose_scene[int(final.arrays["frame_indices"][frame])],
-        np.asarray(obj.mesh.vertices_local),
-    )
+    object_pose = np.asarray(obj.pose_scene.pose_scene[int(final.arrays["frame_indices"][frame])])
+    object_vertices = transform_points(object_pose, np.asarray(obj.mesh.vertices_local))
     collision = dynamic_collision_points_numpy(
         robot_model,
         surface,
@@ -102,6 +119,11 @@ def render_refinement_frame(
     query_stop = int(final.arrays["query_offsets"][frame + 1])
     query_ids = final.arrays["query_ids_concat"][query_start:query_stop]
     phi = np.asarray(final.arrays["full_signed_distance"][frame])
+    source = _view_transform(source, object_pose, view)
+    warm_points = _view_transform(warm_points, object_pose, view)
+    final_points = _view_transform(final_points, object_pose, view)
+    object_vertices = _view_transform(object_vertices, object_pose, view)
+    collision = _view_transform(collision, object_pose, view)
     values = np.concatenate([source, warm_points, final_points, object_vertices, collision], axis=0)
     low, high = _limits(values)
     figure = plt.figure(figsize=(10, 8))
@@ -150,6 +172,8 @@ def render_refinement_frame(
         if len(selected):
             closest = np.asarray(final.arrays["full_closest_points"][frame])[selected]
             normals = np.asarray(final.arrays["full_surface_normals"][frame])[selected]
+            closest = _view_transform(closest, object_pose, view)
+            normals = _view_directions(normals, object_pose, view)
             axis.scatter(*closest.T, color="#8c564b", s=12, label="closest object point")
             axis.quiver(*closest.T, *normals.T, color="#8c564b", length=0.01, alpha=0.7)
     if show_interaction_edges:
@@ -165,6 +189,8 @@ def render_refinement_frame(
     axis.set_zlabel("z (m)")
     if show_frames:
         base_pose = np.asarray(final.arrays["base_pose_scene"][frame])
+        if view == "object":
+            base_pose = np.linalg.inv(object_pose) @ base_pose
         origin = base_pose[:3, 3]
         for index, color in enumerate(("#d62728", "#2ca02c", "#1f77b4")):
             endpoint = origin + 0.035 * base_pose[:3, index]
@@ -186,7 +212,7 @@ def render_refinement_frame(
     success = bool(final.arrays["solver_success"][frame])
     if show_objective:
         title = (
-            f"frame {frame_id} | status {success} | "
+            f"{view} | frame {frame_id} | status {success} | "
             f"rounds {rounds}\nEIM={final.arrays['e_im'][frame]:.4g} | "
             f"min phi={np.min(phi):.4g} m | max slack={max_slack:.4g} m"
         )
@@ -254,6 +280,9 @@ def launch_refinement_viewer(*args: Any, **kwargs: Any) -> dict[str, Any]:
     }
     responsive_apply: Any = None
     current = {"frame": start}
+    view = str(kwargs.pop("view", "scene"))
+    if view not in {"scene", "object"}:
+        raise ValueError("view must be scene or object")
     layout = get_layout("mediapipe21")
 
     def draw(frame: int) -> None:
@@ -268,9 +297,8 @@ def launch_refinement_viewer(*args: Any, **kwargs: Any) -> dict[str, Any]:
         warm_points = np.asarray(warm.arrays["robot_keypoints_scene"][global_frame])
         final_points = np.asarray(final.arrays["robot_keypoints_scene"][frame])
         obj = sequence.rigid_object(str(final.metadata["object_id"]))
-        object_vertices = transform_points(
-            obj.pose_scene.pose_scene[global_frame], np.asarray(obj.mesh.vertices_local)
-        )
+        object_pose = np.asarray(obj.pose_scene.pose_scene[global_frame])
+        object_vertices = transform_points(object_pose, np.asarray(obj.mesh.vertices_local))
         collision = np.asarray(final.arrays["collision_points_scene"][frame])
         phi = np.asarray(final.arrays["full_signed_distance"][frame])
         query_start = int(final.arrays["query_offsets"][frame])
@@ -278,6 +306,11 @@ def launch_refinement_viewer(*args: Any, **kwargs: Any) -> dict[str, Any]:
         query_ids = np.asarray(
             final.arrays["query_ids_concat"][query_start:query_stop], dtype=np.int64
         )
+        source = _view_transform(source, object_pose, view)
+        warm_points = _view_transform(warm_points, object_pose, view)
+        final_points = _view_transform(final_points, object_pose, view)
+        object_vertices = _view_transform(object_vertices, object_pose, view)
+        collision = _view_transform(collision, object_pose, view)
         values = np.concatenate(
             [
                 source,
@@ -330,6 +363,8 @@ def launch_refinement_viewer(*args: Any, **kwargs: Any) -> dict[str, Any]:
         if state["closest"]:
             closest = np.asarray(final.arrays["full_closest_points"][frame])
             normals = np.asarray(final.arrays["full_surface_normals"][frame])
+            closest = _view_transform(closest, object_pose, view)
+            normals = _view_directions(normals, object_pose, view)
             selected = np.flatnonzero(phi < 0)
             if len(selected):
                 axis.scatter(
@@ -349,6 +384,8 @@ def launch_refinement_viewer(*args: Any, **kwargs: Any) -> dict[str, Any]:
                     axis.plot(*pair.T, color="#9467bd", linewidth=0.45, alpha=0.35)
         if state["frames"]:
             base_pose = np.asarray(final.arrays["base_pose_scene"][frame])
+            if view == "object":
+                base_pose = np.linalg.inv(object_pose) @ base_pose
             origin = base_pose[:3, 3]
             for index, color in enumerate(("#d62728", "#2ca02c", "#1f77b4")):
                 endpoint = origin + 0.035 * base_pose[:3, index]
@@ -366,7 +403,9 @@ def launch_refinement_viewer(*args: Any, **kwargs: Any) -> dict[str, Any]:
         axis.set_xlabel("x (m)")
         axis.set_ylabel("y (m)")
         axis.set_zlabel("z (m)")
-        title = f"frame {global_frame} | solver={bool(final.arrays['solver_success'][frame])}"
+        title = (
+            f"{view} | frame {global_frame} | solver={bool(final.arrays['solver_success'][frame])}"
+        )
         if state["objective"]:
             title += (
                 f" | total={final.arrays['total_objective'][frame]:.4g}"

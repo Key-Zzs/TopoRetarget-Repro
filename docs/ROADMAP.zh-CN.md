@@ -6,7 +6,7 @@ HOI 数据接口）、阶段 2B 的有界真实 GRAB 检查、阶段 3 的有界
 适配，以及阶段 5 的有界 GRAB dataset adapter（fresh semantic closeout 已通过）。阶段 6 已完成有界
 geometry foundation（保留显式假设）；阶段 7 已完成有界相对骨方向 warm-start（保留显式假设）；
 阶段 8 已完成有界 source-only 交互图和 Laplacian loss，阶段 9 已完成有界 Eq. (8)-(9)
-final refinement（均保留显式假设）；阶段 10–19 尚未开始，不能把规划内容描述为已实现算法。
+final refinement（均保留显式假设）；阶段 10 已开始实现编排层，但真实 contact-rich 端到端验收尚未完成；阶段 11–19 尚未开始，不能把规划内容描述为已实现算法。
 
 长期阶段依次为：
 

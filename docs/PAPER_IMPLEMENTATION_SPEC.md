@@ -125,3 +125,18 @@ Delaunay and Laplacian graph construction are now implemented for the bounded St
 the bounded Stage 9 SDF-constrained refinement is implemented with explicit assumptions. RL/PPO,
 baseline code, and non-paper extensions remain intentionally outside these stages.
 No module in this repository pretends that those algorithms are already implemented.
+
+## Stage 10 workflow boundary
+
+Stage 10 composes the bounded Stage 5–9 artifacts into a single-sequence,
+native-time GRAB-to-Arti-MANO run. It adds no new objective or contact term:
+official semantic contact labels are used only for deterministic window
+selection and post-run sanity reporting. The workflow records input, profile,
+and artifact hashes; reuses a node only when its content signature and
+validation still match; and invalidates that node and all downstream nodes
+when an upstream dependency changes. The run manifest, review bundle, static
+or GIF visualization wrapper, and `toporetarget.robot_reference.v1` export are
+engineering artifacts rather than paper algorithms. Contact-window thresholds,
+final-distance warnings, cache policy, and human review are tracked as
+`A_WORKFLOW_*` assumptions. A failed Stage 9 refinement remains a failed Stage
+10 run and cannot be converted into a final reference or human acceptance.
