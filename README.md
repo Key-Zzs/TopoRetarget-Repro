@@ -55,7 +55,7 @@ that stage; it does not imply full-dataset or result-level reproduction.
 | 7 | Relative bone-direction initialization | Complete, with assumptions | 20-bone/15-pair Eq. 1, sequential bounded Eq. 2, frame audit, RH/LH acceptance, artifacts, validation, and visual diagnostics pass. |
 | 8 | Interaction graph and Laplacian coordinates | Complete, bounded; assumptions explicit | Source-only Eq. 3–7 graph/loss, RH/LH artifacts, identity/Jacobian validation, reports, and views pass. Eq. 8–9 remains Stage 9. |
 | 9 | Constrained optimization with slack variables | Complete, bounded; assumptions explicit | Eq. 8–9 final refinement, full/adaptive collision QuerySet, slack, independent full-surface audit, RH/LH bounded trajectory artifacts, CLI, tests, and views pass; no Stage 10 behavior is included. |
-| 10 | GRAB → Arti-MANO end-to-end retargeting | Implemented, real acceptance blocked | Resumable bounded DAG, official contact-window selection, provenance, review/export; tested contact-rich windows reach the unchanged Stage 9 solver iteration limit before human review. |
+| 10 | GRAB → Arti-MANO end-to-end retargeting | Implemented, bounded reference-runtime accepted; preferred performance open | Resumable bounded DAG, official contact-window selection, provenance, review/export, and the accepted `s1/airplane_lift` right-hand 60-frame reference-runtime milestone; preferred performance, production, and real-time scopes remain open. |
 | 11 | Metrics and ContactPose evaluation | TODO | Implement Eq. 10–12 metrics and report fixtures. |
 | 12 | OakInk, DexYCB, and HO-Cap adapters | TODO | Add independently validated dataset adapters. |
 | 13 | ARCTIC, OakInk2, and TACO extensions | TODO | Add independently validated dataset adapters. |
@@ -307,9 +307,10 @@ with zero penetration; adaptive/full comparison used 16/512 queries at frames `0
 Detailed metrics, hashes, Jacobian checks, solver comparisons, and visual reports are in the
 ignored `.local/reports/stage9/` directory. This closes Stage 9 only; RL, physics, ContactPose,
 and baseline reproduction remain TODO. Stage 10 orchestration is available through
-[`toporetarget workflow`](docs/END_TO_END_GRAB_ARTIMANO.md), but the current bounded real
-`s1/airplane_lift` and `s7/cubemedium_inspect_1` contact-rich attempts stop at the existing Stage 9
-solver's iteration-limit failure and are not claimed as accepted end-to-end trajectories.
+[`toporetarget workflow`](docs/END_TO_END_GRAB_ARTIMANO.md). The earlier
+`s7/cubemedium_inspect_1` contact-rich attempt stopped at the existing Stage 9 solver's
+iteration-limit failure; the later `s1/airplane_lift` right-hand `[240,300)` run is the accepted
+bounded reference-runtime milestone, limited to one offline 60-frame window.
 
 #### Stage 9.1 solver-robustness closeout
 
@@ -344,7 +345,8 @@ The fixed benchmark currently selects uniform `maxiter=100` (35 records). v1 is
 60-frame real artifact and deterministic repeat are explicit opt-in gates; they
 are now backed by the Stage 9.2 contact-rich run and full fresh/resumed comparison.
 Stage 9.2 meets the reference-runtime minimum gate, while its preferred
-single-frame median/p95 target remains unmet. Stage 10 is still blocked.
+single-frame median/p95 target remains unmet. The bounded reference-runtime Stage 10 milestone is
+accepted; preferred performance debt remains open.
 
 #### Stage 9.2 performance and recoverable execution
 
@@ -359,8 +361,8 @@ for the profiling and recovery commands. The full 60-frame minimum runtime gate
 and deterministic-repeat evidence pass. The v3 first/repeat runs measure
 `10.766/38.711 s` and `10.773/39.052 s` median/p95, with `60/60` strict-accepted
 status-0 frames in each run and exact persisted-array equality excluding
-`solve_time_s`. Stage 10 remains blocked pending the preferred performance gate
-and explicit stage transition.
+`solve_time_s`. The bounded reference-runtime Stage 10 milestone is accepted; the preferred
+performance gate and explicit production/real-time scopes remain open.
 
 ### Stage 10. Run a bounded GRAB → Arti-MANO workflow
 

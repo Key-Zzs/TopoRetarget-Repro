@@ -393,6 +393,9 @@ references the accepted Stage 9.2 final artifact, records all Stage 5–9 nodes
 as reused, and records zero Stage 9 solver invocations. Cross-stage identity,
 semantic sanity, NPZ/direct-Zarr round trips, and static viewer smoke pass.
 The preferred performance gate remains false and performance debt remains open.
+This accepted bounded reference-runtime milestone supersedes the earlier
+pre-v3 Stage 10 blocked-run summaries; those entries remain as historical
+failure evidence for the old contact-rich windows.
 See [`REFINEMENT_PERFORMANCE.md`](REFINEMENT_PERFORMANCE.md),
 [`REFINEMENT_CHECKPOINT_AND_RESUME.md`](REFINEMENT_CHECKPOINT_AND_RESUME.md),
 and [`stages/STAGE_9_2_REFINEMENT_PERFORMANCE.md`](stages/STAGE_9_2_REFINEMENT_PERFORMANCE.md).

@@ -345,6 +345,8 @@ report 出现前不解除 Stage 10。详见 [`REFINEMENT_PERFORMANCE.md`](REFINE
 Stage 5–9 全部记录为 reused，Stage 9 solver invocation 为 0。跨阶段 identity、
 semantic sanity、NPZ/direct-Zarr round-trip 和静态 viewer smoke 均通过；preferred
 performance gate 仍为 false，performance debt 仍保持 open。
+这个已接受的 bounded reference-runtime milestone 覆盖早期 pre-v3 Stage 10 blocked-run
+summary；早期条目仍保留，作为旧 contact-rich window 的历史失败证据。
 [`REFINEMENT_CHECKPOINT_AND_RESUME.md`](REFINEMENT_CHECKPOINT_AND_RESUME.md) 和
 [`stages/STAGE_9_2_REFINEMENT_PERFORMANCE.md`](stages/STAGE_9_2_REFINEMENT_PERFORMANCE.md)。
 

@@ -47,7 +47,7 @@ Eq. (8)-(9) final refinement；仍未声称实现 RL pipeline 或论文实验结
 | 7 | 相对骨方向初始化 | Complete，有假设 | 20-bone/15-pair Eq. 1、时序有界 Eq. 2、frame 审计、RH/LH 验收、artifact、验证和可视化通过。 |
 | 8 | 交互图与 Laplacian 坐标 | Complete，有界；假设显式 | source-only Eq. 3–7 图/loss、RH/LH artifact、identity/Jacobian 验证、报告和可视化通过；Eq. 8–9 仍属于 Stage 9。 |
 | 9 | 带 slack 的受限优化 | Complete，有界；假设显式 | Eq. 8–9 final refinement、full/adaptive QuerySet、slack、独立 full-surface audit、RH/LH artifact、CLI、测试和可视化通过；不包含 Stage 10。 |
-| 10 | GRAB→Arti-MANO 端到端重定向 | 已实现编排，真实验收 blocked | 有界可恢复 DAG、官方 contact-window 选择、provenance、review/export；已测试的 contact-rich 窗口均在未修改的 Stage 9 solver iteration limit 处停止，尚未进入人工 review。 |
+| 10 | GRAB→Arti-MANO 端到端重定向 | 已实现；bounded reference-runtime 已接受，preferred 性能仍开放 | 有界可恢复 DAG、官方 contact-window 选择、provenance、review/export，以及已接受的 `s1/airplane_lift` 右手 60 帧 reference-runtime milestone；preferred 性能、production 和 real-time 范围仍开放。 |
 | 11 | Metrics 与 ContactPose 评估 | TODO | 实现 Eq. 10–12 指标和报告 fixture。 |
 | 12 | OakInk、DexYCB、HO-Cap adapter | TODO | 添加独立验证的数据集 adapter。 |
 | 13 | ARCTIC、OakInk2、TACO 扩展 | TODO | 添加独立验证的数据集 adapter。 |
@@ -239,8 +239,9 @@ physics、ContactPose 和 baselines 不在本阶段。
 `0/29/59` 三帧 adaptive/full 分别使用 16/512 个 query。详细 metrics、hash、Jacobian、solver
 comparison 和可视化报告位于被忽略的 `.local/reports/stage9/`；这只关闭 Stage 9，RL、
 physics、ContactPose 和 baseline reproduction 仍是 TODO。Stage 10 编排已通过
-`toporetarget workflow` 提供，但当前 `s1/airplane_lift` 和 `s7/cubemedium_inspect_1` 的真实
-contact-rich 尝试在既有 Stage 9 solver 的 iteration-limit 处停止，不能声称端到端验收通过。
+`toporetarget workflow` 提供；早期 `s7/cubemedium_inspect_1` contact-rich 尝试在既有 Stage 9
+solver 的 iteration-limit 处停止，之后的 `s1/airplane_lift` 右手 `[240,300)` run 已作为
+bounded reference-runtime milestone 接受，但范围仅限单条离线 60 帧窗口。
 
 #### Stage 9.1 solver-robustness closeout
 
@@ -269,7 +270,7 @@ ID/hash；切换 profile 只使 Stage 9 及下游节点失效，Stage 5–8 inpu
 `c42c21d894c54d07b1d30943b5a3338b13628bf0429ab203b5540cf934d09b7c`。完整 60 帧真实
 artifact 和 deterministic repeat 已由 Stage 9.2 contact-rich run 及 full fresh/resumed comparison
 支撑。Stage 9.2 通过 reference-runtime minimum gate，但 preferred single-frame median/p95
-目标仍未达到；Stage 10 继续 blocked。
+目标仍未达到；bounded reference-runtime Stage 10 milestone 已接受，但 preferred 性能债务仍开放。
 
 #### Stage 9.2 性能与可恢复执行
 
@@ -280,8 +281,9 @@ Profiling 和恢复命令见 [`docs/REFINEMENT_PERFORMANCE.md`](docs/REFINEMENT_
 及 [`docs/REFINEMENT_CHECKPOINT_AND_RESUME.md`](docs/REFINEMENT_CHECKPOINT_AND_RESUME.md)。
 完整 60 帧 minimum runtime gate 与 deterministic repeat 证据已通过。v3 第一次/重复运行
 的 median/p95 分别为 `10.766/38.711 s` 与 `10.773/39.052 s`，两次均为 `60/60`
-strict-accepted status-0 frame；排除 `solve_time_s` 后持久化数组 exact equal。Stage 10
-仍需 preferred 性能 gate 和显式阶段切换才能解除。
+strict-accepted status-0 frame；排除 `solve_time_s` 后持久化数组 exact equal。bounded
+reference-runtime Stage 10 milestone 已接受；preferred 性能 gate 以及 production/real-time
+范围仍未完成。
 
 ### Stage 10：运行有界 GRAB → Arti-MANO workflow
 
