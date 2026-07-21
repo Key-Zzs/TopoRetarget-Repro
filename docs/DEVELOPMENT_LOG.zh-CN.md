@@ -263,3 +263,62 @@ physics、ContactPose 和 baseline 未启动。所有输出和 pre-stage snapsho
 constraint 最大误差低于 `2.03e-10` 且没有 finite-difference fallback。报告位于
 `.local/reports/stage9/`；已知的 canonical `metadata.json` Zarr sidecar warning 是既有输入
 侧车，不会修改 source artifact。
+
+## 阶段 10：有界 workflow 编排（2026-07-20）
+
+阶段 10 增加 manifest 驱动的 19 节点 GRAB→Arti-MANO DAG、官方 semantic contact-window 选择、
+内容签名 cache/resume/invalidation、raw source integrity、semantic sanity 与跨阶段 identity 报告、
+artifact-only review，以及只读 `robot_reference.v1` 导出。配置在 `configs/workflows/`，流程文档在
+`docs/END_TO_END_GRAB_ARTIMANO.md`、`docs/WORKFLOW_RESUME_AND_PROVENANCE.md` 和
+`docs/TRAJECTORY_VISUALIZATION.md`。
+
+选择器在 `s1/airplane_lift` 的 `[844,904)`、`[240,300)`、规格指定的 `[238,298)`，以及已有
+Stage 9 对象 `s7/cubemedium_inspect_1` 的 `[363,423)` 窗口通过官方右手 semantic contact 和严格
+watertight mesh 门禁。额外的有限显式候选包括 `s1/airplane_fly_1 [729,789)`、
+`s1/cubemedium_inspect_1 [343,403)` 和 ratio=0.5 的 transition window
+`s1/airplane_fly_1 [159,219)`。`s1/cubesmall_inspect_1 [984,1044)` 虽通过 selector/mesh，
+但未修改的 Stage 8 strict graph 在第 13 帧因两个 simplex volume 低于 tolerance 被拒绝。其余
+已完成的 contact-rich run 都到达 frozen interaction evaluation，随后在未修改的 Stage 9 SLSQP
+refinement 返回 `Iteration limit reached`（第 0 或第 1 帧）。transition run 的 bounded runtime
+异常，solver 子进程超过 40 分钟且 CPU 约 100%，因此被停止并记录为 SIGTERM failure，未伪装成成功。
+没有修改 Stage 7–9 solver、weight、coordinate 或 threshold；Stage 10 编排已实现，但真实验收在
+contact-rich refinement 收敛边界处 blocked。每个 run 的 input、reuse、performance、待完成的
+determinism、semantic、source-integrity 和 summary 报告保存在被忽略的 `.local/runs/stage10/`，
+没有执行 commit、tag 或 push。
+
+之后对明确列出的 `s1/apple_lift`、`s1/cylinderlarge_inspect_1`、
+`s1/spheremedium_inspect_1`、`s1/mug_lift`、`s1/phone_lift` 和
+`s1/stanfordbunny_inspect_1` 做了有限 selector 查询。Apple 和 cylinderlarge 通过严格选择；
+sphere 在未修改的 Stage 8 graph 验证处失败，mug、phone 和 stanfordbunny 因 mesh 非 watertight
+被拒绝。新的 `cylinderlarge_inspect_1 [327,387)` 仍通过 Stage 8，随后在 Stage 9 第 0 帧返回
+`Iteration limit reached`。对 `airplane_lift [240,300)` 做的只读单帧诊断记录了冻结
+`maxiter=30` 下的 SLSQP status 9，但返回候选的 full-surface 最小 signed distance 已为
+`+0.01184 m`，hard/soft residual 也为正；这确认既有 strict fail-fast solver 边界，Stage 10
+不放宽它。诊断保留在 `.local/reports/stage10/contact_rich_solver_diagnostic.json`。
+
+对应的左手有限查询 `s7/cubemedium_inspect_1 [513,573)` 通过 contact 和严格 mesh 选择，
+但在未修改的 Stage 8 graph 第 1 帧因一个 simplex volume 小于等于 `1e-24` 失败，未进入
+final refinement。
+
+## Stage 9.1 solver-robustness closeout（2026-07-21）
+
+Stage 9.1 保留 v1 SLSQP profile，并新增独立的 contact-rich v2 profile。原有 active-set
+问题是在 QuerySet 扩展后重新使用 Stage 7 warm seed 初始化。v2 改为从上一轮
+`result.x` continuation：直接复制 base/q，按 query ID 映射旧 slack，新 query 使用有界
+最小可行 slack 公式。query set 只允许单调增长，continuation trace 写入 artifact provenance。
+
+现在把 optimizer status/counter 与 primal、bounds、active-set、full-surface hard/soft、
+finite-value 和 acceptance 字段分开保存。即使 status 9 的候选可行，strict policy 仍拒绝；
+`feasible_stationary_v1` 只登记为 deferred，未启用。固定 benchmark grid 与 deterministic
+repeat 的权威记录在 `.local/reports/stage9_1/maxiter_benchmark.json`：`[30, 60, 100, 200, 400]`
+共 35 条记录，最小统一预算为 `100`。保留的 v1 profile hash 为
+`6affff2fdb425a0402f643c291c0b8904d4dbec6c5b69a5006cf9829dcc220aa`，v2 profile hash 为
+`c42c21d894c54d07b1d30943b5a3338b13628bf0429ab203b5540cf934d09b7c`。
+固定 benchmark 在 100 通过，但 bounded runtime 内尚未产出 opt-in 的完整 60 帧 contact-rich
+artifact 及其 deterministic repeat，因此 Stage 10 仍保持 blocked，等待该真实 run。窗口几何
+及 far-vs-contact 对照记录在 `.local/reports/stage9_solver_closeout/`；这不是放宽 status-9
+acceptance。Stage 10 resume 显式选择 v2，只使 Stage 9 及下游 signature 失效，并复用 Stage 5–8
+artifact。solver 与 termination 仍是论文未公开的实现假设。
+随后为 Stage 9.2 性能与可恢复执行阶段暂停了 bounded v2 重跑；完整序列仍被性能阻塞。
+因此本次只保留已测试的 closeout 修改，不宣称 Stage 9.1 complete，也不宣称已经生成
+60 帧 artifact 或 deterministic repeat。

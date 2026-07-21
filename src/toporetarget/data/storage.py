@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import itertools
 import json
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Literal
 
@@ -148,6 +150,159 @@ class _AsyncReadableGroup:
         return asyncio.run(read_once())
 
 
+def _read_zarr3_array_direct(
+    root: Path, relative: str, *, array_prefix: str = "arrays"
+) -> np.ndarray:
+    """Read a repository-written Zarr v3 array without the async codec bridge.
+
+    The managed filesystem can stall inside Zarr's asynchronous chunk decoder
+    even though the local chunk and metadata files are readable.  Stage 5
+    caches are written with the small ``bytes`` + ``zstd`` codec pipeline, so
+    decoding those chunks directly preserves the cache bytes and schema while
+    avoiding the stalled bridge.
+    """
+
+    array_root = root / array_prefix / relative if array_prefix else root / relative
+    metadata_path = array_root / "zarr.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if metadata.get("zarr_format") != 3 or metadata.get("node_type") != "array":
+        raise StorageError(f"unsupported direct Zarr array: {array_root}")
+    shape = tuple(int(item) for item in metadata["shape"])
+    chunk_shape = tuple(
+        int(item) for item in metadata["chunk_grid"]["configuration"]["chunk_shape"]
+    )
+    dtype = np.dtype(str(metadata["data_type"]))
+    fill_value = metadata.get("fill_value", 0)
+    result = np.full(shape, fill_value, dtype=dtype)
+    chunk_counts = tuple(
+        (size + chunk - 1) // chunk for size, chunk in zip(shape, chunk_shape, strict=True)
+    )
+    codecs = tuple(item.get("name") for item in metadata.get("codecs", ()))
+    for chunk_index in itertools.product(*(range(count) for count in chunk_counts)):
+        starts = tuple(index * chunk for index, chunk in zip(chunk_index, chunk_shape, strict=True))
+        stops = tuple(
+            min(start + chunk, size)
+            for start, chunk, size in zip(starts, chunk_shape, shape, strict=True)
+        )
+        chunk_file = array_root / "c" / "/".join(str(item) for item in chunk_index)
+        if not chunk_file.is_file():
+            continue
+        encoded = chunk_file.read_bytes()
+        for codec in reversed(codecs):
+            if codec == "zstd":
+                from numcodecs import Zstd
+
+                encoded = Zstd().decode(encoded)
+            elif codec != "bytes":
+                raise StorageError(f"unsupported direct Zarr codec {codec!r}: {array_root}")
+        actual_shape = tuple(stop - start for start, stop in zip(starts, stops, strict=True))
+        expected_count = int(np.prod(actual_shape, dtype=np.int64))
+        values = np.frombuffer(encoded, dtype=dtype, count=expected_count)
+        if values.size != expected_count:
+            raise StorageError(f"truncated Zarr chunk: {chunk_file}")
+        result[tuple(slice(start, stop) for start, stop in zip(starts, stops, strict=True))] = (
+            values.reshape(actual_shape)
+        )
+    return result
+
+
+class _DirectReadableGroup:
+    """Manifest decoder backed by direct local Zarr v3 chunk reads."""
+
+    def __init__(self, root: Path, *, array_prefix: str = "arrays") -> None:
+        self.root = root
+        self.array_prefix = array_prefix
+
+    def __getitem__(self, key: str) -> np.ndarray:
+        relative = key.removeprefix(f"{self.array_prefix}/") if self.array_prefix else key
+        return _read_zarr3_array_direct(self.root, relative, array_prefix=self.array_prefix)
+
+
+def direct_zarr3_arrays(
+    root: str | Path, names: Iterable[str], *, array_prefix: str = "arrays"
+) -> dict[str, np.ndarray]:
+    """Read named repository-written Zarr v3 arrays through local chunks."""
+
+    source = Path(root)
+    return {
+        str(name): _read_zarr3_array_direct(source, str(name), array_prefix=array_prefix)
+        for name in names
+    }
+
+
+def write_zarr3_group_direct(
+    root: str | Path,
+    attributes: dict[str, Any],
+    arrays: dict[str, np.ndarray],
+    *,
+    array_prefix: str = "arrays",
+) -> None:
+    """Write the repository's small local Zarr v3 format without the async bridge."""
+
+    from numcodecs import Zstd
+
+    destination = Path(root)
+    destination.mkdir(parents=True, exist_ok=True)
+    (destination / "zarr.json").write_text(
+        json.dumps(
+            {
+                "attributes": attributes,
+                "zarr_format": 3,
+                "node_type": "group",
+                "consolidated_metadata": None,
+            },
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    compressor = Zstd(level=0)
+    for name, value in arrays.items():
+        data = np.asarray(value)
+        if data.ndim == 0 or any(size == 0 for size in data.shape):
+            raise StorageError(f"direct Zarr writer requires non-empty arrays: {name}")
+        chunk_shape = data.shape
+        array_root = (
+            destination / array_prefix / str(name) if array_prefix else destination / str(name)
+        )
+        chunk_root = array_root / "c"
+        chunk_root.mkdir(parents=True, exist_ok=True)
+        encoded = compressor.encode(np.ascontiguousarray(data).tobytes(order="C"))
+        chunk_index = tuple(0 for _ in data.shape)
+        chunk_path = chunk_root / "/".join(str(index) for index in chunk_index)
+        chunk_path.parent.mkdir(parents=True, exist_ok=True)
+        chunk_path.write_bytes(encoded)
+        (array_root / "zarr.json").write_text(
+            json.dumps(
+                {
+                    "shape": list(data.shape),
+                    "data_type": data.dtype.str,
+                    "chunk_grid": {
+                        "name": "regular",
+                        "configuration": {"chunk_shape": list(chunk_shape)},
+                    },
+                    "chunk_key_encoding": {
+                        "name": "default",
+                        "configuration": {"separator": "/"},
+                    },
+                    "fill_value": 0,
+                    "codecs": [
+                        {"name": "bytes", "configuration": {"endian": "little"}},
+                        {
+                            "name": "zstd",
+                            "configuration": {"level": 0, "checksum": False},
+                        },
+                    ],
+                    "attributes": {},
+                    "zarr_format": 3,
+                    "node_type": "array",
+                    "storage_transformers": [],
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+
 def _json_safe(value: Any) -> Any:
     if isinstance(value, Path):
         return {"__path__": str(value)}
@@ -209,27 +364,19 @@ def save_hoi_sequence(sequence: HOISequence, path: str | Path) -> Path:
     """Write one explicitly requested sequence to a Zarr directory."""
 
     sequence.validate()
-    zarr = _require_zarr()
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     arrays: dict[str, np.ndarray] = {}
     manifest = _encode(sequence, arrays, "sequence")
 
-    async def write_once() -> None:
-        group = await _async_group_async(zarr, destination, mode="w")
-        await group.update_attributes(
-            {
-                "schema_version": sequence.metadata.schema_version,
-                "metadata_json": json.dumps(manifest, sort_keys=True, separators=(",", ":")),
-            }
-        )
-        for name, array in arrays.items():
-            data = np.asarray(array)
-            dataset_name = f"arrays/{name}"
-            chunks = _chunks(data)
-            await group.create_array(dataset_name, data=data, chunks=chunks, overwrite=True)
-
-    asyncio.run(write_once())
+    write_zarr3_group_direct(
+        destination,
+        {
+            "schema_version": sequence.metadata.schema_version,
+            "metadata_json": json.dumps(manifest, sort_keys=True, separators=(",", ":")),
+        },
+        arrays,
+    )
     (destination / "metadata.json").write_text(
         json.dumps(
             {
@@ -253,18 +400,24 @@ def load_hoi_sequence(path: str | Path) -> HOISequence:
     source = Path(path)
     if not source.exists():
         raise StorageError(f"HOI cache does not exist: {source}")
-    group = _async_group(zarr, source, mode="r")
-    schema_version = group.attrs.get("schema_version")
-    if schema_version != "toporetarget.hoi.v1":
-        raise StorageError(f"unsupported cache schema version: {schema_version!r}")
-    manifest_json = group.attrs.get("metadata_json")
-    if manifest_json is None:
-        metadata_file = source / "metadata.json"
-        if not metadata_file.is_file():
+    metadata_file = source / "metadata.json"
+    if metadata_file.is_file():
+        metadata = json.loads(metadata_file.read_text(encoding="utf-8"))
+        schema_version = metadata.get("schema_version")
+        manifest = metadata.get("manifest")
+        if schema_version != "toporetarget.hoi.v1" or not isinstance(manifest, dict):
+            raise StorageError(f"unsupported cache schema or manifest: {source}")
+        group: Any = _DirectReadableGroup(source)
+    else:
+        group = _async_group(zarr, source, mode="r")
+        schema_version = group.attrs.get("schema_version")
+        if schema_version != "toporetarget.hoi.v1":
+            raise StorageError(f"unsupported cache schema version: {schema_version!r}")
+        manifest_json = group.attrs.get("metadata_json")
+        if manifest_json is None:
             raise StorageError(f"cache has no metadata manifest: {source}")
-        manifest_json = json.loads(metadata_file.read_text(encoding="utf-8"))["manifest"]
-    manifest = json.loads(manifest_json) if isinstance(manifest_json, str) else manifest_json
-    result = _decode(manifest, _AsyncReadableGroup(group))
+        manifest = json.loads(manifest_json) if isinstance(manifest_json, str) else manifest_json
+    result = _decode(manifest, group)
     if not isinstance(result, HOISequence):
         raise StorageError("cache manifest root is not HOISequence")
     result.validate()

@@ -61,3 +61,25 @@ hash, graph hash, warm-start hash, profile hashes, paper weights, solver-only SD
 cross-validation, and the explicit no-Stage-10/RL/physics provenance boundary. The
 source and Stage 6 artifacts remain read-only; derived reports belong under ignored
 `.local/reports/stage9/`.
+
+## Stage 9.1 continuation and termination contract
+
+When the adaptive QuerySet grows, v2 continues from the previous optimizer
+result rather than reconstructing the Stage 7 warm seed. Base/q coordinates are
+copied from `result.x`, existing slack values are looked up by stable query ID,
+and only newly added IDs receive the minimum bounded slack initialization. The
+set grows monotonically and the before/after IDs plus the continuation policy
+are persisted in provenance. v1 retains its historical warm-seed
+reinitialization policy for regression comparison.
+
+Feasibility does not imply solver convergence: status `9` is recorded as a
+non-converged optimizer result and cannot pass strict acceptance even when all
+q/slack, active-query, and full 512-point audits are feasible. The v2 profile
+uses the strict acceptance policy and defers the separate stationarity policy;
+the fixed-grid benchmark and repeat evidence are in
+`.local/reports/stage9_1/maxiter_benchmark.json`.
+For the current Stage 10 inputs, the source/coordinate audit classifies
+`[240,300)` as `contact_rich`, `[238,298)` as `approach`, and the RH regression
+as `pre_contact`. The bounded far-vs-contact comparison is in
+`.local/reports/stage9_solver_closeout/far_vs_contact_solver_comparison.json`;
+semantic contacts remain outside the Eq. (8)/(9) objective.

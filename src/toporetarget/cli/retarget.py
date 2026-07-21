@@ -88,6 +88,12 @@ def _json_write(value: Any, path: Path | None) -> None:
         path.write_text(text, encoding="utf-8")
 
 
+def _decode_bytes(value: Any) -> str:
+    if isinstance(value, (bytes, np.bytes_)):
+        return value.decode("utf-8", errors="replace").rstrip("\x00")
+    return str(value)
+
+
 def _resolve_hand(sequence: Any, hand: str) -> str:
     if hand in {item.hand_id for item in sequence.hands}:
         return hand
@@ -1208,13 +1214,86 @@ def _validation_payload(
         hard = result.signed_distance[ids] + 0.030
         soft = result.signed_distance[ids] + slack + 0.001
         unqueried = np.setdiff1d(np.arange(len(points)), ids, assume_unique=True)
+        optimizer_converged = bool(
+            final.arrays.get("optimizer_converged", final.arrays["solver_success"])[index]
+        )
+        qpos_bounds_pass = bool(
+            np.all(final.arrays["qpos"][index] >= lower - 1e-10)
+            and np.all(final.arrays["qpos"][index] <= upper + 1e-10)
+        )
+        slack_bounds_pass = bool(np.all(slack >= -1e-10) and np.all(slack <= 0.029 + 1e-10))
+        active_constraints_feasible = bool(
+            np.min(hard, initial=np.inf) >= -1e-6 and np.min(soft, initial=np.inf) >= -1e-6
+        )
+        full_surface_hard_audit_pass = bool(np.min(result.signed_distance) >= -0.030 - 1e-6)
+        full_surface_soft_audit_pass = bool(
+            len(unqueried) == 0 or np.all(result.signed_distance[unqueried] >= -0.001 - 1e-6)
+        )
+        active_set_converged = bool(final.arrays["active_set_converged"][index])
+        all_values_finite = bool(
+            np.all(
+                np.isfinite(
+                    np.concatenate(
+                        [
+                            final.arrays["qpos"][index].reshape(-1),
+                            slack.reshape(-1),
+                            result.signed_distance.reshape(-1),
+                        ]
+                    )
+                )
+            )
+        )
+        accepted = bool(final.arrays.get("accepted", final.arrays["solver_success"])[index])
         frame_results.append(
             {
                 "frame": int(global_frame),
                 "solver_success": bool(final.arrays["solver_success"][index]),
-                "qpos_bounds_pass": bool(
-                    np.all(final.arrays["qpos"][index] >= lower - 1e-10)
-                    and np.all(final.arrays["qpos"][index] <= upper + 1e-10)
+                "optimizer_converged": optimizer_converged,
+                "optimizer_status_code": int(
+                    final.arrays.get("optimizer_status_code", final.arrays["solver_status"])[index]
+                ),
+                "optimizer_message": _decode_bytes(
+                    final.arrays.get(
+                        "optimizer_message", np.full(final.frame_count, b"", dtype="S256")
+                    )[index]
+                ),
+                "optimizer_iterations": int(
+                    final.arrays.get("optimizer_iterations", final.arrays["iterations"])[index]
+                ),
+                "optimizer_function_evaluations": int(
+                    final.arrays.get(
+                        "optimizer_function_evaluations", final.arrays["function_evaluations"]
+                    )[index]
+                ),
+                "optimizer_jacobian_evaluations": int(
+                    final.arrays.get(
+                        "optimizer_jacobian_evaluations", final.arrays["jacobian_evaluations"]
+                    )[index]
+                ),
+                "qpos_bounds_pass": qpos_bounds_pass,
+                "slack_bounds_pass": slack_bounds_pass,
+                "active_constraints_feasible": active_constraints_feasible,
+                "full_surface_hard_audit_pass": full_surface_hard_audit_pass,
+                "full_surface_soft_audit_pass": full_surface_soft_audit_pass,
+                "active_set_converged": active_set_converged,
+                "all_values_finite": all_values_finite,
+                "stationarity_checked": bool(
+                    final.arrays.get(
+                        "stationarity_checked", np.zeros(final.frame_count, dtype=bool)
+                    )[index]
+                ),
+                "stationarity_residual": None
+                if "stationarity_residual" not in final.arrays
+                or not np.isfinite(final.arrays["stationarity_residual"][index])
+                else float(final.arrays["stationarity_residual"][index]),
+                "accepted": accepted,
+                "acceptance_policy_id": final.metadata.get(
+                    "acceptance_policy_id", "legacy_solver_success"
+                ),
+                "acceptance_reason": _decode_bytes(
+                    final.arrays.get(
+                        "acceptance_reason", np.full(final.frame_count, b"legacy", dtype="S512")
+                    )[index]
                 ),
                 "min_hard_residual_m": float(np.min(hard)),
                 "min_soft_residual_m": float(np.min(soft)),
@@ -1230,8 +1309,18 @@ def _validation_payload(
     graph_hash = interaction_artifact_hash(graph_path) if graph_path is not None else None
     passed = bool(
         len(frame_results) == final.frame_count
-        and all(item["solver_success"] and item["qpos_bounds_pass"] for item in frame_results)
-        and bool(np.all(final.arrays["active_set_converged"]))
+        and all(
+            item["accepted"]
+            and item["optimizer_converged"]
+            and item["qpos_bounds_pass"]
+            and item["slack_bounds_pass"]
+            and item["active_constraints_feasible"]
+            and item["full_surface_hard_audit_pass"]
+            and item["full_surface_soft_audit_pass"]
+            and item["active_set_converged"]
+            and item["all_values_finite"]
+            for item in frame_results
+        )
         and all(
             item["min_hard_residual_m"] >= -1e-6 and item["min_soft_residual_m"] >= -1e-6
             for item in frame_results
@@ -1270,6 +1359,17 @@ def _validation_payload(
         "collision_surface_profile_hash_match": final.metadata.get("collision_surface_profile_hash")
         == surface.profile.profile_hash,
         "artifact_schema": final.schema_version,
+        "solver_profile_id": final.metadata.get("solver_profile_id"),
+        "solver_profile_hash": final.metadata.get("solver_profile_hash"),
+        "acceptance_policy_id": final.metadata.get("acceptance_policy_id"),
+        "termination_contract": final.metadata.get("termination_contract"),
+        "source_integrity_pass": bool(
+            source_hash_match
+            and warm_hash_match
+            and graph_hash_match
+            and final.metadata.get("object_mesh_hash") == reference_mesh_hash
+            and final.metadata.get("collision_surface_profile_hash") == surface.profile.profile_hash
+        ),
     }
 
 
@@ -1408,6 +1508,7 @@ def visualize_refinement_command(
     graph: Path = typer.Option(..., "--graph"),
     final: Path = typer.Option(..., "--final"),
     robot: str = typer.Option("artimano_rh", "--robot"),
+    view: str = typer.Option("scene", "--view", help="scene or object"),
     frame: int = typer.Option(0, "--frame", min=0),
     start_frame: int = typer.Option(0, "--start-frame", min=0),
     end_frame: int | None = typer.Option(None, "--end-frame", min=1),
@@ -1453,6 +1554,7 @@ def visualize_refinement_command(
             "show_frames": show_frames,
             "show_objective": show_objective,
             "show_closest": show_closest,
+            "view": view,
         }
         if interactive:
             value = launch_refinement_viewer(
@@ -1478,7 +1580,20 @@ def visualize_refinement_command(
                 frame=frame,
                 output=output,
                 show=False,
-                **display_options,
+                show_source_hand=show_source_hand,
+                show_warm_start=show_warm_start,
+                show_final=show_final,
+                show_object=show_object,
+                show_interaction_edges=show_interaction_edges,
+                show_collision_samples=show_collision_samples,
+                show_query_set=show_query_set,
+                show_penetrations=show_penetrations,
+                show_slack=show_slack,
+                show_labels=show_labels,
+                show_frames=show_frames,
+                show_objective=show_objective,
+                show_closest=show_closest,
+                view=view,
             )
         _json_write(value, report)
         if report is None:

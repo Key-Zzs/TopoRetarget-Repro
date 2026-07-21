@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import os
@@ -14,7 +13,7 @@ from typing import Any
 
 import numpy as np
 
-from toporetarget.data.storage import _async_group_async
+from toporetarget.data.storage import direct_zarr3_arrays, write_zarr3_group_direct
 from toporetarget.utils.hashing import sha256_tree
 
 WARM_START_SCHEMA_VERSION = "toporetarget.warm_start.v1"
@@ -104,38 +103,20 @@ def save_warm_start(
     destination = Path(path).expanduser()
     if destination.exists() and not force:
         raise WarmStartArtifactError(f"warm-start artifact exists; pass --force: {destination}")
-    try:
-        import zarr
-
-        from toporetarget.data.storage import _local_store
-    except ImportError as exc:  # pragma: no cover - optional dependency
-        raise WarmStartArtifactError("warm-start artifacts require the cache extra (zarr)") from exc
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(
         tempfile.mkdtemp(prefix=f".{destination.name}.tmp-", dir=str(destination.parent))
     )
     try:
-        group = zarr.open_group(_local_store(zarr, temporary, read_only=False), mode="w")
-        group.attrs["schema_version"] = WARM_START_SCHEMA_VERSION
-        group.attrs["metadata_json"] = _json_metadata(trajectory.metadata)
-        for name, array in trajectory.arrays.items():
-            data = np.asarray(array)
-            chunks: tuple[int, ...] | None = None
-            if data.ndim > 0:
-                chunks = (min(32, int(data.shape[0])),) + tuple(
-                    int(size) for size in data.shape[1:]
-                )
-            try:
-                if chunks is None:
-                    group.create_array(name, data=data, overwrite=True)
-                else:
-                    group.create_array(name, data=data, chunks=chunks, overwrite=True)
-            except AttributeError:  # zarr 2.x
-                legacy_group: Any = group
-                if chunks is None:
-                    legacy_group.create_dataset(name, data=data, overwrite=True)
-                else:
-                    legacy_group.create_dataset(name, data=data, chunks=chunks, overwrite=True)
+        write_zarr3_group_direct(
+            temporary,
+            {
+                "schema_version": WARM_START_SCHEMA_VERSION,
+                "metadata_json": _json_metadata(trajectory.metadata),
+            },
+            trajectory.arrays,
+            array_prefix="",
+        )
         (temporary / "metadata.json").write_text(
             _json_metadata(trajectory.metadata), encoding="utf-8"
         )
@@ -155,34 +136,29 @@ def load_warm_start(path: str | Path) -> WarmStartTrajectory:
     source = Path(path).expanduser()
     if not source.is_dir():
         raise WarmStartArtifactError(f"warm-start artifact does not exist: {source}")
-    try:
-        import zarr
-
-        group = asyncio.run(_async_group_async(zarr, source, mode="r"))
-    except ImportError as exc:  # pragma: no cover
-        raise WarmStartArtifactError("warm-start artifacts require zarr") from exc
-    version = group.attrs.get("schema_version")
-    if version != WARM_START_SCHEMA_VERSION:
-        raise WarmStartArtifactError(f"unsupported warm-start schema: {version!r}")
-    raw = group.attrs.get("metadata_json")
-    if raw is None:
-        metadata_path = source / "metadata.json"
-        if not metadata_path.is_file():
-            raise WarmStartArtifactError("warm-start artifact has no metadata")
+    metadata_path = source / "metadata.json"
+    if metadata_path.is_file():
         raw = metadata_path.read_text(encoding="utf-8")
+    else:
+        root = json.loads((source / "zarr.json").read_text(encoding="utf-8"))
+        attributes = root.get("attributes", {})
+        version = attributes.get("schema_version")
+        if version != WARM_START_SCHEMA_VERSION:
+            raise WarmStartArtifactError(f"unsupported warm-start schema: {version!r}")
+        raw = attributes.get("metadata_json")
+        if raw is None:
+            raise WarmStartArtifactError("warm-start artifact has no metadata")
     metadata = json.loads(raw if isinstance(raw, str) else str(raw))
     if not isinstance(metadata, dict):
         raise WarmStartArtifactError("warm-start metadata is not a mapping")
 
-    async def read_arrays() -> dict[str, np.ndarray]:
-        names = [name async for name in group.array_keys()]
-        result: dict[str, np.ndarray] = {}
-        for name in names:
-            array = await group.getitem(name)
-            result[name] = np.asarray(await array.getitem(slice(None)))
-        return result
-
-    arrays = asyncio.run(read_arrays())
+    names = sorted(
+        str(path.relative_to(source).parent)
+        for path in source.rglob("zarr.json")
+        if path != source / "zarr.json"
+        and json.loads(path.read_text(encoding="utf-8")).get("node_type") == "array"
+    )
+    arrays = direct_zarr3_arrays(source, names, array_prefix="")
     result = WarmStartTrajectory(metadata, arrays)
     return result.validate()
 

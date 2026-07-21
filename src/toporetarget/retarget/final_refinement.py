@@ -7,7 +7,6 @@ stages; no graph is rebuilt and no semantic contact labels are consulted.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import math
@@ -23,7 +22,7 @@ from typing import Any
 import numpy as np
 import yaml
 
-from toporetarget.data.storage import _async_group_async
+from toporetarget.data.storage import direct_zarr3_arrays, write_zarr3_group_direct
 from toporetarget.geometry.mesh_audit import audit_mesh
 from toporetarget.geometry.robot_surface import (
     RobotSurfaceSampleSet,
@@ -49,12 +48,18 @@ from toporetarget.retarget.interaction_graph import (
 )
 from toporetarget.retarget.interaction_objective import InteractionMeshResidual
 
-FINAL_REFINEMENT_SCHEMA_VERSION = "toporetarget.final_retarget.v1"
+FINAL_REFINEMENT_SCHEMA_VERSION_V1 = "toporetarget.final_retarget.v1"
+FINAL_REFINEMENT_SCHEMA_VERSION_V2 = "toporetarget.final_retarget.v2"
+# Historical callers and v1 fixtures continue to use this public alias.
+FINAL_REFINEMENT_SCHEMA_VERSION = FINAL_REFINEMENT_SCHEMA_VERSION_V1
 COORDINATE_PROFILE_ID = "local_seed_delta_v1"
 FULL_QUERY_PROFILE_ID = "full_collision_surface_reference_v1"
 ACTIVE_QUERY_PROFILE_ID = "adaptive_active_set_v1"
 SOLVER_PROFILE_ID = "scipy_slsqp_active_set_v1"
+CONTACT_RICH_SOLVER_PROFILE_ID = "scipy_slsqp_active_set_contact_rich_v2"
 FULL_SOLVER_PROFILE_ID = "scipy_slsqp_full_surface_reference_v1"
+STRICT_ACCEPTANCE_POLICY_ID = "strict_optimizer_converged_and_audits_v1"
+DEFERRED_STATIONARITY_POLICY_ID = "feasible_stationary_v1_deferred"
 
 
 def _as_np(value: Any) -> np.ndarray:
@@ -206,6 +211,12 @@ class RefinementSolverProfile:
     finite_difference_epsilon: float
     disp: bool
     strict_failure_policy: str
+    termination_contract: str
+    acceptance_policy_id: str
+    active_set_continuation_policy: str
+    maxiter_provenance: dict[str, Any]
+    stationarity_policy: str
+    benchmark_grid: tuple[int, ...]
     sdf_backend: str
     sdf_probe_count: int
     sdf_cross_validation_tolerance_m: float
@@ -230,6 +241,30 @@ class RefinementSolverProfile:
             finite_difference_epsilon=float(values.get("finite_difference_epsilon", 1e-6)),
             disp=bool(values.get("disp", False)),
             strict_failure_policy=str(values.get("strict_failure_policy", "fail_fast")),
+            termination_contract=str(
+                values.get("termination_contract", "strict_result_success_and_primal_audits_v1")
+            ),
+            acceptance_policy_id=str(
+                values.get("acceptance_policy_id", STRICT_ACCEPTANCE_POLICY_ID)
+            ),
+            active_set_continuation_policy=str(
+                values.get("active_set_continuation_policy", "warm_seed_reinitialized_v1")
+            ),
+            maxiter_provenance=dict(
+                values.get(
+                    "maxiter_provenance",
+                    {
+                        "source": "repository_profile",
+                        "status": "not_benchmarked",
+                    },
+                )
+            ),
+            stationarity_policy=str(
+                values.get("stationarity_policy", DEFERRED_STATIONARITY_POLICY_ID)
+            ),
+            benchmark_grid=tuple(
+                int(item) for item in values.get("benchmark_grid", (30, 60, 100, 200, 400))
+            ),
             sdf_backend=str(values.get("sdf_backend", "reference")),
             sdf_probe_count=int(values.get("sdf_probe_count", 32)),
             sdf_cross_validation_tolerance_m=float(
@@ -243,6 +278,14 @@ class RefinementSolverProfile:
             raise ValueError("Stage 9 reference profile requires scipy SLSQP")
         if result.dtype != "float64" or result.maxiter <= 0:
             raise ValueError("invalid Stage 9 solver profile")
+        if result.acceptance_policy_id == "" or result.termination_contract == "":
+            raise ValueError(
+                "Stage 9 solver profile must declare acceptance and termination contracts"
+            )
+        if result.maxiter_provenance.get("source") is None:
+            raise ValueError("Stage 9 solver profile must declare maxiter provenance")
+        if any(item <= 0 for item in result.benchmark_grid):
+            raise ValueError("Stage 9 benchmark grid must contain positive iteration budgets")
         return result
 
     def as_dict(self) -> dict[str, Any]:
@@ -258,6 +301,12 @@ class RefinementSolverProfile:
             "finite_difference_epsilon": self.finite_difference_epsilon,
             "disp": self.disp,
             "strict_failure_policy": self.strict_failure_policy,
+            "termination_contract": self.termination_contract,
+            "acceptance_policy_id": self.acceptance_policy_id,
+            "active_set_continuation_policy": self.active_set_continuation_policy,
+            "maxiter_provenance": self.maxiter_provenance,
+            "stationarity_policy": self.stationarity_policy,
+            "benchmark_grid": list(self.benchmark_grid),
             "sdf_backend": self.sdf_backend,
             "sdf_probe_count": self.sdf_probe_count,
             "sdf_cross_validation_tolerance_m": self.sdf_cross_validation_tolerance_m,
@@ -447,6 +496,84 @@ def expand_query_set(
         query_hash=_query_hash(ids[order], reasons),
     )
     return new_set.validate(len(phi)), np.asarray(new_ids, dtype=np.int64)
+
+
+def continue_active_set_initial(
+    result_x: np.ndarray,
+    previous_query_set: CollisionQuerySet,
+    expanded_query_set: CollisionQuerySet,
+    *,
+    new_query_ids: np.ndarray,
+    signed_distance: np.ndarray,
+    tau: float,
+    b: float,
+) -> np.ndarray:
+    """Build the next SLSQP initial point from the preceding result.
+
+    The non-slack coordinates are copied byte-for-byte from ``result_x``.  Slack
+    values are looked up by stable query ID, so a deterministic reorder of the
+    expanded set cannot change an existing slack value.  New slacks use the
+    smallest bounded value that satisfies the soft constraint at the returned
+    candidate.  This helper is intentionally independent of the solver so the
+    continuation contract can be tested without importing a robot or mesh.
+    """
+
+    previous_ids = np.asarray(previous_query_set.sample_ids, dtype=np.int64)
+    expanded_ids = np.asarray(expanded_query_set.sample_ids, dtype=np.int64)
+    new_ids = np.asarray(new_query_ids, dtype=np.int64).reshape(-1)
+    if len(np.unique(expanded_ids)) != len(expanded_ids):
+        raise ValueError("expanded active set contains duplicate query IDs")
+    if not np.all(np.isin(previous_ids, expanded_ids)):
+        raise ValueError("active-set continuation cannot remove an existing query ID")
+    expected_new = np.setdiff1d(expanded_ids, previous_ids, assume_unique=True)
+    if not np.array_equal(np.sort(expected_new), np.sort(new_ids)):
+        raise ValueError("active-set continuation new query IDs do not match expansion")
+
+    value = np.asarray(result_x, dtype=np.float64).reshape(-1)
+    previous_count = len(previous_ids)
+    if previous_count:
+        if len(value) < previous_count:
+            raise ValueError("solver result is shorter than the previous slack vector")
+        base_and_qpos = value[:-previous_count].copy()
+        previous_slack = value[-previous_count:]
+    else:
+        base_and_qpos = value.copy()
+        previous_slack = np.empty(0, dtype=np.float64)
+    previous_slack_by_id = dict(zip(previous_ids.tolist(), previous_slack.tolist(), strict=True))
+    phi = np.asarray(signed_distance, dtype=np.float64).reshape(-1)
+    if len(phi) == 0 or np.any(new_ids < 0) or np.any(new_ids >= len(phi)):
+        raise ValueError("new active-set query ID is outside the signed-distance vector")
+    upper = float(b - tau)
+    if upper < 0:
+        raise ValueError("hard slack bound must exceed soft tolerance")
+    new_slack_by_id = {
+        int(query_id): float(np.clip(max(-float(tau) - float(phi[query_id]), 0.0), 0.0, upper))
+        for query_id in new_ids.tolist()
+    }
+    slack = np.asarray(
+        [
+            previous_slack_by_id[int(query_id)]
+            if int(query_id) in previous_slack_by_id
+            else new_slack_by_id[int(query_id)]
+            for query_id in expanded_ids.tolist()
+        ],
+        dtype=np.float64,
+    )
+    return np.concatenate([base_and_qpos, slack])
+
+
+def active_set_is_monotonic(
+    previous_query_set: CollisionQuerySet, expanded_query_set: CollisionQuerySet
+) -> bool:
+    """Return whether an active-set expansion preserves all previous IDs."""
+
+    previous = np.asarray(previous_query_set.sample_ids, dtype=np.int64)
+    expanded = np.asarray(expanded_query_set.sample_ids, dtype=np.int64)
+    return bool(
+        len(np.unique(expanded)) == len(expanded)
+        and np.all(np.isin(previous, expanded))
+        and len(expanded) >= len(previous)
+    )
 
 
 def _skew(vector: Any) -> Any:
@@ -883,6 +1010,28 @@ class FinalFrameResult:
     iterations: int
     function_evaluations: int
     jacobian_evaluations: int
+    optimizer_converged: bool
+    optimizer_status_code: int
+    optimizer_message: str
+    optimizer_iterations: int
+    optimizer_function_evaluations: int
+    optimizer_jacobian_evaluations: int
+    qpos_bounds_pass: bool
+    slack_bounds_pass: bool
+    active_constraints_feasible: bool
+    full_surface_hard_audit_pass: bool
+    full_surface_soft_audit_pass: bool
+    active_set_converged: bool
+    all_values_finite: bool
+    stationarity_checked: bool
+    stationarity_residual: float
+    accepted: bool
+    acceptance_policy_id: str
+    acceptance_reason: str
+    initial_objective: float
+    final_objective: float
+    final_objective_change: float
+    final_step_norm: float
     solve_time_s: float
     active_set_rounds: int
     jacobian_diagnostics: dict[str, Any]
@@ -956,6 +1105,7 @@ def _solver_call(
     objective_calls = 0
     jacobian_calls = 0
     fallback_total = 0
+    callback_iterates: list[np.ndarray] = []
 
     def objective(value: np.ndarray) -> tuple[float, np.ndarray]:
         nonlocal objective_calls
@@ -974,6 +1124,9 @@ def _solver_call(
         )
         fallback_total += int(diagnostics["finite_difference_fallback_count"])
         return jac
+
+    def callback(value: np.ndarray) -> None:
+        callback_iterates.append(np.asarray(value, dtype=np.float64).copy())
 
     lower = np.concatenate(
         [
@@ -998,11 +1151,23 @@ def _solver_call(
         bounds=bounds,
         constraints={"type": "ineq", "fun": constraint, "jac": constraint_jac},
         options={"maxiter": solver.maxiter, "ftol": solver.ftol, "disp": solver.disp},
+        callback=callback,
     )
+    initial_objective = float(context.objective(np.asarray(initial, dtype=np.float64))[0])
+    final_objective = float(context.objective(np.asarray(result.x, dtype=np.float64))[0])
+    previous_iterate = callback_iterates[-1] if callback_iterates else np.asarray(initial)
     return result, {
         "objective_evaluations": objective_calls,
         "constraint_jacobian_evaluations": jacobian_calls,
         "finite_difference_fallback_count": fallback_total,
+        "optimizer_function_evaluations": int(getattr(result, "nfev", objective_calls)),
+        "optimizer_jacobian_evaluations": int(getattr(result, "njev", jacobian_calls)),
+        "initial_objective": initial_objective,
+        "final_objective": final_objective,
+        "final_objective_change": initial_objective - final_objective,
+        "final_step_norm": float(
+            np.linalg.norm(np.asarray(result.x, dtype=np.float64) - previous_iterate)
+        ),
     }
 
 
@@ -1031,6 +1196,48 @@ def _independent_constraints(
     }
 
 
+def strict_acceptance_decision(
+    *,
+    optimizer_converged: bool,
+    optimizer_status_code: int,
+    qpos_bounds_pass: bool,
+    slack_bounds_pass: bool,
+    active_constraints_feasible: bool,
+    full_surface_hard_audit_pass: bool,
+    full_surface_soft_audit_pass: bool,
+    active_set_converged: bool,
+    all_values_finite: bool,
+    acceptance_policy_id: str = STRICT_ACCEPTANCE_POLICY_ID,
+) -> dict[str, Any]:
+    """Apply strict Stage 9 termination; feasibility never overrides status 9."""
+
+    optimizer_ok = bool(optimizer_converged) and int(optimizer_status_code) != 9
+    checks = {
+        "optimizer_converged": optimizer_ok,
+        "qpos_bounds_pass": bool(qpos_bounds_pass),
+        "slack_bounds_pass": bool(slack_bounds_pass),
+        "active_constraints_feasible": bool(active_constraints_feasible),
+        "full_surface_hard_audit_pass": bool(full_surface_hard_audit_pass),
+        "full_surface_soft_audit_pass": bool(full_surface_soft_audit_pass),
+        "active_set_converged": bool(active_set_converged),
+        "all_values_finite": bool(all_values_finite),
+    }
+    failures = [name for name, passed in checks.items() if not passed]
+    if acceptance_policy_id != STRICT_ACCEPTANCE_POLICY_ID:
+        failures.append(f"unregistered_acceptance_policy:{acceptance_policy_id}")
+    accepted = not failures
+    return {
+        "accepted": accepted,
+        "acceptance_policy_id": acceptance_policy_id,
+        "acceptance_reason": (
+            "strict contract passed"
+            if accepted
+            else "strict contract failed: " + ", ".join(failures)
+        ),
+        "checks": checks,
+    }
+
+
 def refine_frame(
     context: _FrameContext,
     query_set: CollisionQuerySet,
@@ -1051,7 +1258,8 @@ def refine_frame(
     result: Any = None
     full: SignedDistanceQueryResult | None = None
     diagnostics: dict[str, Any] = {}
-    outer_converged = False
+    continuation_trace: list[dict[str, Any]] = []
+    active_set_converged = False
     while True:
         query_rounds += 1
         if len(initial) != 6 + context.robot_model.num_dofs + query_set.count:
@@ -1075,21 +1283,19 @@ def refine_frame(
             len(unqueried) == 0 or np.all(full_phi[unqueried] >= -context.paper.tau - 1e-6)
         )
         hard_ok = bool(np.min(full_phi) >= -context.paper.b - 1e-6)
-        solver_ok = bool(
-            result.success
-            and independent["min_hard_residual"] >= -1e-6
-            and independent["min_soft_residual"] >= -1e-6
+        active_constraints_ok = bool(
+            independent["min_hard_residual"] >= -1e-6 and independent["min_soft_residual"] >= -1e-6
         )
         no_active_unqueried = not np.any(
             full_phi[unqueried] < (active_margin_m if len(unqueried) else -np.inf)
         )
-        if (
-            solver_ok
+        active_set_converged = bool(
+            active_constraints_ok
             and hard_ok
             and unqueried_soft_ok
             and (query_set.count == len(full_phi) or no_active_unqueried)
-        ):
-            outer_converged = True
+        )
+        if result.success and active_set_converged:
             break
         if query_rounds >= max_rounds or query_set.count == len(full_phi):
             break
@@ -1110,13 +1316,45 @@ def refine_frame(
         )
         if len(new_ids) == 0:
             break
+        previous_query_set = query_set
         query_set = expanded
-        warm_slack = np.clip(
-            np.maximum(-context.paper.tau - query_set.initial_signed_distance, 0.0),
-            0.0,
-            context.paper.b - context.paper.tau,
+        continuation_is_v2 = (
+            solver.active_set_continuation_policy == "result_x_query_id_slack_remap_v2"
         )
-        initial = np.concatenate([warm_value_without, warm_slack])
+        if continuation_is_v2:
+            initial = continue_active_set_initial(
+                result.x,
+                previous_query_set,
+                query_set,
+                new_query_ids=new_ids,
+                signed_distance=full_phi,
+                tau=context.paper.tau,
+                b=context.paper.b,
+            )
+        else:
+            # Preserve the v1 warm-seed reinitialization behavior exactly. It is
+            # retained for regression comparison; v2 is the only profile that
+            # opts into result.x continuation.
+            warm_slack = np.clip(
+                np.maximum(-context.paper.tau - query_set.initial_signed_distance, 0.0),
+                0.0,
+                context.paper.b - context.paper.tau,
+            )
+            initial = np.concatenate([warm_value_without, warm_slack])
+        continuation_trace.append(
+            {
+                "round": query_rounds,
+                "query_ids_before": previous_query_set.sample_ids.tolist(),
+                "query_ids_after": query_set.sample_ids.tolist(),
+                "new_query_ids": new_ids.tolist(),
+                "active_set_monotonic": active_set_is_monotonic(previous_query_set, query_set),
+                "resumed_from_result_x": continuation_is_v2,
+                "reinitialized_from_stage7_warm_seed": not continuation_is_v2,
+                "result_x_sha256": _sha256_bytes(
+                    np.asarray(result.x, dtype=np.float64).tobytes(order="C")
+                ),
+            }
+        )
     if full is None:
         raise RuntimeError("Stage 9 full-surface audit did not run")
     value = np.asarray(result.x, dtype=np.float64)
@@ -1152,21 +1390,71 @@ def refine_frame(
         else full.gradient_valid[query_set.sample_ids],
     )
     independent = _independent_constraints(context, value, query_set, distance_result=selected_full)
-    diagnostics["outer_converged"] = outer_converged
+    diagnostics["outer_converged"] = bool(active_set_converged and result.success)
+    diagnostics["active_set_converged"] = active_set_converged
+    diagnostics["active_set_continuation"] = continuation_trace
     diagnostics["full_surface_backend_id"] = full.backend_id
-    solver_success = bool(
-        result.success
-        and outer_converged
-        and independent["min_hard_residual"] >= -1e-6
-        and independent["min_soft_residual"] >= -1e-6
-        and np.min(full.signed_distance) >= -context.paper.b - 1e-6
+    optimizer_status_code = int(getattr(result, "status", -1))
+    optimizer_converged = bool(result.success) and optimizer_status_code != 9
+    qpos_bounds_pass = bool(
+        np.all(qpos >= np.asarray(context.robot_model.joint_lower) - 1e-10)
+        and np.all(qpos <= np.asarray(context.robot_model.joint_upper) + 1e-10)
     )
+    slack_bounds_pass = bool(
+        np.all(slack >= -1e-10) and np.all(slack <= context.paper.b - context.paper.tau + 1e-10)
+    )
+    full_surface_hard_audit_pass = bool(
+        np.all(np.asarray(full.signed_distance) >= -context.paper.b - 1e-6)
+    )
+    unqueried_final = np.setdiff1d(
+        np.arange(len(full.signed_distance)), query_set.sample_ids, assume_unique=True
+    )
+    full_surface_soft_audit_pass = bool(
+        len(unqueried_final) == 0
+        or np.all(np.asarray(full.signed_distance)[unqueried_final] >= -context.paper.tau - 1e-6)
+    )
+    all_values_finite = bool(
+        np.all(
+            np.isfinite(
+                np.concatenate(
+                    [
+                        value.reshape(-1),
+                        np.asarray(full.signed_distance).reshape(-1),
+                        np.asarray(independent["hard_residual"]).reshape(-1),
+                        np.asarray(independent["soft_residual"]).reshape(-1),
+                    ]
+                )
+            )
+        )
+        and np.isfinite(float(diagnostics.get("initial_objective", math.nan)))
+        and np.isfinite(float(diagnostics.get("final_objective", math.nan)))
+    )
+    decision = strict_acceptance_decision(
+        optimizer_converged=optimizer_converged,
+        optimizer_status_code=optimizer_status_code,
+        qpos_bounds_pass=qpos_bounds_pass,
+        slack_bounds_pass=slack_bounds_pass,
+        active_constraints_feasible=active_constraints_ok,
+        full_surface_hard_audit_pass=full_surface_hard_audit_pass,
+        full_surface_soft_audit_pass=full_surface_soft_audit_pass,
+        active_set_converged=active_set_converged,
+        all_values_finite=all_values_finite,
+        acceptance_policy_id=solver.acceptance_policy_id,
+    )
+    accepted = bool(decision["accepted"])
+    acceptance_reason = str(decision["acceptance_reason"])
+    # feasible_stationary_v1 is deliberately not implemented in this closeout.
+    # Keep the artifact field explicit without treating a placeholder as a
+    # stationarity proof or as part of strict acceptance.
+    stationarity_checked = False
+    stationarity_residual = float("nan")
+    solver_success = accepted
     failure = None
     if not solver_success:
         failure = (
             str(result.message)
-            if not result.success
-            else "independent full-surface or active-set convergence audit failed"
+            if not optimizer_converged
+            else f"strict acceptance failed: {acceptance_reason}"
         )
     return FinalFrameResult(
         qpos=np.asarray(qpos, dtype=np.float64),
@@ -1187,11 +1475,33 @@ def refine_frame(
         full_closest_points=np.asarray(full.closest_points, dtype=np.float64),
         full_surface_normals=np.asarray(full.surface_normals, dtype=np.float64),
         solver_success=solver_success,
-        solver_status=int(result.status),
+        solver_status=optimizer_status_code,
         solver_message=str(result.message),
         iterations=int(getattr(result, "nit", 0)),
         function_evaluations=int(diagnostics.get("objective_evaluations", 0)),
         jacobian_evaluations=int(diagnostics.get("constraint_jacobian_evaluations", 0)),
+        optimizer_converged=optimizer_converged,
+        optimizer_status_code=optimizer_status_code,
+        optimizer_message=str(result.message),
+        optimizer_iterations=int(getattr(result, "nit", 0)),
+        optimizer_function_evaluations=int(diagnostics.get("optimizer_function_evaluations", 0)),
+        optimizer_jacobian_evaluations=int(diagnostics.get("optimizer_jacobian_evaluations", 0)),
+        qpos_bounds_pass=qpos_bounds_pass,
+        slack_bounds_pass=slack_bounds_pass,
+        active_constraints_feasible=active_constraints_ok,
+        full_surface_hard_audit_pass=full_surface_hard_audit_pass,
+        full_surface_soft_audit_pass=full_surface_soft_audit_pass,
+        active_set_converged=active_set_converged,
+        all_values_finite=all_values_finite,
+        stationarity_checked=stationarity_checked,
+        stationarity_residual=stationarity_residual,
+        accepted=accepted,
+        acceptance_policy_id=solver.acceptance_policy_id,
+        acceptance_reason=acceptance_reason,
+        initial_objective=float(diagnostics.get("initial_objective", math.nan)),
+        final_objective=float(diagnostics.get("final_objective", math.nan)),
+        final_objective_change=float(diagnostics.get("final_objective_change", math.nan)),
+        final_step_norm=float(diagnostics.get("final_step_norm", math.nan)),
         solve_time_s=float(time.perf_counter() - started),
         active_set_rounds=query_rounds,
         jacobian_diagnostics=diagnostics,
@@ -1271,7 +1581,10 @@ class FinalRetargetTrajectory:
         return int(np.asarray(self.arrays["qpos"]).shape[0])
 
     def validate(self) -> FinalRetargetTrajectory:
-        if self.schema_version != FINAL_REFINEMENT_SCHEMA_VERSION:
+        if self.schema_version not in {
+            FINAL_REFINEMENT_SCHEMA_VERSION_V1,
+            FINAL_REFINEMENT_SCHEMA_VERSION_V2,
+        }:
             raise ValueError(f"unsupported final artifact schema: {self.schema_version}")
         t = self.frame_count
         required = {
@@ -1303,6 +1616,38 @@ class FinalRetargetTrajectory:
             if shape[0] is None and value.ndim != 1:
                 if name != "robot_link_poses" or value.ndim != 4 or value.shape[0] != t:
                     raise ValueError(f"{name} has invalid variable shape {value.shape}")
+        optional_frame_arrays = {
+            "optimizer_converged": (t,),
+            "optimizer_status_code": (t,),
+            "optimizer_message": (t,),
+            "optimizer_iterations": (t,),
+            "optimizer_function_evaluations": (t,),
+            "optimizer_jacobian_evaluations": (t,),
+            "qpos_bounds_pass": (t,),
+            "slack_bounds_pass": (t,),
+            "active_constraints_feasible": (t,),
+            "full_surface_hard_audit_pass": (t,),
+            "full_surface_soft_audit_pass": (t,),
+            "all_values_finite": (t,),
+            "stationarity_checked": (t,),
+            "stationarity_residual": (t,),
+            "accepted": (t,),
+            "acceptance_reason": (t,),
+            "initial_objective": (t,),
+            "final_objective": (t,),
+            "final_objective_change": (t,),
+            "final_step_norm": (t,),
+        }
+        present = set(optional_frame_arrays).intersection(self.arrays)
+        if present and present != set(optional_frame_arrays):
+            missing = sorted(set(optional_frame_arrays) - present)
+            raise ValueError(f"new Stage 9 termination contract is incomplete: {missing}")
+        for name in present:
+            if tuple(np.asarray(self.arrays[name]).shape) != optional_frame_arrays[name]:
+                raise ValueError(
+                    f"{name} has shape {np.asarray(self.arrays[name]).shape}, "
+                    f"expected {optional_frame_arrays[name]}"
+                )
         return self
 
     def arrays_for_storage(self) -> dict[str, np.ndarray]:
@@ -1325,19 +1670,6 @@ def final_artifact_hash(trajectory: FinalRetargetTrajectory) -> str:
     return _stable_hash({"metadata": metadata, "arrays": arrays})
 
 
-async def _write_final_group(
-    group: Any, metadata: dict[str, Any], arrays: dict[str, np.ndarray]
-) -> None:
-    await group.update_attributes(
-        {
-            "schema_version": FINAL_REFINEMENT_SCHEMA_VERSION,
-            "metadata_json": json.dumps(metadata, sort_keys=True, default=str),
-        }
-    )
-    for name, value in arrays.items():
-        await group.create_array(name, data=np.asarray(value), chunks="auto", overwrite=True)
-
-
 def save_final_trajectory(
     trajectory: FinalRetargetTrajectory, path: str | Path, *, force: bool = False
 ) -> Path:
@@ -1350,13 +1682,20 @@ def save_final_trajectory(
         tempfile.mkdtemp(prefix=f".{destination.name}.tmp-", dir=str(destination.parent))
     )
     metadata = dict(trajectory.metadata)
-    metadata["schema_version"] = FINAL_REFINEMENT_SCHEMA_VERSION
+    metadata["schema_version"] = str(
+        metadata.get("schema_version", FINAL_REFINEMENT_SCHEMA_VERSION_V1)
+    )
     metadata["array_manifest"] = sorted(trajectory.arrays)
     try:
-        import zarr
-
-        group = asyncio.run(_async_group_async(zarr, temporary, mode="w"))
-        asyncio.run(_write_final_group(group, metadata, trajectory.arrays_for_storage()))
+        write_zarr3_group_direct(
+            temporary,
+            {
+                "schema_version": metadata["schema_version"],
+                "metadata_json": json.dumps(metadata, sort_keys=True, default=str),
+            },
+            trajectory.arrays_for_storage(),
+            array_prefix="",
+        )
         if destination.exists():
             shutil.rmtree(destination)
         os.replace(temporary, destination)
@@ -1369,20 +1708,27 @@ def save_final_trajectory(
 
 def load_final_trajectory(path: str | Path) -> FinalRetargetTrajectory:
     source = Path(path).expanduser()
-    import zarr
+    root_metadata = source / "zarr.json"
+    group: Any = None
+    if root_metadata.is_file():
+        root = json.loads(root_metadata.read_text(encoding="utf-8"))
+        attributes = root.get("attributes", {})
+    else:
+        import zarr
 
-    group = asyncio.run(_async_group_async(zarr, source, mode="r"))
-    if group.attrs.get("schema_version") != FINAL_REFINEMENT_SCHEMA_VERSION:
+        group = zarr.open_group(source, mode="r")
+        attributes = group.attrs
+    schema_version = attributes.get("schema_version")
+    if schema_version not in {
+        FINAL_REFINEMENT_SCHEMA_VERSION_V1,
+        FINAL_REFINEMENT_SCHEMA_VERSION_V2,
+    }:
         raise ValueError("unsupported final artifact schema")
-    metadata = json.loads(str(group.attrs["metadata_json"]))
-    arrays: dict[str, np.ndarray] = {}
-
-    async def read() -> None:
-        for name in metadata["array_manifest"]:
-            array = await group.getitem(name)
-            arrays[name] = np.asarray(await array.getitem(slice(None)))
-
-    asyncio.run(read())
+    metadata = json.loads(str(attributes["metadata_json"]))
+    if root_metadata.is_file():
+        arrays = direct_zarr3_arrays(source, metadata["array_manifest"], array_prefix="")
+    else:
+        arrays = {name: np.asarray(group[name][:]) for name in metadata["array_manifest"]}
     return FinalRetargetTrajectory(metadata, arrays).validate()
 
 
@@ -1405,6 +1751,7 @@ def build_final_trajectory(
     object_faces: np.ndarray | None = None,
     warm_artifact_hash: str | None = None,
     graph_artifact_hash: str | None = None,
+    continue_on_failure: bool = False,
 ) -> tuple[FinalRetargetTrajectory, dict[str, Any]]:
     from toporetarget.geometry.signed_distance.reference import build_signed_distance_backend
 
@@ -1495,12 +1842,19 @@ def build_final_trajectory(
                 "final_query_count": frame_result.query_set.count,
                 "query_hash": frame_result.query_set.query_hash,
                 "active_set_rounds": frame_result.active_set_rounds,
-                "active_set_converged": bool(
-                    frame_result.jacobian_diagnostics.get("outer_converged", False)
+                "active_set_converged": frame_result.active_set_converged,
+                "optimizer_converged": frame_result.optimizer_converged,
+                "accepted": frame_result.accepted,
+                "continuation": frame_result.jacobian_diagnostics.get(
+                    "active_set_continuation", []
                 ),
             }
         )
-        if not frame_result.solver_success and solver_profile.strict_failure_policy == "fail_fast":
+        if (
+            not frame_result.solver_success
+            and solver_profile.strict_failure_policy == "fail_fast"
+            and not continue_on_failure
+        ):
             raise RuntimeError(f"Stage 9 frame {local_index} failed: {frame_result.failure}")
         previous_base, previous_qpos = frame_result.base_pose_scene, frame_result.qpos
     qpos = np.stack([item.qpos for item in frames])
@@ -1620,13 +1974,61 @@ def build_final_trajectory(
             [item.active_set_rounds for item in frames], dtype=np.int64
         ),
         "active_set_converged": np.asarray(
-            [item.jacobian_diagnostics.get("outer_converged", False) for item in frames],
+            [item.active_set_converged for item in frames],
             dtype=bool,
         ),
+        "optimizer_converged": np.asarray(
+            [item.optimizer_converged for item in frames], dtype=bool
+        ),
+        "optimizer_status_code": np.asarray(
+            [item.optimizer_status_code for item in frames], dtype=np.int64
+        ),
+        "optimizer_message": np.asarray([item.optimizer_message for item in frames], dtype="S256"),
+        "optimizer_iterations": np.asarray(
+            [item.optimizer_iterations for item in frames], dtype=np.int64
+        ),
+        "optimizer_function_evaluations": np.asarray(
+            [item.optimizer_function_evaluations for item in frames], dtype=np.int64
+        ),
+        "optimizer_jacobian_evaluations": np.asarray(
+            [item.optimizer_jacobian_evaluations for item in frames], dtype=np.int64
+        ),
+        "qpos_bounds_pass": np.asarray([item.qpos_bounds_pass for item in frames], dtype=bool),
+        "slack_bounds_pass": np.asarray([item.slack_bounds_pass for item in frames], dtype=bool),
+        "active_constraints_feasible": np.asarray(
+            [item.active_constraints_feasible for item in frames], dtype=bool
+        ),
+        "full_surface_hard_audit_pass": np.asarray(
+            [item.full_surface_hard_audit_pass for item in frames], dtype=bool
+        ),
+        "full_surface_soft_audit_pass": np.asarray(
+            [item.full_surface_soft_audit_pass for item in frames], dtype=bool
+        ),
+        "all_values_finite": np.asarray([item.all_values_finite for item in frames], dtype=bool),
+        "stationarity_checked": np.asarray(
+            [item.stationarity_checked for item in frames], dtype=bool
+        ),
+        "stationarity_residual": np.asarray(
+            [item.stationarity_residual for item in frames], dtype=np.float64
+        ),
+        "accepted": np.asarray([item.accepted for item in frames], dtype=bool),
+        "acceptance_reason": np.asarray([item.acceptance_reason for item in frames], dtype="S512"),
+        "initial_objective": np.asarray(
+            [item.initial_objective for item in frames], dtype=np.float64
+        ),
+        "final_objective": np.asarray([item.final_objective for item in frames], dtype=np.float64),
+        "final_objective_change": np.asarray(
+            [item.final_objective_change for item in frames], dtype=np.float64
+        ),
+        "final_step_norm": np.asarray([item.final_step_norm for item in frames], dtype=np.float64),
     }
     object_mesh_hash = mesh_audit.mesh_hash
     metadata = {
-        "schema_version": FINAL_REFINEMENT_SCHEMA_VERSION,
+        "schema_version": (
+            FINAL_REFINEMENT_SCHEMA_VERSION_V2
+            if solver_profile.profile_id == CONTACT_RICH_SOLVER_PROFILE_ID
+            else FINAL_REFINEMENT_SCHEMA_VERSION_V1
+        ),
         "artifact_type": "final_interaction_preserving_robot_reference",
         "source_sequence_id": warm.metadata.get("source_sequence_id"),
         "source_hand_id": warm.metadata.get("source_hand_id"),
@@ -1651,6 +2053,13 @@ def build_final_trajectory(
         "query_profile": query_profile.as_dict(),
         "coordinate_profile": coordinate_profile.as_dict(),
         "solver_profile": solver_profile.as_dict(),
+        "solver_profile_id": solver_profile.profile_id,
+        "solver_profile_hash": solver_profile.profile_hash,
+        "termination_contract": solver_profile.termination_contract,
+        "acceptance_policy_id": solver_profile.acceptance_policy_id,
+        "active_set_continuation_policy": solver_profile.active_set_continuation_policy,
+        "maxiter_provenance": solver_profile.maxiter_provenance,
+        "stationarity_policy": solver_profile.stationarity_policy,
         "paper_weights": paper.as_dict(),
         "sdf_selection_report": sdf_report,
         "frame_range": [
@@ -1698,6 +2107,13 @@ def build_final_trajectory(
         },
         "query_summaries": query_summaries,
         "solver_messages": [item.solver_message for item in frames],
+        "termination_contract_summary": {
+            "optimizer_converged_required": True,
+            "primal_bounds_and_full_audits_required": True,
+            "active_set_converged_required": True,
+            "status_9_is_not_accepted": True,
+            "stationarity_policy": solver_profile.stationarity_policy,
+        },
         "artifact_hash": None,
     }
     trajectory = FinalRetargetTrajectory(metadata, arrays).validate()
@@ -1706,18 +2122,25 @@ def build_final_trajectory(
 
 __all__ = [
     "ACTIVE_QUERY_PROFILE_ID",
+    "CONTACT_RICH_SOLVER_PROFILE_ID",
     "COORDINATE_PROFILE_ID",
     "CollisionQueryProfile",
     "CollisionQuerySet",
+    "DEFERRED_STATIONARITY_POLICY_ID",
     "FinalFrameResult",
     "FinalObjectiveBreakdown",
     "FinalRetargetTrajectory",
     "FULL_QUERY_PROFILE_ID",
     "FULL_SOLVER_PROFILE_ID",
+    "FINAL_REFINEMENT_SCHEMA_VERSION_V1",
+    "FINAL_REFINEMENT_SCHEMA_VERSION_V2",
     "PaperRefinementWeights",
     "RefinementCoordinateProfile",
     "RefinementSolverProfile",
     "SOLVER_PROFILE_ID",
+    "STRICT_ACCEPTANCE_POLICY_ID",
+    "active_set_is_monotonic",
+    "continue_active_set_initial",
     "build_final_trajectory",
     "build_query_set",
     "choose_solver_sdf_backend",
@@ -1730,4 +2153,5 @@ __all__ = [
     "save_final_trajectory",
     "so3_exp",
     "so3_log",
+    "strict_acceptance_decision",
 ]

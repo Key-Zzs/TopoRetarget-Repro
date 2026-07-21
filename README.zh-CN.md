@@ -47,7 +47,7 @@ Eq. (8)-(9) final refinement；仍未声称实现 RL pipeline 或论文实验结
 | 7 | 相对骨方向初始化 | Complete，有假设 | 20-bone/15-pair Eq. 1、时序有界 Eq. 2、frame 审计、RH/LH 验收、artifact、验证和可视化通过。 |
 | 8 | 交互图与 Laplacian 坐标 | Complete，有界；假设显式 | source-only Eq. 3–7 图/loss、RH/LH artifact、identity/Jacobian 验证、报告和可视化通过；Eq. 8–9 仍属于 Stage 9。 |
 | 9 | 带 slack 的受限优化 | Complete，有界；假设显式 | Eq. 8–9 final refinement、full/adaptive QuerySet、slack、独立 full-surface audit、RH/LH artifact、CLI、测试和可视化通过；不包含 Stage 10。 |
-| 10 | GRAB→Arti-MANO 端到端重定向 | TODO | 生成可复现的机器人 reference trajectory。 |
+| 10 | GRAB→Arti-MANO 端到端重定向 | 已实现编排，真实验收 blocked | 有界可恢复 DAG、官方 contact-window 选择、provenance、review/export；已测试的 contact-rich 窗口均在未修改的 Stage 9 solver iteration limit 处停止，尚未进入人工 review。 |
 | 11 | Metrics 与 ContactPose 评估 | TODO | 实现 Eq. 10–12 指标和报告 fixture。 |
 | 12 | OakInk、DexYCB、HO-Cap adapter | TODO | 添加独立验证的数据集 adapter。 |
 | 13 | ARCTIC、OakInk2、TACO 扩展 | TODO | 添加独立验证的数据集 adapter。 |
@@ -237,8 +237,53 @@ physics、ContactPose 和 baselines 不在本阶段。
 当前 `[0,60)` RH/LH 有界 closeout 已通过 full-surface validation 和 full-artifact determinism。
 最小 full signed distance 为 RH `0.623582905 m`、LH `0.641271031 m`，两侧 penetration 均为 0；
 `0/29/59` 三帧 adaptive/full 分别使用 16/512 个 query。详细 metrics、hash、Jacobian、solver
-comparison 和可视化报告位于被忽略的 `.local/reports/stage9/`；这只关闭 Stage 9，Stage 10、RL、
-physics、ContactPose 和 baseline reproduction 仍是 TODO。
+comparison 和可视化报告位于被忽略的 `.local/reports/stage9/`；这只关闭 Stage 9，RL、
+physics、ContactPose 和 baseline reproduction 仍是 TODO。Stage 10 编排已通过
+`toporetarget workflow` 提供，但当前 `s1/airplane_lift` 和 `s7/cubemedium_inspect_1` 的真实
+contact-rich 尝试在既有 Stage 9 solver 的 iteration-limit 处停止，不能声称端到端验收通过。
+
+#### Stage 9.1 solver-robustness closeout
+
+v1 profile 保持不变。contact-rich run 可能得到可行但 status `9` / `Iteration limit reached`
+的 SLSQP candidate；strict acceptance 仍然拒绝它，因为 optimizer convergence 是独立的必要
+字段。v2 在 adaptive active-set 扩展时从 `result.x` continuation，按 query ID 映射旧 slack，
+只为新 query 初始化有界最小 slack，并保存 continuation trace。它不修改 Eq. (8)、Eq. (9)、
+论文权重、base parameterization、q/slack bounds、signed-distance sign 或 full 512-point audit。
+
+Stage 10 resume 时显式选择 profile：
+
+```bash
+toporetarget workflow run-grab \
+  --sequence s1/airplane_lift --index .local/index/grab \
+  --hand right --robot artimano_rh --start-frame 240 --end-frame 300 \
+  --refinement-solver-profile scipy_slsqp_active_set_contact_rich_v2 \
+  --run-root .local/runs/stage10
+```
+
+固定 benchmark、strict status 字段、deterministic repeat、最终统一 maxiter 及 profile hash
+记录在 `.local/reports/stage9_1/maxiter_benchmark.json`。Stage 10 signature 包含所选 profile
+ID/hash；切换 profile 只使 Stage 9 及下游节点失效，Stage 5–8 input 可复用。solver/termination
+细节仍属于论文未公开的实现假设。
+当前固定 benchmark 共 35 条记录，选择统一 `maxiter=100`。v1 hash 为
+`6affff2fdb425a0402f643c291c0b8904d4dbec6c5b69a5006cf9829dcc220aa`，v2 hash 为
+`c42c21d894c54d07b1d30943b5a3338b13628bf0429ab203b5540cf934d09b7c`。完整 60 帧真实
+artifact 和 deterministic repeat 仍是显式 opt-in gate，不能仅由 fixed benchmark 代替；完整序列
+仍被性能阻塞，不能宣称 Stage 9.1 complete。
+
+### Stage 10：运行有界 GRAB → Arti-MANO workflow
+
+```bash
+toporetarget workflow run-grab \
+  --sequence s1/airplane_lift --index .local/index/grab \
+  --hand right --robot artimano_rh --auto-contact-window --window-length 60 \
+  --mano-model-root /path/to/MANO --asset-root .local/assets/artimano \
+  --run-root .local/runs/stage10 \
+  --manual-acceptance .local/reports/stage9/manual_acceptance.json
+```
+
+生成 manifest 后可使用 `workflow status`、`workflow validate`、`workflow visualize` 和
+`workflow export-reference`；断点续跑及 provenance 规则见
+[`docs/WORKFLOW_RESUME_AND_PROVENANCE.md`](docs/WORKFLOW_RESUME_AND_PROVENANCE.md)。
 
 Stage 9 有界 clip 的交互查看（不使用 `--output`）：
 

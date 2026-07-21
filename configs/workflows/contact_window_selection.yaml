@@ -1,0 +1,25 @@
+schema_version: toporetarget.contact_window_config.v1
+window_length: 60
+frame_interval: '[start,end)'
+minimum_contact_frame_ratio: 0.5
+maximum_source_contact_median_distance_m: 0.02
+contact_definition:
+  source: GRAB contact.object
+  mapping: configs/datasets/grab_contact_parts.yaml
+  accepted_categories:
+    right: right_hand
+    left: left_hand
+  body_labels_excluded: true
+geometry_gate:
+  object_mesh_sign_reliability: reliable_watertight
+  mano_vertices_required: true
+  signed_distance_is_not_inferred: true
+ranking:
+  - contact_frame_ratio_desc
+  - total_hand_contact_vertices_desc
+  - source_contact_median_distance_m_asc
+  - start_frame_asc
+  - sequence_asc
+assumptions:
+  - A_WORKFLOW_CONTACT_WINDOW_THRESHOLD_001
+  - A_WORKFLOW_SOURCE_CONTACT_SANITY_001

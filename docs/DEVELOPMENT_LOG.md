@@ -295,3 +295,75 @@ observed differences were `8.20e-6 m` in minimum full SDF and `8.77e-10` in obje
 Jacobian checks passed for RH/LH with constraint max errors below `2.03e-10` and no finite-difference
 fallbacks. Reports are under `.local/reports/stage9/`; the known canonical `metadata.json` Zarr
 sidecar warning is pre-existing and does not modify source artifacts.
+
+## Stage 10 — bounded workflow orchestration (2026-07-20)
+
+Stage 10 adds a manifest-driven 19-node GRAB-to-Arti-MANO DAG, official semantic contact-window
+selection, content-addressed cache/resume/invalidation, source-integrity snapshots, semantic sanity
+and cross-stage identity reports, artifact-only review rendering, and read-only `robot_reference.v1`
+export. New workflow configuration is under `configs/workflows/`; user-facing procedures are in
+`docs/END_TO_END_GRAB_ARTIMANO.md`, `docs/WORKFLOW_RESUME_AND_PROVENANCE.md`, and
+`docs/TRAJECTORY_VISUALIZATION.md`.
+
+The selector passed on `s1/airplane_lift` windows `[844,904)`, `[240,300)`, and the specified
+`[238,298)`, and on the existing Stage 9 object `s7/cubemedium_inspect_1` at `[363,423)`, with
+official right-hand semantic contact and strict watertight object geometry. Additional finite,
+explicitly queried candidates included `s1/airplane_fly_1 [729,789)`, `s1/cubemedium_inspect_1
+[343,403)`, and the ratio-0.5 transition window `s1/airplane_fly_1 [159,219)`. The small-cube
+candidate `[984,1044)` was rejected by the unchanged strict Stage 8 graph at frame 13 because two
+simplex volumes were below tolerance. The other completed contact-rich runs reached frozen
+interaction evaluation, then stopped at the unchanged Stage 9 SLSQP refinement with `Iteration
+limit reached` (frame 0 or 1). The transition run exceeded the normal bounded runtime, was stopped
+after the solver child reached roughly 100% CPU for more than 40 minutes, and was recorded as a
+SIGTERM failure rather than a success. No Stage 7–9 solver, weight, coordinate, or threshold was
+changed to bypass any result. Stage 10 is therefore implemented with real acceptance blocked at
+the existing contact-rich refinement convergence boundary; per-run input, reuse, performance,
+determinism-pending, semantic, source-integrity, and summary reports are retained under ignored
+`.local/runs/stage10/`; no commit, tag, or push was performed.
+
+A finite follow-up pass queried explicit `s1/apple_lift`, `s1/cylinderlarge_inspect_1`,
+`s1/spheremedium_inspect_1`, `s1/mug_lift`, `s1/phone_lift`, and
+`s1/stanfordbunny_inspect_1` sequences. Apple and cylinderlarge passed strict selection;
+sphere failed unchanged Stage 8 graph validation, while mug, phone, and stanfordbunny
+were rejected for non-watertight meshes. The new `cylinderlarge_inspect_1 [327,387)`
+run again passed Stage 8 and failed at Stage 9 frame 0 with `Iteration limit reached`.
+A read-only one-frame diagnostic on `airplane_lift [240,300)` recorded SLSQP status 9
+at frozen `maxiter=30`, although the returned candidate had full-surface minimum signed
+distance `+0.01184 m` and positive hard/soft residual minima. This confirms the existing
+strict fail-fast solver boundary; Stage 10 does not relax it. The diagnostic is retained
+at `.local/reports/stage10/contact_rich_solver_diagnostic.json`.
+
+The corresponding finite left-hand query for `s7/cubemedium_inspect_1 [513,573)` passed
+contact and strict mesh selection but failed the unchanged Stage 8 graph at frame 1 due to
+one simplex volume at or below `1e-24`; it did not enter final refinement.
+
+## Stage 9.1 solver-robustness closeout (2026-07-21)
+
+Stage 9.1 preserves the v1 SLSQP profile and adds the independent contact-rich
+v2 profile. The active-set bug was that an expanded QuerySet rebuilt its
+initial vector from the Stage 7 warm seed. v2 now continues from the prior
+`result.x`, copies base/q coordinates, remaps old slack by query ID, and uses
+the minimum bounded slack formula for new IDs. Query-set growth is monotonic
+and the continuation trace is part of artifact provenance.
+
+Termination is now decomposed into optimizer status/counters and independent
+primal, bounds, active-set, full-surface hard/soft, finite-value, and acceptance
+fields. A feasible status-9 result remains rejected by the strict policy;
+`feasible_stationary_v1` is deferred and was not enabled. The fixed benchmark
+grid is authoritative in `.local/reports/stage9_1/maxiter_benchmark.json`:
+35 records over `[30, 60, 100, 200, 400]` select the minimum uniform budget
+`100`. The preserved v1 profile hash is
+`6affff2fdb425a0402f643c291c0b8904d4dbec6c5b69a5006cf9829dcc220aa`; the v2
+profile hash is `c42c21d894c54d07b1d30943b5a3338b13628bf0429ab203b5540cf934d09b7c`.
+The fixed-window benchmark passed at 100, but the opt-in full 60-frame
+contact-rich artifact and deterministic repeat were not produced within the
+bounded runtime window, so Stage 10 remains blocked pending that run. Window
+geometry and the far-vs-contact comparison are recorded in
+`.local/reports/stage9_solver_closeout/`; this is not a status-9 relaxation.
+The Stage 10 resume plan selects v2 explicitly, invalidates Stage 9 and
+downstream signatures only, and reuses Stage 5-8 artifacts. Solver and
+termination remain paper-undisclosed implementation assumptions.
+The bounded v2 rerun was then paused for the Stage 9.2 performance and
+recoverability phase: the complete sequence is still performance-blocked.
+This preserves the tested closeout changes but does not claim Stage 9.1
+complete, a 60-frame artifact, or a deterministic repeat.

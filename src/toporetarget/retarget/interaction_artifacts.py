@@ -14,7 +14,11 @@ from typing import Any
 
 import numpy as np
 
-from toporetarget.data.storage import _async_group_async, _AsyncReadableGroup
+from toporetarget.data.storage import (
+    _AsyncReadableGroup,
+    direct_zarr3_arrays,
+    write_zarr3_group_direct,
+)
 from toporetarget.utils.hashing import sha256_tree
 
 from .graph_weights import DirectedGraphWeights
@@ -95,26 +99,20 @@ def _create_array(group: Any, name: str, data: np.ndarray) -> None:
             group.create_dataset(name, data=value, chunks=chunks, overwrite=True)
 
 
-async def _write_group_async(
+def _write_group(
     zarr: Any,
     temporary: Path,
     schema_version: str,
     metadata: dict[str, Any],
     arrays: dict[str, np.ndarray],
 ) -> None:
-    group = await _async_group_async(zarr, temporary, mode="w")
-    await group.update_attributes(
-        {"schema_version": schema_version, "metadata_json": _metadata_text(metadata)}
+    del zarr
+    write_zarr3_group_direct(
+        temporary,
+        {"schema_version": schema_version, "metadata_json": _metadata_text(metadata)},
+        arrays,
+        array_prefix="",
     )
-    for name, value in arrays.items():
-        data = np.asarray(value)
-        chunks = None
-        if data.ndim:
-            first_chunk = min(4096, max(1, int(data.shape[0])))
-            if data.ndim >= 3:
-                first_chunk = min(32, max(1, int(data.shape[0])))
-            chunks = (first_chunk,) + tuple(int(size) for size in data.shape[1:])
-        await group.create_array(name, data=data, chunks=chunks or "auto", overwrite=True)
 
 
 def _atomic_destination(path: str | Path, force: bool) -> tuple[Path, Path]:
@@ -140,18 +138,14 @@ def save_interaction_graph(
     metadata["artifact_type"] = "source_only"
     metadata["array_manifest"] = sorted(trajectory.arrays())
     try:
-        import asyncio
-
         import zarr
 
-        asyncio.run(
-            _write_group_async(
-                zarr,
-                temporary,
-                INTERACTION_GRAPH_SCHEMA_VERSION,
-                metadata,
-                trajectory.arrays(),
-            )
+        _write_group(
+            zarr,
+            temporary,
+            INTERACTION_GRAPH_SCHEMA_VERSION,
+            metadata,
+            trajectory.arrays(),
         )
         if destination.exists():
             shutil.rmtree(destination)
@@ -172,32 +166,22 @@ def _read_group(path: str | Path, expected_schema: str) -> tuple[Any, dict[str, 
     if not source.is_dir():
         raise InteractionArtifactError(f"artifact does not exist: {source}")
     try:
-        import asyncio
-
-        import zarr
-
-        group = asyncio.run(_async_group_async(zarr, source, mode="r"))
+        root_metadata = source / "zarr.json"
+        root = json.loads(root_metadata.read_text(encoding="utf-8"))
+        attributes = root.get("attributes", {})
     except ImportError as exc:  # pragma: no cover
         raise InteractionArtifactError("interaction artifacts require zarr") from exc
-    if group.attrs.get("schema_version") != expected_schema:
+    if attributes.get("schema_version") != expected_schema:
         raise InteractionArtifactError(
-            f"unsupported artifact schema: {group.attrs.get('schema_version')!r}"
+            f"unsupported artifact schema: {attributes.get('schema_version')!r}"
         )
-    raw = group.attrs.get("metadata_json")
+    raw = attributes.get("metadata_json")
     if raw is None:
         raise InteractionArtifactError("artifact has no metadata_json Zarr attribute")
     metadata = _parse_metadata(raw)
 
-    async def read_arrays() -> dict[str, np.ndarray]:
-        values: dict[str, np.ndarray] = {}
-        for name in metadata.get("array_manifest", []):
-            array = await group.getitem(name)
-            values[name] = np.asarray(await array.getitem(slice(None)))
-        return values
-
-    import asyncio
-
-    return _AsyncReadableGroup(group, asyncio.run(read_arrays())), metadata
+    values = direct_zarr3_arrays(source, metadata.get("array_manifest", []), array_prefix="")
+    return _AsyncReadableGroup(None, values), metadata
 
 
 def _array(group: Any, name: str) -> np.ndarray:
@@ -291,18 +275,14 @@ def save_interaction_evaluation(evaluation: Any, path: str | Path, *, force: boo
     metadata["schema_version"] = INTERACTION_EVALUATION_SCHEMA_VERSION
     metadata["array_manifest"] = sorted(evaluation.arrays())
     try:
-        import asyncio
-
         import zarr
 
-        asyncio.run(
-            _write_group_async(
-                zarr,
-                temporary,
-                INTERACTION_EVALUATION_SCHEMA_VERSION,
-                metadata,
-                evaluation.arrays(),
-            )
+        _write_group(
+            zarr,
+            temporary,
+            INTERACTION_EVALUATION_SCHEMA_VERSION,
+            metadata,
+            evaluation.arrays(),
         )
         if destination.exists():
             shutil.rmtree(destination)

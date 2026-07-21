@@ -1,0 +1,51 @@
+schema_version: toporetarget.workflow_config.v1
+workflow_id: grab_to_artimano
+workflow_version: 1.0.0
+dataset: grab
+source_contract:
+  index_required: true
+  explicit_sequence_required: true
+  native_time_preserved: true
+  raw_source_read_only: true
+  contact_mode: semantic
+  official_mapping: configs/datasets/grab_contact_parts.yaml
+source_hand:
+  right: artimano_rh
+  left: artimano_lh
+profiles:
+  canonical_conversion: canonical_keypoint_wrist_v1
+  bone: mediapipe21_full_finger_chain_v1
+  warm_start_solver: paper_repro_scipy_trf
+  object_surface: paper_strict_area_uniform
+  delaunay: strict_scipy_qhull_v1
+  query: adaptive_active_set_v1
+  refinement_coordinates: local_seed_delta_v1
+  refinement_solver: scipy_slsqp_active_set_v1
+dag:  # Ordered; dependencies are also recorded in the run plan.
+  - resolve_source
+  - canonicalize_grab
+  - validate_canonical
+  - enrich_mediapipe21
+  - validate_keypoints
+  - audit_object_mesh
+  - sample_object_surface
+  - validate_object_samples
+  - generate_warm_start
+  - validate_warm_start
+  - build_interaction_graph
+  - validate_interaction_graph
+  - evaluate_warm_start_interaction
+  - final_refinement
+  - validate_final_refinement
+  - full_surface_penetration_audit
+  - semantic_sanity_validation
+  - generate_review_bundle
+  - write_run_manifest
+artifacts:
+  run_layout: .local/runs/stage10/{sequence}__{hand}__{robot}__{frame_range}/
+  final_schema: toporetarget.final_refinement.v1
+  reference_schema: toporetarget.robot_reference.v1
+assumptions:
+  - A_WORKFLOW_ARTIFACT_REUSE_001
+  - A_WORKFLOW_INVALIDATION_001
+  - A_WORKFLOW_MANUAL_ACCEPTANCE_001

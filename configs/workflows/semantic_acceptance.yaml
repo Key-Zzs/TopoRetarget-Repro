@@ -1,0 +1,24 @@
+schema_version: toporetarget.semantic_acceptance_config.v1
+final_contact_sanity_max_distance_m: 0.05
+required_source_integrity:
+  raw_source_unchanged: true
+  source_hash_before_after_equal: true
+  canonical_frame_count_matches_final: true
+required_manual_gate:
+  status: pass
+  reviewer: human
+  reviewed_frames: [0, 29, 59]
+  interpretation: [pre_contact, contact_rich]
+  invalid_is_rejected: true
+coverage_reporting:
+  collision_surface_is_reported: true
+  missing_tip_collision_is_reported: true
+  visual_fallback_is_reported: true
+  no_full_hand_collision_claim: true
+reference_export:
+  schema_version: toporetarget.robot_reference.v1
+  source_copy: false
+  solver_during_export: false
+assumptions:
+  - A_WORKFLOW_FINAL_CONTACT_SANITY_001
+  - A_WORKFLOW_MANUAL_ACCEPTANCE_001

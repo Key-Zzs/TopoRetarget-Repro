@@ -109,8 +109,8 @@ items:
     status: implemented_with_assumptions
     known_parameters: {equation_number: 8, soft_tolerance_m: 0.001, hard_bound_m: 0.030, slack_penalty: 100000, unit: mixed}
     unknowns: [query-set construction, solver termination, joint-limit realization, signed-distance backend]
-    assumptions: [A_REFINEMENT_SOLVER_001, A_REFINEMENT_SOLVER_TOLERANCES_001, A_REFINEMENT_QUERY_SET_001, A_COLLISION_ACTIVE_MARGIN_001, A_SDF_CONSTRAINT_JACOBIAN_001]
-    notes: "Paper weights and constraint signs are locked; solver, Q_t, and derivative details are explicit engineering assumptions."
+    assumptions: [A_REFINEMENT_SOLVER_001, A_REFINEMENT_SOLVER_TOLERANCES_001, A_REFINEMENT_SOLVER_CONTINUATION_002, A_REFINEMENT_SOLVER_TERMINATION_002, A_REFINEMENT_QUERY_SET_001, A_COLLISION_ACTIVE_MARGIN_001, A_SDF_CONSTRAINT_JACOBIAN_001]
+    notes: "Paper weights and constraint signs are locked; solver, Q_t, active-set continuation, and termination details are explicit engineering assumptions."
   - id: equation_9
     kind: equation
     title: Refinement regularization
@@ -750,6 +750,34 @@ items:
     unknowns: [paper robot surface count, paper primitive sampling policy]
     assumptions: [A_HAND_SURFACE_SAMPLES_001, A_ARTIMANO_COLLISION_COVERAGE_001]
     notes: "The 32-per-geometry profile is explicitly not paper-specified; visual-only tips are reported and never synthesized."
+
+  - id: workflow_stage_10_grab_to_artimano
+    kind: workflow
+    title: Bounded GRAB to Arti-MANO end-to-end orchestration
+    paper_section: "Sec. 3 and Sec. 5"
+    pdf_page: 4
+    evidence_summary: "Repository workflow that composes the source-hand, interaction, and retargeting stages into a reproducible robot reference artifact."
+    implementation_targets: [src/toporetarget/workflows, src/toporetarget/cli/workflow.py, configs/workflows/grab_to_artimano.yaml]
+    test_targets: [tests/unit/test_workflow_schema.py, tests/unit/test_workflow_cache.py, tests/integration/test_stage10_synthetic_pipeline.py]
+    status: implemented_with_assumptions
+    known_parameters: {window_length: 60, minimum_contact_frame_ratio: 0.5, unit: mixed}
+    unknowns: [paper's sequence/window selection policy, paper's end-to-end export schema]
+    assumptions: [A_WORKFLOW_CONTACT_WINDOW_THRESHOLD_001, A_WORKFLOW_SOURCE_CONTACT_SANITY_001, A_WORKFLOW_FINAL_CONTACT_SANITY_001, A_WORKFLOW_ARTIFACT_REUSE_001, A_WORKFLOW_INVALIDATION_001, A_WORKFLOW_MANUAL_ACCEPTANCE_001]
+    notes: "This is an orchestration and provenance layer; it does not claim the paper's undisclosed experiment protocol or implement Eq. 10-12, RL, physics, or baselines."
+
+  - id: stage9_solver_robustness_closeout
+    kind: engineering_foundation
+    title: Stage 9.1 solver termination and active-set continuation
+    paper_section: "Sec. 3.4 and Appendix A.1"
+    pdf_page: 5
+    evidence_summary: "Preserves v1, registers a hashed v2 continuation profile, separates optimizer termination from feasibility, and selects one uniform maxiter from a fixed benchmark grid."
+    implementation_targets: [src/toporetarget/retarget/final_refinement.py, src/toporetarget/retarget/solver_benchmark.py, configs/retarget/refinement_solvers/scipy_slsqp_active_set_contact_rich_v2.yaml]
+    test_targets: [tests/unit/test_stage9_solver_robustness.py, tests/unit/test_stage9_solver_closeout.py, tests/licensed_data/test_stage9_v2_real_opt_in.py]
+    status: implemented_with_assumptions
+    known_parameters: {benchmark_grid: [30, 60, 100, 200, 400], selected_uniform_maxiter: 100, strict_status_9_rejection: true, v1_profile_hash: 6affff2fdb425a0402f643c291c0b8904d4dbec6c5b69a5006cf9829dcc220aa, v2_profile_hash: c42c21d894c54d07b1d30943b5a3338b13628bf0429ab203b5540cf934d09b7c, unit: mixed}
+    unknowns: [paper optimizer, active-set continuation state, stationarity/KKT termination policy]
+    assumptions: [A_REFINEMENT_SOLVER_001, A_REFINEMENT_SOLVER_CONTINUATION_002, A_REFINEMENT_SOLVER_TERMINATION_002]
+    notes: "The v2 policy is an engineering closeout and is not presented as a paper-specified optimizer or termination contract. The fixed benchmark selects 100; the full 60-frame real opt-in gate remains pending."
 
 parameter_contract:
   configs/paper/retarget.yaml:

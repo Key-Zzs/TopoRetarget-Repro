@@ -66,3 +66,39 @@ ContactPose, or baseline behavior is included.
 See [`COLLISION_QUERY_SET_AND_SLACK.md`](COLLISION_QUERY_SET_AND_SLACK.md) for QuerySet
 construction and [`stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md`](stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md)
 for the bounded acceptance procedure.
+
+## Stage 9.1 solver-robustness closeout
+
+The contact-rich closeout preserves
+`scipy_slsqp_active_set_v1.yaml` unchanged and registers the independent
+`scipy_slsqp_active_set_contact_rich_v2.yaml` profile. The v2 active-set
+continuation starts the next SLSQP call from the preceding `result.x`: base
+correction and qpos are copied directly, old slack is remapped by query ID, and
+new slack is initialized as
+`clip(max(-tau - phi_i(result.x), 0), 0, b - tau)`. Query IDs are never removed
+or silently reinterpreted, and each continuation decision is recorded in the
+artifact provenance.
+
+Solver termination is separate from primal feasibility. A feasible candidate
+with SciPy status `9` / `Iteration limit reached` remains `accepted=false` under
+the strict policy. Strict acceptance requires optimizer convergence, q/slack
+bounds, active constraints, the independent 512-point hard and soft audits,
+active-set convergence, and finite values. The artifact stores the optimizer
+status/message/iteration and evaluation counters, objective change, step norm,
+all individual checks, acceptance policy ID, and reason. The optional
+`feasible_stationary_v1` policy is deferred; no status-9 relaxation is enabled.
+
+The fixed benchmark grid is `[30, 60, 100, 200, 400]` with one uniform budget
+across the current failure, semantic-contact maximum, minimum full-surface SDF,
+maximum interaction-energy, frames `0/29/59`, RH/LH, and a successful
+pre-contact case. The auditable result and deterministic-repeat records are
+kept in `.local/reports/stage9_1/maxiter_benchmark.json`; the selected budget
+and final v2 profile hash are copied into the development log and Stage 10
+manifest. Solver and termination behavior remain implementation assumptions
+because the paper does not disclose them.
+The measured v1 profile hash is `6affff2fdb425a0402f643c291c0b8904d4dbec6c5b69a5006cf9829dcc220aa`;
+the independent v2 profile hash is
+`c42c21d894c54d07b1d30943b5a3338b13628bf0429ab203b5540cf934d09b7c`. The fixed
+35-record grid selects uniform `maxiter=100`; the full 60-frame real opt-in
+artifact and deterministic repeat remain pending and are not inferred from the
+benchmark subset.

@@ -79,3 +79,29 @@ sample density, SDF derivative at nonsmooth points, or solver tolerances. These 
 explicit `implemented_with_assumptions` entries in `docs/ASSUMPTIONS.md` and
 `docs/PAPER_FIDELITY.yaml`. Stage 10 end-to-end retargeting, RL, physics, ContactPose,
 metrics Eq. (10)-(12), and baseline reproduction are intentionally not started.
+The v2 closeout selects uniform `maxiter=100` from the five-budget grid. It
+preserves v1 hash `6affff2fdb425a0402f643c291c0b8904d4dbec6c5b69a5006cf9829dcc220aa`
+and uses v2 hash
+`c42c21d894c54d07b1d30943b5a3338b13628bf0429ab203b5540cf934d09b7c`. The full
+real 60-frame artifact and deterministic repeat remain required pending gates;
+no feasible status-9 result is accepted while those gates are incomplete.
+
+## Stage 9.1 solver-robustness closeout
+
+The v1 profile and its acceptance behavior are preserved. The independent v2
+profile fixes the adaptive active-set continuation contract: after a solve, the
+next initial vector contains the returned base/q coordinates, old slack remapped
+by query ID, and minimum feasible slack for new IDs. The provenance records the
+query order and whether `result.x` continuation was used. This does not change
+Eq. (8), Eq. (9), paper weights, q/slack bounds, signed-distance sign, or the
+full 512-point audit.
+
+The strict termination contract stores optimizer convergence, status code,
+message, `nit/nfev/njev`, objective and step diagnostics separately from
+feasibility and audit checks. Status 9 is rejected even for a feasible
+candidate. `feasible_stationary_v1` is explicitly deferred because no KKT or
+projected-gradient proof is implemented. The fixed benchmark set, uniform
+maxiter selection, repeat results, profile IDs, and profile hashes are recorded
+in `.local/reports/stage9_1/maxiter_benchmark.json` and the corresponding
+Stage 9.1 development-log entry. Optimizer and termination details remain
+paper-undisclosed implementation assumptions.

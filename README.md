@@ -55,7 +55,7 @@ that stage; it does not imply full-dataset or result-level reproduction.
 | 7 | Relative bone-direction initialization | Complete, with assumptions | 20-bone/15-pair Eq. 1, sequential bounded Eq. 2, frame audit, RH/LH acceptance, artifacts, validation, and visual diagnostics pass. |
 | 8 | Interaction graph and Laplacian coordinates | Complete, bounded; assumptions explicit | Source-only Eq. 3–7 graph/loss, RH/LH artifacts, identity/Jacobian validation, reports, and views pass. Eq. 8–9 remains Stage 9. |
 | 9 | Constrained optimization with slack variables | Complete, bounded; assumptions explicit | Eq. 8–9 final refinement, full/adaptive collision QuerySet, slack, independent full-surface audit, RH/LH bounded trajectory artifacts, CLI, tests, and views pass; no Stage 10 behavior is included. |
-| 10 | GRAB → Arti-MANO end-to-end retargeting | TODO | Produce a reproducible robot reference trajectory. |
+| 10 | GRAB → Arti-MANO end-to-end retargeting | Implemented, real acceptance blocked | Resumable bounded DAG, official contact-window selection, provenance, review/export; tested contact-rich windows reach the unchanged Stage 9 solver iteration limit before human review. |
 | 11 | Metrics and ContactPose evaluation | TODO | Implement Eq. 10–12 metrics and report fixtures. |
 | 12 | OakInk, DexYCB, and HO-Cap adapters | TODO | Add independently validated dataset adapters. |
 | 13 | ARCTIC, OakInk2, and TACO extensions | TODO | Add independently validated dataset adapters. |
@@ -305,8 +305,60 @@ The bounded RH/LH closeout on frames `[0,60)` passed full-surface validation and
 determinism. Minimum full signed distance was `0.623582905 m` (RH) and `0.641271031 m` (LH),
 with zero penetration; adaptive/full comparison used 16/512 queries at frames `0/29/59`.
 Detailed metrics, hashes, Jacobian checks, solver comparisons, and visual reports are in the
-ignored `.local/reports/stage9/` directory. This closes Stage 9 only; Stage 10, RL, physics,
-ContactPose, and baseline reproduction remain TODO.
+ignored `.local/reports/stage9/` directory. This closes Stage 9 only; RL, physics, ContactPose,
+and baseline reproduction remain TODO. Stage 10 orchestration is available through
+[`toporetarget workflow`](docs/END_TO_END_GRAB_ARTIMANO.md), but the current bounded real
+`s1/airplane_lift` and `s7/cubemedium_inspect_1` contact-rich attempts stop at the existing Stage 9
+solver's iteration-limit failure and are not claimed as accepted end-to-end trajectories.
+
+#### Stage 9.1 solver-robustness closeout
+
+The v1 profile remains unchanged. Contact-rich runs may return a feasible SLSQP
+candidate with status `9` / `Iteration limit reached`; strict acceptance still
+rejects it because optimizer convergence is a separate required field. The v2
+profile continues adaptive active-set solves from `result.x`, remaps old slack
+by query ID, initializes only new slack with the minimum bounded value, and
+persists the continuation trace. It preserves Eq. (8), Eq. (9), paper weights,
+base parameterization, q/slack bounds, signed-distance sign, and the full
+512-point audit.
+
+Use the explicit profile selector when resuming Stage 10:
+
+```bash
+toporetarget workflow run-grab \
+  --sequence s1/airplane_lift --index .local/index/grab \
+  --hand right --robot artimano_rh --start-frame 240 --end-frame 300 \
+  --refinement-solver-profile scipy_slsqp_active_set_contact_rich_v2 \
+  --run-root .local/runs/stage10
+```
+
+The fixed-grid benchmark, strict status fields, deterministic repeats, selected
+uniform maxiter, and profile hashes are recorded in
+`.local/reports/stage9_1/maxiter_benchmark.json`. Stage 10 signatures include
+the selected profile ID/hash; changing it invalidates Stage 9 and downstream
+nodes while Stage 5–8 inputs remain reusable. Solver/termination details remain
+paper-undisclosed implementation assumptions.
+The fixed benchmark currently selects uniform `maxiter=100` (35 records). v1 is
+`6affff2fdb425a0402f643c291c0b8904d4dbec6c5b69a5006cf9829dcc220aa`; v2 is
+`c42c21d894c54d07b1d30943b5a3338b13628bf0429ab203b5540cf934d09b7c`. The full
+60-frame real artifact and deterministic repeat are still explicit opt-in gates;
+they are not claimed from the fixed benchmark alone. The complete sequence is
+still performance-blocked, so Stage 9.1 is not claimed complete.
+
+### Stage 10. Run a bounded GRAB → Arti-MANO workflow
+
+```bash
+toporetarget workflow run-grab \
+  --sequence s1/airplane_lift --index .local/index/grab \
+  --hand right --robot artimano_rh --auto-contact-window --window-length 60 \
+  --mano-model-root /path/to/MANO --asset-root .local/assets/artimano \
+  --run-root .local/runs/stage10 \
+  --manual-acceptance .local/reports/stage9/manual_acceptance.json
+```
+
+Use `workflow status`, `workflow validate`, `workflow visualize`, and
+`workflow export-reference` with the generated manifest. Resume and provenance rules are in
+[`docs/WORKFLOW_RESUME_AND_PROVENANCE.md`](docs/WORKFLOW_RESUME_AND_PROVENANCE.md).
 
 #### Visualize the entire trajectory
 
