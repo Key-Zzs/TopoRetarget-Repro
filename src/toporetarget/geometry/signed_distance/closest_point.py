@@ -125,9 +125,7 @@ class TriangleAABBTree:
 
     def _build(self, start: int, stop: int) -> int:
         node_index = len(self._nodes)
-        self._nodes.append(
-            _AABBNode(np.zeros(3, dtype=np.float64), np.zeros(3, dtype=np.float64))
-        )
+        self._nodes.append(_AABBNode(np.zeros(3, dtype=np.float64), np.zeros(3, dtype=np.float64)))
         indices = self._order[start:stop]
         minimum = np.min(self._triangle_minimum[indices], axis=0)
         maximum = np.max(self._triangle_maximum[indices], axis=0)
@@ -136,9 +134,7 @@ class TriangleAABBTree:
             self._nodes[node_index] = _AABBNode(minimum, maximum, start, stop)
             return node_index
         axis = int(np.argmax(maximum - minimum))
-        sorted_indices = indices[
-            np.argsort(self._centroids[indices, axis], kind="mergesort")
-        ]
+        sorted_indices = indices[np.argsort(self._centroids[indices, axis], kind="mergesort")]
         self._order[start:stop] = sorted_indices
         middle = start + count // 2
         left = self._build(start, middle)
@@ -176,12 +172,9 @@ class TriangleAABBTree:
                     local = int(np.argmin(leaf_distance2[0]))
                     candidate_distance2 = float(leaf_distance2[0, local])
                     candidate_face = int(leaf_indices[local])
-                    if (
-                        candidate_distance2 < best_distance2
-                        or (
-                            candidate_distance2 == best_distance2
-                            and (best_face < 0 or candidate_face < best_face)
-                        )
+                    if candidate_distance2 < best_distance2 or (
+                        candidate_distance2 == best_distance2
+                        and (best_face < 0 or candidate_face < best_face)
                     ):
                         best_distance2 = candidate_distance2
                         best_face = candidate_face

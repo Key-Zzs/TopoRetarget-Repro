@@ -228,7 +228,9 @@ def render_interaction_mesh_html(
     base_warm = warm.arrays["base_pose_scene"][selected]
     qpos_final = final.arrays["qpos"][selected]
     base_final = final.arrays["base_pose_scene"][selected]
-    model = get_robot_registry().load(_robot_name(manifest), asset_root=asset_root or manifest.get("asset_root"))
+    model = get_robot_registry().load(
+        _robot_name(manifest), asset_root=asset_root or manifest.get("asset_root")
+    )
     warm_payload = _robot_payload(model, qpos_warm, base_warm)
     final_payload = _robot_payload(model, qpos_final, base_final)
     object_payload = _object_payload(sequence, final, source_local_indices, max_object_points)
@@ -261,7 +263,14 @@ def render_interaction_mesh_html(
         "object": object_payload,
         "interaction": interaction,
         "metrics": _metrics(
-            type("FinalSlice", (), {"arrays": {k: v[selected] for k, v in final.arrays.items()}, "frame_count": len(selected)})(),
+            type(
+                "FinalSlice",
+                (),
+                {
+                    "arrays": {k: v[selected] for k, v in final.arrays.items()},
+                    "frame_count": len(selected),
+                },
+            )(),
             type("WarmSlice", (), {"arrays": {k: v[selected] for k, v in warm.arrays.items()}})(),
             display_indices,
         ),
@@ -282,7 +291,11 @@ def render_interaction_mesh_html(
             (warm_payload, final_payload),
         ),
     }
-    destination = Path(output) if output is not None else Path(manifest["run_root"]) / "review" / "trajectory_mesh.html"
+    destination = (
+        Path(output)
+        if output is not None
+        else Path(manifest["run_root"]) / "review" / "trajectory_mesh.html"
+    )
     destination = destination.expanduser()
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(_html_document(payload), encoding="utf-8")

@@ -55,9 +55,7 @@ def _robot_name(manifest: dict[str, Any]) -> str:
     return robot
 
 
-def _source_frame_indices(
-    sequence: Any, final: Any, manifest: dict[str, Any]
-) -> np.ndarray:
+def _source_frame_indices(sequence: Any, final: Any, manifest: dict[str, Any]) -> np.ndarray:
     frame_count = final.frame_count
     if sequence.num_frames == frame_count:
         return np.arange(frame_count, dtype=np.int64)
@@ -71,7 +69,9 @@ def _source_frame_indices(
     return np.arange(frame_count, dtype=np.int64) + offset
 
 
-def _source_mesh(sequence: Any, final: Any, manifest: dict[str, Any]) -> tuple[np.ndarray, np.ndarray]:
+def _source_mesh(
+    sequence: Any, final: Any, manifest: dict[str, Any]
+) -> tuple[np.ndarray, np.ndarray]:
     hand_id = str(final.metadata.get("source_hand_id", ""))
     hand = sequence.hand(hand_id)
     source_indices = _source_frame_indices(sequence, final, manifest)
@@ -124,7 +124,9 @@ def _robot_payload(model: Any, qpos: np.ndarray, base_pose: np.ndarray) -> dict[
     return {"parts": parts}
 
 
-def _object_payload(sequence: Any, final: Any, source_indices: np.ndarray, max_points: int) -> dict[str, Any]:
+def _object_payload(
+    sequence: Any, final: Any, source_indices: np.ndarray, max_points: int
+) -> dict[str, Any]:
     object_id = str(final.metadata.get("object_id", ""))
     if not object_id:
         return {"vertices": [], "poses": [], "object_id": None}
@@ -187,12 +189,16 @@ def _visual_undirected_weights(directed: Any, edges: np.ndarray) -> np.ndarray:
     weights = np.asarray(directed.weights, dtype=np.float64)
     pair_values: dict[tuple[int, int], list[float]] = {}
     for first, second, weight in zip(source, destination, weights, strict=True):
-        pair_values.setdefault(tuple(sorted((int(first), int(second)))), []).append(float(weight))
+        first_index, second_index = int(first), int(second)
+        key = (min(first_index, second_index), max(first_index, second_index))
+        pair_values.setdefault(key, []).append(float(weight))
     result = []
     for first, second in np.asarray(edges, dtype=np.int64):
         values = pair_values.get((int(first), int(second)), [])
         if len(values) != 2:
-            raise ValueError(f"Stage 8 directed graph does not contain two weights for {(first, second)}")
+            raise ValueError(
+                f"Stage 8 directed graph does not contain two weights for {(first, second)}"
+            )
         result.append(float(np.mean(values)))
     return np.asarray(result, dtype=np.float64)
 
@@ -222,7 +228,9 @@ def _filter_edge_indices(
     return selected.astype(np.int64, copy=False)
 
 
-def _residual_summary(residual: np.ndarray, vertex_metadata: list[dict[str, Any]]) -> dict[str, Any]:
+def _residual_summary(
+    residual: np.ndarray, vertex_metadata: list[dict[str, Any]]
+) -> dict[str, Any]:
     value = np.asarray(residual, dtype=np.float64)
     if value.shape != (71, 3):
         raise ValueError(f"residual must have shape [71,3], got {value.shape}")
@@ -285,12 +293,15 @@ def _interaction_payload(
         edges = np.asarray(graph.edge_frames[index], dtype=np.int64)
         categories = _edge_category_codes(edges)
         weights = _visual_undirected_weights(graph.directed_frames[index], edges)
-        final_residual = laplacian_numpy(
-            final_vertices[index],
-            graph.directed_frames[index].source_index,
-            graph.directed_frames[index].destination_index,
-            graph.directed_frames[index].weights,
-        ) - graph.source_laplacian[index]
+        final_residual = (
+            laplacian_numpy(
+                final_vertices[index],
+                graph.directed_frames[index].source_index,
+                graph.directed_frames[index].destination_index,
+                graph.directed_frames[index].weights,
+            )
+            - graph.source_laplacian[index]
+        )
         final_residuals.append(final_residual)
         graph_frames.append(
             {
@@ -563,8 +574,17 @@ def render_mesh_html(
         base_warm = warm.arrays["base_pose_scene"][indices]
         qpos_final = final.arrays["qpos"][indices]
         base_final = final.arrays["base_pose_scene"][indices]
-        warm_for_metrics = type("WarmSlice", (), {"arrays": {k: v[indices] for k, v in warm.arrays.items()}})()
-        final_for_metrics = type("FinalSlice", (), {"arrays": {k: v[indices] for k, v in final.arrays.items()}, "frame_count": len(indices)})()
+        warm_for_metrics = type(
+            "WarmSlice", (), {"arrays": {k: v[indices] for k, v in warm.arrays.items()}}
+        )()
+        final_for_metrics = type(
+            "FinalSlice",
+            (),
+            {
+                "arrays": {k: v[indices] for k, v in final.arrays.items()},
+                "frame_count": len(indices),
+            },
+        )()
     else:
         source_vertices, source_faces = _source_mesh(sequence, final, manifest)
         source_indices = _source_frame_indices(sequence, final, manifest)
@@ -573,7 +593,9 @@ def render_mesh_html(
         qpos_final = np.asarray(final.arrays["qpos"])
         base_final = np.asarray(final.arrays["base_pose_scene"])
         warm_for_metrics, final_for_metrics = warm, final
-    model = get_robot_registry().load(_robot_name(manifest), asset_root=asset_root or manifest.get("asset_root"))
+    model = get_robot_registry().load(
+        _robot_name(manifest), asset_root=asset_root or manifest.get("asset_root")
+    )
     warm_payload = _robot_payload(model, qpos_warm, base_warm)
     final_payload = _robot_payload(model, qpos_final, base_final)
     object_payload = _object_payload(sequence, final, source_indices, max_object_points)
@@ -590,9 +612,15 @@ def render_mesh_html(
         "final": final_payload,
         "object": object_payload,
         "metrics": _metrics(final_for_metrics, warm_for_metrics, source_indices),
-        "bounds": _bounds(source_vertices, object_vertices, object_poses, (warm_payload, final_payload)),
+        "bounds": _bounds(
+            source_vertices, object_vertices, object_poses, (warm_payload, final_payload)
+        ),
     }
-    destination = Path(output) if output is not None else Path(manifest["run_root"]) / "review" / "trajectory_mesh.html"
+    destination = (
+        Path(output)
+        if output is not None
+        else Path(manifest["run_root"]) / "review" / "trajectory_mesh.html"
+    )
     destination = destination.expanduser()
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(_html_document(payload), encoding="utf-8")

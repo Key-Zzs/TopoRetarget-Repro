@@ -1386,9 +1386,7 @@ def _solver_call(
         nonlocal objective_jacobian_calls
         objective_jacobian_calls += 1
         with context.timers.measure("objective_jacobian_callback"):
-            return normalized_gradient(
-                context.objective(physical(value), query_set.query_hash)[1]
-            )
+            return normalized_gradient(context.objective(physical(value), query_set.query_hash)[1])
 
     def constraint_jac(value: np.ndarray) -> np.ndarray:
         nonlocal jacobian_calls, fallback_total
@@ -1603,18 +1601,14 @@ def refine_frame(
                 "optimizer_jacobian_evaluations",
                 "finite_difference_fallback_count",
             ):
-                recovery_diag[key] = int(primary_diag.get(key, 0)) + int(
-                    recovery_diag.get(key, 0)
-                )
+                recovery_diag[key] = int(primary_diag.get(key, 0)) + int(recovery_diag.get(key, 0))
             recovery_diag["initial_objective"] = primary_diag["initial_objective"]
             recovery_diag["final_objective_change"] = float(
                 primary_diag["initial_objective"] - recovery_diag["final_objective"]
             )
             recovery_diag["primary_solver_status"] = int(getattr(primary_result, "status", -1))
             recovery_diag["primary_solver_message"] = str(primary_result.message)
-            recovery_diag["primary_optimizer_iterations"] = int(
-                getattr(primary_result, "nit", 0)
-            )
+            recovery_diag["primary_optimizer_iterations"] = int(getattr(primary_result, "nit", 0))
             recovery_diag["primary_point_jacobian_backend"] = point_jacobian_backend
             recovery_diag["solver_recovery"] = strict_recovery
             recovery_diag["solver_retry_count"] = 1
@@ -1631,9 +1625,7 @@ def refine_frame(
         else:
             solve_diag["primary_solver_status"] = int(getattr(primary_result, "status", -1))
             solve_diag["primary_solver_message"] = str(primary_result.message)
-            solve_diag["primary_optimizer_iterations"] = int(
-                getattr(primary_result, "nit", 0)
-            )
+            solve_diag["primary_optimizer_iterations"] = int(getattr(primary_result, "nit", 0))
             solve_diag["primary_point_jacobian_backend"] = point_jacobian_backend
             solve_diag["solver_recovery"] = "none"
             solve_diag["solver_retry_count"] = 0
@@ -2588,9 +2580,7 @@ def build_final_trajectory(
         "solver_profile": solver_profile.as_dict(),
         "solver_profile_id": solver_profile.profile_id,
         "solver_profile_hash": solver_profile.profile_hash,
-        "execution_profile": (
-            None if execution_profile is None else execution_profile.as_dict()
-        ),
+        "execution_profile": (None if execution_profile is None else execution_profile.as_dict()),
         "point_jacobian_backend": point_jacobian_backend,
         "strict_recovery": strict_recovery,
         "sdf_tree_leaf_size": sdf_tree_leaf_size,

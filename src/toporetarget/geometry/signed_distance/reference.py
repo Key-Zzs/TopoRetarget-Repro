@@ -156,9 +156,7 @@ class ReferenceSignedDistanceBackend(SignedDistanceBackend):
             signed = np.full(len(points), np.nan, dtype=np.float64)
             method = "unsigned_only"
         elif self._convex_equations is not None:
-            halfspace = (
-                points @ self._convex_equations[:, :3].T + self._convex_equations[:, 3]
-            )
+            halfspace = points @ self._convex_equations[:, :3].T + self._convex_equations[:, 3]
             inside = np.all(halfspace <= 1e-10, axis=1)
             confidence = np.ones(len(points), dtype=np.float64)
             sign_valid = np.ones(len(points), dtype=bool)
