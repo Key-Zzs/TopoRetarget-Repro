@@ -71,3 +71,12 @@ The stable report copies for the current workspace are under
 
 Stage 10 does not implement Eq. 10–12, ContactPose metrics, baselines, PPO/RL,
 physics, or full-dataset conversion.
+
+## Accepted bounded milestone
+
+The current accepted run is `s1/airplane_lift`, right hand, `artimano_rh`,
+global frames `[240,300)`. Its run root is
+`.local/runs/stage10_reference_runtime/s1__airplane_lift__right__artimano_rh__f000240_f000300`.
+The Stage 9.2 final artifact is referenced by hash, not copied or recomputed;
+the manifest records every Stage 5–9 node as reused and zero Stage 9 solver
+invocations. Runtime mode is `reference`, with performance debt still open.

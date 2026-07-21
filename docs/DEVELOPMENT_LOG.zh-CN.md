@@ -337,6 +337,14 @@ CLI 新增 `profile-refinement`、`checkpoint-status`、`validate-checkpoints`�
 CPU float64 `cached_checkpoint_cpu_float64_v1`。Focused tests 已通过；完整 contact-rich
 60 帧运行、deterministic fresh/resumed repeat 和 runtime gate 仍需真实证据。在这些
 report 出现前不解除 Stage 10。详见 [`REFINEMENT_PERFORMANCE.md`](REFINEMENT_PERFORMANCE.md)、
+
+## Stage 10 已接受的 reference-runtime milestone（2026-07-21）
+
+用户已接受 `s1/airplane_lift` 右手 `[240,300)` 窗口。新的 manifest 位于
+`.local/runs/stage10_reference_runtime/`，只引用已接受的 Stage 9.2 final artifact；
+Stage 5–9 全部记录为 reused，Stage 9 solver invocation 为 0。跨阶段 identity、
+semantic sanity、NPZ/direct-Zarr round-trip 和静态 viewer smoke 均通过；preferred
+performance gate 仍为 false，performance debt 仍保持 open。
 [`REFINEMENT_CHECKPOINT_AND_RESUME.md`](REFINEMENT_CHECKPOINT_AND_RESUME.md) 和
 [`stages/STAGE_9_2_REFINEMENT_PERFORMANCE.md`](stages/STAGE_9_2_REFINEMENT_PERFORMANCE.md)。
 
@@ -351,5 +359,5 @@ repeat 完成 60/60 帧，median 为 `10.773 s`、p95 为 `39.052 s`、总计 `1
 两次运行均为 status 0 且 strict accepted，checkpoint chain 有效，独立 `60 x 512`
 reference validation 通过，最大 signed-distance error 为 `2.50e-16 m`。排除
 `solve_time_s` 与文档规定的 metadata 后，全部持久化数组 exact equal。最终状态仍为
-`STAGE9_2_COMPLETE_REFERENCE_RUNTIME`；preferred single-frame gate 未通过，Stage 10
-继续保持 blocked，未启动任何 Stage 10 执行。
+`STAGE9_2_COMPLETE_REFERENCE_RUNTIME`；preferred single-frame gate 未通过，但用户明确
+接受的 reference-runtime Stage 10 bounded milestone 已完成。

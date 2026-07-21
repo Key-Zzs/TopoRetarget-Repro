@@ -384,6 +384,15 @@ The execution profile is CPU float64 `cached_checkpoint_cpu_float64_v1`,
 separate from the SLSQP profile. Focused tests pass; the complete contact-rich
 60-frame run, deterministic fresh/resumed repeat, and runtime-gate decision
 remain evidence tasks. Until those reports exist, Stage 10 is not unblocked.
+
+## Stage 10 accepted reference-runtime milestone (2026-07-21)
+
+The user-accepted `s1/airplane_lift` right-hand window `[240,300)` is now
+materialized under `.local/runs/stage10_reference_runtime/`. The new manifest
+references the accepted Stage 9.2 final artifact, records all Stage 5–9 nodes
+as reused, and records zero Stage 9 solver invocations. Cross-stage identity,
+semantic sanity, NPZ/direct-Zarr round trips, and static viewer smoke pass.
+The preferred performance gate remains false and performance debt remains open.
 See [`REFINEMENT_PERFORMANCE.md`](REFINEMENT_PERFORMANCE.md),
 [`REFINEMENT_CHECKPOINT_AND_RESUME.md`](REFINEMENT_CHECKPOINT_AND_RESUME.md),
 and [`stages/STAGE_9_2_REFINEMENT_PERFORMANCE.md`](stages/STAGE_9_2_REFINEMENT_PERFORMANCE.md).
@@ -402,4 +411,5 @@ chains, and independent `60 x 512` reference validation; the maximum signed-
 distance error is `2.50e-16 m`. All persisted arrays compare exactly after
 excluding `solve_time_s` and documented metadata. The final status remains
 `STAGE9_2_COMPLETE_REFERENCE_RUNTIME`; the preferred single-frame gate is not
-met, Stage 10 remains blocked, and no Stage 10 execution was started.
+met, while the explicitly accepted reference-runtime Stage 10 milestone is
+complete.

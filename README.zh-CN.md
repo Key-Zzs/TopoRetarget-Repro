@@ -285,6 +285,12 @@ strict-accepted status-0 frame；排除 `solve_time_s` 后持久化数组 exact 
 
 ### Stage 10：运行有界 GRAB → Arti-MANO workflow
 
+当前已物化 bounded reference-runtime milestone：
+`.local/runs/stage10_reference_runtime/s1__airplane_lift__right__artimano_rh__f000240_f000300/`。
+该 run 只复用已接受的 Stage 5–9 artifact，`solver_invocation_count=0`，并导出
+`exports/robot_reference.zarr` 与 NPZ。该决定仅适用于单条离线 60 帧 milestone，
+不代表全数据集、production、real-time 或 online control readiness。
+
 ```bash
 toporetarget workflow run-grab \
   --sequence s1/airplane_lift --index .local/index/grab \

@@ -19,8 +19,115 @@ from toporetarget.workflows.validation import (
     cross_stage_identity_report,
 )
 from toporetarget.workflows.visualization import run_visualization, write_visualization_report
+from toporetarget.workflows.gate import build_runtime_acceptance, evaluate_gate
+from toporetarget.workflows.accepted_run import create_accepted_run
 
 app = typer.Typer(help="Stage 10 bounded, resumable GRAB-to-Arti-MANO workflows.")
+
+
+@app.command("gate-status")
+def gate_status_command(
+    manual_acceptance: Path = typer.Option(..., "--manual-acceptance"),
+    runtime_acceptance: Path = typer.Option(..., "--runtime-acceptance"),
+    final: Path = typer.Option(
+        Path(".local/cache/retarget/final/stage9_2_contact_rich_60f_v3.zarr"), "--final"
+    ),
+    status: Path = typer.Option(
+        Path(".local/reports/stage9_performance/stage9_2_status.json"), "--stage9-status"
+    ),
+    performance: Path = typer.Option(
+        Path(".local/reports/stage9_performance/performance_gate.json"), "--performance"
+    ),
+    checkpoint: Path = typer.Option(
+        Path(".local/cache/retarget/final_checkpoints/stage9_2_contact_rich_60f_v3/manifest.json"),
+        "--checkpoint",
+    ),
+    report: Path = typer.Option(Path(".local/reports/stage10/stage10_gate.json"), "--report"),
+) -> None:
+    """Derive, rather than accept, the Stage 10 unblocked decision."""
+    try:
+        payload = evaluate_gate(
+            final_path=final,
+            manual_path=manual_acceptance,
+            runtime_path=runtime_acceptance,
+            status_path=status,
+            performance_path=performance,
+            checkpoint_path=checkpoint,
+            repo_root=_repo_root(),
+            output=report,
+        )
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+        if not payload["stage10_unblocked"]:
+            raise typer.Exit(code=1)
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"workflow gate failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("accept-reference-runtime")
+def accept_reference_runtime_command(
+    final: Path = typer.Option(
+        Path(".local/cache/retarget/final/stage9_2_contact_rich_60f_v3.zarr"), "--final"
+    ),
+    manual_acceptance: Path = typer.Option(..., "--manual-acceptance"),
+    status: Path = typer.Option(
+        Path(".local/reports/stage9_performance/stage9_2_status.json"), "--stage9-status"
+    ),
+    performance: Path = typer.Option(
+        Path(".local/reports/stage9_performance/performance_gate.json"), "--performance"
+    ),
+    checkpoint: Path = typer.Option(
+        Path(".local/cache/retarget/final_checkpoints/stage9_2_contact_rich_60f_v3/manifest.json"),
+        "--checkpoint",
+    ),
+    output: Path = typer.Option(
+        Path(".local/reports/stage9/reference_runtime_acceptance.json"), "--output"
+    ),
+) -> None:
+    """Record the explicit user decision for this bounded reference-runtime milestone."""
+    try:
+        payload = build_runtime_acceptance(
+            final_path=final,
+            manual_path=manual_acceptance,
+            status_path=status,
+            performance_path=performance,
+            checkpoint_path=checkpoint,
+            output=output,
+        )
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"reference-runtime acceptance failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("run-accepted")
+def run_accepted_command(
+    source_manifest: Path = typer.Option(..., "--source-manifest"),
+    final: Path = typer.Option(..., "--final"),
+    manual_acceptance: Path = typer.Option(..., "--manual-acceptance"),
+    runtime_acceptance: Path = typer.Option(..., "--runtime-acceptance"),
+    run_root: Path = typer.Option(..., "--run-root"),
+    collision_samples: Path = typer.Option(..., "--collision-samples"),
+    no_review: bool = typer.Option(False, "--no-review"),
+    resume: bool = typer.Option(False, "--resume"),
+) -> None:
+    """Create a fresh Stage 10 run from accepted artifacts without Stage 9 execution."""
+    try:
+        manifest = create_accepted_run(
+            source_manifest=source_manifest,
+            final_path=final,
+            manual_acceptance=manual_acceptance,
+            runtime_acceptance=runtime_acceptance,
+            run_root=run_root,
+            repo_root=_repo_root(),
+            collision_samples=collision_samples,
+            generate_review=not no_review,
+            resume=resume,
+        )
+        typer.echo(str(manifest))
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"accepted workflow failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
 
 
 def _repo_root() -> Path:
@@ -446,6 +553,17 @@ def export_reference_command(
             format=format,
             metadata_path=destination.with_suffix(destination.suffix + ".json"),
         )
+        manifest.setdefault("export_paths", {})[format] = str(destination.resolve())
+        metadata = result.get("metadata", {})
+        for key in ("native_fps", "object_id", "source_sequence", "subject", "action"):
+            if metadata.get(key) is not None:
+                manifest[key if key != "source_sequence" else "source_sequence"] = metadata[key]
+        if metadata.get("side"):
+            manifest["hand"] = metadata["side"]
+        if metadata.get("robot"):
+            manifest["robot"] = metadata["robot"]
+        manifest["updated_at"] = __import__("toporetarget.workflows.schema", fromlist=["utc_now"]).utc_now()
+        write_json(manifest, run)
         typer.echo(json.dumps(result, indent=2, sort_keys=True, default=str))
     except (OSError, ValueError, RuntimeError) as exc:
         typer.echo(f"reference export failed: {exc}", err=True)

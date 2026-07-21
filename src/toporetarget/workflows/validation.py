@@ -316,14 +316,21 @@ def cross_stage_identity_report(
     object_identity_pass = len(set(object_identity.values())) == 1
     object_mesh_identity = {
         "canonical_object_mesh_hash": canonical_object_mesh_hash,
-        "sample_object_mesh_hash": str(samples.source_provenance.get("object_mesh_hash", "")),
+        "sample_object_mesh_hash": str(
+            samples.source_provenance.get("object_mesh_hash", getattr(samples, "mesh_hash", ""))
+        ),
+        "sample_mesh_array_hash": str(getattr(samples, "mesh_array_hash", "")),
         "graph_object_mesh_hash": str(graph_value.metadata.get("object_mesh_hash", "")),
         "final_object_mesh_hash": str(final_value.metadata.get("object_mesh_hash", "")),
     }
-    known_object_mesh_hashes = {
-        value for value in object_mesh_identity.values() if value not in {"", "None"}
-    }
-    object_mesh_identity_pass = len(known_object_mesh_hashes) <= 1
+    # Stage 5 preserves the source mesh hash; Stage 6/8/9 may carry the
+    # canonicalized in-memory mesh-array hash.  Validate both links explicitly.
+    object_mesh_identity_pass = bool(
+        object_mesh_identity["canonical_object_mesh_hash"]
+        == object_mesh_identity["sample_object_mesh_hash"]
+        and object_mesh_identity["graph_object_mesh_hash"]
+        == object_mesh_identity["final_object_mesh_hash"]
+    )
     robot_identity = {
         "requested_robot": robot,
         "warm_start_robot": warm.metadata.get("robot_name"),

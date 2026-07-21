@@ -364,6 +364,13 @@ and explicit stage transition.
 
 ### Stage 10. Run a bounded GRAB → Arti-MANO workflow
 
+The accepted bounded reference-runtime milestone is now materialized at
+`.local/runs/stage10_reference_runtime/s1__airplane_lift__right__artimano_rh__f000240_f000300/`.
+It reuses the accepted Stage 5–9 artifacts, records `solver_invocation_count=0`,
+and exports `exports/robot_reference.zarr` plus NPZ. The runtime decision is
+deliberately limited to this single offline 60-frame milestone; production,
+real-time, online-control, and full-dataset claims remain false.
+
 ```bash
 toporetarget workflow run-grab \
   --sequence s1/airplane_lift --index .local/index/grab \

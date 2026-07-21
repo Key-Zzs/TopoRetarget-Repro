@@ -30,7 +30,7 @@ def _reference_payload(run: dict[str, Any]) -> tuple[dict[str, Any], dict[str, n
         "robot_keypoints_scene": np.asarray(
             final.arrays["robot_keypoints_scene"], dtype=np.float64
         ),
-        "robot_link_poses": np.asarray(final.arrays["robot_link_poses"], dtype=np.float64),
+        "robot_link_poses_scene": np.asarray(final.arrays["robot_link_poses"], dtype=np.float64),
         "object_pose_scene": np.asarray(
             object_track.pose_scene.pose_scene[frame_indices], dtype=np.float64
         ),
@@ -39,10 +39,10 @@ def _reference_payload(run: dict[str, Any]) -> tuple[dict[str, Any], dict[str, n
         "schema_version": REFERENCE_SCHEMA_VERSION,
         "robot": run["robot"],
         "side": run["hand"],
-        "native_fps": run["native_fps"],
+        "native_fps": run.get("native_fps") or sequence.metadata.native_fps or final.metadata.get("native_fps"),
         "source_sequence": run["source_sequence"],
         "subject": run.get("subject"),
-        "object_id": run.get("object_id", object_id),
+        "object_id": run.get("object_id") or object_id,
         "action": run.get("action"),
         "source_hash": run.get("source_hash"),
         "final_artifact_path": final_path,
@@ -77,18 +77,12 @@ def export_reference(
         save_npz: Any = np.savez_compressed
         save_npz(destination, **arrays, metadata=np.asarray(json.dumps(metadata, sort_keys=True)))
     elif format == "zarr":
-        try:
-            import zarr
-        except ImportError as exc:
-            raise RuntimeError("Zarr export requires the cache extra") from exc
-        group = zarr.open_group(str(destination), mode="w")
-        group.attrs.update(metadata)
-        for name, value in arrays.items():
-            try:
-                group.create_array(name, data=value, overwrite=True)
-            except AttributeError:
-                legacy_group: Any = group
-                legacy_group.create_dataset(name, data=value, overwrite=True)
+        # Use the repository's direct Zarr-v3 writer.  The async zarr bridge
+        # is intentionally avoided here because it can hang on this host's
+        # local filesystem during group creation.
+        from toporetarget.data.storage import write_zarr3_group_direct
+
+        write_zarr3_group_direct(destination, metadata, arrays, array_prefix="arrays")
     else:
         raise ValueError("format must be zarr or npz")
     if metadata_path is not None:
