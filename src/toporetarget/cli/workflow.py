@@ -9,9 +9,12 @@ from typing import Any
 
 import typer
 
+from toporetarget.workflows.accepted_run import create_accepted_run
 from toporetarget.workflows.contact_window import select_contact_windows
 from toporetarget.workflows.executor import WorkflowExecutionError, run_workflow
 from toporetarget.workflows.export import export_reference
+from toporetarget.workflows.gate import build_runtime_acceptance, evaluate_gate
+from toporetarget.workflows.mesh_visualization import render_mesh_html
 from toporetarget.workflows.planning import build_plan, write_plan
 from toporetarget.workflows.schema import WorkflowRequest, read_json, write_json
 from toporetarget.workflows.validation import (
@@ -19,8 +22,6 @@ from toporetarget.workflows.validation import (
     cross_stage_identity_report,
 )
 from toporetarget.workflows.visualization import run_visualization, write_visualization_report
-from toporetarget.workflows.gate import build_runtime_acceptance, evaluate_gate
-from toporetarget.workflows.accepted_run import create_accepted_run
 
 app = typer.Typer(help="Stage 10 bounded, resumable GRAB-to-Arti-MANO workflows.")
 
@@ -538,6 +539,39 @@ def visualize_command(
         raise typer.Exit(code=1) from exc
 
 
+@app.command("visualize-mesh")
+def visualize_mesh_command(
+    run: Path = typer.Option(..., "--run"),
+    output: Path | None = typer.Option(None, "--output"),
+    start_frame: int | None = typer.Option(None, "--start-frame", min=0),
+    end_frame: int | None = typer.Option(None, "--end-frame", min=1),
+    max_object_points: int = typer.Option(1200, "--max-object-points", min=1),
+    asset_root: Path | None = typer.Option(None, "--asset-root"),
+    interactive: bool = typer.Option(
+        False,
+        "--interactive",
+        help="Open the generated HTML in the default browser; the HTML is interactive by default.",
+    ),
+    open_browser: bool = typer.Option(False, "--open-browser"),
+) -> None:
+    """Write a self-contained HTML viewer with source/warm/final hand meshes."""
+
+    try:
+        result = render_mesh_html(
+            run,
+            output=output,
+            start_frame=start_frame,
+            end_frame=end_frame,
+            max_object_points=max_object_points,
+            asset_root=asset_root,
+            open_browser=open_browser or interactive,
+        )
+        typer.echo(json.dumps(result, indent=2, sort_keys=True))
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"workflow mesh visualization failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
 @app.command("export-reference")
 def export_reference_command(
     run: Path = typer.Option(..., "--run"),
@@ -562,7 +596,9 @@ def export_reference_command(
             manifest["hand"] = metadata["side"]
         if metadata.get("robot"):
             manifest["robot"] = metadata["robot"]
-        manifest["updated_at"] = __import__("toporetarget.workflows.schema", fromlist=["utc_now"]).utc_now()
+        manifest["updated_at"] = __import__(
+            "toporetarget.workflows.schema", fromlist=["utc_now"]
+        ).utc_now()
         write_json(manifest, run)
         typer.echo(json.dumps(result, indent=2, sort_keys=True, default=str))
     except (OSError, ValueError, RuntimeError) as exc:

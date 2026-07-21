@@ -384,6 +384,20 @@ Use `workflow status`, `workflow validate`, `workflow visualize`, and
 `workflow export-reference` with the generated manifest. Resume and provenance rules are in
 [`docs/WORKFLOW_RESUME_AND_PROVENANCE.md`](docs/WORKFLOW_RESUME_AND_PROVENANCE.md).
 
+To inspect the actual source MANO mesh together with the warm-start and final Arti-MANO visual
+meshes in a browser, write a self-contained HTML file:
+
+```bash
+toporetarget workflow visualize-mesh \
+  --run .local/runs/stage10_reference_runtime/s1__airplane_lift__right__artimano_rh__f000240_f000300/manifest.json \
+  --interactive
+```
+
+The default output is `review/trajectory_mesh.html`. Blue, orange, and green are source,
+warm-start, and final meshes; the page also provides frame playback, orbit/zoom controls,
+object context points, and per-frame refinement metrics. This is a visual inspection aid and
+does not replace the numeric Stage 9/10 gates.
+
 #### Visualize the entire trajectory
 
 The existing `f000000_f000060` inputs and final artifacts contain only the half-open range

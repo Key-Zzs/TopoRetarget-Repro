@@ -304,6 +304,19 @@ toporetarget workflow run-grab \
 `workflow export-reference`；断点续跑及 provenance 规则见
 [`docs/WORKFLOW_RESUME_AND_PROVENANCE.md`](docs/WORKFLOW_RESUME_AND_PROVENANCE.md)。
 
+如需在浏览器中查看真实的 source MANO mesh，以及 warm-start 和 final 的 Arti-MANO visual
+mesh，可生成自包含 HTML：
+
+```bash
+toporetarget workflow visualize-mesh \
+  --run .local/runs/stage10_reference_runtime/s1__airplane_lift__right__artimano_rh__f000240_f000300/manifest.json \
+  --interactive
+```
+
+默认输出为 `review/trajectory_mesh.html`。蓝色、橙色、绿色分别表示 source、warm-start、final
+mesh；页面支持逐帧播放、旋转/缩放、object 上下文点云和逐帧 refinement 指标。它只是可视化检查工具，
+不能替代 Stage 9/10 的数值 gate。
+
 Stage 9 有界 clip 的交互查看（不使用 `--output`）：
 
 ```bash
