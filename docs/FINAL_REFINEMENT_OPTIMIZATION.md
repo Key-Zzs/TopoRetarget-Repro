@@ -39,14 +39,16 @@ x = [delta_p(3), delta_omega(3), q_theta(22), s(|Q_t|)]
 The first frame starts from the warm-start seed with zero delta and no temporal
 residual. Later frames initialize from the previous final pose remapped into the
 current seed coordinates. Translation is metres, rotation and joint coordinates are
-radians, and no hidden normalization or FPS scaling is applied.
+radians, and no FPS or dt scaling is applied. The execution layer may use the
+explicit, invertible `seed_delta_normalized_v1` map internally for SLSQP
+conditioning; callbacks, audits, and persisted artifacts always use the raw vector above.
 
 ## Solver and derivatives
 
 The engineering solver is float64 SciPy SLSQP with analytic Torch-autograd objective
 derivatives and SDF-normal times collision-point Jacobians. Invalid SDF-normal rows
 fall back to central finite differences and are counted. URDF q bounds, non-negative
-slack bounds, fail-fast solver status, and the configured `maxiter=30`, `ftol=1e-7`
+slack bounds, fail-fast solver status, and the configured `maxiter=100`, `ftol=1e-7`
 are recorded in the final artifact. These solver details are not disclosed by the
 paper and are not presented as paper facts.
 
@@ -99,6 +101,18 @@ because the paper does not disclose them.
 The measured v1 profile hash is `6affff2fdb425a0402f643c291c0b8904d4dbec6c5b69a5006cf9829dcc220aa`;
 the independent v2 profile hash is
 `c42c21d894c54d07b1d30943b5a3338b13628bf0429ab203b5540cf934d09b7c`. The fixed
-35-record grid selects uniform `maxiter=100`; the full 60-frame real opt-in
-artifact and deterministic repeat remain pending and are not inferred from the
-benchmark subset.
+35-record grid selects uniform `maxiter=100`. The Stage 9.2 full 60-frame
+contact-rich artifact and fresh/resumed deterministic comparison are now
+recorded in `.local/reports/stage9_performance/`; the reference-runtime minimum
+gate passes while the preferred single-frame gate remains unmet.
+
+## Stage 9.2 execution layer
+
+The performance and recoverability implementation is documented in
+[`REFINEMENT_PERFORMANCE.md`](REFINEMENT_PERFORMANCE.md) and
+[`REFINEMENT_CHECKPOINT_AND_RESUME.md`](REFINEMENT_CHECKPOINT_AND_RESUME.md).
+It owns callback caching, persistent resources, batched point Jacobians,
+scheduled independent full-surface audits, and atomic frame checkpoints. These
+are engineering mechanisms only; Eq. (8)-(9), profiles, weights, sample count,
+and strict acceptance are unchanged. Runtime-gate and deterministic-repeat
+claims require reports under `.local/reports/stage9_performance/`.

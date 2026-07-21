@@ -322,3 +322,34 @@ artifact。solver 与 termination 仍是论文未公开的实现假设。
 随后为 Stage 9.2 性能与可恢复执行阶段暂停了 bounded v2 重跑；完整序列仍被性能阻塞。
 因此本次只保留已测试的 closeout 修改，不宣称 Stage 9.1 complete，也不宣称已经生成
 60 帧 artifact 或 deterministic repeat。
+
+## Stage 9.2 refinement 性能与可恢复执行（2026-07-21）
+
+Stage 9.2 在冻结的 Stage 9 数学契约外增加执行层：不可变 per-frame context、精确
+float64 x/query cache 失效、持久 mesh/SDF resource、批量 collision-point Jacobian、
+明确的 full-512 audit 调度、strict-accepted frame 的原子 checkpoint、soft wall-time
+pause、resume、assembly 和 fresh/resumed comparison。solver profile、paper weights、
+signed-distance convention、512 samples、v2 continuation 及 strict status-9 rejection
+均未改变。
+
+CLI 新增 `profile-refinement`、`checkpoint-status`、`validate-checkpoints`、
+`assemble-refinement` 和 `compare-refinement-runs`。execution profile 使用独立的
+CPU float64 `cached_checkpoint_cpu_float64_v1`。Focused tests 已通过；完整 contact-rich
+60 帧运行、deterministic fresh/resumed repeat 和 runtime gate 仍需真实证据。在这些
+report 出现前不解除 Stage 10。详见 [`REFINEMENT_PERFORMANCE.md`](REFINEMENT_PERFORMANCE.md)、
+[`REFINEMENT_CHECKPOINT_AND_RESUME.md`](REFINEMENT_CHECKPOINT_AND_RESUME.md) 和
+[`stages/STAGE_9_2_REFINEMENT_PERFORMANCE.md`](stages/STAGE_9_2_REFINEMENT_PERFORMANCE.md)。
+
+随后 bounded full run 完成全部 60 个 contact-rich frame，solver compute 为
+`1075.941 s`（`17.932 min`）。这份较早的 v1 证据已由下方 v3 优化 run
+取代，但其 strict acceptance 与恢复历史仍保留在 report 中。
+
+v3 execution profile 使用 analytic URDF spatial Jacobian、status-9 的 strict
+reference recovery，以及 leaf size 为 512 的 SDF tree。第一次运行完成 60/60 帧，
+median 为 `10.766 s`、p95 为 `38.711 s`、总 solve time 为 `1104.827 s`；deterministic
+repeat 完成 60/60 帧，median 为 `10.773 s`、p95 为 `39.052 s`、总计 `1107.368 s`。
+两次运行均为 status 0 且 strict accepted，checkpoint chain 有效，独立 `60 x 512`
+reference validation 通过，最大 signed-distance error 为 `2.50e-16 m`。排除
+`solve_time_s` 与文档规定的 metadata 后，全部持久化数组 exact equal。最终状态仍为
+`STAGE9_2_COMPLETE_REFERENCE_RUNTIME`；preferred single-frame gate 未通过，Stage 10
+继续保持 blocked，未启动任何 Stage 10 执行。

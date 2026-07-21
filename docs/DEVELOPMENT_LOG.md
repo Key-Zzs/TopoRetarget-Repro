@@ -367,3 +367,39 @@ The bounded v2 rerun was then paused for the Stage 9.2 performance and
 recoverability phase: the complete sequence is still performance-blocked.
 This preserves the tested closeout changes but does not claim Stage 9.1
 complete, a 60-frame artifact, or a deterministic repeat.
+
+## Stage 9.2 refinement performance and recoverability (2026-07-21)
+
+Stage 9.2 adds an execution layer around the frozen Stage 9 math: immutable
+per-frame context, exact float64 x/query cache invalidation, persistent mesh and
+SDF resources, batched collision-point Jacobians, explicit full-512 audit
+scheduling, atomic strict-accepted frame checkpoints, soft wall-time pause,
+resume, assembly, and fresh/resumed comparison commands. The solver profile,
+paper weights, signed-distance convention, 512 samples, v2 continuation, and
+strict status-9 rejection remain unchanged.
+
+The CLI now exposes `profile-refinement`, `checkpoint-status`,
+`validate-checkpoints`, `assemble-refinement`, and `compare-refinement-runs`.
+The execution profile is CPU float64 `cached_checkpoint_cpu_float64_v1`,
+separate from the SLSQP profile. Focused tests pass; the complete contact-rich
+60-frame run, deterministic fresh/resumed repeat, and runtime-gate decision
+remain evidence tasks. Until those reports exist, Stage 10 is not unblocked.
+See [`REFINEMENT_PERFORMANCE.md`](REFINEMENT_PERFORMANCE.md),
+[`REFINEMENT_CHECKPOINT_AND_RESUME.md`](REFINEMENT_CHECKPOINT_AND_RESUME.md),
+and [`stages/STAGE_9_2_REFINEMENT_PERFORMANCE.md`](stages/STAGE_9_2_REFINEMENT_PERFORMANCE.md).
+
+The bounded full run subsequently completed all 60 contact-rich frames in
+`1075.941 s` (`17.932 min`) of solver compute. This earlier v1 evidence is
+superseded by the v3 optimization run below; its strict-acceptance and recovery
+history remains preserved in the reports.
+
+The v3 execution profile uses analytic URDF spatial Jacobians, strict reference
+recovery, and SDF tree leaf size 512. The first run completed 60/60 frames with
+median `10.766 s`, p95 `38.711 s`, and `1104.827 s` total solve time. Its
+deterministic repeat completed 60/60 with median `10.773 s`, p95 `39.052 s`, and
+`1107.368 s` total. Both runs have status-0 strict acceptance, valid checkpoint
+chains, and independent `60 x 512` reference validation; the maximum signed-
+distance error is `2.50e-16 m`. All persisted arrays compare exactly after
+excluding `solve_time_s` and documented metadata. The final status remains
+`STAGE9_2_COMPLETE_REFERENCE_RUNTIME`; the preferred single-frame gate is not
+met, Stage 10 remains blocked, and no Stage 10 execution was started.

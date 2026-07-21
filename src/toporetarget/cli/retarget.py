@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import copy
+import cProfile
 import csv
 import json
+import pstats
+import re
+import shutil
+import time
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +34,7 @@ from toporetarget.retarget.final_refinement import (
     FULL_SOLVER_PROFILE_ID,
     SOLVER_PROFILE_ID,
     CollisionQueryProfile,
+    PaperRefinementWeights,
     RefinementCoordinateProfile,
     RefinementSolverProfile,
     build_final_trajectory,
@@ -37,6 +43,7 @@ from toporetarget.retarget.final_refinement import (
     final_artifact_hash,
     load_final_trajectory,
     load_robot_surface_samples,
+    prepare_refinement_resources,
     save_final_trajectory,
 )
 from toporetarget.retarget.final_visualization import (
@@ -72,9 +79,15 @@ from toporetarget.retarget.interaction_visualization import (
     render_interaction_frame,
 )
 from toporetarget.retarget.pipeline import build_warm_start_trajectory
+from toporetarget.retarget.refinement_checkpoint import (
+    CheckpointError,
+    CheckpointStore,
+    frame_checkpoint_payload,
+)
+from toporetarget.retarget.refinement_performance import RefinementExecutionProfile
 from toporetarget.retarget.solver import WarmStartSolveError, load_solver_profile
 from toporetarget.robots.artimano import load_artimano_model
-from toporetarget.utils.hashing import sha256_tree
+from toporetarget.utils.hashing import sha256_file, sha256_tree
 
 app = typer.Typer(help="Stage 7-9 retargeting tools.")
 
@@ -944,6 +957,13 @@ def _default_collision_samples(robot: str) -> Path:
     return root / ".local" / "cache" / "geometry" / "robot_surface" / f"{robot}_neutral.npz"
 
 
+def _source_frame_offset(path: Path) -> int:
+    """Recover the source-frame offset recorded in cropped Stage 9 artifacts."""
+
+    match = re.search(r"f(\d{6})_f\d{6}", str(path))
+    return 0 if match is None else int(match.group(1))
+
+
 def _object_for_graph(sequence: Any, object_id: str) -> Any:
     if object_id in {"primary", "object"}:
         if not sequence.rigid_objects:
@@ -966,6 +986,337 @@ def _refinement_components(
     model = _load_robot(robot, asset_root)
     surface = load_robot_surface_samples(collision_samples or _default_collision_samples(robot))
     return sequence, warm, graph_trajectory, model, surface, collision_samples
+
+
+def _refinement_input_signature(
+    canonical: Path,
+    warm_start: Path,
+    graph: Path,
+    collision_samples: Path,
+    robot: str,
+    start_frame: int,
+    end_frame: int,
+) -> str:
+    import hashlib
+
+    payload = {
+        "canonical": str(canonical.resolve()),
+        "canonical_hash": sha256_tree(canonical),
+        "warm_start": str(warm_start.resolve()),
+        "warm_start_hash": artifact_hash(warm_start),
+        "graph": str(graph.resolve()),
+        "graph_hash": interaction_artifact_hash(graph),
+        "collision_samples": str(collision_samples.resolve()),
+        "collision_samples_hash": sha256_file(collision_samples),
+        "robot": robot,
+        "start_frame": int(start_frame),
+        "end_frame": int(end_frame),
+        "frame_range": [int(start_frame), int(end_frame)],
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
+    ).hexdigest()
+
+
+def _checkpoint_manifest(
+    *,
+    sequence: Any,
+    warm: Any,
+    graph: Any,
+    model: Any,
+    paper: Any,
+    solver: RefinementSolverProfile,
+    execution: RefinementExecutionProfile,
+    query: CollisionQueryProfile,
+    coordinate: RefinementCoordinateProfile,
+    surface: Any,
+    resources: Any,
+    input_signature: str,
+    start_frame: int,
+    end_frame: int,
+    canonical: Path,
+    warm_start: Path,
+    graph_path: Path,
+    collision_samples: Path,
+    checkpoint_root: Path,
+    source_frame_offset: int,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "toporetarget.final_retarget_checkpoint.v1",
+        "run_id": checkpoint_root.name,
+        "input_signature": input_signature,
+        "source_sequence_id": warm.metadata.get("source_sequence_id"),
+        "source_hand_id": warm.metadata.get("source_hand_id"),
+        "source_hand_side": warm.metadata.get("source_side"),
+        "canonical": str(canonical),
+        "warm_start": str(warm_start),
+        "graph": str(graph_path),
+        "collision_samples": str(collision_samples),
+        "robot_name": model.name,
+        "robot_side": model.side,
+        "start_frame": int(start_frame),
+        "end_frame": int(end_frame),
+        "native_fps": warm.metadata.get("native_fps"),
+        "solver_profile_id": solver.profile_id,
+        "solver_profile_hash": solver.profile_hash,
+        "execution_profile_id": execution.profile_id,
+        "execution_profile_hash": execution.profile_hash,
+        "query_profile_id": query.profile_id,
+        "query_profile_hash": query.profile_hash,
+        "frame_range": [int(start_frame), int(end_frame)],
+        "source_frame_offset": int(source_frame_offset),
+        "source_frame_range": [
+            int(source_frame_offset + start_frame),
+            int(source_frame_offset + end_frame),
+        ],
+        "final_artifact_schema": "toporetarget.final_retarget.v2",
+        "paper_weights": paper.as_dict(),
+        "resume_command": "toporetarget retarget refine --resume --checkpoint-root "
+        + str(checkpoint_root),
+        "final_artifact_metadata": {
+            "source_sequence_id": warm.metadata.get("source_sequence_id"),
+            "source_hand_id": warm.metadata.get("source_hand_id"),
+            "source_hand_side": warm.metadata.get("source_side"),
+            "source_canonical_hash": warm.metadata.get("source_cache_hash"),
+            "object_id": graph.metadata.get("object_id"),
+            "object_mesh_hash": resources.mesh_hash,
+            "graph_artifact_hash": interaction_artifact_hash(graph.source_path)
+            if graph.source_path
+            else None,
+            "warm_start_artifact_hash": artifact_hash(warm_start),
+            "robot_name": model.name,
+            "robot_side": model.side,
+            "robot_spec_hash": model.spec_hash,
+            "robot_urdf_hash": model.urdf_hash,
+            "robot_asset_manifest_hash": model.asset_manifest_hash,
+            "robot_link_names": list(model.link_names),
+            "collision_surface_profile_hash": surface.profile.profile_hash,
+            "collision_surface_sample_count": surface.count,
+            "sdf_backend": resources.sdf.describe(),
+            "sdf_reference_backend": resources.reference_sdf.describe(),
+            "sdf_selection_report": resources.sdf_report,
+            "solver_profile_id": solver.profile_id,
+            "solver_profile_hash": solver.profile_hash,
+            "execution_profile_id": execution.profile_id,
+            "execution_profile_hash": execution.profile_hash,
+            "execution_profile": execution.as_dict(),
+            "point_jacobian_backend": execution.point_jacobian_backend,
+            "strict_recovery": execution.strict_recovery,
+            "sdf_tree_leaf_size": execution.sdf_tree_leaf_size,
+            "query_profile": query.as_dict(),
+            "coordinate_profile": coordinate.as_dict(),
+            "solver_profile": solver.as_dict(),
+            "termination_contract": solver.termination_contract,
+            "acceptance_policy_id": solver.acceptance_policy_id,
+            "active_set_continuation_policy": solver.active_set_continuation_policy,
+            "maxiter_provenance": solver.maxiter_provenance,
+            "stationarity_policy": solver.stationarity_policy,
+            "paper_weights": paper.as_dict(),
+            "native_fps": warm.metadata.get("native_fps"),
+            "input_signature": input_signature,
+            "source_frame_offset": int(source_frame_offset),
+            "source_frame_range": [
+                int(source_frame_offset + start_frame),
+                int(source_frame_offset + end_frame),
+            ],
+        },
+    }
+
+
+def _checkpoint_status_payload(store: CheckpointStore) -> dict[str, Any]:
+    assert store.manifest is not None
+    manifest = store.manifest
+    value = store.validate_chain(allow_incomplete=True)
+    value["remaining_frames"] = max(
+        0,
+        int(manifest.get("frame_range", [0, 0])[1]) - int(value["next_frame"]),
+    )
+    value["elapsed_sessions"] = int(manifest.get("elapsed_sessions", 0))
+    value.update(
+        {
+            "run_id": manifest.get("run_id"),
+            "checkpoint_root": str(store.root),
+            "input_signature": manifest.get("input_signature"),
+            "solver_profile_hash": manifest.get("solver_profile_hash"),
+            "execution_profile_hash": manifest.get("execution_profile_hash"),
+            "resume_command": manifest.get("resume_command"),
+        }
+    )
+    return value
+
+
+def _run_checkpoint_refinement(
+    *,
+    canonical: Path,
+    warm_start: Path,
+    graph_path: Path,
+    robot: str,
+    collision_samples: Path | None,
+    query_profile_id: str,
+    coordinate_profile_id: str,
+    solver_profile_id: str,
+    execution_profile_id: str,
+    start_frame: int,
+    end_frame: int | None,
+    checkpoint_root: Path,
+    output: Path | None,
+    asset_root: Path | None,
+    resume: bool,
+    max_wall_time: float | None,
+    stop_after_frame: int | None,
+    progress_json: Path | None,
+    progress_log: Path | None,
+    force: bool,
+) -> dict[str, Any]:
+    sequence, warm, graph, model, surface, selected_samples = _refinement_components(
+        canonical, warm_start, graph_path, robot, collision_samples, asset_root
+    )
+    sample_path = selected_samples or _default_collision_samples(robot)
+    stop = warm.frame_count if end_frame is None else int(end_frame)
+    if stop <= start_frame or stop > warm.frame_count:
+        raise ValueError(f"invalid frame range [{start_frame},{stop})")
+    if stop_after_frame is not None and not start_frame <= stop_after_frame < stop:
+        raise ValueError("--stop-after-frame must be within the requested half-open range")
+    solver = RefinementSolverProfile.load(solver_profile_id)
+    execution = RefinementExecutionProfile.load(execution_profile_id)
+    query = CollisionQueryProfile.load(query_profile_id)
+    coordinate = RefinementCoordinateProfile.load(coordinate_profile_id)
+    paper = PaperRefinementWeights.load()
+    resources = prepare_refinement_resources(
+        sequence,
+        graph,
+        solver,
+        sdf_tree_leaf_size=execution.sdf_tree_leaf_size,
+    )
+    source_frame_offset = _source_frame_offset(canonical)
+    signature = _refinement_input_signature(
+        canonical, warm_start, graph_path, sample_path, robot, start_frame, stop
+    )
+    manifest = _checkpoint_manifest(
+        sequence=sequence,
+        warm=warm,
+        graph=graph,
+        model=model,
+        paper=paper,
+        solver=solver,
+        execution=execution,
+        query=query,
+        coordinate=coordinate,
+        surface=surface,
+        resources=resources,
+        input_signature=signature,
+        start_frame=start_frame,
+        end_frame=stop,
+        canonical=canonical,
+        warm_start=warm_start,
+        graph_path=graph_path,
+        collision_samples=sample_path,
+        checkpoint_root=checkpoint_root,
+        source_frame_offset=source_frame_offset,
+    )
+    store = CheckpointStore.open(checkpoint_root, manifest=manifest, resume=resume)
+    assert store.manifest is not None
+    manifest = dict(store.manifest)
+    chain = store.validate_chain()
+    next_frame = int(chain["next_frame"])
+    if next_frame < start_frame or next_frame > stop:
+        raise CheckpointError(f"invalid next frame from checkpoint chain: {next_frame}")
+    previous: tuple[np.ndarray, np.ndarray] | None = None
+    previous_hash: str | None = None
+    if next_frame > start_frame:
+        previous_metadata, previous_arrays = store.load_frame(next_frame - 1)
+        previous_hash = str(previous_metadata["per_frame_checkpoint_hash"])
+        previous = (
+            np.asarray(previous_arrays["base_pose_scene"], dtype=np.float64),
+            np.asarray(previous_arrays["qpos"], dtype=np.float64),
+        )
+    started = time.perf_counter()
+    frame_rows: list[dict[str, Any]] = []
+    frame_profile = load_frame_profile("canonical_keypoint_wrist_v1")
+    bone_profile = load_bone_profile("mediapipe21_full_finger_chain_v1")
+
+    while next_frame < stop:
+        if max_wall_time is not None and time.perf_counter() - started >= max_wall_time:
+            status = store.update_progress(status="paused", elapsed_s=time.perf_counter() - started)
+            status.update(_checkpoint_status_payload(store))
+            if progress_json is not None:
+                _json_write(status, progress_json)
+            if progress_log is not None:
+                progress_log.parent.mkdir(parents=True, exist_ok=True)
+                progress_log.open("a", encoding="utf-8").write(json.dumps(status) + "\n")
+            return status
+        current_frame = next_frame
+        callback_hash = previous_hash
+
+        def on_frame(
+            local_index: int,
+            frame_result: Any,
+            context: Any,
+        ) -> None:
+            nonlocal callback_hash
+            metadata, arrays = frame_checkpoint_payload(
+                local_index,
+                frame_result,
+                context,
+                global_frame=int(graph.frame_indices[local_index]),
+                source_frame=source_frame_offset + int(graph.frame_indices[local_index]),
+                timestamp=float(warm.arrays["timestamps"][local_index]),
+                input_signature=manifest["input_signature"],
+                solver_profile=solver.as_dict(),
+                execution_profile=execution.as_dict(),
+                previous_checkpoint_hash=callback_hash,
+            )
+            callback_hash = store.save_frame(metadata, arrays)
+            frame_rows.append(metadata)
+
+        trajectory, _ = build_final_trajectory(
+            sequence,
+            warm,
+            graph,
+            model,
+            surface,
+            frame_profile,
+            bone_profile,
+            coordinate,
+            query,
+            solver,
+            start_frame=current_frame,
+            end_frame=current_frame + 1,
+            initial_previous=previous,
+            warm_artifact_hash=artifact_hash(warm_start),
+            graph_artifact_hash=interaction_artifact_hash(graph_path),
+            resources=resources,
+            frame_callback=on_frame,
+            source_frame_offset=source_frame_offset,
+            execution_profile=execution,
+        )
+        previous = (
+            np.asarray(trajectory.arrays["base_pose_scene"][-1], dtype=np.float64),
+            np.asarray(trajectory.arrays["qpos"][-1], dtype=np.float64),
+        )
+        previous_hash = callback_hash
+        next_frame += 1
+        store.update_progress(status="paused", elapsed_s=time.perf_counter() - started)
+        if stop_after_frame is not None and current_frame >= stop_after_frame:
+            status = store.update_progress(status="paused", elapsed_s=time.perf_counter() - started)
+            status.update(_checkpoint_status_payload(store))
+            status["stop_after_frame"] = stop_after_frame
+            if progress_json is not None:
+                _json_write(status, progress_json)
+            return status
+
+    status = store.update_progress(status="complete", elapsed_s=time.perf_counter() - started)
+    status.update(_checkpoint_status_payload(store))
+    status["frame_rows"] = frame_rows
+    if output is not None:
+        destination = store.assemble(output, force=force)
+        status["final_artifact"] = str(destination)
+    if progress_json is not None:
+        _json_write(status, progress_json)
+    if progress_log is not None:
+        progress_log.parent.mkdir(parents=True, exist_ok=True)
+        progress_log.open("a", encoding="utf-8").write(json.dumps(status) + "\n")
+    return status
 
 
 @app.command("inspect-query-set")
@@ -1107,6 +1458,330 @@ def compare_query_profiles_command(
         raise typer.Exit(code=1) from exc
 
 
+@app.command("profile-refinement")
+def profile_refinement_command(
+    canonical: Path = typer.Option(..., "--canonical"),
+    warm_start: Path = typer.Option(..., "--warm-start"),
+    graph: Path = typer.Option(..., "--graph"),
+    robot: str = typer.Option("artimano_rh", "--robot"),
+    collision_samples: Path | None = typer.Option(None, "--collision-samples"),
+    frames: list[int] = typer.Option([0, 12, 29], "--frames", min=0),
+    query_profile: str = typer.Option(ACTIVE_QUERY_PROFILE_ID, "--query-profile"),
+    coordinate_profile: str = typer.Option("local_seed_delta_v1", "--coordinate-profile"),
+    solver_profile: str = typer.Option(
+        "scipy_slsqp_active_set_contact_rich_v2", "--solver-profile"
+    ),
+    execution_profile: str = typer.Option(
+        "cached_checkpoint_cpu_float64_v1", "--execution-profile"
+    ),
+    classification_override: str | None = typer.Option(None, "--classification"),
+    output_root: Path = typer.Option(..., "--output-root"),
+    torch_profiler_enabled: bool = typer.Option(True, "--torch-profiler/--no-torch-profiler"),
+    asset_root: Path | None = typer.Option(None, "--asset-root"),
+) -> None:
+    """Profile selected real frames without changing the refinement contract."""
+
+    try:
+        sequence, warm, graph_trajectory, model, surface, _ = _refinement_components(
+            canonical, warm_start, graph, robot, collision_samples, asset_root
+        )
+        solver = RefinementSolverProfile.load(solver_profile)
+        execution = RefinementExecutionProfile.load(execution_profile)
+        query = CollisionQueryProfile.load(query_profile)
+        coordinate = RefinementCoordinateProfile.load(coordinate_profile)
+        frame_profile = load_frame_profile("canonical_keypoint_wrist_v1")
+        bone_profile = load_bone_profile("mediapipe21_full_finger_chain_v1")
+        resources = prepare_refinement_resources(
+            sequence,
+            graph_trajectory,
+            solver,
+            sdf_tree_leaf_size=execution.sdf_tree_leaf_size,
+        )
+        source_frame_offset = _source_frame_offset(canonical)
+        output_root.mkdir(parents=True, exist_ok=True)
+        (output_root / "cprofile").mkdir(exist_ok=True)
+        (output_root / "torch_profiler").mkdir(exist_ok=True)
+        rows: list[dict[str, Any]] = []
+        callback_rows: list[dict[str, Any]] = []
+        cache_rows: list[dict[str, Any]] = []
+        torch_status: dict[str, Any] = {"available": False, "frames": {}}
+        for requested_frame in sorted(set(int(frame) for frame in frames)):
+            matches = np.flatnonzero(graph_trajectory.frame_indices == requested_frame)
+            if len(matches):
+                local_frame = int(matches[0])
+                graph_frame = int(graph_trajectory.frame_indices[local_frame])
+                global_frame = (
+                    graph_frame
+                    if graph_frame >= source_frame_offset
+                    else source_frame_offset + graph_frame
+                )
+            elif 0 <= requested_frame - source_frame_offset < warm.frame_count:
+                local_frame = requested_frame - source_frame_offset
+                global_frame = requested_frame
+            elif 0 <= requested_frame < warm.frame_count:
+                local_frame = requested_frame
+                global_frame = source_frame_offset + int(
+                    graph_trajectory.frame_indices[local_frame]
+                )
+            else:
+                raise ValueError(f"frame is outside warm-start/graph artifact: {requested_frame}")
+            classification = classification_override or (
+                "status9_frame"
+                if global_frame == 240
+                else "approach"
+                if global_frame in {238, 239}
+                else "pre_contact"
+                if global_frame < 240
+                else "contact_rich"
+            )
+            cprofile_path = output_root / "cprofile" / f"frame_{local_frame:06d}.prof"
+            profile = cProfile.Profile()
+            torch_profiler = None
+            torch_module: Any = None
+            started = time.perf_counter()
+            profile.enable()
+            try:
+                try:
+                    import torch
+
+                    torch_module = torch
+                    if torch_profiler_enabled:
+                        torch_status["available"] = True
+                    else:
+                        torch_status["frames"][str(global_frame)] = {"status": "disabled_by_cli"}
+                except (ImportError, RuntimeError, AttributeError) as exc:
+                    torch_status["frames"][str(global_frame)] = {
+                        "status": "unavailable",
+                        "reason": str(exc),
+                    }
+                trajectory, diagnostics = build_final_trajectory(
+                    sequence,
+                    warm,
+                    graph_trajectory,
+                    model,
+                    surface,
+                    frame_profile,
+                    bone_profile,
+                    coordinate,
+                    query,
+                    solver,
+                    start_frame=local_frame,
+                    end_frame=local_frame + 1,
+                    warm_artifact_hash=artifact_hash(warm_start),
+                    graph_artifact_hash=interaction_artifact_hash(graph),
+                    resources=resources,
+                    continue_on_failure=True,
+                    source_frame_offset=source_frame_offset,
+                    execution_profile=execution,
+                )
+            finally:
+                if torch_profiler is not None:
+                    torch_profiler.__exit__(None, None, None)
+                profile.disable()
+                profile.dump_stats(str(cprofile_path))
+                with (output_root / "cprofile" / f"frame_{local_frame:06d}.txt").open(
+                    "w", encoding="utf-8"
+                ) as handle:
+                    stats = pstats.Stats(profile, stream=handle)
+                    stats.strip_dirs().sort_stats("cumtime").print_stats(40)
+            elapsed = time.perf_counter() - started
+            if torch_module is not None and torch_profiler_enabled:
+                trace_path = output_root / "torch_profiler" / f"frame_{local_frame:06d}.json"
+                # Profiling the whole SciPy/Torch callback stream creates an
+                # unbounded multi-GB event tree. Record a bounded Torch smoke
+                # trace here; the real solve's detailed timings are provided by
+                # the internal timers and cProfile above.
+                with torch_module.profiler.profile(
+                    activities=[torch_module.profiler.ProfilerActivity.CPU],
+                    record_shapes=False,
+                    profile_memory=False,
+                ) as smoke_profiler:
+                    smoke_value = torch_module.zeros(8, dtype=torch_module.float64)
+                    smoke_value.add_(1.0)
+                _json_write(
+                    {
+                        "schema_version": "toporetarget.torch_profiler_smoke.v1",
+                        "format": "key_averages_json",
+                        "events": [
+                            {
+                                "key": item.key,
+                                "cpu_time_total_us": float(item.cpu_time_total),
+                                "cpu_time_avg_us": float(item.cpu_time_total / max(item.count, 1)),
+                                "count": int(item.count),
+                            }
+                            for item in smoke_profiler.key_averages()
+                        ],
+                        "real_solve_trace_omitted_resource_guard": True,
+                    },
+                    trace_path,
+                )
+                torch_status["frames"][str(global_frame)] = {
+                    "status": "bounded_smoke",
+                    "trace": str(trace_path),
+                    "format": "key_averages_json",
+                }
+            frame_row = dict(diagnostics["performance"][0])
+            frame_row.update(
+                {
+                    "classification": classification,
+                    "global_frame": global_frame,
+                    "local_frame": local_frame,
+                    "wall_time_s": elapsed,
+                    "accepted": bool(trajectory.arrays["accepted"][0]),
+                    "optimizer_status_code": int(trajectory.arrays["optimizer_status_code"][0]),
+                    "profile_id": solver.profile_id,
+                    "profile_hash": solver.profile_hash,
+                    "execution_profile": execution.as_dict(),
+                    "cprofile": str(cprofile_path),
+                }
+            )
+            rows.append(frame_row)
+            callback_rows.append(
+                {
+                    "global_frame": global_frame,
+                    "classification": classification,
+                    "wall_time_s": elapsed,
+                    "objective_calls": frame_row["objective_calls"],
+                    "objective_jacobian_calls": frame_row["objective_jacobian_calls"],
+                    "constraint_calls": frame_row["constraint_calls"],
+                    "constraint_jacobian_calls": frame_row["constraint_jacobian_calls"],
+                    "full_audit_call_count": frame_row["full_audit_call_count"],
+                }
+            )
+            cache_rows.append(
+                {
+                    "global_frame": global_frame,
+                    **frame_row.get("cache", {}),
+                }
+            )
+            summary_path = output_root / f"profile_{classification}.json"
+            _json_write(
+                {
+                    "status": "pass",
+                    "frame": frame_row,
+                    "timers": frame_row.get("timers", {}),
+                    "resource_counts": diagnostics["resource_counts"],
+                },
+                summary_path,
+            )
+        profiled_labels = {str(row["classification"]) for row in rows}
+        for label in ("pre_contact", "approach", "contact_rich", "status9_frame"):
+            missing_path = output_root / f"profile_{label}.json"
+            if label not in profiled_labels and not missing_path.exists():
+                _json_write(
+                    {
+                        "status": "not_profiled",
+                        "classification": label,
+                        "reason": "no selected frame mapped to this benchmark class",
+                    },
+                    missing_path,
+                )
+        timer_totals: dict[str, float] = {}
+        for row in rows:
+            for name, value in row.get("timers", {}).get("elapsed_s", {}).items():
+                timer_totals[name] = timer_totals.get(name, 0.0) + float(value)
+        bottlenecks = sorted(timer_totals.items(), key=lambda item: item[1], reverse=True)
+        _json_write(
+            {
+                "status": "pass",
+                "frames": rows,
+                "timer_totals_s": timer_totals,
+                "top_three": [
+                    {"name": name, "elapsed_s": elapsed} for name, elapsed in bottlenecks[:3]
+                ],
+                "resource_counts": resources.build_counts,
+            },
+            output_root / "bottleneck_summary.json",
+        )
+        _json_write({"frames": callback_rows}, output_root / "callback_counts.json")
+        _json_write({"frames": cache_rows}, output_root / "evaluation_cache_stats.json")
+        _json_write(
+            {
+                "status": "pass",
+                "execution_profile": execution.as_dict(),
+                "solver_profile": solver.as_dict(),
+                "resource_counts": resources.build_counts,
+                "full_audit_in_inner_callbacks": False,
+                "report_or_artifact_io_in_inner_loop": False,
+                "active_set_initialization": "stage7_seed_v1",
+                "cache_identity": ["frame_id", "exact_x", "query_set_hash", "context_hash"],
+                "numpy_torch_boundary": (
+                    "SciPy callback arrays are float64; Torch tensors are created per candidate"
+                ),
+                "device_synchronization": "CPU float64 execution profile; no CUDA synchronization",
+                "checkpoint_present_before_profile": False,
+                "final_artifact_write": (
+                    "after all accepted frames, or explicit checkpoint assembly"
+                ),
+            },
+            output_root / "execution_path_audit.json",
+        )
+        py_spy = shutil.which("py-spy")
+        _json_write(
+            {
+                "py_spy": {
+                    "available": py_spy is not None,
+                    "path": py_spy,
+                    "status": "available_but_external_attach_not_started"
+                    if py_spy
+                    else "unavailable",
+                },
+                "torch_profiler": torch_status,
+            },
+            output_root / "profiler_availability.json",
+        )
+        benchmark_rows: list[dict[str, Any]] = []
+        for row in rows:
+            try:
+                benchmark_rows.append(
+                    {
+                        "global_frame": row["global_frame"],
+                        "local_frame": row["local_frame"],
+                        "classification": row["classification"],
+                        "canonical": str(canonical),
+                        "warm_start": str(warm_start),
+                        "graph": str(graph),
+                        "collision_samples": str(
+                            collision_samples or _default_collision_samples(robot)
+                        ),
+                        "robot": robot,
+                        "input_signature": _refinement_input_signature(
+                            canonical,
+                            warm_start,
+                            graph,
+                            collision_samples or _default_collision_samples(robot),
+                            robot,
+                            row["local_frame"],
+                            row["local_frame"] + 1,
+                        ),
+                        "solver_profile_id": solver.profile_id,
+                        "expected_strict_result": bool(row["accepted"]),
+                    }
+                )
+            except (OSError, ValueError) as exc:
+                benchmark_rows.append(
+                    {
+                        "global_frame": row["global_frame"],
+                        "local_frame": row["local_frame"],
+                        "classification": row["classification"],
+                        "status": "provenance_error",
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
+        _json_write(
+            {
+                "status": "pass",
+                "source": "user-selected Stage 9.1 benchmark frames",
+                "frames": benchmark_rows,
+            },
+            output_root / "benchmark_frames.json",
+        )
+        _json_write({"status": "pass", "frames": rows}, None)
+    except (StorageError, ValueError, OSError, RuntimeError, WarmStartArtifactError) as exc:
+        typer.echo(f"profile-refinement failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
 @app.command("refine")
 def refine_command(
     canonical: Path = typer.Option(..., "--canonical"),
@@ -1120,14 +1795,49 @@ def refine_command(
     start_frame: int = typer.Option(0, "--start-frame", min=0),
     end_frame: int | None = typer.Option(None, "--end-frame", min=1),
     resume_from: Path | None = typer.Option(None, "--resume-from"),
+    checkpoint_root: Path | None = typer.Option(None, "--checkpoint-root"),
+    resume: bool = typer.Option(False, "--resume"),
+    max_wall_time: float | None = typer.Option(None, "--max-wall-time", min=0.0),
+    stop_after_frame: int | None = typer.Option(None, "--stop-after-frame", min=0),
+    progress_json: Path | None = typer.Option(None, "--progress-json"),
+    progress_log: Path | None = typer.Option(None, "--progress-log"),
+    execution_profile: str = typer.Option(
+        "cached_checkpoint_cpu_float64_v1", "--execution-profile"
+    ),
     output: Path = typer.Option(..., "--output"),
     asset_root: Path | None = typer.Option(None, "--asset-root"),
     force: bool = typer.Option(False, "--force"),
 ) -> None:
     try:
+        if checkpoint_root is not None:
+            value = _run_checkpoint_refinement(
+                canonical=canonical,
+                warm_start=warm_start,
+                graph_path=graph,
+                robot=robot,
+                collision_samples=collision_samples,
+                query_profile_id=query_profile,
+                coordinate_profile_id=coordinate_profile,
+                solver_profile_id=solver_profile,
+                execution_profile_id=execution_profile,
+                start_frame=start_frame,
+                end_frame=end_frame,
+                checkpoint_root=checkpoint_root,
+                output=output,
+                asset_root=asset_root,
+                resume=resume,
+                max_wall_time=max_wall_time,
+                stop_after_frame=stop_after_frame,
+                progress_json=progress_json,
+                progress_log=progress_log,
+                force=force,
+            )
+            _json_write(value, None)
+            return
         sequence, warm, graph_trajectory, model, surface, _ = _refinement_components(
             canonical, warm_start, graph, robot, collision_samples, asset_root
         )
+        execution = RefinementExecutionProfile.load(execution_profile)
         initial_previous = None
         if resume_from is not None:
             previous = load_final_trajectory(resume_from)
@@ -1153,6 +1863,8 @@ def refine_command(
             initial_previous=initial_previous,
             warm_artifact_hash=artifact_hash(warm_start),
             graph_artifact_hash=interaction_artifact_hash(graph),
+            source_frame_offset=_source_frame_offset(canonical),
+            execution_profile=execution,
         )
         trajectory.metadata["artifact_hash"] = final_artifact_hash(trajectory)
         save_final_trajectory(trajectory, output, force=force)
@@ -1173,8 +1885,109 @@ def refine_command(
         RuntimeError,
         WarmStartArtifactError,
         InteractionArtifactError,
+        CheckpointError,
     ) as exc:
         typer.echo(f"refine failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("checkpoint-status")
+def checkpoint_status_command(
+    checkpoint_root: Path = typer.Option(..., "--checkpoint-root"),
+) -> None:
+    try:
+        _json_write(_checkpoint_status_payload(CheckpointStore(checkpoint_root)), None)
+    except (CheckpointError, OSError, ValueError) as exc:
+        typer.echo(f"checkpoint-status failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("validate-checkpoints")
+def validate_checkpoints_command(
+    checkpoint_root: Path = typer.Option(..., "--checkpoint-root"),
+    report: Path | None = typer.Option(None, "--report"),
+) -> None:
+    try:
+        value = CheckpointStore(checkpoint_root).validate_chain()
+        _json_write(value, report)
+        if report is None:
+            _json_write(value, None)
+        if not value["chain_pass"]:
+            raise typer.Exit(code=1)
+    except (CheckpointError, OSError, ValueError) as exc:
+        typer.echo(f"validate-checkpoints failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("assemble-refinement")
+def assemble_refinement_command(
+    checkpoint_root: Path = typer.Option(..., "--checkpoint-root"),
+    output: Path = typer.Option(..., "--output"),
+    force: bool = typer.Option(False, "--force"),
+) -> None:
+    try:
+        store = CheckpointStore(checkpoint_root)
+        destination = store.assemble(output, force=force)
+        _json_write({"status": "pass", "output": str(destination)}, None)
+    except (CheckpointError, OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"assemble-refinement failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("compare-refinement-runs")
+def compare_refinement_runs_command(
+    left: Path = typer.Option(..., "--left"),
+    right: Path = typer.Option(..., "--right"),
+    report: Path | None = typer.Option(None, "--report"),
+) -> None:
+    try:
+        left_artifact = load_final_trajectory(left)
+        right_artifact = load_final_trajectory(right)
+        names = sorted(set(left_artifact.arrays) | set(right_artifact.arrays))
+        rows: dict[str, Any] = {}
+        equal = True
+        for name in names:
+            if name == "solve_time_s":
+                rows[name] = {"status": "excluded_nondeterministic_runtime_field"}
+                continue
+            if name not in left_artifact.arrays or name not in right_artifact.arrays:
+                rows[name] = {"status": "missing"}
+                equal = False
+                continue
+            lhs = np.asarray(left_artifact.arrays[name])
+            rhs = np.asarray(right_artifact.arrays[name])
+            row: dict[str, Any]
+            if lhs.shape != rhs.shape:
+                row = {"shape_equal": False, "array_equal": False}
+            elif lhs.dtype.kind in "OUS" or rhs.dtype.kind in "OUS":
+                row = {"shape_equal": True, "array_equal": bool(np.array_equal(lhs, rhs))}
+            else:
+                left_float = lhs.astype(np.float64)
+                right_float = rhs.astype(np.float64)
+                difference = np.abs(left_float - right_float)
+                difference = np.where(np.isnan(left_float) & np.isnan(right_float), 0.0, difference)
+                row = {
+                    "shape_equal": lhs.shape == rhs.shape,
+                    "array_equal": bool(np.array_equal(lhs, rhs, equal_nan=True)),
+                    "max_abs_difference": float(np.max(difference, initial=0.0)),
+                }
+            rows[name] = row
+            equal = equal and bool(row.get("array_equal", False))
+        value = {
+            "status": "pass" if equal else "fail",
+            "left": str(left),
+            "right": str(right),
+            "metadata_fields_excluded": ["artifact_hash", "created_at", "checkpoint_root"],
+            "array_fields_excluded": ["solve_time_s"],
+            "array_comparison": rows,
+        }
+        _json_write(value, report)
+        if report is None:
+            _json_write(value, None)
+        if not equal:
+            raise typer.Exit(code=1)
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"compare-refinement-runs failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
 

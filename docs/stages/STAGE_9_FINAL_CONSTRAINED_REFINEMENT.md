@@ -86,6 +86,18 @@ and uses v2 hash
 real 60-frame artifact and deterministic repeat remain required pending gates;
 no feasible status-9 result is accepted while those gates are incomplete.
 
+## Stage 9.2 execution layer
+
+The Stage 9.2 implementation in `REFINEMENT_PERFORMANCE.md` and
+`REFINEMENT_CHECKPOINT_AND_RESUME.md` is deliberately outside the objective and
+constraint math. It provides exact-x callback accounting/cache, per-run exact
+reference-SDF AABB resource reuse, batched collision Jacobians, explicit solver
+variable conditioning, full-audit scheduling, atomic
+strict-accepted frame checkpoints, soft pause/resume, and independent assembly.
+The 60-frame contact-rich artifact, deterministic repeat, and runtime-gate
+decision remain separate evidence requirements; implementation alone does not
+unblock Stage 10.
+
 ## Stage 9.1 solver-robustness closeout
 
 The v1 profile and its acceptance behavior are preserved. The independent v2

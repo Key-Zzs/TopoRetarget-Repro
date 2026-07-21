@@ -48,3 +48,11 @@ Stage 5-8 input hashes, then run the full 60-frame v2 refinement and its
 independent repeat. Stage 10 math and acceptance gates are unchanged. Solver
 termination and the deferred stationarity policy remain explicit
 paper-undisclosed assumptions.
+
+## Stage 9.2 frame checkpoints
+
+The final refinement CLI has a separate frame-level checkpoint path described in
+[`REFINEMENT_CHECKPOINT_AND_RESUME.md`](REFINEMENT_CHECKPOINT_AND_RESUME.md).
+Its input/profile hashes are part of the checkpoint manifest and are checked
+before resume; a workflow cache record cannot substitute for a strict accepted
+frame checkpoint. The execution policy and SLSQP solver policy remain separate.

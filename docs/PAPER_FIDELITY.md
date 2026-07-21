@@ -129,6 +129,21 @@ not a claim of result-level reproduction or Stage 10 end-to-end completion. See
 [`FINAL_REFINEMENT_OPTIMIZATION.md`](FINAL_REFINEMENT_OPTIMIZATION.md) and
 [`stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md`](stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md).
 
+## Stage 9.2 execution boundary
+
+Stage 9.2 adds only engineering execution machinery around the frozen contract:
+immutable per-frame context, exact-x evaluation reuse, persistent exact reference-SDF
+AABB resources, batched collision Jacobians, scheduled independent full-surface audits, atomic
+strict-accepted checkpoints, soft pause/resume, and final artifact assembly.
+The paper does not specify these mechanisms; they are recorded as
+`A_REFINEMENT_EVALUATION_CACHE_001`, `A_REFINEMENT_CHECKPOINT_RESUME_001`,
+`A_REFINEMENT_EXECUTION_DEVICE_001`, `A_REFINEMENT_SOLVER_VARIABLE_SCALING_001`,
+`A_REFINEMENT_REFERENCE_SDF_ACCELERATION_001`, `A_REFINEMENT_BATCHED_JACOBIAN_001`,
+`A_REFINEMENT_FULL_AUDIT_SCHEDULING_001`,
+`A_REFINEMENT_PERFORMANCE_GATE_001`, and
+`A_REFINEMENT_WALL_TIME_PAUSE_001`. They do not change Eq. (8)-(9), the SLSQP
+profile, or the paper's 4.70 ms/frame reference claim.
+
 ## Stage 10 workflow boundary
 
 Stage 10 adds only the bounded orchestration/provenance layer that composes the implemented source,

@@ -126,6 +126,13 @@ the bounded Stage 9 SDF-constrained refinement is implemented with explicit assu
 baseline code, and non-paper extensions remain intentionally outside these stages.
 No module in this repository pretends that those algorithms are already implemented.
 
+Stage 9.2 is an execution layer only. It adds an immutable frame context, exact-x callback cache,
+persistent mesh/SDF resources, batched collision-point Jacobians, scheduled independent full audits,
+atomic accepted-frame checkpoint/resume, and final assembly. These are not paper algorithms and do
+not alter Eq. (8)-(9); the default execution profile is CPU float64 and remains separate from the
+v2 SLSQP solver profile. Runtime gates and the paper's 4.70 ms/frame reference are engineering
+provenance, not reproduction claims.
+
 ## Stage 10 workflow boundary
 
 Stage 10 composes the bounded Stage 5–9 artifacts into a single-sequence,

@@ -14,8 +14,8 @@ import os
 import shutil
 import tempfile
 import time
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +47,10 @@ from toporetarget.retarget.interaction_graph import (
     InteractionGraphTrajectory,
 )
 from toporetarget.retarget.interaction_objective import InteractionMeshResidual
+from toporetarget.retarget.refinement_performance import (
+    RefinementEvaluationCache,
+    TimerBook,
+)
 
 FINAL_REFINEMENT_SCHEMA_VERSION_V1 = "toporetarget.final_retarget.v1"
 FINAL_REFINEMENT_SCHEMA_VERSION_V2 = "toporetarget.final_retarget.v2"
@@ -649,7 +653,14 @@ class ConvexHullSignedDistanceBackend:
 
     backend_id = "convex_hull_exact_solver_only"
 
-    def __init__(self, vertices: np.ndarray, faces: np.ndarray, mesh_hash: str):
+    def __init__(
+        self,
+        vertices: np.ndarray,
+        faces: np.ndarray,
+        mesh_hash: str,
+        *,
+        tree_leaf_size: int = 32,
+    ):
         from scipy.spatial import ConvexHull
 
         self.vertices = np.asarray(vertices, dtype=np.float64)
@@ -660,6 +671,15 @@ class ConvexHullSignedDistanceBackend:
         if float(np.max(distances)) > 1e-9:
             raise ValueError("mesh is not convex")
         self.triangles = self.vertices[self.hull.simplices]
+        # Keep the exact hull closest-point acceleration alive for the whole
+        # refinement run.  The leaf closest-point computation is unchanged;
+        # only triangles that cannot beat the current best distance are pruned.
+        from toporetarget.geometry.signed_distance.closest_point import TriangleAABBTree
+
+        if tree_leaf_size <= 0:
+            raise ValueError("SDF tree leaf size must be positive")
+        self._closest_tree = TriangleAABBTree(self.triangles, leaf_size=tree_leaf_size)
+        self.tree_leaf_size = int(tree_leaf_size)
 
     def audit(self) -> dict[str, Any]:
         return {"strict": True, "convex": True, "hull_face_count": int(len(self.triangles))}
@@ -671,6 +691,7 @@ class ConvexHullSignedDistanceBackend:
             "mesh_hash": self.mesh_hash,
             "hull_face_count": int(len(self.triangles)),
             "solver_only": True,
+            "triangle_aabb_leaf_size": self.tree_leaf_size,
         }
 
     def query_local(self, points_local: np.ndarray) -> SignedDistanceQueryResult:
@@ -680,7 +701,11 @@ class ConvexHullSignedDistanceBackend:
         shape = points.shape[:-1]
         flat = points.reshape(-1, 3)
         closest, face, bary, unsigned = closest_points_on_triangles(
-            flat, self.triangles, query_chunk_size=4096, face_chunk_size=len(self.triangles)
+            flat,
+            self.triangles,
+            query_chunk_size=4096,
+            face_chunk_size=len(self.triangles),
+            tree=self._closest_tree,
         )
         equations = self.hull.equations
         inside = np.all(flat @ equations[:, :3].T + equations[:, 3] <= 1e-10, axis=1)
@@ -730,6 +755,7 @@ def choose_solver_sdf_backend(
     profile: RefinementSolverProfile,
     *,
     object_pose_scene: np.ndarray,
+    tree_leaf_size: int = 32,
 ) -> tuple[Any, dict[str, Any]]:
     report: dict[str, Any] = {
         "reference": reference.describe(),
@@ -740,7 +766,12 @@ def choose_solver_sdf_backend(
     if profile.sdf_backend != "convex_hull_exact_solver_only":
         return reference, report
     try:
-        candidate = ConvexHullSignedDistanceBackend(vertices, faces, reference.mesh_hash)
+        candidate = ConvexHullSignedDistanceBackend(
+            vertices,
+            faces,
+            reference.mesh_hash,
+            tree_leaf_size=tree_leaf_size,
+        )
         rng = np.random.default_rng(20260720)
         local = rng.normal(size=(profile.sdf_probe_count, 3))
         local *= max(float(np.linalg.norm(np.ptp(vertices, axis=0))), 1.0)
@@ -792,21 +823,57 @@ class _FrameContext:
     sdf: Any
     reference_sdf: Any
     object_pose_scene: np.ndarray
+    surface: RobotSurfaceSampleSet
     surface_points_local: np.ndarray
     surface_geometry_indices: np.ndarray
     surface_local_transforms: tuple[np.ndarray, ...]
     surface_link_names: tuple[str, ...]
     geometry_slices: tuple[tuple[int, int, int], ...]
+    frame_id: int | str = -1
+    context_hash: str = ""
+    cache: RefinementEvaluationCache = field(
+        default_factory=lambda: RefinementEvaluationCache(-1, "")
+    )
+    timers: TimerBook = field(default_factory=TimerBook)
+    full_audit_call_count: int = 0
+    full_audit_call_reasons: list[str] = field(default_factory=list)
+    active_query_call_count: int = 0
+    _residual_model: Any = field(default=None, init=False, repr=False)
+    _surface_joint_paths: tuple[tuple[Any, ...], ...] = field(
+        default_factory=tuple, init=False, repr=False
+    )
+    _active_query_hash: str = field(default="__unbound__", init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._residual_model = InteractionMeshResidual(
+            self.graph_frame.source_vertices,
+            self.graph_frame.directed_source_index,
+            self.graph_frame.directed_destination_index,
+            self.graph_frame.weights,
+        )
+        by_child = self.robot_model.urdf.parent_joint_by_child
+        paths: list[tuple[Any, ...]] = []
+        for link_name in self.surface_link_names:
+            current = link_name
+            path: list[Any] = []
+            while current != self.robot_model.urdf.root_link:
+                joint = by_child[current]
+                if joint.actuated:
+                    path.append(joint)
+                current = joint.parent
+            paths.append(tuple(reversed(path)))
+        self._surface_joint_paths = tuple(paths)
 
     @property
     def variable_size_without_slack(self) -> int:
         return 6 + int(self.robot_model.num_dofs)
 
     def unpack(self, value: Any) -> tuple[Any, Any, Any, Any]:
-        delta_p = value[..., :3]
-        delta_w = value[..., 3:6]
-        qpos = value[..., 6 : 6 + self.robot_model.num_dofs]
-        slack = value[..., 6 + self.robot_model.num_dofs :]
+        with self.timers.measure("candidate_state_decode"):
+            delta_p = value[..., :3]
+            delta_w = value[..., 3:6]
+            qpos = value[..., 6 : 6 + self.robot_model.num_dofs]
+            slack = value[..., 6 + self.robot_model.num_dofs :]
         return delta_p, delta_w, qpos, slack
 
     def base_pose_torch(self, value: Any) -> Any:
@@ -814,18 +881,21 @@ class _FrameContext:
 
         delta_p, delta_w, _, _ = self.unpack(value)
         seed = torch.as_tensor(self.seed_base, dtype=value.dtype, device=value.device)
-        rotation = so3_exp(delta_w) @ seed[:3, :3]
+        with self.timers.measure("so3_exp"):
+            rotation = so3_exp(delta_w) @ seed[:3, :3]
         base = torch.eye(4, dtype=value.dtype, device=value.device)
         base = base.clone()
         base[:3, :3] = rotation
         base[:3, 3] = seed[:3, 3] + delta_p
         return base
 
-    def collision_points_torch(self, value: Any) -> Any:
+    def collision_points_torch(self, value: Any, fk: dict[str, Any] | None = None) -> Any:
         import torch
 
         _, _, qpos, _ = self.unpack(value)
-        fk = self.robot_model.forward_kinematics_base(qpos)
+        if fk is None:
+            with self.timers.measure("robot_fk"):
+                fk = self.robot_model.forward_kinematics_base(qpos)
         pieces: list[Any] = []
         start = 0
         for geometry_index, start, stop in self.geometry_slices:
@@ -845,12 +915,16 @@ class _FrameContext:
         points = torch.cat(pieces, dim=0)
         return points @ base[:3, :3].transpose(-1, -2) + base[:3, 3]
 
-    def robot_graph_vertices_torch(self, value: Any) -> Any:
+    def robot_graph_vertices_torch(self, value: Any, robot_keypoints: Any | None = None) -> Any:
         import torch
 
         _, _, qpos, _ = self.unpack(value)
         base = self.base_pose_torch(value)
-        hand = self.robot_model.keypoints_scene(qpos, base, layout="mediapipe21")
+        hand = (
+            self.robot_model.keypoints_scene(qpos, base, layout="mediapipe21")
+            if robot_keypoints is None
+            else robot_keypoints
+        )
         object_points = torch.as_tensor(
             self.graph_frame.source_vertices[21:], dtype=value.dtype, device=value.device
         )
@@ -860,40 +934,40 @@ class _FrameContext:
         import torch
 
         delta_p, delta_w, qpos, slack = self.unpack(value)
-        graph = self.graph_frame
-        residual_model = InteractionMeshResidual(
-            graph.source_vertices,
-            graph.directed_source_index,
-            graph.directed_destination_index,
-            graph.weights,
-        )
-        robot_vertices = self.robot_graph_vertices_torch(value)
-        e_im = residual_model(robot_vertices).square().sum() / 71.0
         base = self.base_pose_torch(value)
-        robot_keypoints = self.robot_model.keypoints_scene(qpos, base, layout="mediapipe21")
-        robot_features = extract_bone_features(
-            robot_keypoints,
-            self.frame_profile,
-            self.bone_profile,
-            side=self.robot_model.side,
-            strict=True,
-        )
+        with self.timers.measure("robot_keypoints"):
+            robot_keypoints = self.robot_model.keypoints_scene(qpos, base, layout="mediapipe21")
+        robot_vertices = self.robot_graph_vertices_torch(value, robot_keypoints)
+        with self.timers.measure("interaction_laplacian"):
+            residual = self._residual_model(robot_vertices)
+        with self.timers.measure("e_im"):
+            e_im = residual.square().sum() / 71.0
+        with self.timers.measure("bone_features"):
+            robot_features = extract_bone_features(
+                robot_keypoints,
+                self.frame_profile,
+                self.bone_profile,
+                side=self.robot_model.side,
+                strict=True,
+            )
         source_adj = torch.as_tensor(
             _as_np(self.source_features.adjacent_features), dtype=value.dtype, device=value.device
         )
-        e_bone = (robot_features.adjacent_features - source_adj).square().sum()
-        e_temporal = value.new_zeros(())
-        if self.previous_reference is not None:
-            previous = torch.as_tensor(
-                self.previous_reference, dtype=value.dtype, device=value.device
-            )
-            e_temporal = (
-                self.paper.lambda_reg
-                * (value[: self.variable_size_without_slack] - previous).square().sum()
-            )
-        e_base_pos = self.paper.lambda_base_pos * delta_p.square().sum()
-        e_base_rot = self.paper.lambda_base_rot * delta_w.square().sum()
-        e_slack = 0.5 * self.paper.w_s * slack.square().sum()
+        with self.timers.measure("e_bone"):
+            e_bone = (robot_features.adjacent_features - source_adj).square().sum()
+        with self.timers.measure("temporal_base_slack_objective"):
+            e_temporal = value.new_zeros(())
+            if self.previous_reference is not None:
+                previous = torch.as_tensor(
+                    self.previous_reference, dtype=value.dtype, device=value.device
+                )
+                e_temporal = (
+                    self.paper.lambda_reg
+                    * (value[: self.variable_size_without_slack] - previous).square().sum()
+                )
+            e_base_pos = self.paper.lambda_base_pos * delta_p.square().sum()
+            e_base_rot = self.paper.lambda_base_rot * delta_w.square().sum()
+            e_slack = 0.5 * self.paper.w_s * slack.square().sum()
         weighted_im = self.paper.lambda_im * e_im
         weighted_bone = self.paper.lambda_bone * e_bone
         total = weighted_im + weighted_bone + e_temporal + e_base_pos + e_base_rot + e_slack
@@ -909,54 +983,209 @@ class _FrameContext:
             total=float(total.detach().cpu()),
         )
 
-    def objective(self, value: np.ndarray) -> tuple[float, np.ndarray, FinalObjectiveBreakdown]:
+    def objective(
+        self, value: np.ndarray, query_hash: str | None = None
+    ) -> tuple[float, np.ndarray, FinalObjectiveBreakdown]:
         import torch
 
-        variable = torch.as_tensor(
-            np.asarray(value, dtype=np.float64), dtype=torch.float64
-        ).requires_grad_(True)
-        total, breakdown = self.breakdown_tensor(variable)
-        gradient = torch.autograd.grad(total, variable, create_graph=False)[0]
-        return float(total.detach().cpu()), _as_np(gradient), breakdown
+        current = np.asarray(value, dtype=np.float64).reshape(-1)
+        active_hash = str(query_hash or getattr(self, "_active_query_hash", "__unbound__"))
+        self._active_query_hash = active_hash
+        self.cache.prepare(current, active_hash)
+        cached = self.cache.get("objective")
+        if cached is not None:
+            total, gradient, breakdown = cached
+            return float(total), np.asarray(gradient, dtype=np.float64).copy(), breakdown
+        with self.timers.measure("objective_autograd"):
+            with self.timers.measure("numpy_to_torch"):
+                variable = torch.as_tensor(current, dtype=torch.float64).requires_grad_(True)
+            total, breakdown = self.breakdown_tensor(variable)
+            gradient = torch.autograd.grad(total, variable, create_graph=False)[0]
+        if self.cache.get("candidate_points") is None:
+            with self.timers.measure("collision_point_transform"):
+                points = _as_np(self.collision_points_torch(variable))
+            self.cache.put("candidate_points", np.asarray(points, dtype=np.float64).copy())
+        with self.timers.measure("torch_to_numpy"):
+            stored = (float(total.detach().cpu()), _as_np(gradient).copy(), breakdown)
+        self.cache.put("objective", stored)
+        return float(stored[0]), np.asarray(stored[1]).copy(), stored[2]
 
-    def candidate_points(self, value: np.ndarray) -> np.ndarray:
+    def candidate_points(self, value: np.ndarray, query_hash: str | None = None) -> np.ndarray:
         import torch
 
-        variable = torch.as_tensor(np.asarray(value, dtype=np.float64), dtype=torch.float64)
-        return _as_np(self.collision_points_torch(variable))
+        current = np.asarray(value, dtype=np.float64).reshape(-1)
+        active_hash = str(query_hash or getattr(self, "_active_query_hash", "__unbound__"))
+        self._active_query_hash = active_hash
+        self.cache.prepare(current, active_hash)
+        cached = self.cache.get("candidate_points")
+        if cached is not None:
+            return np.asarray(cached, dtype=np.float64).copy()
+        with self.timers.measure("collision_point_transform"):
+            variable = torch.as_tensor(current, dtype=torch.float64)
+            points = _as_np(self.collision_points_torch(variable))
+        self.cache.put("candidate_points", np.asarray(points, dtype=np.float64).copy())
+        return np.asarray(points, dtype=np.float64).copy()
 
-    def constraint_query(
-        self, value: np.ndarray, query_ids: np.ndarray
-    ) -> SignedDistanceQueryResult:
-        result = self.sdf.query_scene(
-            self.candidate_points(value)[query_ids], self.object_pose_scene
+    def collision_points_jacobian_numpy(self, value: np.ndarray) -> np.ndarray:
+        """Return the exact batched point Jacobian without per-point autograd.
+
+        The URDF chain gives each collision point's qpos derivative directly
+        from the joint origin/axis spatial Jacobian.  Only the six base
+        coordinates use Torch autograd, over a fixed 6-vector and constant
+        link points; this keeps the float64 Exp-map derivative identical to
+        the objective path while removing the O(points * qpos) functional
+        Jacobian cost from the hot callback.
+        """
+
+        import torch
+
+        current = np.asarray(value, dtype=np.float64).reshape(-1)
+        _, _, qpos, _ = self.unpack(current)
+        qpos = np.asarray(qpos, dtype=np.float64)
+        fk = self.robot_model.forward_kinematics_reference(qpos)
+        points_base = np.empty((self.surface.count, 3), dtype=np.float64)
+        qpos_jacobian_base = np.zeros(
+            (self.surface.count, 3, self.robot_model.num_dofs), dtype=np.float64
         )
-        if not np.all(result.sign_valid) or not np.all(result.valid):
-            raise ValueError("invalid signed-distance result entered constrained solve")
+        for geometry_index, start, stop in self.geometry_slices:
+            local = np.asarray(self.surface_points_local[start:stop], dtype=np.float64)
+            local_transform = np.asarray(
+                self.surface_local_transforms[geometry_index], dtype=np.float64
+            )
+            local_points = local @ local_transform[:3, :3].T + local_transform[:3, 3]
+            link_name = self.surface_link_names[geometry_index]
+            link = np.asarray(fk[link_name], dtype=np.float64)
+            points = local_points @ link[:3, :3].T + link[:3, 3]
+            points_base[start:stop] = points
+            for joint in self._surface_joint_paths[geometry_index]:
+                parent = np.asarray(fk[joint.parent], dtype=np.float64)
+                origin = parent @ np.asarray(joint.origin, dtype=np.float64)
+                axis = (
+                    parent[:3, :3]
+                    @ np.asarray(joint.origin[:3, :3], dtype=np.float64)
+                    @ np.asarray(joint.axis, dtype=np.float64)
+                )
+                if joint.joint_type in {"revolute", "continuous"}:
+                    derivative = np.cross(axis[None, :], points - origin[:3, 3][None, :])
+                elif joint.joint_type == "prismatic":
+                    derivative = np.broadcast_to(axis, points.shape)
+                else:  # pragma: no cover - fixed joints are excluded above
+                    continue
+                q_index = int(self.robot_model._dof_index[joint.name])
+                qpos_jacobian_base[start:stop, :, q_index] += derivative
+
+        base_delta = torch.as_tensor(current[:6], dtype=torch.float64)
+        seed_rotation = torch.as_tensor(self.seed_base[:3, :3], dtype=torch.float64)
+        base_points = torch.as_tensor(points_base, dtype=torch.float64)
+
+        def base_points_fn(delta: Any) -> Any:
+            rotation = so3_exp(delta[3:]) @ seed_rotation
+            translation = torch.as_tensor(self.seed_base[:3, 3], dtype=delta.dtype) + delta[:3]
+            return base_points @ rotation.transpose(-1, -2) + translation
+
+        with self.timers.measure("collision_point_jacobian"):
+            base_jacobian = torch.autograd.functional.jacobian(
+                base_points_fn,
+                base_delta,
+                create_graph=False,
+                vectorize=True,
+                strategy="reverse-mode",
+            )
+        base_jacobian_np = _as_np(base_jacobian)
+        rotation_np = _as_np(so3_exp(base_delta)) @ np.asarray(
+            self.seed_base[:3, :3], dtype=np.float64
+        )
+        qpos_jacobian_scene = np.einsum(
+            "ab,mbd->mad", rotation_np, qpos_jacobian_base, optimize=True
+        )
+        result = np.zeros(
+            (self.surface.count, 3, self.variable_size_without_slack), dtype=np.float64
+        )
+        result[:, :, :6] = base_jacobian_np
+        result[:, :, 6:] = qpos_jacobian_scene
         return result
 
-    def constraint_values(self, value: np.ndarray, query_ids: np.ndarray) -> np.ndarray:
-        result = self.constraint_query(value, query_ids)
-        _, _, _, slack = self.unpack(np.asarray(value, dtype=np.float64))
-        return np.concatenate(
-            [result.signed_distance + self.paper.b, result.signed_distance + slack + self.paper.tau]
-        )
+    def collision_points_jacobian_reference_numpy(self, value: np.ndarray) -> np.ndarray:
+        """Reference batched Torch Jacobian used only for strict recovery."""
 
-    def constraint_jacobian(
-        self, value: np.ndarray, query_ids: np.ndarray, eps: float
-    ) -> tuple[np.ndarray, dict[str, Any]]:
         import torch
 
-        current = np.asarray(value, dtype=np.float64)
-        n = self.variable_size_without_slack
+        current = np.asarray(value, dtype=np.float64).reshape(-1)
         variable = torch.as_tensor(current, dtype=torch.float64)
+        with self.timers.measure("collision_point_jacobian_reference"):
+            jacobian = torch.autograd.functional.jacobian(
+                lambda item: self.collision_points_torch(item),
+                variable,
+                create_graph=False,
+                vectorize=True,
+                strategy="reverse-mode",
+            )
+        return _as_np(jacobian)[:, :, : self.variable_size_without_slack]
 
-        def points_fn(base_value: Any) -> Any:
-            return self.collision_points_torch(base_value)[query_ids]
+    def constraint_query(
+        self, value: np.ndarray, query_ids: np.ndarray, query_hash: str | None = None
+    ) -> SignedDistanceQueryResult:
+        current = np.asarray(value, dtype=np.float64).reshape(-1)
+        active_hash = str(query_hash or getattr(self, "_active_query_hash", "__unbound__"))
+        self._active_query_hash = active_hash
+        self.cache.prepare(current, active_hash)
+        cached = self.cache.get("constraint_query")
+        if cached is not None:
+            return cached
+        with self.timers.measure("solver_sdf"):
+            result = self.sdf.query_scene(
+                self.candidate_points(current)[query_ids], self.object_pose_scene
+            )
+        self.active_query_call_count += 1
+        if not np.all(result.sign_valid) or not np.all(result.valid):
+            raise ValueError("invalid signed-distance result entered constrained solve")
+        self.cache.put("constraint_query", result)
+        return result
 
-        jac = torch.autograd.functional.jacobian(points_fn, variable, create_graph=False)
-        jac_np = _as_np(jac)
-        result = self.constraint_query(current, query_ids)
+    def constraint_values(
+        self, value: np.ndarray, query_ids: np.ndarray, query_hash: str | None = None
+    ) -> np.ndarray:
+        current = np.asarray(value, dtype=np.float64).reshape(-1)
+        active_hash = str(query_hash or getattr(self, "_active_query_hash", "__unbound__"))
+        self._active_query_hash = active_hash
+        self.cache.prepare(current, active_hash)
+        cached = self.cache.get("constraint_values")
+        if cached is not None:
+            return np.asarray(cached, dtype=np.float64).copy()
+        result = self.constraint_query(current, query_ids, active_hash)
+        _, _, _, slack = self.unpack(np.asarray(value, dtype=np.float64))
+        output = np.concatenate(
+            [result.signed_distance + self.paper.b, result.signed_distance + slack + self.paper.tau]
+        )
+        self.cache.put("constraint_values", output.copy())
+        return output
+
+    def constraint_jacobian(
+        self,
+        value: np.ndarray,
+        query_ids: np.ndarray,
+        eps: float,
+        query_hash: str | None = None,
+        backend: str = "analytic_urdf_spatial_v2",
+    ) -> tuple[np.ndarray, dict[str, Any]]:
+        current = np.asarray(value, dtype=np.float64)
+        active_hash = str(query_hash or getattr(self, "_active_query_hash", "__unbound__"))
+        self._active_query_hash = active_hash
+        self.cache.prepare(current, active_hash)
+        cached = self.cache.get("constraint_jacobian")
+        if cached is not None:
+            jacobian, diagnostics = cached
+            return np.asarray(jacobian, dtype=np.float64).copy(), dict(diagnostics)
+        n = self.variable_size_without_slack
+        if backend == "analytic_urdf_spatial_v2":
+            # Use the URDF spatial Jacobian for qpos and a fixed six-coordinate
+            # autograd derivative for the base Exp-map.
+            jac_np = self.collision_points_jacobian_numpy(current)[query_ids]
+        elif backend == "reference_batched_torch_v1":
+            jac_np = self.collision_points_jacobian_reference_numpy(current)[query_ids]
+        else:
+            raise ValueError(f"unsupported collision point Jacobian backend: {backend}")
+        result = self.constraint_query(current, query_ids, active_hash)
         normals = np.asarray(result.surface_normals, dtype=np.float64).reshape(-1, 3)
         valid = np.asarray(
             result.gradient_valid if result.gradient_valid is not None else result.sign_valid,
@@ -982,11 +1211,15 @@ class _FrameContext:
         values_soft[:, n:] = 0.0
         for row in range(len(query_ids)):
             values_soft[row, n + row] = 1.0
-        return np.vstack([values, values_soft]), {
+        output = np.vstack([values, values_soft])
+        diagnostics = {
             "gradient_valid_count": int(np.count_nonzero(valid)),
             "finite_difference_fallback_count": fallback_count,
             "normal_frame": "scene",
+            "point_jacobian_backend": backend,
         }
+        self.cache.put("constraint_jacobian", (output.copy(), dict(diagnostics)))
+        return output, diagnostics
 
 
 @dataclass
@@ -1098,67 +1331,124 @@ def _solver_call(
     initial: np.ndarray,
     query_set: CollisionQuerySet,
     solver: RefinementSolverProfile,
+    *,
+    point_jacobian_backend: str = "analytic_urdf_spatial_v2",
 ) -> tuple[Any, dict[str, Any]]:
     from scipy.optimize import minimize
 
     query_ids = query_set.sample_ids
+    # SLSQP sees normalized variables, while every objective/constraint and
+    # every persisted artifact remains in the paper's raw meters/radians/
+    # slack coordinates.  This is an invertible diagonal reparameterization;
+    # it changes numerical conditioning only and leaves Eq. (8)-(9), bounds,
+    # tolerances, and the fixed maxiter contract unchanged.
+    variable_scales = np.concatenate(
+        [
+            np.full(3, 0.1, dtype=np.float64),
+            np.ones(3, dtype=np.float64),
+            np.maximum(
+                np.asarray(context.robot_model.joint_upper, dtype=np.float64)
+                - np.asarray(context.robot_model.joint_lower, dtype=np.float64),
+                1e-6,
+            ),
+            np.full(query_set.count, context.paper.b - context.paper.tau, dtype=np.float64),
+        ]
+    )
+
+    def physical(value: np.ndarray) -> np.ndarray:
+        return np.asarray(value, dtype=np.float64) * variable_scales
+
+    def normalized_gradient(gradient: np.ndarray) -> np.ndarray:
+        return np.asarray(gradient, dtype=np.float64) * variable_scales
+
     objective_calls = 0
+    objective_jacobian_calls = 0
+    constraint_calls = 0
     jacobian_calls = 0
     fallback_total = 0
     callback_iterates: list[np.ndarray] = []
+    context._active_query_hash = query_set.query_hash
 
     def objective(value: np.ndarray) -> tuple[float, np.ndarray]:
         nonlocal objective_calls
         objective_calls += 1
-        total, grad, _ = context.objective(value)
-        return total, grad
+        with context.timers.measure("objective_callback"):
+            total, grad, _ = context.objective(physical(value), query_set.query_hash)
+        return total, normalized_gradient(grad)
 
     def constraint(value: np.ndarray) -> np.ndarray:
-        return context.constraint_values(value, query_ids)
+        nonlocal constraint_calls
+        constraint_calls += 1
+        with context.timers.measure("constraint_callback"):
+            return context.constraint_values(physical(value), query_ids, query_set.query_hash)
+
+    def objective_jacobian(value: np.ndarray) -> np.ndarray:
+        nonlocal objective_jacobian_calls
+        objective_jacobian_calls += 1
+        with context.timers.measure("objective_jacobian_callback"):
+            return normalized_gradient(
+                context.objective(physical(value), query_set.query_hash)[1]
+            )
 
     def constraint_jac(value: np.ndarray) -> np.ndarray:
         nonlocal jacobian_calls, fallback_total
         jacobian_calls += 1
-        jac, diagnostics = context.constraint_jacobian(
-            value, query_ids, solver.finite_difference_epsilon
-        )
+        with context.timers.measure("constraint_jacobian_callback"):
+            jac, diagnostics = context.constraint_jacobian(
+                physical(value),
+                query_ids,
+                solver.finite_difference_epsilon,
+                query_set.query_hash,
+                backend=point_jacobian_backend,
+            )
         fallback_total += int(diagnostics["finite_difference_fallback_count"])
-        return jac
+        return np.asarray(jac, dtype=np.float64) * variable_scales[None, :]
 
     def callback(value: np.ndarray) -> None:
-        callback_iterates.append(np.asarray(value, dtype=np.float64).copy())
+        callback_iterates.append(physical(value).copy())
 
-    lower = np.concatenate(
+    lower_physical = np.concatenate(
         [
             np.full(6, -np.inf),
             np.asarray(context.robot_model.joint_lower, dtype=np.float64),
             np.zeros(query_set.count, dtype=np.float64),
         ]
     )
-    upper = np.concatenate(
+    upper_physical = np.concatenate(
         [
             np.full(6, np.inf),
             np.asarray(context.robot_model.joint_upper, dtype=np.float64),
             np.full(query_set.count, context.paper.b - context.paper.tau, dtype=np.float64),
         ]
     )
+    lower = lower_physical / variable_scales
+    upper = upper_physical / variable_scales
     bounds = list(zip(lower, upper, strict=True))
-    result = minimize(
-        lambda value: objective(value)[0],
-        np.asarray(initial, dtype=np.float64),
-        jac=lambda value: objective(value)[1],
-        method=solver.method,
-        bounds=bounds,
-        constraints={"type": "ineq", "fun": constraint, "jac": constraint_jac},
-        options={"maxiter": solver.maxiter, "ftol": solver.ftol, "disp": solver.disp},
-        callback=callback,
+    with context.timers.measure("slsqp_total"):
+        result = minimize(
+            lambda value: objective(value)[0],
+            np.asarray(initial, dtype=np.float64) / variable_scales,
+            jac=objective_jacobian,
+            method=solver.method,
+            bounds=bounds,
+            constraints={"type": "ineq", "fun": constraint, "jac": constraint_jac},
+            options={"maxiter": solver.maxiter, "ftol": solver.ftol, "disp": solver.disp},
+            callback=callback,
+        )
+    result.x = physical(np.asarray(result.x, dtype=np.float64))
+    initial_objective = float(
+        context.objective(np.asarray(initial, dtype=np.float64), query_set.query_hash)[0]
     )
-    initial_objective = float(context.objective(np.asarray(initial, dtype=np.float64))[0])
-    final_objective = float(context.objective(np.asarray(result.x, dtype=np.float64))[0])
+    final_objective = float(
+        context.objective(np.asarray(result.x, dtype=np.float64), query_set.query_hash)[0]
+    )
     previous_iterate = callback_iterates[-1] if callback_iterates else np.asarray(initial)
     return result, {
         "objective_evaluations": objective_calls,
+        "objective_jacobian_evaluations": objective_jacobian_calls,
+        "constraint_evaluations": constraint_calls,
         "constraint_jacobian_evaluations": jacobian_calls,
+        "point_jacobian_backend": point_jacobian_backend,
         "finite_difference_fallback_count": fallback_total,
         "optimizer_function_evaluations": int(getattr(result, "nfev", objective_calls)),
         "optimizer_jacobian_evaluations": int(getattr(result, "njev", jacobian_calls)),
@@ -1168,6 +1458,8 @@ def _solver_call(
         "final_step_norm": float(
             np.linalg.norm(np.asarray(result.x, dtype=np.float64) - previous_iterate)
         ),
+        "cache": context.cache.as_dict(),
+        "timers": context.timers.as_dict(),
     }
 
 
@@ -1178,7 +1470,9 @@ def _independent_constraints(
     *,
     distance_result: SignedDistanceQueryResult | None = None,
 ) -> dict[str, Any]:
-    result = distance_result or context.constraint_query(value, query_set.sample_ids)
+    result = distance_result or context.constraint_query(
+        value, query_set.sample_ids, query_set.query_hash
+    )
     _, _, _, slack = context.unpack(np.asarray(value, dtype=np.float64))
     hard = result.signed_distance + context.paper.b
     soft = result.signed_distance + slack + context.paper.tau
@@ -1245,6 +1539,8 @@ def refine_frame(
     *,
     max_rounds: int,
     active_margin_m: float = 0.010,
+    point_jacobian_backend: str = "reference_batched_torch_v1",
+    strict_recovery: str = "none",
 ) -> FinalFrameResult:
     started = time.perf_counter()
     warm_value_without = np.concatenate([np.zeros(6), context.seed_qpos])
@@ -1259,22 +1555,101 @@ def refine_frame(
     full: SignedDistanceQueryResult | None = None
     diagnostics: dict[str, Any] = {}
     continuation_trace: list[dict[str, Any]] = []
+    solver_attempt_trace: list[dict[str, Any]] = []
     active_set_converged = False
+    full_audit_call_count = int(context.full_audit_call_count)
+    full_audit_call_reasons = list(context.full_audit_call_reasons)
     while True:
         query_rounds += 1
+        outer_round_started = time.perf_counter()
         if len(initial) != 6 + context.robot_model.num_dofs + query_set.count:
             raise ValueError(
                 "query set changed variable dimension without rebuilding initial state"
             )
-        result, solve_diag = _solver_call(context, initial, query_set, solver)
+        result, solve_diag = _solver_call(
+            context,
+            initial,
+            query_set,
+            solver,
+            point_jacobian_backend=point_jacobian_backend,
+        )
+        primary_result = result
+        primary_diag = dict(solve_diag)
+        attempt = {
+            "round": query_rounds,
+            "primary_status": int(getattr(primary_result, "status", -1)),
+            "primary_success": bool(primary_result.success),
+            "primary_message": str(primary_result.message),
+            "primary_backend": point_jacobian_backend,
+            "recovery_used": False,
+        }
+        if (
+            int(getattr(primary_result, "status", -1)) == 9
+            and strict_recovery == "reference_batched_from_primary_result_v1"
+        ):
+            result, recovery_diag = _solver_call(
+                context,
+                np.asarray(primary_result.x, dtype=np.float64),
+                query_set,
+                solver,
+                point_jacobian_backend="reference_batched_torch_v1",
+            )
+            for key in (
+                "objective_evaluations",
+                "objective_jacobian_evaluations",
+                "constraint_evaluations",
+                "constraint_jacobian_evaluations",
+                "optimizer_function_evaluations",
+                "optimizer_jacobian_evaluations",
+                "finite_difference_fallback_count",
+            ):
+                recovery_diag[key] = int(primary_diag.get(key, 0)) + int(
+                    recovery_diag.get(key, 0)
+                )
+            recovery_diag["initial_objective"] = primary_diag["initial_objective"]
+            recovery_diag["final_objective_change"] = float(
+                primary_diag["initial_objective"] - recovery_diag["final_objective"]
+            )
+            recovery_diag["primary_solver_status"] = int(getattr(primary_result, "status", -1))
+            recovery_diag["primary_solver_message"] = str(primary_result.message)
+            recovery_diag["primary_optimizer_iterations"] = int(
+                getattr(primary_result, "nit", 0)
+            )
+            recovery_diag["primary_point_jacobian_backend"] = point_jacobian_backend
+            recovery_diag["solver_recovery"] = strict_recovery
+            recovery_diag["solver_retry_count"] = 1
+            attempt.update(
+                {
+                    "recovery_used": True,
+                    "recovery_status": int(getattr(result, "status", -1)),
+                    "recovery_success": bool(result.success),
+                    "recovery_message": str(result.message),
+                    "recovery_backend": "reference_batched_torch_v1",
+                }
+            )
+            solve_diag = recovery_diag
+        else:
+            solve_diag["primary_solver_status"] = int(getattr(primary_result, "status", -1))
+            solve_diag["primary_solver_message"] = str(primary_result.message)
+            solve_diag["primary_optimizer_iterations"] = int(
+                getattr(primary_result, "nit", 0)
+            )
+            solve_diag["primary_point_jacobian_backend"] = point_jacobian_backend
+            solve_diag["solver_recovery"] = "none"
+            solve_diag["solver_retry_count"] = 0
+        solver_attempt_trace.append(attempt)
         diagnostics.update(solve_diag)
         independent = _independent_constraints(context, result.x, query_set)
         # Use the Stage 6 reference backend once per frame for both active-set
         # expansion and the persisted independent full-surface audit. The
         # solver-only backend remains reserved for inner constraint calls.
-        full = context.reference_sdf.query_scene(
-            context.candidate_points(result.x), context.object_pose_scene
-        )
+        with context.timers.measure("full_512_audit"):
+            full = context.reference_sdf.query_scene(
+                context.candidate_points(result.x, query_set.query_hash),
+                context.object_pose_scene,
+            )
+        full_audit_call_count += 1
+        full_audit_call_reasons.append("active_set_round_end")
         full_phi = np.asarray(full.signed_distance, dtype=np.float64)
         if not np.all(full.sign_valid):
             raise ValueError("full-surface audit received invalid signed distance")
@@ -1295,25 +1670,27 @@ def refine_frame(
             and unqueried_soft_ok
             and (query_set.count == len(full_phi) or no_active_unqueried)
         )
+        context.timers.add("active_set_outer_loop", time.perf_counter() - outer_round_started)
         if result.success and active_set_converged:
             break
         if query_rounds >= max_rounds or query_set.count == len(full_phi):
             break
-        expanded, new_ids = expand_query_set(
-            query_set,
-            full_phi,
-            CollisionQueryProfile(
-                profile_id="runtime",
-                version="1",
-                mode="adaptive",
-                active_margin_m=active_margin_m,
-                max_active_set_rounds=max_rounds,
-                paper_status="not_paper_specified",
-                assumptions=(),
-                profile_hash="",
-            ),
-            active_round=query_rounds,
-        )
+        with context.timers.measure("active_set_expansion"):
+            expanded, new_ids = expand_query_set(
+                query_set,
+                full_phi,
+                CollisionQueryProfile(
+                    profile_id="runtime",
+                    version="1",
+                    mode="adaptive",
+                    active_margin_m=active_margin_m,
+                    max_active_set_rounds=max_rounds,
+                    paper_status="not_paper_specified",
+                    assumptions=(),
+                    profile_hash="",
+                ),
+                active_round=query_rounds,
+            )
         if len(new_ids) == 0:
             break
         previous_query_set = query_set
@@ -1358,14 +1735,25 @@ def refine_frame(
     if full is None:
         raise RuntimeError("Stage 9 full-surface audit did not run")
     value = np.asarray(result.x, dtype=np.float64)
+    with context.timers.measure("full_512_audit"):
+        full = context.reference_sdf.query_scene(
+            context.candidate_points(value, query_set.query_hash),
+            context.object_pose_scene,
+        )
+    full_audit_call_count += 1
+    full_audit_call_reasons.append("frame_final_independent_acceptance")
+    if not np.all(full.sign_valid):
+        raise ValueError("final independent full-surface audit received invalid signed distance")
     _, _, qpos, slack = context.unpack(value)
-    _, _, breakdown = context.objective(value)
+    _, _, breakdown = context.objective(value, query_set.query_hash)
     final_warm_slack = np.clip(
         np.maximum(-context.paper.tau - query_set.initial_signed_distance, 0.0),
         0.0,
         context.paper.b - context.paper.tau,
     )
-    _, _, warm_breakdown = context.objective(np.concatenate([warm_value_without, final_warm_slack]))
+    _, _, warm_breakdown = context.objective(
+        np.concatenate([warm_value_without, final_warm_slack]), query_set.query_hash
+    )
     selected_full = SignedDistanceQueryResult(
         signed_distance=full.signed_distance[query_set.sample_ids],
         unsigned_distance=full.unsigned_distance[query_set.sample_ids],
@@ -1392,8 +1780,14 @@ def refine_frame(
     independent = _independent_constraints(context, value, query_set, distance_result=selected_full)
     diagnostics["outer_converged"] = bool(active_set_converged and result.success)
     diagnostics["active_set_converged"] = active_set_converged
+    diagnostics["full_audit_call_count"] = full_audit_call_count
+    diagnostics["full_audit_call_reasons"] = full_audit_call_reasons
+    diagnostics["active_query_call_count"] = int(context.active_query_call_count)
     diagnostics["active_set_continuation"] = continuation_trace
+    diagnostics["solver_attempt_trace"] = solver_attempt_trace
     diagnostics["full_surface_backend_id"] = full.backend_id
+    diagnostics["evaluation_cache"] = context.cache.as_dict()
+    diagnostics["timers"] = context.timers.as_dict()
     optimizer_status_code = int(getattr(result, "status", -1))
     optimizer_converged = bool(result.success) and optimizer_status_code != 9
     qpos_bounds_pass = bool(
@@ -1537,6 +1931,17 @@ def _make_context(
     obj = sequence.rigid_object(str(graph.metadata["object_id"]))
     object_pose = np.asarray(obj.pose_scene.pose_scene[global_frame], dtype=np.float64)
     geometry_indices, transforms, links, slices = _surface_layout(robot_model, surface)
+    context_hash = _stable_hash(
+        {
+            "global_frame": global_frame,
+            "robot_name": robot_model.name,
+            "object_pose": object_pose.tolist(),
+            "graph_frame": int(local_index),
+            "source_feature_shape": list(np.asarray(source_features.adjacent_features).shape),
+            "paper_hash": paper.config_hash,
+            "surface_profile_hash": surface.profile.profile_hash,
+        }
+    )
     return _FrameContext(
         robot_model=robot_model,
         graph_frame=frame,
@@ -1550,11 +1955,15 @@ def _make_context(
         sdf=sdf,
         reference_sdf=reference_sdf,
         object_pose_scene=object_pose,
+        surface=surface,
         surface_points_local=np.asarray(surface.points_local, dtype=np.float64),
         surface_geometry_indices=geometry_indices,
         surface_local_transforms=transforms,
         surface_link_names=links,
         geometry_slices=slices,
+        frame_id=global_frame,
+        context_hash=context_hash,
+        cache=RefinementEvaluationCache(global_frame, context_hash),
     )
 
 
@@ -1652,6 +2061,73 @@ class FinalRetargetTrajectory:
 
     def arrays_for_storage(self) -> dict[str, np.ndarray]:
         return {key: np.asarray(value) for key, value in self.arrays.items()}
+
+
+@dataclass
+class RefinementResources:
+    """Immutable per-run resources shared by every refinement frame."""
+
+    paper: PaperRefinementWeights
+    object_vertices: np.ndarray
+    object_faces: np.ndarray
+    mesh_hash: str
+    reference_sdf: Any
+    sdf: Any
+    sdf_report: dict[str, Any]
+    build_counts: dict[str, int]
+
+
+def prepare_refinement_resources(
+    sequence: Any,
+    graph: InteractionGraphTrajectory,
+    solver_profile: RefinementSolverProfile,
+    *,
+    object_vertices: np.ndarray | None = None,
+    object_faces: np.ndarray | None = None,
+    sdf_tree_leaf_size: int = 32,
+) -> RefinementResources:
+    """Build mesh/SDF resources once for a refinement run."""
+
+    from toporetarget.geometry.signed_distance.reference import build_signed_distance_backend
+
+    paper = PaperRefinementWeights.load()
+    if object_vertices is None or object_faces is None:
+        obj = sequence.rigid_object(str(graph.metadata["object_id"]))
+        object_vertices = obj.mesh.vertices_local
+        object_faces = obj.mesh.faces
+    vertices = np.asarray(object_vertices, dtype=np.float64)
+    faces = np.asarray(object_faces, dtype=np.int64)
+    mesh_audit = audit_mesh(vertices, faces)
+    reference_sdf = build_signed_distance_backend(
+        vertices, faces, sign_mode="strict", mesh_hash=mesh_audit.mesh_hash
+    )
+    obj = sequence.rigid_object(str(graph.metadata["object_id"]))
+    sdf, sdf_report = choose_solver_sdf_backend(
+        vertices,
+        faces,
+        reference_sdf,
+        solver_profile,
+        object_pose_scene=np.asarray(obj.pose_scene.pose_scene[0]),
+        tree_leaf_size=sdf_tree_leaf_size,
+    )
+    return RefinementResources(
+        paper=paper,
+        object_vertices=vertices,
+        object_faces=faces,
+        mesh_hash=mesh_audit.mesh_hash,
+        reference_sdf=reference_sdf,
+        sdf=sdf,
+        sdf_report=sdf_report,
+        build_counts={
+            "mesh_load_count": 1,
+            "solver_sdf_build_count": 1,
+            "reference_sdf_build_count": 1,
+            "convex_hull_build_count": int(
+                getattr(sdf, "backend_id", "") == "convex_hull_exact_solver_only"
+            ),
+            "bvh_build_count": 1,
+        },
+    )
 
 
 def final_artifact_hash(trajectory: FinalRetargetTrajectory) -> str:
@@ -1752,10 +2228,12 @@ def build_final_trajectory(
     warm_artifact_hash: str | None = None,
     graph_artifact_hash: str | None = None,
     continue_on_failure: bool = False,
+    resources: RefinementResources | None = None,
+    frame_callback: Callable[[int, FinalFrameResult, _FrameContext], None] | None = None,
+    pause_check: Callable[[int], bool] | None = None,
+    source_frame_offset: int = 0,
+    execution_profile: Any | None = None,
 ) -> tuple[FinalRetargetTrajectory, dict[str, Any]]:
-    from toporetarget.geometry.signed_distance.reference import build_signed_distance_backend
-
-    paper = PaperRefinementWeights.load()
     warm.validate()
     graph.validate()
     if warm.frame_count != graph.frame_count:
@@ -1764,22 +2242,25 @@ def build_final_trajectory(
         raise ValueError("warm-start and selected robot differ")
     if not np.array_equal(warm.arrays["timestamps"], graph.timestamps):
         raise ValueError("warm-start and graph timestamps differ")
-    if object_vertices is None or object_faces is None:
-        obj = sequence.rigid_object(str(graph.metadata["object_id"]))
-        object_vertices, object_faces = obj.mesh.vertices_local, obj.mesh.faces
-    mesh_audit = audit_mesh(object_vertices, object_faces)
-    reference_sdf = build_signed_distance_backend(
-        object_vertices, object_faces, sign_mode="strict", mesh_hash=mesh_audit.mesh_hash
+    point_jacobian_backend = str(
+        getattr(execution_profile, "point_jacobian_backend", "reference_batched_torch_v1")
     )
-    sdf, sdf_report = choose_solver_sdf_backend(
-        object_vertices,
-        object_faces,
-        reference_sdf,
+    strict_recovery = str(getattr(execution_profile, "strict_recovery", "none"))
+    sdf_tree_leaf_size = int(getattr(execution_profile, "sdf_tree_leaf_size", 32))
+    resources = resources or prepare_refinement_resources(
+        sequence,
+        graph,
         solver_profile,
-        object_pose_scene=np.asarray(
-            sequence.rigid_object(str(graph.metadata["object_id"])).pose_scene.pose_scene[0]
-        ),
+        object_vertices=object_vertices,
+        object_faces=object_faces,
+        sdf_tree_leaf_size=sdf_tree_leaf_size,
     )
+    paper = resources.paper
+    object_vertices = resources.object_vertices
+    object_faces = resources.object_faces
+    reference_sdf = resources.reference_sdf
+    sdf = resources.sdf
+    sdf_report = resources.sdf_report
     stop = warm.frame_count if end_frame is None else int(end_frame)
     if start_frame < 0 or stop <= start_frame or stop > warm.frame_count:
         raise ValueError(f"invalid frame range [{start_frame},{stop})")
@@ -1791,7 +2272,12 @@ def build_final_trajectory(
         previous_base = np.asarray(initial_previous[0], dtype=np.float64)
         previous_qpos = np.asarray(initial_previous[1], dtype=np.float64)
     query_summaries: list[dict[str, Any]] = []
+    performance_rows: list[dict[str, Any]] = []
+    paused = False
     for local_index in frame_indices:
+        if pause_check is not None and pause_check(local_index):
+            paused = True
+            break
         previous = None
         if previous_base is not None and previous_qpos is not None:
             previous = map_previous_state_to_seed(
@@ -1812,6 +2298,14 @@ def build_final_trajectory(
             previous,
         )
         initial_points = context.candidate_points(np.concatenate([np.zeros(6), context.seed_qpos]))
+        with context.timers.measure("full_512_audit"):
+            initial_full = context.reference_sdf.query_scene(
+                initial_points, context.object_pose_scene
+            )
+        if not np.all(initial_full.sign_valid):
+            raise ValueError("initial full-surface audit received invalid signed distance")
+        context.full_audit_call_count = 1
+        context.full_audit_call_reasons = ["frame_query_set_initialization"]
         # The selected solver backend is exact for this audited convex mesh and
         # has passed probe comparison. It is sufficient for initial QuerySet
         # selection; reference_sdf remains the independent persisted audit.
@@ -1833,6 +2327,8 @@ def build_final_trajectory(
             solver_profile,
             max_rounds=query_profile.max_active_set_rounds,
             active_margin_m=query_profile.active_margin_m,
+            point_jacobian_backend=point_jacobian_backend,
+            strict_recovery=strict_recovery,
         )
         frames.append(frame_result)
         query_summaries.append(
@@ -1848,8 +2344,39 @@ def build_final_trajectory(
                 "continuation": frame_result.jacobian_diagnostics.get(
                     "active_set_continuation", []
                 ),
+                "full_audit_call_count": frame_result.jacobian_diagnostics.get(
+                    "full_audit_call_count", 0
+                ),
+                "cache": frame_result.jacobian_diagnostics.get("cache", {}),
+                "timers": frame_result.jacobian_diagnostics.get("timers", {}),
             }
         )
+        performance_rows.append(
+            {
+                "frame": int(graph.frame_indices[local_index]),
+                "solve_time_s": float(frame_result.solve_time_s),
+                "active_set_rounds": int(frame_result.active_set_rounds),
+                "full_audit_call_count": int(
+                    frame_result.jacobian_diagnostics.get("full_audit_call_count", 0)
+                ),
+                "objective_calls": int(
+                    frame_result.jacobian_diagnostics.get("objective_evaluations", 0)
+                ),
+                "objective_jacobian_calls": int(
+                    frame_result.jacobian_diagnostics.get("objective_jacobian_evaluations", 0)
+                ),
+                "constraint_calls": int(
+                    frame_result.jacobian_diagnostics.get("constraint_evaluations", 0)
+                ),
+                "constraint_jacobian_calls": int(
+                    frame_result.jacobian_diagnostics.get("constraint_jacobian_evaluations", 0)
+                ),
+                "cache": frame_result.jacobian_diagnostics.get("cache", {}),
+                "timers": frame_result.jacobian_diagnostics.get("timers", {}),
+            }
+        )
+        if frame_callback is not None and frame_result.accepted:
+            frame_callback(local_index, frame_result, context)
         if (
             not frame_result.solver_success
             and solver_profile.strict_failure_policy == "fail_fast"
@@ -1857,6 +2384,9 @@ def build_final_trajectory(
         ):
             raise RuntimeError(f"Stage 9 frame {local_index} failed: {frame_result.failure}")
         previous_base, previous_qpos = frame_result.base_pose_scene, frame_result.qpos
+    if not frames:
+        raise RuntimeError("refinement paused before any frame completed")
+    processed_frame_indices = frame_indices[: len(frames)]
     qpos = np.stack([item.qpos for item in frames])
     base = np.stack([item.base_pose_scene for item in frames])
     corrections = np.stack([item.base_correction for item in frames])
@@ -1869,7 +2399,7 @@ def build_final_trajectory(
     reason_concat, _ = _ragged(
         [np.asarray(item.query_set.inclusion_reasons, dtype="S96") for item in frames]
     )
-    timestamps = np.asarray(warm.arrays["timestamps"])[frame_indices]
+    timestamps = np.asarray(warm.arrays["timestamps"])[processed_frame_indices]
     collision_points = np.stack(
         [
             dynamic_collision_points_numpy(robot_model, surface, item.qpos, item.base_pose_scene)
@@ -1914,7 +2444,10 @@ def build_final_trajectory(
     lower, upper = robot_model.joint_lower, robot_model.joint_upper
     arrays = {
         "timestamps": timestamps,
-        "frame_indices": np.asarray(graph.frame_indices[frame_indices], dtype=np.int64),
+        "frame_indices": np.asarray(graph.frame_indices[processed_frame_indices], dtype=np.int64),
+        "source_frame_indices": np.asarray(
+            graph.frame_indices[processed_frame_indices] + int(source_frame_offset), dtype=np.int64
+        ),
         "qpos": qpos,
         "base_pose_scene": base,
         "base_corrections": corrections,
@@ -2022,7 +2555,7 @@ def build_final_trajectory(
         ),
         "final_step_norm": np.asarray([item.final_step_norm for item in frames], dtype=np.float64),
     }
-    object_mesh_hash = mesh_audit.mesh_hash
+    object_mesh_hash = resources.mesh_hash
     metadata = {
         "schema_version": (
             FINAL_REFINEMENT_SCHEMA_VERSION_V2
@@ -2055,6 +2588,12 @@ def build_final_trajectory(
         "solver_profile": solver_profile.as_dict(),
         "solver_profile_id": solver_profile.profile_id,
         "solver_profile_hash": solver_profile.profile_hash,
+        "execution_profile": (
+            None if execution_profile is None else execution_profile.as_dict()
+        ),
+        "point_jacobian_backend": point_jacobian_backend,
+        "strict_recovery": strict_recovery,
+        "sdf_tree_leaf_size": sdf_tree_leaf_size,
         "termination_contract": solver_profile.termination_contract,
         "acceptance_policy_id": solver_profile.acceptance_policy_id,
         "active_set_continuation_policy": solver_profile.active_set_continuation_policy,
@@ -2063,11 +2602,16 @@ def build_final_trajectory(
         "paper_weights": paper.as_dict(),
         "sdf_selection_report": sdf_report,
         "frame_range": [
+            int(graph.frame_indices[processed_frame_indices[0]]),
+            int(graph.frame_indices[processed_frame_indices[-1]]) + 1,
+        ],
+        "requested_frame_range": [
             int(graph.frame_indices[start_frame]),
             int(graph.frame_indices[stop - 1]) + 1,
         ],
         "native_fps": warm.metadata.get("native_fps"),
         "frame_count": len(frames),
+        "paused": paused,
         "initial_previous_frame": None if initial_previous is None else int(frame_indices[0] - 1),
         "timestamps": timestamps.tolist(),
         "assumptions": sorted(
@@ -2106,6 +2650,20 @@ def build_final_trajectory(
             "stage10_started": False,
         },
         "query_summaries": query_summaries,
+        "performance": {
+            "frame_rows": performance_rows,
+            "resource_build_counts": {
+                "robot_model_load_count": 1,
+                "graph_load_count": 1,
+                "source_feature_build_count": len(frames),
+                **resources.build_counts,
+            },
+            "full_audit_in_inner_callbacks": False,
+            "point_jacobian_backend": point_jacobian_backend,
+            "strict_recovery": strict_recovery,
+            "sdf_tree_leaf_size": sdf_tree_leaf_size,
+            "variable_scaling": "seed_delta_normalized_v1",
+        },
         "solver_messages": [item.solver_message for item in frames],
         "termination_contract_summary": {
             "optimizer_converged_required": True,
@@ -2117,7 +2675,14 @@ def build_final_trajectory(
         "artifact_hash": None,
     }
     trajectory = FinalRetargetTrajectory(metadata, arrays).validate()
-    return trajectory, {"sdf": sdf_report, "query_summaries": query_summaries}
+    return trajectory, {
+        "sdf": sdf_report,
+        "query_summaries": query_summaries,
+        "performance": performance_rows,
+        "paused": paused,
+        "processed_frame_indices": [int(item) for item in processed_frame_indices],
+        "resource_counts": resources.build_counts,
+    }
 
 
 __all__ = [
@@ -2136,6 +2701,7 @@ __all__ = [
     "FINAL_REFINEMENT_SCHEMA_VERSION_V2",
     "PaperRefinementWeights",
     "RefinementCoordinateProfile",
+    "RefinementResources",
     "RefinementSolverProfile",
     "SOLVER_PROFILE_ID",
     "STRICT_ACCEPTANCE_POLICY_ID",
@@ -2150,6 +2716,7 @@ __all__ = [
     "load_final_trajectory",
     "load_robot_surface_samples",
     "map_previous_state_to_seed",
+    "prepare_refinement_resources",
     "save_final_trajectory",
     "so3_exp",
     "so3_log",

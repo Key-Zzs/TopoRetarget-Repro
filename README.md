@@ -341,9 +341,26 @@ paper-undisclosed implementation assumptions.
 The fixed benchmark currently selects uniform `maxiter=100` (35 records). v1 is
 `6affff2fdb425a0402f643c291c0b8904d4dbec6c5b69a5006cf9829dcc220aa`; v2 is
 `c42c21d894c54d07b1d30943b5a3338b13628bf0429ab203b5540cf934d09b7c`. The full
-60-frame real artifact and deterministic repeat are still explicit opt-in gates;
-they are not claimed from the fixed benchmark alone. The complete sequence is
-still performance-blocked, so Stage 9.1 is not claimed complete.
+60-frame real artifact and deterministic repeat are explicit opt-in gates; they
+are now backed by the Stage 9.2 contact-rich run and full fresh/resumed comparison.
+Stage 9.2 meets the reference-runtime minimum gate, while its preferred
+single-frame median/p95 target remains unmet. Stage 10 is still blocked.
+
+#### Stage 9.2 performance and recoverable execution
+
+Stage 9.2 adds exact-x callback reuse, persistent SDF/FK resources, exact
+reference-SDF AABB acceleration, batched collision Jacobians, explicit solver
+conditioning, scheduled independent 512-point audits, atomic frame
+checkpoints, soft wall-time pause/resume, assembly, and fresh/resumed
+comparison. It preserves the Stage 9 math and strict status-9 policy. Use
+[`docs/REFINEMENT_PERFORMANCE.md`](docs/REFINEMENT_PERFORMANCE.md) and
+[`docs/REFINEMENT_CHECKPOINT_AND_RESUME.md`](docs/REFINEMENT_CHECKPOINT_AND_RESUME.md)
+for the profiling and recovery commands. The full 60-frame minimum runtime gate
+and deterministic-repeat evidence pass. The v3 first/repeat runs measure
+`10.766/38.711 s` and `10.773/39.052 s` median/p95, with `60/60` strict-accepted
+status-0 frames in each run and exact persisted-array equality excluding
+`solve_time_s`. Stage 10 remains blocked pending the preferred performance gate
+and explicit stage transition.
 
 ### Stage 10. Run a bounded GRAB → Arti-MANO workflow
 

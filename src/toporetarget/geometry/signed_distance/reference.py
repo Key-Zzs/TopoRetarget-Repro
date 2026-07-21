@@ -11,7 +11,7 @@ from toporetarget.geometry.mesh_audit import MeshAuditReport, audit_mesh
 from toporetarget.geometry.se3 import invert_transform, transform_points, transform_vectors
 
 from .base import SignedDistanceBackend, SignedDistanceQueryResult
-from .closest_point import closest_points_on_triangles
+from .closest_point import TriangleAABBTree, closest_points_on_triangles
 from .winding import generalized_winding_number, winding_sign
 
 
@@ -70,6 +70,31 @@ class ReferenceSignedDistanceBackend(SignedDistanceBackend):
         self._face_normals /= np.maximum(
             np.linalg.norm(self._face_normals, axis=1, keepdims=True), 1e-15
         )
+        # Keep the reference mesh and its exact closest-point acceleration
+        # structure alive for the whole run.  This changes only query
+        # scheduling; the leaf computation and winding sign remain the
+        # reference implementation.
+        self._closest_tree = TriangleAABBTree(self._triangles)
+        # For a watertight mesh whose every vertex lies on one convex hull,
+        # the hull half-spaces are an exact inside/outside predicate.  Keep
+        # the triangle closest-point query as the reference distance, but use
+        # this persistent sign structure instead of recomputing a 50k-face
+        # winding sum for every 512-point audit.  Non-convex meshes retain the
+        # original generalized-winding path.
+        self._convex_equations: np.ndarray | None = None
+        try:
+            from scipy.spatial import ConvexHull
+
+            hull = ConvexHull(self.vertices)
+            hull_residual = hull.equations[:, :3] @ self.vertices.T + hull.equations[:, 3, None]
+            vertex_boundary_residual = np.max(hull_residual, axis=0)
+            if (
+                float(np.max(hull_residual)) <= 1e-9
+                and float(np.min(vertex_boundary_residual)) >= -1e-9
+            ):
+                self._convex_equations = np.asarray(hull.equations, dtype=np.float64)
+        except (ImportError, ValueError):  # pragma: no cover - qhull fallback
+            self._convex_equations = None
         if self.audit_report.signed_volume is not None and self.audit_report.signed_volume < 0:
             self._face_normals *= -1.0
 
@@ -104,6 +129,8 @@ class ReferenceSignedDistanceBackend(SignedDistanceBackend):
             "query_chunk_size": self.query_chunk_size,
             "face_chunk_size": self.face_chunk_size,
             "acceleration": {"rtree": False, "pyembree": False, "reference_fallback": True},
+            "triangle_aabb": True,
+            "convex_halfspace_sign": self._convex_equations is not None,
             "audit_sign_reliability": self.audit_report.sign_reliability,
         }
 
@@ -116,6 +143,7 @@ class ReferenceSignedDistanceBackend(SignedDistanceBackend):
             self._triangles,
             query_chunk_size=self.query_chunk_size,
             face_chunk_size=self.face_chunk_size,
+            tree=self._closest_tree,
         )
         original_faces = self._face_indices[local_faces]
         normals = self._face_normals[local_faces].copy()
@@ -127,6 +155,15 @@ class ReferenceSignedDistanceBackend(SignedDistanceBackend):
             confidence = np.zeros(len(points), dtype=np.float64)
             signed = np.full(len(points), np.nan, dtype=np.float64)
             method = "unsigned_only"
+        elif self._convex_equations is not None:
+            halfspace = (
+                points @ self._convex_equations[:, :3].T + self._convex_equations[:, 3]
+            )
+            inside = np.all(halfspace <= 1e-10, axis=1)
+            confidence = np.ones(len(points), dtype=np.float64)
+            sign_valid = np.ones(len(points), dtype=bool)
+            signed = np.where(inside, -unsigned, unsigned)
+            method = "strict_convex_halfspace"
         else:
             winding_value = generalized_winding_number(
                 points,

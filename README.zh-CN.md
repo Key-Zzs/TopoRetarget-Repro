@@ -267,8 +267,21 @@ ID/hash；切换 profile 只使 Stage 9 及下游节点失效，Stage 5–8 inpu
 当前固定 benchmark 共 35 条记录，选择统一 `maxiter=100`。v1 hash 为
 `6affff2fdb425a0402f643c291c0b8904d4dbec6c5b69a5006cf9829dcc220aa`，v2 hash 为
 `c42c21d894c54d07b1d30943b5a3338b13628bf0429ab203b5540cf934d09b7c`。完整 60 帧真实
-artifact 和 deterministic repeat 仍是显式 opt-in gate，不能仅由 fixed benchmark 代替；完整序列
-仍被性能阻塞，不能宣称 Stage 9.1 complete。
+artifact 和 deterministic repeat 已由 Stage 9.2 contact-rich run 及 full fresh/resumed comparison
+支撑。Stage 9.2 通过 reference-runtime minimum gate，但 preferred single-frame median/p95
+目标仍未达到；Stage 10 继续 blocked。
+
+#### Stage 9.2 性能与可恢复执行
+
+Stage 9.2 增加 exact-x callback reuse、持久 SDF/FK resource、精确 reference-SDF AABB
+加速、批量 collision Jacobian、显式 solver conditioning、独立 full-512 audit 调度、原子 frame checkpoint、soft wall-time pause/resume、assembly
+和 fresh/resumed comparison，同时保持 Stage 9 数学及 strict status-9 policy 不变。
+Profiling 和恢复命令见 [`docs/REFINEMENT_PERFORMANCE.md`](docs/REFINEMENT_PERFORMANCE.md)
+及 [`docs/REFINEMENT_CHECKPOINT_AND_RESUME.md`](docs/REFINEMENT_CHECKPOINT_AND_RESUME.md)。
+完整 60 帧 minimum runtime gate 与 deterministic repeat 证据已通过。v3 第一次/重复运行
+的 median/p95 分别为 `10.766/38.711 s` 与 `10.773/39.052 s`，两次均为 `60/60`
+strict-accepted status-0 frame；排除 `solve_time_s` 后持久化数组 exact equal。Stage 10
+仍需 preferred 性能 gate 和显式阶段切换才能解除。
 
 ### Stage 10：运行有界 GRAB → Arti-MANO workflow
 

@@ -1,0 +1,16 @@
+profile_id: cached_checkpoint_cpu_float64_v1
+version: "1.0.0"
+device: cpu
+dtype: float64
+cache_mode: exact_x_common_forward
+checkpoint_schema: toporetarget.final_retarget_checkpoint.v1
+initialization_profile: stage7_seed_v1
+full_audit_mode: outer_round_and_final
+variable_scaling: seed_delta_normalized_v1
+assumptions:
+  - A_REFINEMENT_EVALUATION_CACHE_001
+  - A_REFINEMENT_CHECKPOINT_RESUME_001
+  - A_REFINEMENT_EXECUTION_DEVICE_001
+  - A_REFINEMENT_SOLVER_VARIABLE_SCALING_001
+  - A_REFINEMENT_REFERENCE_SDF_ACCELERATION_001
+  - A_REFINEMENT_FULL_AUDIT_SCHEDULING_001
