@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from .cache import path_hash
 from .gate import EXPECTED_SOLVER, validate_manual_context
 from .planning import git_state
-from .registry import get_node_specs, validate_dag
+from .registry import get_node_specs
 from .review import generate_review_bundle
-from .schema import read_json, stable_hash, utc_now, write_json
+from .schema import read_json, utc_now, write_json
 from .validation import build_semantic_sanity_report
 
 
@@ -72,66 +71,104 @@ def create_accepted_run(
             outputs = {"artifact": artifacts["evaluation"]["path"]}
         elif spec.node_id in {"generate_review_bundle", "semantic_sanity_validation"}:
             outputs = {"artifact": str(root / "reports" / f"{spec.node_id}.json")}
-        nodes.append({
-            "node_id": spec.node_id,
-            "implementation_version": "stage10-v2",
-            "dependencies": list(spec.dependencies),
-            "status": "reused",
-            "reused": True,
-            "skipped": False,
-            "validation_status": "pass",
-            "provenance": "stage9.2 accepted artifact; no Stage 9 invocation",
-            "output_paths": outputs,
-            "output_hashes": {key: path_hash(value) for key, value in outputs.items() if value and Path(value).exists()},
-        })
+        nodes.append(
+            {
+                "node_id": spec.node_id,
+                "implementation_version": "stage10-v2",
+                "dependencies": list(spec.dependencies),
+                "status": "reused",
+                "reused": True,
+                "skipped": False,
+                "validation_status": "pass",
+                "provenance": "stage9.2 accepted artifact; no Stage 9 invocation",
+                "output_paths": outputs,
+                "output_hashes": {
+                    key: path_hash(value)
+                    for key, value in outputs.items()
+                    if value and Path(value).exists()
+                },
+            }
+        )
     manifest = dict(source)
-    manifest.update({
-        "schema_version": "toporetarget.workflow_run.v1",
-        "workflow_version": "2.0.0",
-        "run_id": root.name,
-        "run_root": str(root),
-        "created_at": utc_now(),
-        "updated_at": utc_now(),
-        "git_commit": commit,
-        "dirty_worktree": dirty,
-        "repo_root": str(Path(repo_root).resolve()),
-        "artifacts": artifacts,
-        "final_artifact_path": str(final),
-        "selected_frame_range": [240, 300],
-        "native_fps": float(final_metadata.get("native_fps", 120.0)),
-        "timestamps": [float(value) for value in final_trajectory.arrays["timestamps"]],
-        "object_id": str(final_metadata.get("object_id", "airplane")),
-        "action": "lift",
-        "profiles": {**source.get("profiles", {}), "refinement_solver_profile_id": EXPECTED_SOLVER, "execution_profile_id": "cached_checkpoint_cpu_float64_v3"},
-        "manual_acceptance": {"path": str(Path(manual_acceptance).resolve()), **manual},
-        "runtime_acceptance": {"path": str(Path(runtime_acceptance).resolve()), "hash": path_hash(runtime_acceptance), "status": "accepted", "scope": "stage10_single_sequence_bounded_milestone"},
-        "nodes": nodes,
-        "reused_nodes": [spec.node_id for spec in get_node_specs()],
-        "recomputed_nodes": [],
-        "solver_invocation_count": 0,
-        "runtime_mode": "reference",
-        "preferred_performance_gate_pass": False,
-        "reference_runtime_gate_pass": True,
-        "production_batch_ready": False,
-        "real_time_ready": False,
-        "performance_debt_open": True,
-        "run_status": "running",
-    })
+    manifest.update(
+        {
+            "schema_version": "toporetarget.workflow_run.v1",
+            "workflow_version": "2.0.0",
+            "run_id": root.name,
+            "run_root": str(root),
+            "created_at": utc_now(),
+            "updated_at": utc_now(),
+            "git_commit": commit,
+            "dirty_worktree": dirty,
+            "repo_root": str(Path(repo_root).resolve()),
+            "artifacts": artifacts,
+            "final_artifact_path": str(final),
+            "selected_frame_range": [240, 300],
+            "native_fps": float(final_metadata.get("native_fps", 120.0)),
+            "timestamps": [float(value) for value in final_trajectory.arrays["timestamps"]],
+            "object_id": str(final_metadata.get("object_id", "airplane")),
+            "action": "lift",
+            "profiles": {
+                **source.get("profiles", {}),
+                "refinement_solver_profile_id": EXPECTED_SOLVER,
+                "execution_profile_id": "cached_checkpoint_cpu_float64_v3",
+            },
+            "manual_acceptance": {"path": str(Path(manual_acceptance).resolve()), **manual},
+            "runtime_acceptance": {
+                "path": str(Path(runtime_acceptance).resolve()),
+                "hash": path_hash(runtime_acceptance),
+                "status": "accepted",
+                "scope": "stage10_single_sequence_bounded_milestone",
+            },
+            "nodes": nodes,
+            "reused_nodes": [spec.node_id for spec in get_node_specs()],
+            "recomputed_nodes": [],
+            "solver_invocation_count": 0,
+            "runtime_mode": "reference",
+            "preferred_performance_gate_pass": False,
+            "reference_runtime_gate_pass": True,
+            "production_batch_ready": False,
+            "real_time_ready": False,
+            "performance_debt_open": True,
+            "run_status": "running",
+        }
+    )
     semantic = build_semantic_sanity_report(
-        canonical=artifacts["canonical"]["path"], final=str(final), robot="artimano_rh",
-        collision_samples=artifacts["collision_samples"]["path"], selected_window=selected,
-        final_contact_sanity_max_distance_m=0.05, report_path=root / "reports" / "semantic_sanity.json",
+        canonical=artifacts["canonical"]["path"],
+        final=str(final),
+        robot="artimano_rh",
+        collision_samples=artifacts["collision_samples"]["path"],
+        selected_window=selected,
+        final_contact_sanity_max_distance_m=0.05,
+        report_path=root / "reports" / "semantic_sanity.json",
     )
     manifest.setdefault("validations", {})["semantic_sanity"] = semantic
     if semantic.get("status") == "conflict":
         manifest["run_status"] = "blocked"
     if generate_review and manifest["run_status"] != "blocked":
-        manifest["review_bundle"] = generate_review_bundle(manifest=manifest, final=str(final), selected_window=selected, review_root=root / "review")
+        manifest["review_bundle"] = generate_review_bundle(
+            manifest=manifest,
+            final=str(final),
+            selected_window=selected,
+            review_root=root / "review",
+        )
     manifest["run_status"] = "complete" if manifest["run_status"] != "blocked" else "blocked"
-    manifest["export_paths"] = {"zarr": str(root / "exports" / "robot_reference.zarr"), "npz": str(root / "exports" / "robot_reference.npz")}
+    manifest["export_paths"] = {
+        "zarr": str(root / "exports" / "robot_reference.zarr"),
+        "npz": str(root / "exports" / "robot_reference.npz"),
+    }
     write_json(manifest, root / "manifest.json")
     write_json(manifest, root / "status.json")
-    write_json({"schema_version": "toporetarget.workflow_plan.v2", "run_id": root.name, "nodes": nodes, "reused_nodes": manifest["reused_nodes"], "recomputed_nodes": []}, root / "plan.json")
+    write_json(
+        {
+            "schema_version": "toporetarget.workflow_plan.v2",
+            "run_id": root.name,
+            "nodes": nodes,
+            "reused_nodes": manifest["reused_nodes"],
+            "recomputed_nodes": [],
+        },
+        root / "plan.json",
+    )
     return root / "manifest.json"
 
 

@@ -39,7 +39,9 @@ def _reference_payload(run: dict[str, Any]) -> tuple[dict[str, Any], dict[str, n
         "schema_version": REFERENCE_SCHEMA_VERSION,
         "robot": run["robot"],
         "side": run["hand"],
-        "native_fps": run.get("native_fps") or sequence.metadata.native_fps or final.metadata.get("native_fps"),
+        "native_fps": run.get("native_fps")
+        or sequence.metadata.native_fps
+        or final.metadata.get("native_fps"),
         "source_sequence": run["source_sequence"],
         "subject": run.get("subject"),
         "object_id": run.get("object_id") or object_id,
