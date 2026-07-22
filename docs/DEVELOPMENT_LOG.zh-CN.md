@@ -377,3 +377,15 @@ solver、不重建 graph，也不写入输入 artifact。
 smoke。生成前后 artifact content hash 与 mtime 均未变化。该 viewer 只是检查工具；正式的
 interaction、collision、continuity、bounds、solver 和 provenance gate 仍以数值报告为准。
 本阶段没有执行 git add、commit 或 push。
+
+## Stage 9.3 接触保持与碰撞几何审计（2026-07-22）
+
+实现了 manifest 驱动的审计 workflow 与 self-contained HTML review，并对已接受的
+`s1/airplane_lift` 右手 `[240,300)` reference runtime 完成完整 60 帧运行。审计使用
+确定性的 dense surface sample、明确的 positive-outside signed-distance provenance、
+source/warm/final contact proxy、visual-vs-collision offset、QuerySet per-point/per-link
+报告、同定义 Stage 9 objective 对比和不执行优化的 warm-to-final interpolation 诊断。
+所有正式输入的 hash 与 mtime 均保持不变，solver invocation count 为 0。由于现有
+artifact 不支持更强结论，contact retention 与 physical trackability 仍分别保持
+diagnostic/inconclusive 或 unverified。可选 shadow evidence 未运行，并明确记录为缺失。
+没有执行 git add、commit、push、reset 或 tag。

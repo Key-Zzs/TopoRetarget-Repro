@@ -432,3 +432,17 @@ HTML variants and passed headless Chrome smoke checks. Artifact content hashes
 and mtimes were unchanged across generation. The viewer is an inspection aid;
 formal interaction, collision, continuity, bounds, solver, and provenance gates
 remain authoritative. No git add, commit, or push was performed.
+
+## Stage 9.3 contact-retention and collision-geometry audit (2026-07-22)
+
+Implemented the manifest-driven audit workflow and self-contained HTML review
+for the accepted `s1/airplane_lift` right-hand `[240,300)` reference runtime.
+The full 60-frame run uses deterministic dense surface samples, explicit
+positive-outside signed-distance provenance, source/warm/final contact proxies,
+visual-vs-collision offsets, QuerySet per-point/per-link reports, same-definition
+Stage 9 objective comparisons, and a non-optimizing warm-to-final interpolation
+diagnostic. All formal inputs retained their hashes and mtimes; solver
+invocation count was zero. Contact retention and physical trackability remain
+diagnostic/inconclusive or unverified where the available artifacts do not
+support a stronger claim. The optional shadow evidence was not run and is
+recorded as missing. No git add, commit, push, reset, or tag was performed.

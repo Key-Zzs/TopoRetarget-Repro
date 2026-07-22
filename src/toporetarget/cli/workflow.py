@@ -10,6 +10,7 @@ from typing import Any
 import typer
 
 from toporetarget.workflows.accepted_run import create_accepted_run
+from toporetarget.workflows.contact_audit import run_contact_audit
 from toporetarget.workflows.contact_window import select_contact_windows
 from toporetarget.workflows.executor import WorkflowExecutionError, run_workflow
 from toporetarget.workflows.export import export_reference
@@ -24,6 +25,53 @@ from toporetarget.workflows.validation import (
 from toporetarget.workflows.visualization import run_visualization, write_visualization_report
 
 app = typer.Typer(help="Stage 10 bounded, resumable GRAB-to-Arti-MANO workflows.")
+
+
+@app.command("audit-contact-retention")
+def audit_contact_retention_command(
+    run: Path = typer.Option(..., "--run", help="Stage 10 manifest; all inputs resolve from it."),
+    output_dir: Path = typer.Option(Path(".local/runs/stage9_3_contact_audit"), "--output-dir"),
+    html: bool = typer.Option(False, "--html/--no-html"),
+    interactive: bool = typer.Option(False, "--interactive"),
+    surface_samples: int = typer.Option(8192, "--surface-samples", min=8192),
+    thresholds_mm: str = typer.Option("1,2,3,5,8,10", "--thresholds-mm"),
+    frame_start: int | None = typer.Option(None, "--frame-start", min=0),
+    frame_end: int | None = typer.Option(None, "--frame-end", min=1),
+    links: str | None = typer.Option(None, "--links"),
+    force: bool = typer.Option(False, "--force"),
+    no_cache: bool = typer.Option(False, "--no-cache"),
+    run_shadow_ablation: bool = typer.Option(False, "--run-shadow-ablation"),
+    shadow_frames: str = typer.Option("auto", "--shadow-frames"),
+    headless_smoke_test: bool = typer.Option(False, "--headless-smoke-test"),
+) -> None:
+    """Audit source/warm/final contact retention without invoking Stage 9."""
+    try:
+        parsed_thresholds = [
+            float(value.strip()) for value in thresholds_mm.split(",") if value.strip()
+        ]
+        selected_links = (
+            [value.strip() for value in links.split(",") if value.strip()] if links else None
+        )
+        payload = run_contact_audit(
+            run,
+            output_dir,
+            thresholds_mm=parsed_thresholds,
+            surface_samples=surface_samples,
+            frame_start=frame_start,
+            frame_end=frame_end,
+            links=selected_links,
+            html=html,
+            interactive=interactive,
+            force=force,
+            no_cache=no_cache,
+            run_shadow_ablation=run_shadow_ablation,
+            shadow_frames=shadow_frames,
+            headless_smoke_test=headless_smoke_test,
+        )
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"contact retention audit failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
 
 
 @app.command("gate-status")

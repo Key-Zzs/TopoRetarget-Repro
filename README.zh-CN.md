@@ -798,6 +798,26 @@ MANO_MODEL_ROOT="$MANO_MODEL_ROOT" \
 pytest -q tests/licensed_data
 ```
 
+## Stage 9.3 接触保持审计
+
+该审计是基于 manifest、不会调用 solver 的诊断流程，比较 accepted Stage 9.2/
+Stage 10 artifact 中的 source、warm-start、final、visual robot geometry、collision
+geometry、QuerySet provenance、同定义 objective，以及不执行优化的 warm-to-final
+插值路径。
+
+```bash
+conda run -n topo-retarget env PYTHONNOUSERSITE=1 \
+  python -m toporetarget workflow audit-contact-retention \
+  --run .local/runs/stage10_reference_runtime/<run>/manifest.json \
+  --output-dir .local/runs/stage9_3_contact_audit/<run> \
+  --surface-samples 8192 --thresholds-mm 1,2,3,5,8,10 --html --force
+```
+
+输出记录输入 artifact 的 hash/mtime 不变性、positive-outside signed-distance 约定、
+proxy 假设、per-frame/per-link CSV、root-cause 分析和 self-contained HTML。Source
+contact 与 semantic-anchor retention 明确只是诊断 proxy，不是真实接触标签。详见
+[`docs/CONTACT_RETENTION_AUDIT.md`](docs/CONTACT_RETENTION_AUDIT.md) 和本页中文说明。
+
 ## 文档索引
 
 - [Roadmap](docs/ROADMAP.md) / [中文路线图](docs/ROADMAP.zh-CN.md)

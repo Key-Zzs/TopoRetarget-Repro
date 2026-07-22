@@ -98,3 +98,23 @@ and penetration, temporal continuity, joint/base limits, solver acceptance, and
 the required artifact/provenance checks. See
 [`INTERACTION_MESH_VISUALIZATION.md`](INTERACTION_MESH_VISUALIZATION.md) for the
 full interpretation and recommended review procedure.
+
+## Stage 9.3 contact audit viewer
+
+The contact-retention audit has a separate self-contained HTML review. It reads
+the accepted manifest-resolved artifacts and does not call the solver:
+
+```bash
+toporetarget workflow audit-contact-retention \
+  --run .local/runs/stage10_reference_runtime/<run>/manifest.json \
+  --output-dir .local/runs/stage9_3_contact_audit/<run> \
+  --surface-samples 8192 --thresholds-mm 1,2,3,5,8,10 --html --force
+```
+
+The page separates source, warm-start, final, object, visual surface, collision
+geometry, QuerySet, anchors, and nearest object segments. Frame, threshold, and
+link/region controls are review aids; per-frame/per-link CSV and JSON reports
+remain authoritative. Object points are transformed from object-local into the
+scene frame for display. Source contact and semantic-anchor retention are
+diagnostic proxies rather than ground-truth labels, and the warm-to-final
+interpolation is not an optimizer trajectory.

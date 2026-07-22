@@ -854,6 +854,28 @@ MANO_MODEL_ROOT="$MANO_MODEL_ROOT" \
 pytest -q tests/licensed_data
 ```
 
+## Stage 9.3 contact-retention audit
+
+The audit is a manifest-driven, solver-free diagnostic over the accepted
+Stage 9.2/Stage 10 artifacts. It compares source, warm-start, final, visual
+robot geometry, collision geometry, QuerySet provenance, same-definition
+objective terms, and a non-optimizing warm-to-final interpolation path.
+
+```bash
+conda run -n topo-retarget env PYTHONNOUSERSITE=1 \
+  python -m toporetarget workflow audit-contact-retention \
+  --run .local/runs/stage10_reference_runtime/<run>/manifest.json \
+  --output-dir .local/runs/stage9_3_contact_audit/<run> \
+  --surface-samples 8192 --thresholds-mm 1,2,3,5,8,10 --html --force
+```
+
+The output records input immutability, positive-outside signed-distance
+conventions, proxy assumptions, per-frame/per-link CSVs, root-cause analysis,
+and a self-contained HTML review. Source contact and semantic-anchor retention
+are explicitly diagnostic proxies, not ground-truth contact labels. See
+[`docs/CONTACT_RETENTION_AUDIT.md`](docs/CONTACT_RETENTION_AUDIT.md) and the
+[中文说明](docs/CONTACT_RETENTION_AUDIT.zh-CN.md).
+
 ## Documentation map
 
 - [Roadmap](docs/ROADMAP.md) / [中文路线图](docs/ROADMAP.zh-CN.md)
