@@ -37,3 +37,13 @@ sequential solves, exact base-frame alignment, artifact round-trip, source
 integrity, bilingual documentation, and paper-fidelity status
 `implemented_with_assumptions`. Stage 8 now consumes the artifact read-only for bounded Eq. (7)
 evaluation; it does not modify the warm-start trajectory.
+
+### Stage 7.1 audit boundary
+
+[`../WARM_START_FIDELITY_AND_REACHABILITY_AUDIT.md`](../WARM_START_FIDELITY_AND_REACHABILITY_AUDIT.md)
+replays the accepted artifact without regenerating it. It audits mapping, thumb
+URDF ancestry/axes, frame and base conventions, joint limits, Jacobian
+observability, morphology-normalized targets, and warm-vs-final attribution.
+Bounded IK and workspace sampling are diagnostic-only; sampled workspace is not a
+global reachability proof. Formal Stage 7 remains the relative bone-direction
+objective and contact fidelity is evaluated separately downstream.

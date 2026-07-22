@@ -415,3 +415,20 @@ superseded。workflow 保留 Eq. (1)-(9)、论文权重、所有已接受的 Sta
 9.2/Stage 10 artifact、manual acceptance 和 robot export。audit-only solver
 invocation 保持为 0；若 gate 通过，shadow 输出仍是隔离的 diagnostic。所有
 代码修改保持 unstaged。
+
+## Stage 7.1 Warm-Start 保真度与可达性审计（2026-07-23）
+
+新增 manifest 驱动的只读 `workflow audit-warm-start` boundary 和 HTML/report 契约。对已接受的
+`s1/airplane_lift` RH reference runtime（local `[0,60)`、global `[240,300)`）重放全部 persisted
+Stage 7 qpos；Eq. (1)/(2)、frame、base、source mapping 和 robot mapping gates 均在 machine precision
+内通过。审计记录 thumb URDF ancestry/axis、joint-limit margins、Jacobian projection、Kabsch
+alignment alternatives、raw 与 robot-length thumb target，以及 warm/final formal/keypoint/E_IM/contact
+attribution。
+
+5 个 bounded frame 执行 diagnostic-only IK 和 4096 点 Sobol workspace sampling。raw thumb target
+到 sampled workspace 平均约 12.51 mm，而 robot-length target 平均约 3.81 mm，且每个 selected frame
+均接近 workspace；该结论记录为 morphology/embodiment gap，不修改正式 Stage 7 目标。whole-hand
+final keypoint RMSE 和 E_IM 高于 warm，因此 final refinement degradation 作为独立 ranked factor。
+最终 readiness 为 `WARM_START_FORMALLY_VALID_CONTINUE_STAGE9_3_3`，
+`CONTINUE_STAGE9_3_3=YES`；official solver invocation 仍为 0，45 次 diagnostic call 全部隔离。没有
+修改正式 artifact、Stage 10 manifest、manual acceptance 或 Git index。

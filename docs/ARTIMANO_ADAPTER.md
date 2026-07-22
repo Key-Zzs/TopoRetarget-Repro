@@ -123,3 +123,11 @@ toporetarget robots visualize --robot artimano_rh --pose random --seed 4 --geome
 Use `artimano_lh` for the independent left-hand run. Stage 4 stops at `P^r(q)`, FK, anchor and
 geometry inspection. It does not implement MANO-to-Arti-MANO qpos conversion, GRAB ingestion,
 bone initialization, Delaunay/Laplacian/SDF, collision optimization, or RL.
+
+## Stage 7.1 thumb audit
+
+The read-only warm-start audit consumes the accepted RH manifest and verifies
+that the `mediapipe21` semantic thumb chain resolves to the declared
+`j_thumb1x` → `j_thumb2y` → `j_thumb3` → `j_thumb_tip` ancestry. Joint axes and
+limits are evidence for diagnosis only. A morphology-normalized target is never
+used to rewrite this adapter or the formal Stage 7 source target.

@@ -36,8 +36,36 @@ from toporetarget.workflows.validation import (
     cross_stage_identity_report,
 )
 from toporetarget.workflows.visualization import run_visualization, write_visualization_report
+from toporetarget.workflows.warm_start_audit import run_warm_start_audit
 
 app = typer.Typer(help="Stage 10 bounded, resumable GRAB-to-Arti-MANO workflows.")
+
+
+@app.command("audit-warm-start")
+def audit_warm_start_command(
+    run: Path = typer.Option(..., "--run", help="Stage 10 manifest; inputs resolve from it."),
+    canonical_contact_audit: Path = typer.Option(..., "--canonical-contact-audit"),
+    output_root: Path = typer.Option(..., "--output-root"),
+    html: bool = typer.Option(False, "--html/--no-html"),
+    run_reachability_diagnostics: bool = typer.Option(
+        False, "--run-reachability-diagnostics/--no-reachability-diagnostics"
+    ),
+    diagnostic_frames: str = typer.Option("auto", "--diagnostic-frames"),
+) -> None:
+    """Audit Stage 7 warm-start fidelity without mutating official artifacts."""
+    try:
+        payload = run_warm_start_audit(
+            run,
+            canonical_contact_audit,
+            output_root,
+            html_output=html,
+            run_reachability_diagnostics=run_reachability_diagnostics,
+            diagnostic_frames=diagnostic_frames,
+        )
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"warm-start audit failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
 
 
 @app.command("run-contact-shadow-ablation")

@@ -91,6 +91,20 @@ than hidden. These choices are not presented as paper-exact facts. The independe
 `toporetarget.warm_start.v1`; it is an initialization output, not final retargeting. See
 [`stages/STAGE_7_BONE_DIRECTION_WARM_START.md`](stages/STAGE_7_BONE_DIRECTION_WARM_START.md).
 
+## Stage 7.1 warm-start audit boundary
+
+Stage 7.1 is an engineering audit of the Arti-MANO warm-start, not a new paper
+objective. It verifies source semantic mapping, robot anchors/thumb URDF axes,
+canonical frames, the non-paper base seed, persisted Eq. (1)/(2) replay, and
+per-finger warm/final attribution. The formal Stage 7 target remains relative
+bone-direction only; contact fidelity is not silently added to it. Raw source
+targets and robot-length reconstructed targets are separate diagnostic evidence,
+and local Jacobian/workspace sampling is not a global reachability certificate.
+Diagnostic IK is `paper_method=false`, `accepted_reference=false`, and all
+diagnostic solver calls are isolated from official artifacts. See
+[`WARM_START_FIDELITY_AND_REACHABILITY_AUDIT.md`](WARM_START_FIDELITY_AND_REACHABILITY_AUDIT.md)
+and its Chinese counterpart.
+
 ## 11. Stage 6 geometry foundation
 
 Stage 6 implements three traceable engineering foundations with explicit assumptions:

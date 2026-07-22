@@ -475,3 +475,26 @@ contact claims. The workflow preserves Eq. (1)-(9), paper weights, all
 accepted Stage 9.2/Stage 10 artifacts, manual acceptance, and robot export.
 Audit-only solver invocation remains zero; shadow outputs, if the gate passes,
 are diagnostic and isolated. All code changes remain unstaged.
+
+## Stage 7.1 warm-start fidelity and reachability audit (2026-07-23)
+
+Added the manifest-driven, read-only `workflow audit-warm-start` boundary and
+its HTML/report contract. The accepted `s1/airplane_lift` RH reference runtime
+(`local [0,60)`, global `[240,300)`) replays all persisted Stage 7 qpos and
+passes Eq. (1)/(2), frame, base, source mapping, and robot mapping gates at
+machine precision. The audit records thumb URDF ancestry/axes, joint-limit
+margins, Jacobian projection, Kabsch alignment alternatives, raw versus
+robot-length thumb targets, and warm/final formal/keypoint/E_IM/contact
+attribution.
+
+Five bounded frames ran diagnostic-only IK and 4096-point Sobol workspace
+sampling. Raw thumb targets averaged about 12.51 mm from the sampled workspace,
+whereas robot-length targets averaged about 3.81 mm and were near it on every
+selected frame; this is recorded as a morphology/embodiment gap, not a change to
+the formal Stage 7 objective. Whole-hand final keypoint RMSE and E_IM increased
+relative to warm, so final refinement degradation remains a separate ranked
+factor. The final readiness is
+`WARM_START_FORMALLY_VALID_CONTINUE_STAGE9_3_3`, with
+`CONTINUE_STAGE9_3_3=YES`; official solver invocation remains zero and all 45
+diagnostic calls are isolated. No official artifact, Stage 10 manifest, manual
+acceptance, or Git index was changed.

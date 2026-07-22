@@ -87,3 +87,12 @@ toporetarget retarget compare-frame-profiles \
 
 See [WARM_START_OPTIMIZATION.md](WARM_START_OPTIMIZATION.md) for Eq. (2),
 artifacts, validation, and solver behavior.
+
+## Warm-start fidelity audit
+
+Stage 7.1 replays persisted qpos and compares formal Eq. (1)/(2), FK anchors,
+frames, and the explicit base seed before examining contact or final-refinement
+metrics. Raw source metric targets and robot-length reconstructed targets remain
+separate diagnostic quantities. The audit never changes this initialization
+objective or its artifact; see
+[`WARM_START_FIDELITY_AND_REACHABILITY_AUDIT.md`](WARM_START_FIDELITY_AND_REACHABILITY_AUDIT.md).

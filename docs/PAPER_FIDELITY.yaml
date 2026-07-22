@@ -7,6 +7,17 @@ paper:
   page_count: 16
 
 audit_contracts:
+  stage7_1_warm_start_audit:
+    profile: src/toporetarget/workflows/warm_start_audit.py
+    formal_stage7_objective_unchanged: true
+    source_robot_mapping_audited: true
+    contact_proxy_is_ground_truth: false
+    diagnostic_ik_is_paper_method: false
+    sampled_workspace_is_global_proof: false
+    official_artifacts_mutated: false
+    official_solver_invocation_count: 0
+    assumptions: [A_STAGE7_1_MORPHOLOGY_TARGET_001, A_STAGE7_1_WORKSPACE_SAMPLE_001, A_STAGE7_1_FINAL_ATTRIBUTION_001]
+    notes: "Read-only warm-start fidelity, thumb mapping, base alignment, morphology and bounded reachability audit."
   stage9_3_2_canonical_contact:
     profile: configs/audit/contact_distance/reference_winding_v1.yaml
     formal_backend: reference_triangle_winding

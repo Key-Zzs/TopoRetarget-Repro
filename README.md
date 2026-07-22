@@ -196,6 +196,26 @@ Use `--frame 30` and `--frame 59` for middle/last frames. In the interactive win
 keypoint/skeleton/frame/label/residual fonts resize with the window; `--show-object-context` is
 display-only and does not enter the warm-start objective.
 
+### Stage 7.1. Audit warm-start fidelity and reachability
+
+The manifest-driven Stage 7.1 audit replays the accepted Stage 7 warm-start,
+checks source/robot mapping, thumb URDF ancestry and axes, frame/base alignment,
+joint limits, per-finger attribution, and bounded diagnostic-only reachability.
+It keeps formal Stage 7 fidelity separate from Stage 8/contact/task fidelity and
+does not modify official artifacts. See
+[`docs/WARM_START_FIDELITY_AND_REACHABILITY_AUDIT.md`](docs/WARM_START_FIDELITY_AND_REACHABILITY_AUDIT.md)
+for the full contract and current accepted-run result.
+
+```bash
+env PYTHONNOUSERSITE=1 PYTHONPATH=src \
+  /home/deepcybo/miniconda3/envs/topo-retarget/bin/python \
+  -m toporetarget workflow audit-warm-start \
+  --run .local/runs/stage10_reference_runtime/s1__airplane_lift__right__artimano_rh__f000240_f000300/manifest.json \
+  --canonical-contact-audit .local/runs/stage9_3_2_canonical_reaudit/s1__airplane_lift__right__artimano_rh__f000240_f000300 \
+  --output-root .local/runs/stage7_1_warmstart_audit/s1__airplane_lift__right__artimano_rh__f000240_f000300 \
+  --html --run-reachability-diagnostics --diagnostic-frames auto
+```
+
 ### Stage 8. Build and validate the shared interaction graph
 
 Stage 8 consumes the Stage 7 warm start and Stage 6 50-point sample artifact as separate,

@@ -87,3 +87,13 @@ Stage 8 reads this artifact without modifying qpos or base pose. Its source grap
 directed weights, and object samples are separate derived artifacts; Stage 9 consumes
 them for the final constrained refinement documented in
 [FINAL_REFINEMENT_OPTIMIZATION.md](FINAL_REFINEMENT_OPTIMIZATION.md).
+
+## Stage 7.1 fidelity and reachability audit
+
+The audit is a read-only consumer of `toporetarget.warm_start.v1`. Its bounded
+diagnostic solves may compare thumb-only, all-joint, base-adjusted, temporal
+ablation, and robot-length target profiles, but these are not paper-method
+solves and never publish accepted qpos. Formal replay, joint-limit margins,
+Jacobian projection, workspace sampling, Stage 8 `E_IM`, and contact proxies are
+reported as separate evidence. See
+[`WARM_START_FIDELITY_AND_REACHABILITY_AUDIT.md`](WARM_START_FIDELITY_AND_REACHABILITY_AUDIT.md).

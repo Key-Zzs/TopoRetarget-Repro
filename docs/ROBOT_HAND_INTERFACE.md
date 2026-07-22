@@ -105,6 +105,15 @@ To add another hand, add a YAML `RobotHandSpec`, an anchor profile with the cano
 an asset resolver entry if needed. The generic parser and FK code must not gain hand-specific link
 names. A synthetic YAML-only hand and fixture exercise this boundary in the public tests.
 
+## Stage 7.1 anchor audit
+
+The read-only warm-start audit checks the Arti-MANO anchor profile and thumb URDF
+ancestry without changing this interface. It records declared link/joint origins,
+the fixed thumb base transform, local and parent-frame joint axes, nearest visual
+or collision mesh-vertex diagnostics, and 22-DoF joint-limit margins. Missing
+collision coverage or a nearest-vertex distance is reported as an audit fact;
+visual geometry is never silently substituted for a formal collision model.
+
 No MANO-to-robot qpos conversion, bone-direction initialization, loss, inverse kinematics, or
 optimization is part of this Stage 4 interface. The separate Stage 9 refinement consumes its
 collision geometry and FK through the documented final-refinement path.

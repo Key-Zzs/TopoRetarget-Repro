@@ -160,6 +160,24 @@ toporetarget retarget visualize-warm-start \
   --show-object-context
 ```
 
+### Stage 7.1：Warm-Start 保真度与可达性审计
+
+manifest 驱动的 Stage 7.1 audit 会重放已接受的 Stage 7 warm-start，检查 source/robot mapping、
+thumb URDF ancestry 与 axis、frame/base alignment、joint limits、per-finger attribution 和有界的
+diagnostic-only reachability。它把正式 Stage 7 fidelity 与 Stage 8/contact/task fidelity 分开，
+不会修改正式 artifact。完整契约和当前 accepted-run 结果见
+[`docs/WARM_START_FIDELITY_AND_REACHABILITY_AUDIT.zh-CN.md`](docs/WARM_START_FIDELITY_AND_REACHABILITY_AUDIT.zh-CN.md)。
+
+```bash
+env PYTHONNOUSERSITE=1 PYTHONPATH=src \
+  /home/deepcybo/miniconda3/envs/topo-retarget/bin/python \
+  -m toporetarget workflow audit-warm-start \
+  --run .local/runs/stage10_reference_runtime/s1__airplane_lift__right__artimano_rh__f000240_f000300/manifest.json \
+  --canonical-contact-audit .local/runs/stage9_3_2_canonical_reaudit/s1__airplane_lift__right__artimano_rh__f000240_f000300 \
+  --output-root .local/runs/stage7_1_warmstart_audit/s1__airplane_lift__right__artimano_rh__f000240_f000300 \
+  --html --run-reachability-diagnostics --diagnostic-frames auto
+```
+
 ### Stage 8：构建并验证共享交互图
 
 Stage 8 将 Stage 7 warm start 和 Stage 6 的 50 点 sample artifact 作为独立、带 hash 检查的输入。
