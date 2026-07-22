@@ -462,3 +462,16 @@ inconclusive because the visual meshes are open. The requested shadow boundary s
 three frames but ran zero profiles and invoked zero solvers because the reconciliation gate
 failed. Formal Stage 9.2/Stage 10 artifacts, exports, and manual acceptance were unchanged;
 all changes remain unstaged.
+
+## Stage 9.3.2 canonical SDF re-audit (2026-07-22)
+
+Added the versioned `reference_winding_v1` formal contact-distance contract,
+v2 canonical re-audit workflow, legacy-vs-canonical disagreement reports,
+source/warm/final proxy metrics, collision/visual coverage diagnostics,
+readiness reporting, and an isolated six-profile bounded shadow boundary.
+Formal evaluation is separate from the approved Stage 9.2 solver backend;
+legacy convex-hull values are diagnostic-only and superseded for formal
+contact claims. The workflow preserves Eq. (1)-(9), paper weights, all
+accepted Stage 9.2/Stage 10 artifacts, manual acceptance, and robot export.
+Audit-only solver invocation remains zero; shadow outputs, if the gate passes,
+are diagnostic and isolated. All code changes remain unstaged.

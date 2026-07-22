@@ -179,6 +179,17 @@ Method-complete means all publicly specified method equations, configurations, c
 metrics, and evaluation code are implemented and tested, with every remaining assumption
 explicitly resolved or marked as a deliberate extension. This repository is not method-complete.
 
+## Stage 9.3.2 canonical contact audit boundary
+
+Stage 9.3.2 is an engineering audit, not a new paper method. Formal contact
+evaluation is pinned to the versioned reference winding SDF; solver-side
+acceleration remains a separate profile. The old convex-hull Stage 9.3
+values are diagnostic-only and superseded for formal contact claims. Dense
+visual samples and retention values are proxies, and open visual meshes do
+not establish signed collision/visual offset direction. The bounded shadow
+profiles are paper-external diagnostics and cannot modify Eq. (1)-(9), paper
+weights, accepted Stage 9.2 artifacts, or Stage 10 acceptance/export.
+
 ## 15. Definition of result-complete
 
 Result-complete additionally requires the same datasets, private trajectories, robot assets,

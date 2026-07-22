@@ -11,6 +11,12 @@ import typer
 
 from toporetarget.workflows.accepted_run import create_accepted_run
 from toporetarget.workflows.contact_audit import run_contact_audit
+from toporetarget.workflows.contact_canonical_reaudit import (
+    SHADOW_PROFILES,
+    Stage932PreconditionError,
+    run_canonical_reaudit,
+    run_canonical_shadow_ablation,
+)
 from toporetarget.workflows.contact_metric_reconciliation import (
     run_contact_metric_reconciliation,
 )
@@ -34,6 +40,87 @@ from toporetarget.workflows.visualization import run_visualization, write_visual
 app = typer.Typer(help="Stage 10 bounded, resumable GRAB-to-Arti-MANO workflows.")
 
 
+@app.command("run-contact-shadow-ablation")
+def run_contact_shadow_ablation_v2_command(
+    run: Path = typer.Option(..., "--run", help="Stage 10 manifest."),
+    canonical_audit_root: Path = typer.Option(..., "--canonical-audit-root"),
+    output_root: Path = typer.Option(..., "--output-root"),
+    frames: str = typer.Option("auto", "--frames"),
+    profiles: str = typer.Option(",".join(SHADOW_PROFILES), "--profiles"),
+    force: bool = typer.Option(False, "--force"),
+) -> None:
+    """Run the gate-approved Stage 9.3.2 diagnostic shadow solver profiles."""
+    try:
+        selected_frames = (
+            ()
+            if frames.strip().lower() == "auto"
+            else tuple(int(value.strip()) for value in frames.split(",") if value.strip())
+        )
+        selected_profiles = tuple(value.strip() for value in profiles.split(",") if value.strip())
+        payload = run_canonical_shadow_ablation(
+            run,
+            canonical_audit_root,
+            output_root,
+            frames=selected_frames,
+            profiles=selected_profiles,
+            force=force,
+        )
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, Stage932PreconditionError) as exc:
+        typer.echo(f"canonical contact shadow ablation failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("contact-audit-status")
+def contact_audit_status_command(
+    canonical_audit_root: Path = typer.Option(..., "--canonical-audit-root"),
+    shadow_root: Path | None = typer.Option(None, "--shadow-root"),
+) -> None:
+    """Report canonical audit gate, shadow status, and Stage 9.4 readiness."""
+    root = canonical_audit_root.expanduser().resolve()
+    payload: dict[str, Any] = {}
+    for name in ("audit_manifest.json", "stage9_3_2_summary.json", "stage9_4_readiness.json"):
+        path = root / name
+        if path.exists():
+            payload[name] = json.loads(path.read_text(encoding="utf-8"))
+    if shadow_root is not None:
+        path = shadow_root.expanduser().resolve() / "shadow_manifest.json"
+        if path.exists():
+            payload["shadow_manifest.json"] = json.loads(path.read_text(encoding="utf-8"))
+    typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+
+
+@app.command("reaudit-contact-canonical")
+def reaudit_contact_canonical_command(
+    run: Path = typer.Option(..., "--run", help="Stage 10 manifest."),
+    legacy_audit_root: Path = typer.Option(..., "--legacy-audit-root"),
+    reconciliation_root: Path = typer.Option(..., "--reconciliation-root"),
+    output_root: Path = typer.Option(..., "--output-root"),
+    surface_samples: int = typer.Option(8192, "--surface-samples", min=8192),
+    precomputed_audit_root: Path | None = typer.Option(None, "--precomputed-audit-root"),
+    html: bool = typer.Option(False, "--html/--no-html"),
+    headless_smoke_test: bool = typer.Option(False, "--headless-smoke-test"),
+    force: bool = typer.Option(False, "--force"),
+) -> None:
+    """Run Stage 9.3.2 formal contact audit on the reference winding SDF."""
+    try:
+        payload = run_canonical_reaudit(
+            run,
+            legacy_audit_root,
+            reconciliation_root,
+            output_root,
+            surface_samples=surface_samples,
+            html=html,
+            headless_smoke_test=headless_smoke_test,
+            force=force,
+            precomputed_audit_root=precomputed_audit_root,
+        )
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, Stage932PreconditionError) as exc:
+        typer.echo(f"canonical contact re-audit failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
 @app.command("audit-contact-retention")
 def audit_contact_retention_command(
     run: Path = typer.Option(..., "--run", help="Stage 10 manifest; all inputs resolve from it."),
@@ -50,6 +137,7 @@ def audit_contact_retention_command(
     run_shadow_ablation: bool = typer.Option(False, "--run-shadow-ablation"),
     shadow_frames: str = typer.Option("auto", "--shadow-frames"),
     headless_smoke_test: bool = typer.Option(False, "--headless-smoke-test"),
+    evaluation_backend: str = typer.Option("configured", "--evaluation-backend"),
 ) -> None:
     """Audit source/warm/final contact retention without invoking Stage 9."""
     try:
@@ -74,6 +162,7 @@ def audit_contact_retention_command(
             run_shadow_ablation=run_shadow_ablation,
             shadow_frames=shadow_frames,
             headless_smoke_test=headless_smoke_test,
+            evaluation_backend=evaluation_backend,
         )
         typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
     except (OSError, ValueError, RuntimeError) as exc:
@@ -102,7 +191,7 @@ def reconcile_contact_metrics_command(
         raise typer.Exit(code=1) from exc
 
 
-@app.command("run-contact-shadow-ablation")
+@app.command("run-contact-shadow-ablation-legacy")
 def run_contact_shadow_ablation_command(
     run: Path = typer.Option(..., "--run", help="Stage 10 manifest; retained for provenance."),
     reconciliation_root: Path = typer.Option(..., "--reconciliation-root"),

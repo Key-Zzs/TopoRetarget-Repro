@@ -823,6 +823,18 @@ contact 与 semantic-anchor retention 明确只是诊断 proxy，不是真实接
 当前 reference-runtime closeout 因旧 Stage 9.3 convex-hull metric 与 Stage 9.2 reference
 SDF 定义不一致而阻止 shadow 执行。
 
+### Stage 9.3.2 canonical re-audit
+
+正式 audit 来源是版本化的
+[`reference_winding_v1`](configs/audit/contact_distance/reference_winding_v1.yaml)
+reference winding SDF。solver-side SDF acceleration 与 formal evaluation 分离；旧的
+convex-hull 报告只用于诊断，并对正式 contact/penetration claim 标记为 superseded。
+v2 audit 将 raw penetration、tau/hard/soft residual、visual approximation、collision
+distance 和 contact-retention proxy 分开记录。开放 visual mesh 可以支持 unsigned coverage
+审计，但不能证明 inflated/inset 方向。Shadow profile 只是 diagnostic，且必须在 canonical
+60x512 gate 通过后才可运行；本阶段不实现 Stage 9.4，也不修改 Stage 10 artifact。详见
+[`docs/CANONICAL_CONTACT_DISTANCE_AND_REAUDIT.md`](docs/CANONICAL_CONTACT_DISTANCE_AND_REAUDIT.md)。
+
 ## 文档索引
 
 - [Roadmap](docs/ROADMAP.md) / [中文路线图](docs/ROADMAP.zh-CN.md)

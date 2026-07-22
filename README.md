@@ -883,6 +883,20 @@ The current reference-runtime closeout blocks shadow execution because the
 legacy Stage 9.3 convex-hull metric does not share the Stage 9.2 reference SDF
 definition.
 
+### Stage 9.3.2 canonical re-audit
+
+The formal audit source is now the versioned
+[`reference_winding_v1`](configs/audit/contact_distance/reference_winding_v1.yaml)
+reference winding SDF. Solver-side SDF acceleration is a separate contract;
+the legacy convex-hull report is diagnostic-only and superseded for formal
+contact/penetration claims. The v2 audit keeps raw penetration, tau/hard/soft
+residuals, visual approximation, collision distance, and contact-retention
+proxy semantics separate. Open visual meshes allow unsigned coverage audits
+but do not prove inflated/inset direction. Shadow profiles are diagnostic-only
+and can run only after the canonical 60x512 gate; no Stage 9.4 implementation
+or Stage 10 artifact is changed. See
+[`docs/CANONICAL_CONTACT_DISTANCE_AND_REAUDIT.md`](docs/CANONICAL_CONTACT_DISTANCE_AND_REAUDIT.md).
+
 ## Documentation map
 
 - [Roadmap](docs/ROADMAP.md) / [中文路线图](docs/ROADMAP.zh-CN.md)

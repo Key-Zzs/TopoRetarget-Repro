@@ -11,7 +11,11 @@ from toporetarget.geometry.mesh_audit import MeshAuditReport, audit_mesh
 from toporetarget.geometry.se3 import invert_transform, transform_points, transform_vectors
 
 from .base import SignedDistanceBackend, SignedDistanceQueryResult
-from .closest_point import TriangleAABBTree, closest_points_on_triangles
+from .closest_point import (
+    TriangleAABBTree,
+    TriangleCentroidBoundTree,
+    closest_points_on_triangles,
+)
 from .winding import generalized_winding_number, winding_sign
 
 
@@ -34,6 +38,9 @@ class ReferenceSignedDistanceBackend(SignedDistanceBackend):
         confidence_threshold: float = 0.05,
         query_chunk_size: int = 256,
         face_chunk_size: int = 4096,
+        closest_acceleration: str = "tree",
+        winding_device: str | None = None,
+        closest_device: str | None = None,
         source_path: str | Path | None = None,
     ) -> None:
         self.vertices = np.asarray(vertices, dtype=np.float64)
@@ -61,6 +68,44 @@ class ReferenceSignedDistanceBackend(SignedDistanceBackend):
         self.confidence_threshold = float(confidence_threshold)
         self.query_chunk_size = int(query_chunk_size)
         self.face_chunk_size = int(face_chunk_size)
+        if closest_acceleration not in {"tree", "vectorized", "centroid_bound"}:
+            raise ValueError("closest_acceleration must be tree, vectorized, or centroid_bound")
+        requested_winding_device = winding_device
+        requested_closest_device = closest_device
+        if winding_device is not None and str(winding_device).startswith("cuda"):
+            try:
+                import torch
+
+                if not torch.cuda.is_available():
+                    winding_device = "cpu"
+            except ImportError:
+                winding_device = None
+        if closest_device is not None and str(closest_device).startswith("cuda"):
+            try:
+                import torch
+
+                if not torch.cuda.is_available():
+                    closest_device = None
+                    if closest_acceleration == "vectorized":
+                        closest_acceleration = "tree"
+            except ImportError:
+                closest_device = None
+                if closest_acceleration == "vectorized":
+                    closest_acceleration = "tree"
+        if (
+            requested_winding_device is not None
+            and str(requested_winding_device).startswith("cuda")
+            and str(winding_device) == "cpu"
+        ):
+            query_chunk_size = min(int(query_chunk_size), 256)
+            face_chunk_size = min(int(face_chunk_size), 4096)
+        self.query_chunk_size = int(query_chunk_size)
+        self.face_chunk_size = int(face_chunk_size)
+        self.closest_acceleration = closest_acceleration
+        self.winding_device = winding_device
+        self.closest_device = closest_device
+        self.requested_winding_device = requested_winding_device
+        self.requested_closest_device = requested_closest_device
         self._face_indices = np.flatnonzero(self._valid_face_mask)
         self._triangles = self.vertices[self.faces[self._valid_face_mask]]
         self._face_normals = np.cross(
@@ -74,27 +119,13 @@ class ReferenceSignedDistanceBackend(SignedDistanceBackend):
         # structure alive for the whole run.  This changes only query
         # scheduling; the leaf computation and winding sign remain the
         # reference implementation.
-        self._closest_tree = TriangleAABBTree(self._triangles)
-        # For a watertight mesh whose every vertex lies on one convex hull,
-        # the hull half-spaces are an exact inside/outside predicate.  Keep
-        # the triangle closest-point query as the reference distance, but use
-        # this persistent sign structure instead of recomputing a 50k-face
-        # winding sum for every 512-point audit.  Non-convex meshes retain the
-        # original generalized-winding path.
-        self._convex_equations: np.ndarray | None = None
-        try:
-            from scipy.spatial import ConvexHull
-
-            hull = ConvexHull(self.vertices)
-            hull_residual = hull.equations[:, :3] @ self.vertices.T + hull.equations[:, 3, None]
-            vertex_boundary_residual = np.max(hull_residual, axis=0)
-            if (
-                float(np.max(hull_residual)) <= 1e-9
-                and float(np.min(vertex_boundary_residual)) >= -1e-9
-            ):
-                self._convex_equations = np.asarray(hull.equations, dtype=np.float64)
-        except (ImportError, ValueError):  # pragma: no cover - qhull fallback
-            self._convex_equations = None
+        self._closest_tree: TriangleAABBTree | TriangleCentroidBoundTree | None
+        if closest_acceleration == "tree":
+            self._closest_tree = TriangleAABBTree(self._triangles)
+        elif closest_acceleration == "centroid_bound":
+            self._closest_tree = TriangleCentroidBoundTree(self._triangles)
+        else:
+            self._closest_tree = None
         if self.audit_report.signed_volume is not None and self.audit_report.signed_volume < 0:
             self._face_normals *= -1.0
 
@@ -130,7 +161,12 @@ class ReferenceSignedDistanceBackend(SignedDistanceBackend):
             "face_chunk_size": self.face_chunk_size,
             "acceleration": {"rtree": False, "pyembree": False, "reference_fallback": True},
             "triangle_aabb": True,
-            "convex_halfspace_sign": self._convex_equations is not None,
+            "closest_acceleration": self.closest_acceleration,
+            "winding_device": self.winding_device or "cpu_numpy",
+            "closest_device": self.closest_device or "cpu_numpy",
+            "requested_winding_device": self.requested_winding_device or "cpu_numpy",
+            "requested_closest_device": self.requested_closest_device or "cpu_numpy",
+            "convex_halfspace_sign": False,
             "audit_sign_reliability": self.audit_report.sign_reliability,
         }
 
@@ -143,7 +179,8 @@ class ReferenceSignedDistanceBackend(SignedDistanceBackend):
             self._triangles,
             query_chunk_size=self.query_chunk_size,
             face_chunk_size=self.face_chunk_size,
-            tree=self._closest_tree,
+            tree=None if self.closest_device is not None else self._closest_tree,
+            device=self.closest_device,
         )
         original_faces = self._face_indices[local_faces]
         normals = self._face_normals[local_faces].copy()
@@ -155,19 +192,13 @@ class ReferenceSignedDistanceBackend(SignedDistanceBackend):
             confidence = np.zeros(len(points), dtype=np.float64)
             signed = np.full(len(points), np.nan, dtype=np.float64)
             method = "unsigned_only"
-        elif self._convex_equations is not None:
-            halfspace = points @ self._convex_equations[:, :3].T + self._convex_equations[:, 3]
-            inside = np.all(halfspace <= 1e-10, axis=1)
-            confidence = np.ones(len(points), dtype=np.float64)
-            sign_valid = np.ones(len(points), dtype=bool)
-            signed = np.where(inside, -unsigned, unsigned)
-            method = "strict_convex_halfspace"
         else:
             winding_value = generalized_winding_number(
                 points,
                 self._triangles,
                 query_chunk_size=self.query_chunk_size,
                 face_chunk_size=self.face_chunk_size,
+                device=self.winding_device,
             )
             inside, confidence, ambiguous, _ = winding_sign(
                 winding_value,

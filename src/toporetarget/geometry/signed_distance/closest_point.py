@@ -195,18 +195,159 @@ class TriangleAABBTree:
         return closest, faces, barycentric, np.sqrt(np.maximum(distance2, 0.0))
 
 
+class TriangleCentroidBoundTree:
+    """Exact closest-triangle queries using centroid lower-bound pruning.
+
+    The centroid index is only an accelerator.  Each candidate is evaluated
+    by ``_closest_point_pairs`` and every omitted triangle is proven farther
+    away by its bounding-sphere lower bound, so this returns the same exact
+    triangle distance and deterministic face tie-break as the AABB backend.
+    """
+
+    def __init__(self, triangles: np.ndarray) -> None:
+        try:
+            from scipy.spatial import cKDTree
+        except ImportError as exc:  # pragma: no cover - optional accelerator
+            raise RuntimeError("centroid-bound accelerator requires scipy") from exc
+        self.triangles = np.asarray(triangles, dtype=np.float64).reshape(-1, 3, 3)
+        if len(self.triangles) == 0:
+            raise ValueError("centroid-bound tree requires at least one triangle")
+        self.centroids = np.mean(self.triangles, axis=1)
+        self.radii = np.max(
+            np.linalg.norm(self.triangles - self.centroids[:, None, :], axis=-1), axis=1
+        )
+        self.max_radius = float(np.max(self.radii))
+        self._tree = cKDTree(self.centroids)
+
+    def query(self, points: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        values = np.asarray(points, dtype=np.float64).reshape(-1, 3)
+        _, nearest = self._tree.query(values, k=1, workers=-1)
+        nearest = np.asarray(nearest, dtype=np.int64)
+        seed_triangles = self.triangles[nearest]
+        seed_points, _, seed_distance2 = _closest_point_pairs(values, seed_triangles)
+        seed_distance = np.sqrt(np.maximum(seed_distance2[:, 0], 0.0))
+        radii = seed_distance + self.max_radius
+        candidate_lists = self._tree.query_ball_point(values, radii, workers=-1, return_sorted=True)
+        closest = np.empty_like(values)
+        faces = np.empty(len(values), dtype=np.int64)
+        barycentric = np.empty((len(values), 3), dtype=np.float64)
+        distance2 = np.empty(len(values), dtype=np.float64)
+        for index, candidates in enumerate(candidate_lists):
+            if not candidates:  # pragma: no cover - nearest centroid is included
+                candidates = [int(nearest[index])]
+            candidate_indices = np.asarray(candidates, dtype=np.int64)
+            candidate_points, candidate_bary, candidate_distance2 = _closest_point_pairs(
+                values[index : index + 1], self.triangles[candidate_indices]
+            )
+            local = int(np.argmin(candidate_distance2[0]))
+            best_distance2 = float(candidate_distance2[0, local])
+            tied = np.flatnonzero(
+                np.isclose(candidate_distance2[0], best_distance2, rtol=0.0, atol=0.0)
+            )
+            if len(tied) > 1:
+                local = int(tied[np.argmin(candidate_indices[tied])])
+            closest[index] = candidate_points[0, local]
+            faces[index] = candidate_indices[local]
+            barycentric[index] = candidate_bary[0, local]
+            distance2[index] = best_distance2
+        return closest, faces, barycentric, np.sqrt(np.maximum(distance2, 0.0))
+
+
 def closest_points_on_triangles(
     points: np.ndarray,
     triangles: np.ndarray,
     *,
     query_chunk_size: int = 256,
     face_chunk_size: int = 4096,
-    tree: TriangleAABBTree | None = None,
+    tree: TriangleAABBTree | TriangleCentroidBoundTree | None = None,
+    device: str | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     queries = np.asarray(points, dtype=np.float64).reshape(-1, 3)
     mesh = np.asarray(triangles, dtype=np.float64).reshape(-1, 3, 3)
     if len(mesh) == 0:
         raise ValueError("closest-point query requires at least one triangle")
+    if device is not None:
+        try:
+            import torch
+
+            torch_device = torch.device(device)
+            query_tensor = torch.as_tensor(queries, dtype=torch.float64, device=torch_device)
+            mesh_tensor = torch.as_tensor(mesh, dtype=torch.float64, device=torch_device)
+            result_points = np.empty_like(queries)
+            result_bary = np.empty((len(queries), 3), dtype=np.float64)
+            result_faces = np.empty(len(queries), dtype=np.int64)
+            result_dist2 = np.full(len(queries), np.inf, dtype=np.float64)
+            for q_start in range(0, len(queries), query_chunk_size):
+                q_end = min(len(queries), q_start + query_chunk_size)
+                p = query_tensor[q_start:q_end]
+                best_dist = torch.full(
+                    (len(p),), float("inf"), dtype=torch.float64, device=torch_device
+                )
+                best_p = torch.zeros((len(p), 3), dtype=torch.float64, device=torch_device)
+                best_bary = torch.zeros((len(p), 3), dtype=torch.float64, device=torch_device)
+                best_face = torch.zeros((len(p),), dtype=torch.int64, device=torch_device)
+                for f_start in range(0, len(mesh), face_chunk_size):
+                    tri = mesh_tensor[f_start : min(len(mesh), f_start + face_chunk_size)]
+                    a, b, c = tri[None, :, 0, :], tri[None, :, 1, :], tri[None, :, 2, :]
+                    point = p[:, None, :]
+                    ab, ac = b - a, c - a
+                    ap, bp, cp = point - a, point - b, point - c
+                    d1, d2 = torch.sum(ab * ap, dim=-1), torch.sum(ac * ap, dim=-1)
+                    d3, d4 = torch.sum(ab * bp, dim=-1), torch.sum(ac * bp, dim=-1)
+                    d5, d6 = torch.sum(ab * cp, dim=-1), torch.sum(ac * cp, dim=-1)
+                    bary = torch.zeros(
+                        (len(p), len(tri), 3), dtype=torch.float64, device=torch_device
+                    )
+                    mask = (d1 <= 0) & (d2 <= 0)
+                    bary[..., 0] = torch.where(mask, 1.0, bary[..., 0])
+                    mask_b = (d3 >= 0) & (d4 <= d3)
+                    bary[..., 1] = torch.where(mask_b, 1.0, bary[..., 1])
+                    vc = d1 * d4 - d3 * d2
+                    mask_ab = (vc <= 0) & (d1 >= 0) & (d3 <= 0)
+                    v_ab = d1 / torch.clamp(d1 - d3, min=1e-30)
+                    bary[..., 0] = torch.where(mask_ab, 1.0 - v_ab, bary[..., 0])
+                    bary[..., 1] = torch.where(mask_ab, v_ab, bary[..., 1])
+                    mask_c = (d6 >= 0) & (d5 <= d6)
+                    bary[..., 2] = torch.where(mask_c, 1.0, bary[..., 2])
+                    vb = d5 * d2 - d1 * d6
+                    mask_ac = (vb <= 0) & (d2 >= 0) & (d6 <= 0)
+                    w_ac = d2 / torch.clamp(d2 - d6, min=1e-30)
+                    bary[..., 0] = torch.where(mask_ac, 1.0 - w_ac, bary[..., 0])
+                    bary[..., 2] = torch.where(mask_ac, w_ac, bary[..., 2])
+                    va = d3 * d6 - d5 * d4
+                    mask_bc = (va <= 0) & ((d4 - d3) >= 0) & ((d5 - d6) >= 0)
+                    w_bc = (d4 - d3) / torch.clamp((d4 - d3) + (d5 - d6), min=1e-30)
+                    bary[..., 1] = torch.where(mask_bc, 1.0 - w_bc, bary[..., 1])
+                    bary[..., 2] = torch.where(mask_bc, w_bc, bary[..., 2])
+                    interior = ~(mask | mask_b | mask_ab | mask_c | mask_ac | mask_bc)
+                    denominator = torch.clamp(va + vb + vc, min=1e-30)
+                    bary[..., 0] = torch.where(
+                        interior, 1.0 - (vb + vc) / denominator, bary[..., 0]
+                    )
+                    bary[..., 1] = torch.where(interior, vb / denominator, bary[..., 1])
+                    bary[..., 2] = torch.where(interior, vc / denominator, bary[..., 2])
+                    closest = (
+                        bary[..., 0, None] * a + bary[..., 1, None] * b + bary[..., 2, None] * c
+                    )
+                    distance = torch.sum((point - closest) ** 2, dim=-1)
+                    local_face = torch.argmin(distance, dim=1)
+                    rows = torch.arange(len(p), device=torch_device)
+                    local_distance = distance[rows, local_face]
+                    update = local_distance < best_dist
+                    best_dist = torch.where(update, local_distance, best_dist)
+                    best_p = torch.where(update[:, None], closest[rows, local_face], best_p)
+                    best_bary = torch.where(update[:, None], bary[rows, local_face], best_bary)
+                    best_face = torch.where(update, local_face + f_start, best_face)
+                result_points[q_start:q_end] = best_p.detach().cpu().numpy()
+                result_bary[q_start:q_end] = best_bary.detach().cpu().numpy()
+                result_faces[q_start:q_end] = best_face.detach().cpu().numpy()
+                result_dist2[q_start:q_end] = best_dist.detach().cpu().numpy()
+            return result_points, result_faces, result_bary, np.sqrt(np.maximum(result_dist2, 0.0))
+        except (ImportError, RuntimeError, ValueError) as exc:
+            if str(device).startswith("cuda"):
+                raise RuntimeError(
+                    f"exact closest-point accelerator unavailable: {device}"
+                ) from exc
     if tree is not None:
         if not np.shares_memory(tree.triangles, mesh) and not np.array_equal(tree.triangles, mesh):
             raise ValueError("AABB tree triangles do not match the closest-point query mesh")
@@ -217,30 +358,30 @@ def closest_points_on_triangles(
     result_dist2 = np.full(len(queries), np.inf, dtype=np.float64)
     for q_start in range(0, len(queries), query_chunk_size):
         q_end = min(len(queries), q_start + query_chunk_size)
-        p = queries[q_start:q_end]
-        best_p = np.zeros_like(p)
-        best_bary = np.zeros((len(p), 3), dtype=np.float64)
-        best_face = np.zeros(len(p), dtype=np.int64)
-        best_dist = np.full(len(p), np.inf, dtype=np.float64)
+        np_p = queries[q_start:q_end]
+        np_best_p = np.zeros_like(np_p)
+        np_best_bary = np.zeros((len(np_p), 3), dtype=np.float64)
+        np_best_face = np.zeros(len(np_p), dtype=np.int64)
+        np_best_dist = np.full(len(np_p), np.inf, dtype=np.float64)
         for f_start in range(0, len(mesh), face_chunk_size):
             f_end = min(len(mesh), f_start + face_chunk_size)
-            tri = mesh[f_start:f_end]
-            closest, bary, distances = _closest_point_pairs(p, tri)
-            local_face = np.argmin(distances, axis=1)
-            local_distance = distances[np.arange(len(p)), local_face]
-            update = local_distance < best_dist
-            if np.any(update):
-                rows = np.arange(len(p))[update]
-                selected = local_face[update]
-                best_dist[update] = local_distance[update]
-                best_p[update] = closest[rows, selected]
-                best_bary[update] = bary[rows, selected]
-                best_face[update] = f_start + selected
-        result_points[q_start:q_end] = best_p
-        result_bary[q_start:q_end] = best_bary
-        result_faces[q_start:q_end] = best_face
-        result_dist2[q_start:q_end] = best_dist
+            np_tri = mesh[f_start:f_end]
+            np_closest, np_bary, np_distances = _closest_point_pairs(np_p, np_tri)
+            np_local_face = np.argmin(np_distances, axis=1)
+            np_local_distance = np_distances[np.arange(len(np_p)), np_local_face]
+            np_update = np_local_distance < np_best_dist
+            if np.any(np_update):
+                np_rows = np.arange(len(np_p))[np_update]
+                np_selected = np_local_face[np_update]
+                np_best_dist[np_update] = np_local_distance[np_update]
+                np_best_p[np_update] = np_closest[np_rows, np_selected]
+                np_best_bary[np_update] = np_bary[np_rows, np_selected]
+                np_best_face[np_update] = f_start + np_selected
+        result_points[q_start:q_end] = np_best_p
+        result_bary[q_start:q_end] = np_best_bary
+        result_faces[q_start:q_end] = np_best_face
+        result_dist2[q_start:q_end] = np_best_dist
     return result_points, result_faces, result_bary, np.sqrt(np.maximum(result_dist2, 0.0))
 
 
-__all__ = ["closest_points_on_triangles"]
+__all__ = ["TriangleCentroidBoundTree", "TriangleAABBTree", "closest_points_on_triangles"]

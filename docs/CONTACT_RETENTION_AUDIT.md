@@ -122,3 +122,27 @@ The following are engineering diagnostics rather than claims about the paper:
 and embedded in the audit manifest. The formal Stage 9.2 profile, weights,
 query-set definition, 512 samples, and strict acceptance policy remain
 unchanged.
+
+## Stage 9.3.2 canonical re-audit
+
+The Stage 9.3.2 formal audit is a separate v2 output boundary. It forces the
+strict `reference_triangle_winding` backend used for Stage 9.2 validation and
+records its versioned profile/hash. The solver's approved SDF remains an
+independent inner-solver choice; the legacy `convex_hull_exact_solver_only`
+backend is retained only for diagnostic comparison and is excluded from
+formal pass/fail, source classification, and readiness. The old Stage 9.3
+negative-distance claims are therefore superseded where they depended on the
+legacy definition.
+
+Use `workflow reaudit-contact-canonical` for the complete 60-frame audit. Its
+v2 fields distinguish raw signed distance, raw penetration,
+penetration-beyond-tau, hard violation, soft residual before/after slack, and
+hard residual while retaining compatibility fields with explicit legacy
+semantics. Source and retention values remain proxies, not ground-truth
+contact labels. Open visual meshes permit unsigned coverage statistics but do
+not establish inflated/inset direction. The gate must pass before any shadow
+solver can run; Stage 9.4 is not implemented by this workflow.
+
+See [`CANONICAL_CONTACT_DISTANCE_AND_REAUDIT.md`](CANONICAL_CONTACT_DISTANCE_AND_REAUDIT.md)
+for the complete backend contract, reconciliation gate, six diagnostic shadow
+profiles, and immutable Stage 10 boundary.

@@ -403,3 +403,15 @@ definition matrix。持久化值与统一的 reference triangle/winding backend 
 inflation label 继续当作已证实结论，而是保持 inconclusive。shadow boundary 选择了 3 个
 frame，但因 reconciliation gate 失败没有运行 profile，solver invocation 为 0。正式 Stage
 9.2/Stage 10 artifact、export 和 manual acceptance 均未改变；所有修改仍未 staged。
+
+## Stage 9.3.2 canonical SDF 重审计（2026-07-22）
+
+新增版本化 `reference_winding_v1` 正式 contact-distance contract、v2
+canonical re-audit workflow、legacy-vs-canonical 差异报告、source/warm/final
+proxy 指标、collision/visual coverage 诊断、readiness 报告和隔离的六种
+bounded shadow 边界。正式 evaluation 与已批准的 Stage 9.2 solver backend
+分离；legacy convex-hull 结果仅用于诊断并对正式 contact claim 标记为
+superseded。workflow 保留 Eq. (1)-(9)、论文权重、所有已接受的 Stage
+9.2/Stage 10 artifact、manual acceptance 和 robot export。audit-only solver
+invocation 保持为 0；若 gate 通过，shadow 输出仍是隔离的 diagnostic。所有
+代码修改保持 unstaged。

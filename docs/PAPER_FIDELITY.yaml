@@ -6,6 +6,19 @@ paper:
   pdf_sha256: 21c06a125430854dcff0d778283963b7fe107c8dfa79e3982639a80c21b206ab
   page_count: 16
 
+audit_contracts:
+  stage9_3_2_canonical_contact:
+    profile: configs/audit/contact_distance/reference_winding_v1.yaml
+    formal_backend: reference_triangle_winding
+    solver_backend_separate: true
+    legacy_backend_role: diagnostic_only_superseded
+    dense_visual_is_approximation: true
+    contact_proxy_is_ground_truth: false
+    open_visual_normal_direction: inconclusive
+    shadow_profiles_are_paper_method: false
+    modifies_equations_1_to_9: false
+    modifies_stage10_artifacts: false
+
 items:
   - id: equation_1
     kind: equation

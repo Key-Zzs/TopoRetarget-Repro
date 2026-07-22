@@ -1,0 +1,9 @@
+profile_id: legacy_convex_hull_regression
+version: "1.0.0"
+backend_id: convex_hull_exact_solver_only
+role: regression_comparison_only
+formal_evaluation: false
+accepted_reference: false
+sign_convention: positive_outside
+units: meters
+warning: LEGACY_CONVEX_HULL_DIAGNOSTIC_NOT_USED_FOR_FORMAL_ACCEPTANCE

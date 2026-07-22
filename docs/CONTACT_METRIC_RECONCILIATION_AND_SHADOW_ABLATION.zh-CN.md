@@ -15,7 +15,7 @@ conda run -n topo-retarget env PYTHONNOUSERSITE=1 PYTHONPATH=src \
   --output-root .local/runs/stage9_3_1_metric_reconciliation/<run> --force
 
 conda run -n topo-retarget env PYTHONNOUSERSITE=1 PYTHONPATH=src \
-  python -m toporetarget workflow run-contact-shadow-ablation \
+  python -m toporetarget workflow run-contact-shadow-ablation-legacy \
   --run .local/runs/stage10_reference_runtime/<run>/manifest.json \
   --reconciliation-root .local/runs/stage9_3_1_metric_reconciliation/<run> \
   --output-root .local/runs/stage9_3_shadow_ablation/<run> --frames auto
@@ -74,3 +74,12 @@ comparison outputs 与 `stage9_4_readiness.json`。门禁失败时所有 profile
 
 这些结果仅是诊断证据，不会改变已接受的 Stage 9.2 Zarr、Stage 10 manifest、
 exports 或 manual acceptance record。
+
+## Stage 9.3.2 canonical 重审计边界
+
+后续 canonical 重审计由 `workflow reaudit-contact-canonical` 执行。所有正式
+contact、penetration、visual、collision、HTML、root-cause 与 shadow metric
+统一使用版本化的 `reference_winding_v1` formal evaluation profile；旧报告中的
+`convex_hull_exact_solver_only` 仅用于 regression disagreement，不能用于正式
+acceptance 或 contact-rich 证据。详见
+[`CANONICAL_CONTACT_DISTANCE_AND_REAUDIT.md`](CANONICAL_CONTACT_DISTANCE_AND_REAUDIT.md)。

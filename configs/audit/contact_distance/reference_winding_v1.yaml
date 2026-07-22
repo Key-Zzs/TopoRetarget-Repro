@@ -1,0 +1,18 @@
+profile_id: reference_winding_v1
+version: "1.0.0"
+backend_id: reference_triangle_winding
+implementation_path: toporetarget.geometry.signed_distance.reference.build_signed_distance_backend
+backend_version: reference_triangle_winding.strict.v1
+object_mesh_hash: runtime_manifest_resolved
+sign_convention: positive_outside
+coordinate_frame: object_local_query_scene_transform
+units: meters
+sign_valid_policy: strict_and_all_sign_valid
+confidence_policy: winding_threshold_0.5_with_strict_validation
+closest_point_semantics: triangle_mesh_closest_point
+normal_semantics: closest_triangle_surface_normal
+formal_evaluation: true
+solver_backend_independent: true
+assumptions:
+  - A_STAGE9_3_2_CANONICAL_REFERENCE_SDF_001
+  - A_STAGE9_3_2_FORMAL_EVALUATION_BACKEND_001

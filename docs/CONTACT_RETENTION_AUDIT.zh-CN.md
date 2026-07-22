@@ -85,3 +85,20 @@ root-cause 报告区分 geometry inflation、collision sample coverage、semanti
 pad mismatch、QuerySet activation 以及 objective/regularization 解释，并给出置信度、
 支持/反证和下一步诊断。正式 Stage 9.2 profile、weights、QuerySet、512 samples 与
 strict acceptance policy 保持不变。Stage 9.3 的工程假设登记在 `docs/ASSUMPTIONS.md`。
+## Stage 9.3.2 canonical re-audit
+
+Stage 9.3.2 是独立的 v2、audit-only 边界。所有正式 contact、penetration、visual、
+collision、full-512、HTML、root-cause 和 shadow evaluation 都使用版本化的
+`reference_winding_v1` / `reference_triangle_winding` SDF；solver 内部允许继续使用已批准的
+solver profile backend。旧 `convex_hull_exact_solver_only` 仅保留作 regression/history
+diagnostic，不参与 formal pass/fail、contact-rich classification 或 readiness，依赖它的旧
+Stage 9.3 负距离结论视为 superseded。
+
+Source 和 retention 始终是 contact proxy，不是真实接触标签。Visual mesh 是开放或法向未
+验证时，只能报告 unsigned coverage gap，offset direction 必须是 `INCONCLUSIVE`，不能仅凭
+unsigned offset 宣称 inflated/inset。Canonical 60x512 gate 未通过时禁止 shadow solver；
+shadow profile 不是论文方法，Stage 9.4 也不在本阶段实现。正式 Stage 9.2/Stage 10 artifact、
+manual acceptance 和 robot export 保持不变。
+
+完整 contract 与命令见
+[`CANONICAL_CONTACT_DISTANCE_AND_REAUDIT.md`](CANONICAL_CONTACT_DISTANCE_AND_REAUDIT.md)。

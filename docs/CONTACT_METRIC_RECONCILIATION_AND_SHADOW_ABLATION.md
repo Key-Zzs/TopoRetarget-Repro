@@ -16,7 +16,7 @@ conda run -n topo-retarget env PYTHONNOUSERSITE=1 PYTHONPATH=src \
   --output-root .local/runs/stage9_3_1_metric_reconciliation/<run> --force
 
 conda run -n topo-retarget env PYTHONNOUSERSITE=1 PYTHONPATH=src \
-  python -m toporetarget workflow run-contact-shadow-ablation \
+  python -m toporetarget workflow run-contact-shadow-ablation-legacy \
   --run .local/runs/stage10_reference_runtime/<run>/manifest.json \
   --reconciliation-root .local/runs/stage9_3_1_metric_reconciliation/<run> \
   --output-root .local/runs/stage9_3_shadow_ablation/<run> \
@@ -88,3 +88,14 @@ For `s1/airplane_lift`, right Arti-MANO, global `[240,300)` / local `[0,60)`:
 
 These results are diagnostic evidence only. They do not alter the accepted
 Stage 9.2 Zarr, Stage 10 manifest, exports, or manual acceptance record.
+
+## Stage 9.3.2 supersession boundary
+
+The follow-on canonical re-audit is implemented by
+`workflow reaudit-contact-canonical`. It uses the versioned
+`reference_winding_v1` formal evaluation profile for every contact,
+penetration, visual, collision, HTML, root-cause, and shadow metric. The
+`convex_hull_exact_solver_only` values in this report remain useful for
+regression disagreement, but cannot be used as formal acceptance or
+contact-rich evidence. See
+[`CANONICAL_CONTACT_DISTANCE_AND_REAUDIT.md`](CANONICAL_CONTACT_DISTANCE_AND_REAUDIT.md).

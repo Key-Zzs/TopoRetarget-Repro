@@ -136,6 +136,7 @@ def _dense_samples(
     count: int,
     mesh_id: str,
     seed: int,
+    include_vertices: bool = True,
 ) -> np.ndarray:
     """Return deterministic samples plus all original vertices.
 
@@ -145,7 +146,7 @@ def _dense_samples(
 
     values = np.asarray(vertices, dtype=np.float64)
     triangles = np.asarray(faces, dtype=np.int64)
-    need = max(1, int(count) - len(values))
+    need = max(1, int(count) if not include_vertices else int(count) - len(values))
     profile = SurfaceSamplingProfile(
         profile_id=f"stage9_3_dense:{mesh_id}",
         version="1",
@@ -156,7 +157,8 @@ def _dense_samples(
         assumptions=("A_STAGE9_3_DENSE_SURFACE_APPROXIMATION_001",),
     )
     sampled = sample_mesh_surface(values, triangles, profile, mesh_id=mesh_id).points_local
-    return np.concatenate([values, np.asarray(sampled, dtype=np.float64)], axis=0)
+    sampled_values = np.asarray(sampled, dtype=np.float64)
+    return np.concatenate([values, sampled_values], axis=0) if include_vertices else sampled_values
 
 
 def _load_geometry(instance: Any) -> tuple[np.ndarray, np.ndarray]:
@@ -171,6 +173,7 @@ def _visual_surface(
     *,
     count: int,
     seed: int,
+    include_vertices: bool = True,
 ) -> MeshPoints:
     pieces: list[np.ndarray] = []
     regions: list[str] = []
@@ -185,6 +188,7 @@ def _visual_surface(
             count=max(64, count // max(len(instances), 1)),
             mesh_id=f"visual:{instance.link_name}:{index}",
             seed=seed + index,
+            include_vertices=include_vertices,
         )
         points = points @ instance.world_transform[:3, :3].T + instance.world_transform[:3, 3]
         pieces.append(points)
@@ -205,13 +209,22 @@ def _visual_surface(
     )
 
 
-def _visual_vertices(model: Any, qpos: np.ndarray, base: np.ndarray) -> MeshPoints:
+def _visual_vertices(
+    model: Any,
+    qpos: np.ndarray,
+    base: np.ndarray,
+    *,
+    max_per_instance: int | None = None,
+) -> MeshPoints:
     pieces: list[np.ndarray] = []
     regions: list[str] = []
     links: list[str] = []
     kinds: list[str] = []
     for instance in model.visual_geometry_instances(qpos, base):
         vertices, _ = _load_geometry(instance)
+        if max_per_instance is not None and len(vertices) > max_per_instance:
+            indices = np.linspace(0, len(vertices) - 1, max_per_instance, dtype=np.int64)
+            vertices = vertices[indices]
         points = vertices @ instance.world_transform[:3, :3].T + instance.world_transform[:3, 3]
         pieces.append(points)
         link = str(instance.link_name)
@@ -238,6 +251,7 @@ def _collision_surface(
     *,
     count: int,
     seed: int,
+    include_vertices: bool = True,
 ) -> MeshPoints:
     pieces: list[np.ndarray] = []
     regions: list[str] = []
@@ -252,6 +266,7 @@ def _collision_surface(
             count=max(32, count // max(len(instances), 1)),
             mesh_id=f"collision:{instance.link_name}:{index}",
             seed=seed + index,
+            include_vertices=include_vertices,
         )
         points = points @ instance.world_transform[:3, :3].T + instance.world_transform[:3, 3]
         pieces.append(points)
@@ -459,7 +474,12 @@ def _git(repo_root: Path, *args: str) -> str:
         return ""
 
 
-def _load_inputs(manifest_path: Path, repo_root: Path) -> dict[str, Any]:
+def _load_inputs(
+    manifest_path: Path,
+    repo_root: Path,
+    *,
+    evaluation_backend: str = "configured",
+) -> dict[str, Any]:
     manifest = json.loads(manifest_path.read_text())
     paths = {
         name: _manifest_artifact(manifest, name, repo_root)
@@ -482,8 +502,26 @@ def _load_inputs(manifest_path: Path, repo_root: Path) -> dict[str, Any]:
     model = load_artimano_model(side)
     object_id = str(final.metadata["object_id"])
     obj = sequence.rigid_object(object_id)
+    # Stage 9.3.2 pins formal evaluation to the strict reference backend
+    # defaults used by the Stage 9.2 acceptance replay. This is an audit-only
+    # override; it never changes the solver backend or the official trajectory.
+    reference_kwargs: dict[str, Any] = {"sign_mode": "strict"}
+    if evaluation_backend == "reference_winding_v1":
+        # Exact same solid-angle and triangle-closest-point formulas as the
+        # Stage 9.2 reference path.  Keep the formal audit path deterministic
+        # and CPU-backed; accelerators remain an implementation detail of the
+        # solver backend and are never part of the acceptance contract.
+        reference_kwargs.update(
+            {
+                "query_chunk_size": 256,
+                "face_chunk_size": 4096,
+                "winding_device": "cpu",
+                "closest_acceleration": "tree",
+                "closest_device": None,
+            }
+        )
     reference_sdf = build_signed_distance_backend(
-        obj.mesh.vertices_local, obj.mesh.faces, sign_mode="strict"
+        obj.mesh.vertices_local, obj.mesh.faces, **reference_kwargs
     )
     distance_sdf: Any = reference_sdf
     distance_backend_selection = {
@@ -492,7 +530,15 @@ def _load_inputs(manifest_path: Path, repo_root: Path) -> dict[str, Any]:
         "selected": reference_sdf.describe(),
         "cross_validation": None,
     }
-    if distance_backend_selection["requested"] == "convex_hull_exact_solver_only":
+    if evaluation_backend not in {"configured", "reference_winding_v1"}:
+        raise ValueError(f"unknown contact-audit evaluation backend: {evaluation_backend}")
+    if evaluation_backend == "reference_winding_v1":
+        distance_backend_selection["requested"] = "reference_winding_v1"
+        distance_backend_selection["selected"] = reference_sdf.describe()
+        distance_backend_selection["selection_reason"] = (
+            "Stage 9.3.2 formal evaluation backend override; solver backend is not changed"
+        )
+    elif distance_backend_selection["requested"] == "convex_hull_exact_solver_only":
         try:
             candidate = ConvexHullSignedDistanceBackend(
                 obj.mesh.vertices_local,
@@ -558,6 +604,7 @@ def _load_inputs(manifest_path: Path, repo_root: Path) -> dict[str, Any]:
         "frame_profile": frame_profile,
         "bone_profile": bone_profile,
         "source_bone_features": source_bone_features,
+        "evaluation_backend": evaluation_backend,
     }
 
 
@@ -567,6 +614,9 @@ def _frame_query_records(
     final_points: np.ndarray,
     warm_points: np.ndarray,
     final_full: Any,
+    *,
+    warm_query: Any | None = None,
+    final_query: Any | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     final = inputs["final"]
     surface = inputs["surface"]
@@ -587,8 +637,10 @@ def _frame_query_records(
         ],
         dtype=np.float64,
     )
-    warm_q = inputs["sdf"].query_scene(warm_points, pose)
-    final_q = inputs["sdf"].query_scene(final_points, pose)
+    warm_q = warm_query if warm_query is not None else inputs["sdf"].query_scene(warm_points, pose)
+    final_q = (
+        final_query if final_query is not None else inputs["sdf"].query_scene(final_points, pose)
+    )
     rows: list[dict[str, Any]] = []
     link_rows: dict[str, dict[str, Any]] = {}
     for local, sample_id in enumerate(ids):
@@ -760,7 +812,7 @@ def _objective_rows(inputs: dict[str, Any], frame: int) -> dict[str, Any]:
     warm_slack = np.clip(np.maximum(-tau - initial[ids], 0.0), 0.0, b - tau)
     slack_final_reg = float(0.5 * paper["w_s"] * np.sum(slack_final**2))
     slack_warm_reg = float(0.5 * paper["w_s"] * np.sum(warm_slack**2))
-    rows = {
+    rows: dict[str, Any] = {
         "warm_eval_stage9_e_im_raw": float(warm_eim),
         "warm_eval_stage9_e_im_weighted": float(lambda_im * warm_eim),
         "warm_eval_stage9_e_bone_raw": warm_bone,
@@ -849,6 +901,8 @@ def _interpolation_objective(
     base: np.ndarray,
     collision_signed: np.ndarray,
     query_ids: np.ndarray,
+    warm_initial: np.ndarray | None = None,
+    anchor_unsigned: np.ndarray | None = None,
 ) -> dict[str, Any]:
     final = inputs["final"]
     warm = inputs["warm"]
@@ -906,11 +960,12 @@ def _interpolation_objective(
     warm_points = dynamic_collision_points_numpy(
         model, inputs["surface"], warm.arrays["qpos"][frame], warm.arrays["base_pose_scene"][frame]
     )
-    warm_initial = (
-        inputs["sdf"]
-        .query_scene(warm_points, inputs["object"].pose_scene.pose_scene[frame])
-        .signed_distance
-    )
+    if warm_initial is None:
+        warm_initial = (
+            inputs["sdf"]
+            .query_scene(warm_points, inputs["object"].pose_scene.pose_scene[frame])
+            .signed_distance
+        )
     warm_slack = np.clip(
         np.maximum(-float(paper["tau_m"]) - warm_initial[query_ids], 0.0),
         0.0,
@@ -921,6 +976,12 @@ def _interpolation_objective(
     weighted_im = float(paper["lambda_IM"] * e_im)
     weighted_bone = float(paper["lambda_bone"] * e_bone)
     query_signed = collision_signed[query_ids] if len(query_ids) else np.empty(0)
+    if anchor_unsigned is None:
+        anchor_unsigned = (
+            inputs["sdf"]
+            .query_scene(robot_keypoints, inputs["object"].pose_scene.pose_scene[frame])
+            .unsigned_distance
+        )
     return {
         "e_im_raw": float(e_im),
         "e_im_weighted": weighted_im,
@@ -950,42 +1011,39 @@ def _interpolation_objective(
         if len(query_signed)
         else None,
         "query_slack_median_m": float(np.median(slack)) if len(slack) else None,
-        "contact_proxy_anchor_count_8mm": int(
-            np.count_nonzero(
-                inputs["sdf"]
-                .query_scene(robot_keypoints, inputs["object"].pose_scene.pose_scene[frame])
-                .unsigned_distance
-                <= 0.008
-            )
-        ),
-        "fingertip_anchor_min_m": float(
-            np.min(
-                inputs["sdf"]
-                .query_scene(
-                    robot_keypoints[list(TIP_INDICES.values())],
-                    inputs["object"].pose_scene.pose_scene[frame],
-                )
-                .unsigned_distance
-            )
-        ),
+        "contact_proxy_anchor_count_8mm": int(np.count_nonzero(anchor_unsigned <= 0.008)),
+        "fingertip_anchor_min_m": float(np.min(anchor_unsigned[list(TIP_INDICES.values())])),
     }
 
 
 def _interpolation_row(
-    inputs: dict[str, Any], frame: int, alpha: float, *, visual_count: int
+    inputs: dict[str, Any],
+    frame: int,
+    alpha: float,
+    *,
+    visual_count: int,
+    dense_include_vertices: bool = True,
+    visual_vertex_max_per_instance: int | None = None,
 ) -> dict[str, Any]:
     final = inputs["final"]
     warm = inputs["warm"]
     model = inputs["model"]
     obj = inputs["object"]
-    sdf = inputs["sdf"]
+    sdf: Any = inputs["sdf"]
     q = (1.0 - alpha) * warm.arrays["qpos"][frame] + alpha * final.arrays["qpos"][frame]
     base = _slerp(
         np.asarray(warm.arrays["base_pose_scene"][frame]),
         np.asarray(final.arrays["base_pose_scene"][frame]),
         alpha,
     )
-    visual = _visual_surface(model, q, base, count=visual_count, seed=20260720 + frame)
+    visual = _visual_surface(
+        model,
+        q,
+        base,
+        count=visual_count,
+        seed=20260720 + frame,
+        include_vertices=dense_include_vertices,
+    )
     visual_q = sdf.query_scene(visual.points, obj.pose_scene.pose_scene[frame])
     collision = dynamic_collision_points_numpy(model, inputs["surface"], q, base)
     collision_q = sdf.query_scene(collision, obj.pose_scene.pose_scene[frame])
@@ -1006,7 +1064,12 @@ def _interpolation_row(
 
 
 def _interpolation_rows(
-    inputs: dict[str, Any], frame: int, *, visual_count: int, alpha_count: int = 21
+    inputs: dict[str, Any],
+    frame: int,
+    *,
+    visual_count: int,
+    alpha_count: int = 21,
+    dense_include_vertices: bool = True,
 ) -> list[dict[str, Any]]:
     """Evaluate the counterfactual path in one batched SDF query per layer."""
 
@@ -1023,7 +1086,14 @@ def _interpolation_rows(
     qpos = [(1.0 - alpha) * warm_q + alpha * final_q for alpha in alphas]
     bases = [_slerp(warm_base, final_base, float(alpha)) for alpha in alphas]
     visuals = [
-        _visual_surface(model, q, base, count=visual_count, seed=20260720 + frame)
+        _visual_surface(
+            model,
+            q,
+            base,
+            count=visual_count,
+            seed=20260720 + frame,
+            include_vertices=dense_include_vertices,
+        )
         for q, base in zip(qpos, bases, strict=True)
     ]
     visual_points = [
@@ -1038,6 +1108,19 @@ def _interpolation_rows(
         ]
     )
     collision_query = sdf.query_scene(collisions, obj.pose_scene.pose_scene[frame])
+    warm_points = dynamic_collision_points_numpy(
+        model, inputs["surface"], warm.arrays["qpos"][frame], warm.arrays["base_pose_scene"][frame]
+    )
+    warm_initial = sdf.query_scene(warm_points, obj.pose_scene.pose_scene[frame]).signed_distance
+    anchor_stack = sdf.query_scene(
+        np.stack(
+            [
+                np.asarray(model.keypoints_scene(q, base, layout="mediapipe21"))
+                for q, base in zip(qpos, bases, strict=True)
+            ]
+        ),
+        obj.pose_scene.pose_scene[frame],
+    ).unsigned_distance
     start = int(final.arrays["query_offsets"][frame])
     stop = int(final.arrays["query_offsets"][frame + 1])
     ids = np.asarray(final.arrays["query_ids_concat"][start:stop], dtype=np.int64)
@@ -1052,6 +1135,8 @@ def _interpolation_rows(
             bases[index],
             full,
             ids,
+            warm_initial=warm_initial,
+            anchor_unsigned=anchor_stack[index],
         )
         rows.append(
             {
@@ -1572,6 +1657,9 @@ def run_contact_audit(
     run_shadow_ablation: bool = False,
     shadow_frames: str = "auto",
     headless_smoke_test: bool = False,
+    evaluation_backend: str = "configured",
+    dense_include_vertices: bool = True,
+    visual_vertex_max_per_instance: int | None = None,
 ) -> dict[str, Any]:
     del no_cache  # audit results are always freshly evaluated; this is a provenance flag in CLI.
     started = time.perf_counter()
@@ -1584,7 +1672,11 @@ def run_contact_audit(
     thresholds = [float(x) / 1000.0 for x in (thresholds_mm or [1, 2, 3, 5, 8, 10])]
     preflight = _preflight(manifest_path, json.loads(manifest_path.read_text()), repo_root)
     _write_json(output_root / "preflight_audit.json", preflight)
-    inputs = _load_inputs(manifest_path, repo_root)
+    inputs = _load_inputs(
+        manifest_path,
+        repo_root,
+        evaluation_backend=evaluation_backend,
+    )
     final = inputs["final"]
     warm = inputs["warm"]
     obj = inputs["object"]
@@ -1622,7 +1714,10 @@ def run_contact_audit(
     objective_rows: list[dict[str, Any]] = []
     interpolation_rows: list[dict[str, Any]] = []
     anchor_final_distances: list[float] = []
-    dense_visual_count = max(8192, int(surface_samples))
+    # 8192 is the Stage 9.3/9.3.2 default.  Smaller explicit values remain
+    # available for unit/smoke runs; formal commands keep the CLI minimum at
+    # 8192 unless the caller deliberately overrides the API.
+    dense_visual_count = max(64, int(surface_samples))
     known_links = set(str(x) for x in np.asarray(inputs["surface"].link_names).reshape(-1))
     known_links.update(str(x.link_name) for x in model.visual_geometry_instances(model.neutral_q))
     known_links.update(
@@ -1645,6 +1740,7 @@ def run_contact_audit(
             count=dense_visual_count,
             mesh_id=f"source_frame:{frame}",
             seed=20260720 + frame,
+            include_vertices=dense_include_vertices,
         )
         warm_points = _visual_surface(
             model,
@@ -1652,6 +1748,7 @@ def run_contact_audit(
             warm.arrays["base_pose_scene"][frame],
             count=dense_visual_count,
             seed=20260820 + frame,
+            include_vertices=dense_include_vertices,
         )
         final_points = _visual_surface(
             model,
@@ -1659,19 +1756,30 @@ def run_contact_audit(
             final.arrays["base_pose_scene"][frame],
             count=dense_visual_count,
             seed=20260920 + frame,
+            include_vertices=dense_include_vertices,
         )
         warm_vertices = _visual_vertices(
-            model, warm.arrays["qpos"][frame], warm.arrays["base_pose_scene"][frame]
+            model,
+            warm.arrays["qpos"][frame],
+            warm.arrays["base_pose_scene"][frame],
+            max_per_instance=visual_vertex_max_per_instance,
         )
         final_vertices = _visual_vertices(
-            model, final.arrays["qpos"][frame], final.arrays["base_pose_scene"][frame]
+            model,
+            final.arrays["qpos"][frame],
+            final.arrays["base_pose_scene"][frame],
+            max_per_instance=visual_vertex_max_per_instance,
         )
+        # Collision/visual B2 is formalized by the Stage 6 collision samples
+        # and full 512 audit.  Keep a bounded collision-surface diagnostic for
+        # per-link coverage; the 8192 minimum applies to visual meshes.
         collision_dense = _collision_surface(
             model,
             final.arrays["qpos"][frame],
             final.arrays["base_pose_scene"][frame],
-            count=dense_visual_count,
+            count=max(128, min(1024, dense_visual_count)),
             seed=20261020 + frame,
+            include_vertices=False,
         )
         source_q = sdf.query_scene(source_points, object_pose)
         warm_q = sdf.query_scene(warm_points.points, object_pose)
@@ -1719,17 +1827,24 @@ def run_contact_audit(
         source_proxy["frames"].append(source_frame)
         if source_frame["thresholds"].get("5mm", {}).get("near_surface_ratio", 0) > 0:
             pass
+        final_full = sdf.query_scene(
+            np.asarray(final.arrays["collision_points_scene"][frame]), object_pose
+        )
+        warm_collision_points = dynamic_collision_points_numpy(
+            model,
+            inputs["surface"],
+            warm.arrays["qpos"][frame],
+            warm.arrays["base_pose_scene"][frame],
+        )
+        warm_collision_q = sdf.query_scene(warm_collision_points, object_pose)
         qrows, qlinkrows = _frame_query_records(
             frame,
             inputs,
             np.asarray(final.arrays["collision_points_scene"][frame]),
-            dynamic_collision_points_numpy(
-                model,
-                inputs["surface"],
-                warm.arrays["qpos"][frame],
-                warm.arrays["base_pose_scene"][frame],
-            ),
+            warm_collision_points,
             final_q,
+            warm_query=warm_collision_q,
+            final_query=final_full,
         )
         queryset_points.extend(qrows)
         queryset_links.extend(qlinkrows)
@@ -1807,31 +1922,28 @@ def run_contact_audit(
             }
         for region in REGIONS:
             links_in_region = final_points.regions == region
-            source_contact = int(
+            source_region_contact = int(
                 np.count_nonzero(source_q.unsigned_distance[source_region == region] <= 0.005)
             )
-            warm_contact = int(
+            warm_region_contact = int(
                 np.count_nonzero(warm_q.unsigned_distance[warm_points.regions == region] <= 0.008)
             )
-            final_contact = int(
+            final_region_contact = int(
                 np.count_nonzero(final_q.unsigned_distance[final_points.regions == region] <= 0.008)
             )
             retention_frame["link_level"][region] = {
-                "source_contact_proxy_count_5mm": source_contact,
-                "warm_contact_proxy_count_8mm": warm_contact,
-                "final_contact_proxy_count_8mm": final_contact,
+                "source_contact_proxy_count_5mm": source_region_contact,
+                "warm_contact_proxy_count_8mm": warm_region_contact,
+                "final_contact_proxy_count_8mm": final_region_contact,
                 "source_region_sample_count": int(np.count_nonzero(source_region == region)),
                 "robot_region_sample_count": int(np.count_nonzero(links_in_region)),
                 "contact_retention_proxy_ratio_final_over_source": float(
-                    final_contact / source_contact
+                    final_region_contact / source_region_contact
                 )
-                if source_contact
+                if source_region_contact
                 else None,
             }
         retention["frames"].append(retention_frame)
-        final_full = inputs["sdf"].query_scene(
-            np.asarray(final.arrays["collision_points_scene"][frame]), object_pose
-        )
         geometry_frames.append(
             {
                 "frame": frame,
@@ -1970,27 +2082,8 @@ def run_contact_audit(
                     "source_visual_min_m": source_frame["visual_min_distance_m"],
                     "warm_visual_min_m": float(np.min(warm_q.signed_distance)),
                     "final_visual_min_m": float(np.min(final_q.signed_distance)),
-                    "warm_collision_min_m": float(
-                        np.min(
-                            sdf.query_scene(
-                                dynamic_collision_points_numpy(
-                                    model,
-                                    inputs["surface"],
-                                    warm.arrays["qpos"][frame],
-                                    warm.arrays["base_pose_scene"][frame],
-                                ),
-                                object_pose,
-                            ).signed_distance
-                        )
-                    ),
-                    "final_collision_min_m": float(
-                        np.min(
-                            sdf.query_scene(
-                                np.asarray(final.arrays["collision_points_scene"][frame]),
-                                object_pose,
-                            ).signed_distance
-                        )
-                    ),
+                    "warm_collision_min_m": float(np.min(warm_collision_q.signed_distance)),
+                    "final_collision_min_m": float(np.min(final_full.signed_distance)),
                     "final_full_audit_min_m": float(np.min(final_full.signed_distance)),
                     "source_contact_proxy_5mm": source_frame["thresholds"]["5mm"][
                         "near_surface_count"
@@ -2015,7 +2108,15 @@ def run_contact_audit(
         )
         interpolation_rows.extend(
             _interpolation_rows(
-                inputs, frame, visual_count=min(1024, dense_visual_count), alpha_count=21
+                inputs,
+                frame,
+                # Keep the 21-state interpolation path deterministic and
+                # full-512 for collision feasibility, while using a bounded
+                # visual-only sampling profile distinct from the formal
+                # source/warm/final dense surfaces.
+                visual_count=min(128, dense_visual_count),
+                alpha_count=21,
+                dense_include_vertices=dense_include_vertices,
             )
         )
     offsets = _collision_visual_offsets(inputs, samples=dense_visual_count)
@@ -2055,7 +2156,7 @@ def run_contact_audit(
                 "root_cause_tags": [],
             }
         )
-    objective_summary = {
+    objective_summary: dict[str, Any] = {
         "mean": {
             k: _safe_mean(row[k] for row in objective_rows if isinstance(row.get(k), (float, int)))
             for k in objective_rows[0]
@@ -2085,7 +2186,7 @@ def run_contact_audit(
         float(row["thresholds"]["5mm"]["near_surface_ratio"]) for row in source_proxy["frames"]
     ]
     final_anchor = float(np.median(anchor_final_distances))
-    summary = {
+    summary: dict[str, Any] = {
         "source_contact_proxy": {
             "thresholds_mm": source_proxy["thresholds_mm"],
             "frame_contact_ratio_at_5mm": float(np.mean(np.asarray(source5) > 0.0)),
@@ -2154,6 +2255,8 @@ def run_contact_audit(
             "backend_selection": inputs["distance_backend_selection"],
             "dense_surface_sample_count": dense_visual_count,
             "dense_surface_approximation": True,
+            "dense_surface_includes_all_vertices": dense_include_vertices,
+            "visual_vertex_max_per_instance": visual_vertex_max_per_instance,
             "frames": geometry_frames,
             "per_link_collision_visual_offset": offsets,
             "collision_sample_profile": inputs["surface"].as_dict(),
@@ -2266,6 +2369,7 @@ def run_contact_audit(
         for name in preflight["artifacts"]
     }
     _write_json(output_root / "artifact_immutability.json", immutability)
+    source_proxy_summary: dict[str, Any] = summary["source_contact_proxy"]
     statuses = {
         "NUMERICAL_VALIDITY": "PASS",
         "COLLISION_FEASIBILITY": "PASS"
@@ -2273,7 +2377,7 @@ def run_contact_audit(
         else "FAIL",
         "VISUAL_MESH_CLEARANCE": "INCONCLUSIVE",
         "SOURCE_CONTACT_RICHNESS": "PASS"
-        if summary["source_contact_proxy"]["frame_contact_ratio_at_5mm"] >= 0.5
+        if float(source_proxy_summary["frame_contact_ratio_at_5mm"]) >= 0.5
         else "INCONCLUSIVE",
         "CONTACT_RETENTION": "INCONCLUSIVE",
         "TEMPORAL_CONTINUITY": "PASS",
@@ -2341,9 +2445,14 @@ def _headless_smoke(html_path: Path, report_path: Path) -> None:
     for command in candidates:
         if shutil.which(command[0]):
             result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+            rendered_markers = (
+                "Contact retention audit",
+                "Stage 9.3.2 Canonical Contact Re-Audit",
+            )
             payload = {
                 "status": "pass"
-                if result.returncode == 0 and "Contact retention audit" in result.stdout
+                if result.returncode == 0
+                and any(marker in result.stdout for marker in rendered_markers)
                 else "fail",
                 "command": command,
                 "returncode": result.returncode,

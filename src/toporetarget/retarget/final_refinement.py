@@ -2091,7 +2091,14 @@ def prepare_refinement_resources(
     faces = np.asarray(object_faces, dtype=np.int64)
     mesh_audit = audit_mesh(vertices, faces)
     reference_sdf = build_signed_distance_backend(
-        vertices, faces, sign_mode="strict", mesh_hash=mesh_audit.mesh_hash
+        vertices,
+        faces,
+        sign_mode="strict",
+        mesh_hash=mesh_audit.mesh_hash,
+        query_chunk_size=256,
+        face_chunk_size=4096,
+        closest_acceleration="tree",
+        winding_device="cpu",
     )
     obj = sequence.rigid_object(str(graph.metadata["object_id"]))
     sdf, sdf_report = choose_solver_sdf_backend(
