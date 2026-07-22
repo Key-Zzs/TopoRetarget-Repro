@@ -446,3 +446,19 @@ invocation count was zero. Contact retention and physical trackability remain
 diagnostic/inconclusive or unverified where the available artifacts do not
 support a stronger claim. The optional shadow evidence was not run and is
 recorded as missing. No git add, commit, push, reset, or tag was performed.
+
+## Stage 9.3.1 signed-distance reconciliation and bounded shadow gate (2026-07-22)
+
+Added a read-only reconciliation workflow and CLI for the accepted `s1/airplane_lift`
+right-hand `[240,300)` reference runtime. It proves the Stage 9.2 persisted 512-point
+identity/order and transform chain, replays the formal acceptance contract independently
+at `60/60` with zero mismatches, and records the signed-distance definition matrix.
+The persisted values match the unified reference triangle/winding backend to machine
+precision. The legacy Stage 9.3 `convex_hull_exact_solver_only` values do not match that
+definition, so the unique state is `RETURN_TO_STAGE9_2_ACCEPTANCE_OR_METRIC_FIX`.
+
+The directional offset audit correctly leaves the existing unsigned-only inflation label
+inconclusive because the visual meshes are open. The requested shadow boundary selected
+three frames but ran zero profiles and invoked zero solvers because the reconciliation gate
+failed. Formal Stage 9.2/Stage 10 artifacts, exports, and manual acceptance were unchanged;
+all changes remain unstaged.

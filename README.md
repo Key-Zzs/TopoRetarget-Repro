@@ -876,6 +876,13 @@ are explicitly diagnostic proxies, not ground-truth contact labels. See
 [`docs/CONTACT_RETENTION_AUDIT.md`](docs/CONTACT_RETENTION_AUDIT.md) and the
 [中文说明](docs/CONTACT_RETENTION_AUDIT.zh-CN.md).
 
+For signed-distance reconciliation and the fail-closed maximum-three-frame
+shadow boundary, see
+[`docs/CONTACT_METRIC_RECONCILIATION_AND_SHADOW_ABLATION.md`](docs/CONTACT_METRIC_RECONCILIATION_AND_SHADOW_ABLATION.md).
+The current reference-runtime closeout blocks shadow execution because the
+legacy Stage 9.3 convex-hull metric does not share the Stage 9.2 reference SDF
+definition.
+
 ## Documentation map
 
 - [Roadmap](docs/ROADMAP.md) / [中文路线图](docs/ROADMAP.zh-CN.md)

@@ -153,6 +153,20 @@ do not change Equations 1–9. A real contact-rich solve and human review are st
 workflow can be called accepted. Equations 10–12, ContactPose evaluation, RL, physics, and baselines
 remain explicitly unimplemented.
 
+## Stage 9.3.1 metric-reconciliation boundary
+
+Stage 9.3.1 is an engineering audit, not a new paper method. It preserves
+Equations 1-9, the paper weights, the Stage 9.2 solver profile and artifacts,
+and the Stage 10 manifest/export/manual-acceptance boundary. It defines a
+single reference signed-distance comparison for the persisted 512 collision
+points, keeps the old solver-only convex-hull report diagnostic-only, and
+replays the existing hard/soft/slack acceptance contract without running a
+solver. Its bounded shadow boundary is limited to at most three representative
+frames and is fail-closed; no profile is paper-faithful evidence unless the
+reconciliation gate passes. The current accepted-window audit blocks on the
+legacy backend mismatch, so Stage 9.4 is not entered. See
+[`CONTACT_METRIC_RECONCILIATION_AND_SHADOW_ABLATION.md`](CONTACT_METRIC_RECONCILIATION_AND_SHADOW_ABLATION.md).
+
 ## 13. Current blockers
 
 The private Pen-Spin data, Wuji deployment assets, target hand identity for Table 1, and several

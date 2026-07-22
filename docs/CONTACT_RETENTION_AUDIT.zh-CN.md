@@ -66,6 +66,21 @@ paper-faithful 证据；当前实现运行的是 selected frames 上的 score-on
 反事实证据。shadow 不能替换或覆盖已接受的 Stage 9.2/Stage 10 artifact。
 显式 shadow 输出隔离在 `.local/runs/stage9_3_shadow_ablation/` 下。
 
+## Stage 9.3.1 signed-distance reconciliation 边界
+
+完成审计后，按 [`CONTACT_METRIC_RECONCILIATION_AND_SHADOW_ABLATION.md`](CONTACT_METRIC_RECONCILIATION_AND_SHADOW_ABLATION.md)
+执行只读 reconciliation。它对比 Stage 9.2 持久化的 512 点 reference SDF 与旧 Stage 9.3
+报告，记录 artifact 路径、hash、mtime、点身份/顺序、transform round-trip、signed-distance
+definition matrix，以及独立的 Eq. (8)-(9) acceptance replay。`reference_triangle_winding`
+与旧的 `convex_hull_exact_solver_only` 必须保持分离；当定义不同，旧 backend 的负值不能直接
+被解释为正式 acceptance 失败。
+
+bounded shadow command 必须通过明确的 reconciliation gate，并隔离写入
+`.local/runs/stage9_3_shadow_ablation/`。最多选择三个确定性的 representative frame。gate
+失败时所有 profile 均记录为 `not_run`，solver invocation 为 0，且不会写入 formal artifact。
+不能依据 unsigned offset 推断 `COLLISION_GEOMETRY_INFLATED`；只有在 mesh normal 可靠时才允许
+给出方向性结论。
+
 root-cause 报告区分 geometry inflation、collision sample coverage、semantic-anchor/
 pad mismatch、QuerySet activation 以及 objective/regularization 解释，并给出置信度、
 支持/反证和下一步诊断。正式 Stage 9.2 profile、weights、QuerySet、512 samples 与

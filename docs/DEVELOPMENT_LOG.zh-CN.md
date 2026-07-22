@@ -389,3 +389,17 @@ source/warm/final contact proxy、visual-vs-collision offset、QuerySet per-poin
 artifact 不支持更强结论，contact retention 与 physical trackability 仍分别保持
 diagnostic/inconclusive 或 unverified。可选 shadow evidence 未运行，并明确记录为缺失。
 没有执行 git add、commit、push、reset 或 tag。
+
+## Stage 9.3.1 signed-distance reconciliation 与 bounded shadow gate（2026-07-22）
+
+新增只读 reconciliation workflow 和 CLI，并针对已接受的 `s1/airplane_lift` 右手
+`[240,300)` reference runtime 完成验证。结果证明 Stage 9.2 持久化 512 点的 identity/order
+与 transform chain；独立 acceptance replay 为 `60/60` 且 0 mismatch，并记录 signed-distance
+definition matrix。持久化值与统一的 reference triangle/winding backend 在 machine precision
+内一致。旧 Stage 9.3 的 `convex_hull_exact_solver_only` 值与该定义不一致，因此唯一状态为
+`RETURN_TO_STAGE9_2_ACCEPTANCE_OR_METRIC_FIX`。
+
+由于 visual mesh 是 open surface，directional offset audit 不会把原有 unsigned-only
+inflation label 继续当作已证实结论，而是保持 inconclusive。shadow boundary 选择了 3 个
+frame，但因 reconciliation gate 失败没有运行 profile，solver invocation 为 0。正式 Stage
+9.2/Stage 10 artifact、export 和 manual acceptance 均未改变；所有修改仍未 staged。

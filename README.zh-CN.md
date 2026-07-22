@@ -818,6 +818,11 @@ proxy 假设、per-frame/per-link CSV、root-cause 分析和 self-contained HTML
 contact 与 semantic-anchor retention 明确只是诊断 proxy，不是真实接触标签。详见
 [`docs/CONTACT_RETENTION_AUDIT.md`](docs/CONTACT_RETENTION_AUDIT.md) 和本页中文说明。
 
+关于 signed-distance reconciliation 与最多三个 frame 的 fail-closed shadow boundary，见
+[`docs/CONTACT_METRIC_RECONCILIATION_AND_SHADOW_ABLATION.md`](docs/CONTACT_METRIC_RECONCILIATION_AND_SHADOW_ABLATION.md)。
+当前 reference-runtime closeout 因旧 Stage 9.3 convex-hull metric 与 Stage 9.2 reference
+SDF 定义不一致而阻止 shadow 执行。
+
 ## 文档索引
 
 - [Roadmap](docs/ROADMAP.md) / [中文路线图](docs/ROADMAP.zh-CN.md)

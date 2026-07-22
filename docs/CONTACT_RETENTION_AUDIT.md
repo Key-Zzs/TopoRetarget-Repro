@@ -86,6 +86,25 @@ that the counterfactual evidence is missing. A shadow result cannot replace or
 overwrite the accepted Stage 9.2/Stage 10 artifacts.
 Explicit shadow output is isolated under `.local/runs/stage9_3_shadow_ablation/`.
 
+## Stage 9.3.1 metric reconciliation boundary
+
+After the audit, use [`CONTACT_METRIC_RECONCILIATION_AND_SHADOW_ABLATION.md`](CONTACT_METRIC_RECONCILIATION_AND_SHADOW_ABLATION.md)
+to reconcile the persisted Stage 9.2 512-point reference SDF with the legacy
+Stage 9.3 report. The reconciliation is read-only and records artifact paths,
+hashes, mtimes, point identity/order, transform round trips, the signed-distance
+definition matrix, and an independent Eq. (8)-(9) acceptance replay. It keeps
+`reference_triangle_winding` separate from the legacy
+`convex_hull_exact_solver_only` backend; a negative legacy value cannot be used
+as a formal acceptance failure when the definitions differ.
+
+The bounded shadow command is downstream of an explicit reconciliation gate and
+is isolated under `.local/runs/stage9_3_shadow_ablation/`. It is limited to the
+deterministically selected maximum of three representative frames. A failed
+gate produces `not_run` profile records with zero solver invocations and never
+writes formal artifacts. `COLLISION_GEOMETRY_INFLATED` is not inferred from
+unsigned offsets; directional classification remains inconclusive unless mesh
+normal reliability is established.
+
 The root-cause report separates geometry inflation, collision-sample coverage,
 semantic-anchor/pad mismatch, QuerySet activation, and objective/regularization
 explanations. Each item includes confidence, evidence for and against, and a

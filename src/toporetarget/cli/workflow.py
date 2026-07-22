@@ -11,6 +11,13 @@ import typer
 
 from toporetarget.workflows.accepted_run import create_accepted_run
 from toporetarget.workflows.contact_audit import run_contact_audit
+from toporetarget.workflows.contact_metric_reconciliation import (
+    run_contact_metric_reconciliation,
+)
+from toporetarget.workflows.contact_shadow_ablation import (
+    MANDATORY_PROFILES,
+    run_contact_shadow_ablation,
+)
 from toporetarget.workflows.contact_window import select_contact_windows
 from toporetarget.workflows.executor import WorkflowExecutionError, run_workflow
 from toporetarget.workflows.export import export_reference
@@ -71,6 +78,58 @@ def audit_contact_retention_command(
         typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
     except (OSError, ValueError, RuntimeError) as exc:
         typer.echo(f"contact retention audit failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("reconcile-contact-metrics")
+def reconcile_contact_metrics_command(
+    run: Path = typer.Option(..., "--run", help="Stage 10 manifest; all inputs resolve from it."),
+    contact_audit_root: Path = typer.Option(..., "--contact-audit-root"),
+    output_root: Path = typer.Option(..., "--output-root"),
+    force: bool = typer.Option(False, "--force"),
+) -> None:
+    """Reconcile Stage 9.2 and Stage 9.3 signed-distance definitions."""
+    try:
+        payload = run_contact_metric_reconciliation(
+            run,
+            contact_audit_root,
+            output_root,
+            force=force,
+        )
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"contact metric reconciliation failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("run-contact-shadow-ablation")
+def run_contact_shadow_ablation_command(
+    run: Path = typer.Option(..., "--run", help="Stage 10 manifest; retained for provenance."),
+    reconciliation_root: Path = typer.Option(..., "--reconciliation-root"),
+    output_root: Path = typer.Option(..., "--output-root"),
+    frames: str = typer.Option("auto", "--frames"),
+    profiles: str = typer.Option(",".join(MANDATORY_PROFILES), "--profiles"),
+    force: bool = typer.Option(False, "--force"),
+) -> None:
+    """Run only gate-approved diagnostic shadow profiles in an isolated root."""
+    del run
+    try:
+        selected_frames = (
+            ()
+            if frames.strip().lower() == "auto"
+            else tuple(int(value.strip()) for value in frames.split(",") if value.strip())
+        )
+        selected_profiles = tuple(value.strip() for value in profiles.split(",") if value.strip())
+        payload = run_contact_shadow_ablation(
+            reconciliation_root,
+            output_root,
+            profiles=selected_profiles,
+            frames=selected_frames,
+            force=force,
+        )
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"contact shadow ablation failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
 

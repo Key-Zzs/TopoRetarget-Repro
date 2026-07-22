@@ -779,6 +779,20 @@ items:
     assumptions: [A_REFINEMENT_SOLVER_001, A_REFINEMENT_SOLVER_CONTINUATION_002, A_REFINEMENT_SOLVER_TERMINATION_002]
     notes: "The v2 policy is an engineering closeout and is not presented as a paper-specified optimizer or termination contract. The fixed benchmark selects 100; the full 60-frame real opt-in gate remains pending."
 
+  - id: stage9_3_1_metric_reconciliation_shadow_boundary
+    kind: engineering_foundation
+    title: Stage 9.3.1 signed-distance reconciliation and bounded shadow boundary
+    paper_section: "Sec. 3.4 and Appendix A.1"
+    pdf_page: 5
+    evidence_summary: "Reconciles persisted Stage 9.2 full-512 reference distances with the legacy Stage 9.3 diagnostic backend and gates a maximum-three-frame shadow boundary."
+    implementation_targets: [src/toporetarget/workflows/contact_metric_reconciliation.py, src/toporetarget/workflows/contact_shadow_ablation.py, src/toporetarget/cli/workflow.py, docs/CONTACT_METRIC_RECONCILIATION_AND_SHADOW_ABLATION.md]
+    test_targets: [tests/unit/test_contact_metric_reconciliation.py]
+    status: implemented_with_assumptions
+    known_parameters: {collision_sample_count: 512, max_shadow_frames: 3, positive_outside: true, raw_max_penetration: true, unit: mixed}
+    unknowns: [paper SDF backend identity, paper shadow-ablation protocol, validated visual/collision normal orientation]
+    assumptions: [A_STAGE9_3_1_SDF_RECONCILIATION_001, A_STAGE9_3_1_OFFSET_DIRECTION_001, A_STAGE9_3_1_SHADOW_GATE_001]
+    notes: "This boundary is diagnostic-only. It preserves Eq. (1)-(9), paper weights, Stage 9.2 artifacts, Stage 10 exports, and manual acceptance; the current backend mismatch blocks shadow execution."
+
 parameter_contract:
   configs/paper/retarget.yaml:
     num_object_surface_samples: {value: 50, source: paper}
