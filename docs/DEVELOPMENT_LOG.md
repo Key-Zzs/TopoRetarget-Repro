@@ -498,3 +498,18 @@ factor. The final readiness is
 `CONTINUE_STAGE9_3_3=YES`; official solver invocation remains zero and all 45
 diagnostic calls are isolated. No official artifact, Stage 10 manifest, manual
 acceptance, or Git index was changed.
+
+## Stage 9.3.3 shadow equivalence and long-finger attribution (2026-07-23)
+
+Added the isolated `shadow_equivalence.py` workflow, CLI commands, versioned
+repeat-derived numerical contract, context binding, profile-isolation audit,
+atomic checkpoint/resume layout, per-finger/counterfactual/gradient/constraint
+reports, and HTML output boundary. The official baseline was rerun from three
+selected frames with three repeats. QuerySet IDs/order and strict feasibility
+flags matched, but qpos and canonical SDF differences were far above the
+predeclared caps. The Stage 10 manifest also records inconsistent commits
+(`23e6465` versus runtime environment `58fa77c`). Result:
+`SHADOW_BASELINE_NOT_NUMERICALLY_EQUIVALENT`,
+`RETURN_TO_STAGE9_3_2_SHADOW_HARNESS_FIX`, `ENTER_STAGE9_4=NO`; mandatory
+shadow profiles ran zero times. Formal artifacts and Git index remained
+unchanged; code remains unstaged.

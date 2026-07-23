@@ -31,6 +31,13 @@ from toporetarget.workflows.gate import build_runtime_acceptance, evaluate_gate
 from toporetarget.workflows.mesh_visualization import render_mesh_html
 from toporetarget.workflows.planning import build_plan, write_plan
 from toporetarget.workflows.schema import WorkflowRequest, read_json, write_json
+from toporetarget.workflows.shadow_equivalence import (
+    PROFILES as SHADOW_EQUIVALENCE_PROFILES,
+)
+from toporetarget.workflows.shadow_equivalence import (
+    calibrate_shadow_equivalence,
+    run_stage9_shadow_ablation,
+)
 from toporetarget.workflows.validation import (
     build_semantic_sanity_report,
     cross_stage_identity_report,
@@ -39,6 +46,10 @@ from toporetarget.workflows.visualization import run_visualization, write_visual
 from toporetarget.workflows.warm_start_audit import run_warm_start_audit
 
 app = typer.Typer(help="Stage 10 bounded, resumable GRAB-to-Arti-MANO workflows.")
+
+
+def _parse_frames(value: str) -> tuple[int, ...]:
+    return tuple(int(item.strip()) for item in value.split(",") if item.strip())
 
 
 @app.command("audit-warm-start")
@@ -97,6 +108,93 @@ def run_contact_shadow_ablation_v2_command(
     except (OSError, ValueError, RuntimeError, Stage932PreconditionError) as exc:
         typer.echo(f"canonical contact shadow ablation failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
+
+
+@app.command("calibrate-shadow-equivalence")
+def calibrate_shadow_equivalence_command(
+    run: Path = typer.Option(..., "--run", help="Stage 10 manifest."),
+    stage7_audit: Path = typer.Option(..., "--stage7-audit"),
+    canonical_audit: Path = typer.Option(..., "--canonical-audit"),
+    frames: str = typer.Option("auto", "--frames"),
+    baseline_repeats: int = typer.Option(3, "--baseline-repeats", min=3, max=5),
+    output_root: Path = typer.Option(..., "--output-root"),
+    resume: bool = typer.Option(False, "--resume/--no-resume"),
+) -> None:
+    """Calibrate the versioned Stage 9.3.3 official replay contract."""
+    try:
+        selected = () if frames.strip().lower() == "auto" else _parse_frames(frames)
+        payload = calibrate_shadow_equivalence(
+            run,
+            stage7_audit,
+            canonical_audit,
+            output_root,
+            frames=selected,
+            baseline_repeats=baseline_repeats,
+            resume=resume,
+        )
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"shadow equivalence calibration failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("run-stage9-shadow-ablation")
+def run_stage9_shadow_ablation_command(
+    run: Path = typer.Option(..., "--run", help="Stage 10 manifest."),
+    equivalence_root: Path = typer.Option(..., "--equivalence-root"),
+    canonical_audit: Path = typer.Option(..., "--canonical-audit"),
+    profiles: str = typer.Option(",".join(SHADOW_EQUIVALENCE_PROFILES), "--profiles"),
+    frames: str = typer.Option("auto", "--frames"),
+    output_root: Path = typer.Option(..., "--output-root"),
+    resume: bool = typer.Option(False, "--resume/--no-resume"),
+    max_wall_time: float | None = typer.Option(None, "--max-wall-time", min=1.0),
+    html: bool = typer.Option(True, "--html/--no-html"),
+) -> None:
+    """Run bounded, isolated Stage 9.3.3 shadow profiles after calibration."""
+    try:
+        selected_frames = () if frames.strip().lower() == "auto" else _parse_frames(frames)
+        selected_profiles = tuple(item.strip() for item in profiles.split(",") if item.strip())
+        payload = run_stage9_shadow_ablation(
+            run,
+            equivalence_root,
+            canonical_audit,
+            output_root,
+            frames=selected_frames,
+            profiles=selected_profiles,
+            resume=resume,
+            max_wall_time=max_wall_time,
+            html_output=html,
+        )
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"Stage 9.3.3 shadow ablation failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("stage9-shadow-status")
+def stage9_shadow_status_command(
+    equivalence_root: Path = typer.Option(..., "--equivalence-root"),
+    shadow_root: Path | None = typer.Option(None, "--shadow-root"),
+) -> None:
+    """Report Stage 9.3.3 calibration, checkpoint, and readiness status."""
+    payload: dict[str, Any] = {}
+    equivalence = equivalence_root.expanduser().resolve()
+    for name in (
+        "audit_manifest.json",
+        "shadow_equivalence_contract.json",
+        "numerical_noise_envelope.json",
+        "official_baseline_equivalence.json",
+    ):
+        path = equivalence / name
+        if path.exists():
+            payload[name] = json.loads(path.read_text(encoding="utf-8"))
+    if shadow_root is not None:
+        shadow = shadow_root.expanduser().resolve()
+        for name in ("shadow_manifest.json", "stage9_4_readiness.json", "stage9_3_3_summary.json"):
+            path = shadow / name
+            if path.exists():
+                payload[name] = json.loads(path.read_text(encoding="utf-8"))
+    typer.echo(json.dumps(payload, indent=2, sort_keys=True, default=str))
 
 
 @app.command("contact-audit-status")

@@ -29,6 +29,20 @@ audit_contracts:
     shadow_profiles_are_paper_method: false
     modifies_equations_1_to_9: false
     modifies_stage10_artifacts: false
+  stage9_3_3_shadow_equivalence:
+    profile: src/toporetarget/workflows/shadow_equivalence.py
+    contract: toporetarget.shadow_equivalence.v1
+    diagnostic_only: true
+    paper_method: false
+    modifies_equations_1_to_9: false
+    modifies_stage9_2_profiles: false
+    modifies_stage10_artifacts: false
+    baseline_gate_required: true
+    feasibility_only_equivalence_accepted: false
+    mandatory_profiles_run_current: 0
+    readiness_current: RETURN_TO_STAGE9_3_2_SHADOW_HARNESS_FIX
+    assumptions: [A_SHADOW_NUMERICAL_EQUIVALENCE_001, A_SHADOW_CONTEXT_BINDING_001, A_SHADOW_PROFILE_ISOLATION_001, A_LONG_FINGER_ERROR_ATTRIBUTION_001, A_SHADOW_REGULARIZATION_ABLATION_001]
+    notes: "Three official repeats per selected frame failed the fixed numerical gate; no mandatory shadow profile or Stage 9.4 implementation was run."
 
 items:
   - id: equation_1

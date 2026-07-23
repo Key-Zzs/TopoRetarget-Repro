@@ -83,3 +83,13 @@ For the current Stage 10 inputs, the source/coordinate audit classifies
 as `pre_contact`. The bounded far-vs-contact comparison is in
 `.local/reports/stage9_solver_closeout/far_vs_contact_solver_comparison.json`;
 semantic contacts remain outside the Eq. (8)/(9) objective.
+
+## Stage 9.3.3 numerical gate
+
+The shadow-equivalence workflow compares the official final QuerySet IDs/order,
+strict status, bounds, hard/soft/full-512 audits, state arrays, and objective
+components before any causal profile is allowed to run. Its canonical SDF is
+the same reference-winding definition used by Stage 9.3.2. A feasible replay
+with a different state is not accepted as numerical equivalence, and status 9
+is never normalized to success. All shadow checkpoints are diagnostic-only and
+isolated under `.local/runs/stage9_3_3_shadow_*`.

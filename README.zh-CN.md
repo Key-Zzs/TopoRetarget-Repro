@@ -913,3 +913,12 @@ MANO/SMPL-X、ManipTrans、机器人资产和其他数据集继续遵循其自�
 使用 GRAB、MANO/SMPL-X 或 ManipTrans 的数据、模型、资产时，也请引用相应上游项目。
 本地论文副本见 [docs/TopoRetarget.pdf](docs/TopoRetarget.pdf)，上游获取说明见
 [docs/UPSTREAM_REFERENCES.md](docs/UPSTREAM_REFERENCES.md)。
+
+## Stage 9.3.3 shadow 等价性
+
+诊断性的 Stage 9.3.3 boundary 见
+[`docs/SHADOW_EQUIVALENCE_AND_LONG_FINGER_ABLATION.zh-CN.md`](docs/SHADOW_EQUIVALENCE_AND_LONG_FINGER_ABLATION.zh-CN.md)。
+必须先通过 official numerical-equivalence gate，才能运行六个 bounded shadow
+profile；同时保留 Eq. (1)-(9)、Stage 9.2 和 Stage 10 boundary。当前 accepted-window
+replay 为 fail-closed：`SHADOW_BASELINE_NOT_NUMERICALLY_EQUIVALENT`；mandatory
+shadow profile 和 Stage 9.4 implementation 均未运行/授权。

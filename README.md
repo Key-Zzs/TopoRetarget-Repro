@@ -980,3 +980,13 @@ If this repository or its implementation notes are useful, cite the TopoRetarget
 Also cite GRAB, MANO/SMPL-X, and ManipTrans when using their data, models, or assets. The local
 paper copy is [`docs/TopoRetarget.pdf`](docs/TopoRetarget.pdf), and upstream acquisition notes are
 in [`docs/UPSTREAM_REFERENCES.md`](docs/UPSTREAM_REFERENCES.md).
+
+## Stage 9.3.3 shadow equivalence
+
+The diagnostic Stage 9.3.3 boundary is documented in
+[`docs/SHADOW_EQUIVALENCE_AND_LONG_FINGER_ABLATION.md`](docs/SHADOW_EQUIVALENCE_AND_LONG_FINGER_ABLATION.md).
+It requires an official numerical-equivalence gate before running six bounded
+shadow profiles and preserves the Eq. (1)-(9)/Stage 9.2/Stage 10 boundaries. The
+current accepted-window replay is fail-closed with
+`SHADOW_BASELINE_NOT_NUMERICALLY_EQUIVALENT`; no mandatory shadow profile or
+Stage 9.4 implementation is authorized.

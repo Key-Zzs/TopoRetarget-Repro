@@ -116,3 +116,15 @@ scheduled independent full-surface audits, and atomic frame checkpoints. These
 are engineering mechanisms only; Eq. (8)-(9), profiles, weights, sample count,
 and strict acceptance are unchanged. Runtime-gate and deterministic-repeat
 claims require reports under `.local/reports/stage9_performance/`.
+
+## Stage 9.3.3 shadow-equivalence boundary
+
+Stage 9.3.3 replays the frozen formal profile only in isolated diagnostic
+outputs. It first calibrates `toporetarget.shadow_equivalence.v1` from three
+independent official-profile repeats, with predeclared float64 floors, a `20x`
+repeat-noise multiplier, and hard caps. A context, status, QuerySet identity,
+or numerical-equivalence failure stops all other profiles. The six optional
+shadow profiles do not alter Eq. (8)-(9), solver/execution YAML, paper weights,
+or accepted Stage 9.2/Stage 10 artifacts; projections are state diagnostics,
+not accepted trajectories. See
+[`SHADOW_EQUIVALENCE_AND_LONG_FINGER_ABLATION.md`](SHADOW_EQUIVALENCE_AND_LONG_FINGER_ABLATION.md).

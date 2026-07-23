@@ -220,3 +220,15 @@ label table is now verified and versioned locally; the unresolved GRAB scene, wr
 personalized-template, downstream contact aggregation, table, and sequence-ID choices are listed in
 [`ASSUMPTIONS.md`](ASSUMPTIONS.md); Stage 6 object sampling/SDF is a bounded engineering
 foundation, while no interaction graph, retargeting, or RL behavior is implied.
+
+## Stage 9.3.3 shadow-equivalence boundary
+
+The Stage 9.3.3 workflow is diagnostic-only and paper-external. It preserves
+Eq. (1)-(9), paper weights, formal Stage 9.2 solver/execution profiles, accepted
+artifacts, Stage 10 exports, and manual/runtime acceptance. Numerical baseline
+equivalence is calibrated from independent repeats with fixed floors and caps;
+feasibility-only equivalence is rejected. The six bounded profiles and
+long-finger attribution cannot authorize Stage 9.4. The current run is
+`SHADOW_BASELINE_NOT_NUMERICALLY_EQUIVALENT` because both the replay state
+differences and the accepted manifest's internal code-provenance mismatch must
+be resolved at the Stage 9.3.2 shadow harness boundary.

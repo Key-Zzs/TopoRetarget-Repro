@@ -73,3 +73,10 @@ mapping/frame/base audits、per-finger 与 warm-vs-final attribution、joint-lim
 
 所有正式输入的 hash 与 mtime 必须保持不变。`official_artifacts_changed` 非零、official solver invocation
 非零、mapping/replay 失败或出现非预期 Git worktree 改动，都使 readiness 结果无效。
+
+## Stage 9.3.3 handoff
+
+Stage 7.1 通过只是 prerequisite，并不证明 Stage 9.2 final 可以被数值重放。Stage 9.3.3 将当前
+warm qpos/base seed 与正式 Stage 9.2 的 `t-1` final state 一起绑定；只有 official baseline 达到
+`EXACT` 或 `NUMERICALLY_EQUIVALENT` 才允许进入六个 bounded shadow profile。长指归因属于
+diagnostic，不会替换已保存的 warm-start artifact。

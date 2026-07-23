@@ -88,3 +88,12 @@ Jacobian reports, `root_cause_analysis.json`,
 All official input hashes and mtimes must remain unchanged. Any nonzero
 `official_artifacts_changed`, any official solver invocation, a mapping/replay
 failure, or an unexpected Git worktree change invalidates the readiness result.
+
+## Handoff to Stage 9.3.3
+
+The Stage 7.1 pass is a prerequisite, not evidence that the Stage 9.2 final
+trajectory is numerically replayable. Stage 9.3.3 binds the current warm qpos
+and base seed together with the official Stage 9.2 final `t-1` state, then
+fail-closes if the official baseline is not `EXACT` or
+`NUMERICALLY_EQUIVALENT`. Its long-finger attribution is diagnostic and does
+not replace the persisted warm-start artifact.

@@ -86,3 +86,12 @@ The independent legacy report is never overwritten. The v2 JSON, CSV, and
 self-contained `trajectory_contact_audit_v2.html` are the formal audit
 outputs; HTML defaults to canonical values and labels legacy values
 `DIAGNOSTIC ONLY / SUPERSEDED`.
+
+## Stage 9.3.3 shadow gate
+
+Stage 9.3.3 consumes this canonical audit only after the formal baseline
+reproduction passes. It records source/warm/official/shadow per-finger metrics,
+full-512 canonical SDF, QuerySet and constraint attribution, while retaining
+`source_contact_proxy` and `contact_retention_proxy` as proxies. A failed
+baseline returns `RETURN_TO_STAGE9_3_2_SHADOW_HARNESS_FIX` and runs zero
+mandatory shadow profiles.

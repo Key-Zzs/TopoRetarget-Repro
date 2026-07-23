@@ -432,3 +432,15 @@ final keypoint RMSE 和 E_IM 高于 warm，因此 final refinement degradation �
 最终 readiness 为 `WARM_START_FORMALLY_VALID_CONTINUE_STAGE9_3_3`，
 `CONTINUE_STAGE9_3_3=YES`；official solver invocation 仍为 0，45 次 diagnostic call 全部隔离。没有
 修改正式 artifact、Stage 10 manifest、manual acceptance 或 Git index。
+
+## Stage 9.3.3 shadow 等价性与长指归因（2026-07-23）
+
+新增隔离的 `shadow_equivalence.py` workflow、CLI、基于 repeat 的版本化数值
+contract、context binding、profile isolation、原子 checkpoint/resume、逐指/反事实/
+gradient/constraint 报告和 HTML boundary。对 3 个 selected frame 各做 3 次 official
+baseline replay；QuerySet IDs/order 与 strict feasibility 相同，但 qpos 和 canonical
+SDF 差异远超预先声明的 cap。Stage 10 manifest 内部 commit provenance 也不一致
+（`23e6465` 对 `58fa77c`）。结果为：
+`SHADOW_BASELINE_NOT_NUMERICALLY_EQUIVALENT`、
+`RETURN_TO_STAGE9_3_2_SHADOW_HARNESS_FIX`、`ENTER_STAGE9_4=NO`；mandatory
+shadow profile 运行数为 0。正式 artifact 和 Git index 未改变，代码仍未 staged。
