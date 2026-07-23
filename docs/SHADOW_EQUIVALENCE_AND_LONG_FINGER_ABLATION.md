@@ -105,3 +105,7 @@ export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 NUMEXPR_NUM_TH
 The second command is intentionally fail-closed until the first root reports
 `baseline_pass=true`. Stage 9.4 remains a separate future decision and is not
 implemented by this workflow.
+
+Stage 9.3.4 is the subsequent provenance-rebased current-lane experiment. It
+keeps this shadow-equivalence gate and all accepted artifacts immutable; see
+[`STAGE9_PROVENANCE_MULTISTART_AND_CAUSAL_ABLATION.md`](STAGE9_PROVENANCE_MULTISTART_AND_CAUSAL_ABLATION.md).

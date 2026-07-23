@@ -97,3 +97,7 @@ and base seed together with the official Stage 9.2 final `t-1` state, then
 fail-closes if the official baseline is not `EXACT` or
 `NUMERICALLY_EQUIVALENT`. Its long-finger attribution is diagnostic and does
 not replace the persisted warm-start artifact.
+
+Stage 9.3.4 consumes this audit as a provenance input only. Its base-seed
+Kabsch diagnostics do not replace the official warm-start artifact or prove a
+final optimizer basin.

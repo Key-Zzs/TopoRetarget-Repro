@@ -38,6 +38,18 @@ from toporetarget.workflows.shadow_equivalence import (
     calibrate_shadow_equivalence,
     run_stage9_shadow_ablation,
 )
+from toporetarget.workflows.stage9_3_4 import (
+    Stage934Error,
+    audit_solver_lineage,
+    run_base_seed_ablation,
+    run_current_baseline_repeats,
+    run_current_causal_baseline,
+    run_historical_replay,
+    run_refinement_multistart,
+    run_same_lineage_ablation,
+    run_stage934,
+    stage9_causal_status,
+)
 from toporetarget.workflows.validation import (
     build_semantic_sanity_report,
     cross_stage_identity_report,
@@ -50,6 +62,172 @@ app = typer.Typer(help="Stage 10 bounded, resumable GRAB-to-Arti-MANO workflows.
 
 def _parse_frames(value: str) -> tuple[int, ...]:
     return tuple(int(item.strip()) for item in value.split(",") if item.strip())
+
+
+@app.command("audit-solver-lineage")
+def audit_solver_lineage_command(
+    run: Path = typer.Option(..., "--run", help="Formal Stage 10 manifest."),
+    output_root: Path = typer.Option(Path(".local/runs/stage9_3_4_provenance"), "--output-root"),
+) -> None:
+    """Build the versioned solver-effective provenance closure."""
+    try:
+        value = audit_solver_lineage(run, output_root)
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, Stage934Error) as exc:
+        typer.echo(f"solver lineage audit failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("run-historical-replay")
+def run_historical_replay_command(
+    provenance_root: Path = typer.Option(..., "--provenance-root"),
+    output_root: Path = typer.Option(
+        Path(".local/runs/stage9_3_4_historical_lane"), "--output-root"
+    ),
+    frames: str = typer.Option("auto", "--frames"),
+) -> None:
+    """Run the historical lane without substituting the current environment."""
+    try:
+        value = run_historical_replay(provenance_root, output_root, frames=frames)
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, Stage934Error) as exc:
+        typer.echo(f"historical replay failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("run-current-causal-baseline")
+def run_current_causal_baseline_command(
+    run: Path = typer.Option(..., "--run", help="Formal Stage 10 manifest."),
+    output_root: Path = typer.Option(Path(".local/runs/stage9_3_4_current_lane"), "--output-root"),
+    max_wall_time: float | None = typer.Option(None, "--max-wall-time", min=1.0),
+    resume: bool = typer.Option(True, "--resume/--no-resume"),
+) -> None:
+    """Create or resume the independent current-lineage 60-frame baseline."""
+    try:
+        value = run_current_causal_baseline(
+            run, output_root, max_wall_time=max_wall_time, resume=resume
+        )
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, Stage934Error) as exc:
+        typer.echo(f"current causal baseline failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("run-current-baseline-repeats")
+def run_current_baseline_repeats_command(
+    run: Path = typer.Option(..., "--run", help="Formal Stage 10 manifest."),
+    current_baseline: Path = typer.Option(..., "--current-baseline"),
+    output_root: Path = typer.Option(Path(".local/runs/stage9_3_4_provenance"), "--output-root"),
+    frames: str = typer.Option("auto", "--frames"),
+    repeat_count: int = typer.Option(3, "--repeat-count", min=3, max=5),
+    max_wall_time: float | None = typer.Option(None, "--max-wall-time", min=1.0),
+) -> None:
+    """Run three independent bounded replays of the current-lineage baseline."""
+    try:
+        selected = () if frames == "auto" else _parse_frames(frames)
+        value = run_current_baseline_repeats(
+            run,
+            current_baseline,
+            output_root,
+            frames=selected,
+            repeat_count=repeat_count,
+            max_wall_time=max_wall_time,
+        )
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, Stage934Error) as exc:
+        typer.echo(f"current baseline repeats failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("stage9-causal-status")
+def stage9_causal_status_command(
+    provenance_root: Path = typer.Option(..., "--provenance-root"),
+    current_baseline: Path = typer.Option(..., "--current-baseline"),
+    output_root: Path = typer.Option(Path(".local/reports/stage9_3_4"), "--output-root"),
+) -> None:
+    """Assemble Stage 9.3.4 causal reports, readiness, and HTML."""
+    try:
+        value = stage9_causal_status(provenance_root, current_baseline, output_root)
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, Stage934Error) as exc:
+        typer.echo(f"Stage 9 causal status failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("run-refinement-multistart")
+def run_refinement_multistart_command(
+    run: Path = typer.Option(..., "--run"),
+    current_baseline: Path = typer.Option(..., "--current-baseline"),
+    output_root: Path = typer.Option(Path(".local/runs/stage9_3_4_multistart"), "--output-root"),
+    frames: str = typer.Option("auto", "--frames"),
+    query_mode: str = typer.Option("frozen-first,native-query", "--query-mode"),
+) -> None:
+    """Run bounded same-lineage initialization diagnostics."""
+    del query_mode
+    try:
+        selected = () if frames.strip().lower() == "auto" else _parse_frames(frames)
+        value = run_refinement_multistart(run, current_baseline, output_root, frames=selected)
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, Stage934Error) as exc:
+        typer.echo(f"refinement multistart failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("run-base-seed-ablation")
+def run_base_seed_ablation_command(
+    run: Path = typer.Option(..., "--run"),
+    current_baseline: Path = typer.Option(..., "--current-baseline"),
+    output_root: Path = typer.Option(
+        Path(".local/runs/stage9_3_4_base_seed_ablation"), "--output-root"
+    ),
+    frames: str = typer.Option("auto", "--frames"),
+    protocols: str = typer.Option("initialization-only,seed-and-prior", "--protocols"),
+) -> None:
+    """Run SE(3)-guarded base-seed diagnostics."""
+    del protocols
+    try:
+        selected = () if frames.strip().lower() == "auto" else _parse_frames(frames)
+        value = run_base_seed_ablation(run, current_baseline, output_root, frames=selected)
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, Stage934Error) as exc:
+        typer.echo(f"base seed ablation failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("run-same-lineage-ablation")
+def run_same_lineage_ablation_command(
+    run: Path = typer.Option(..., "--run"),
+    current_baseline: Path = typer.Option(..., "--current-baseline"),
+    output_root: Path = typer.Option(
+        Path(".local/runs/stage9_3_4_mandatory_ablation"), "--output-root"
+    ),
+    frames: str = typer.Option("auto", "--frames"),
+    profiles: str = typer.Option("all", "--profiles"),
+) -> None:
+    """Run margin, full-QuerySet, and projection diagnostics."""
+    del profiles
+    try:
+        selected = () if frames.strip().lower() == "auto" else _parse_frames(frames)
+        value = run_same_lineage_ablation(run, current_baseline, output_root, frames=selected)
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, Stage934Error) as exc:
+        typer.echo(f"same-lineage ablation failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("stage9-3-4")
+def stage9_3_4_command(
+    run: Path = typer.Option(..., "--run"),
+    output_root: Path = typer.Option(Path(".local/runs/stage9_3_4_current_lane"), "--output-root"),
+    max_wall_time: float | None = typer.Option(None, "--max-wall-time", min=1.0),
+) -> None:
+    """Run all bounded Stage 9.3.4 lanes in their declared order."""
+    try:
+        value = run_stage934(run, output_root=output_root, max_wall_time=max_wall_time)
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, Stage934Error) as exc:
+        typer.echo(f"Stage 9.3.4 failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
 
 
 @app.command("audit-warm-start")

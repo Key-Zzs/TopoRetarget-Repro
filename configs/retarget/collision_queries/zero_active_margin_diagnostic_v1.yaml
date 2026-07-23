@@ -1,0 +1,9 @@
+profile_id: zero_active_margin_diagnostic_v1
+version: "1.0.0"
+mode: adaptive
+active_margin_m: 0.0
+max_active_set_rounds: 5
+paper_status: diagnostic_only
+assumptions:
+  - A_REFINEMENT_QUERY_SET_001
+  - A_STAGE9_3_4_ACTIVE_MARGIN_ABLATION_001

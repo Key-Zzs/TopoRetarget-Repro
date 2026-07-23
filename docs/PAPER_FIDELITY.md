@@ -232,3 +232,6 @@ long-finger attribution cannot authorize Stage 9.4. The current run is
 `SHADOW_BASELINE_NOT_NUMERICALLY_EQUIVALENT` because both the replay state
 differences and the accepted manifest's internal code-provenance mismatch must
 be resolved at the Stage 9.3.2 shadow harness boundary.
+
+Stage 9.3.4 remains diagnostic-only: provenance, multistart, base-seed, and
+causal-ablation outputs cannot authorize Stage 9.4 or alter paper fidelity.

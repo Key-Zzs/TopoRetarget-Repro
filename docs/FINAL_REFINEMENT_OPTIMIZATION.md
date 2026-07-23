@@ -128,3 +128,6 @@ shadow profiles do not alter Eq. (8)-(9), solver/execution YAML, paper weights,
 or accepted Stage 9.2/Stage 10 artifacts; projections are state diagnostics,
 not accepted trajectories. See
 [`SHADOW_EQUIVALENCE_AND_LONG_FINGER_ABLATION.md`](SHADOW_EQUIVALENCE_AND_LONG_FINGER_ABLATION.md).
+
+Stage 9.3.4 provenance-rebased causal diagnostics are documented in
+[`STAGE9_PROVENANCE_MULTISTART_AND_CAUSAL_ABLATION.md`](STAGE9_PROVENANCE_MULTISTART_AND_CAUSAL_ABLATION.md).

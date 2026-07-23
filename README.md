@@ -990,3 +990,10 @@ shadow profiles and preserves the Eq. (1)-(9)/Stage 9.2/Stage 10 boundaries. The
 current accepted-window replay is fail-closed with
 `SHADOW_BASELINE_NOT_NUMERICALLY_EQUIVALENT`; no mandatory shadow profile or
 Stage 9.4 implementation is authorized.
+
+## Stage 9.3.4 provenance-rebased causal experiments
+
+Stage 9.3.4 is an audit-only current-lineage experiment with a separate
+historical lane, bounded multistart/base-seed diagnostics, and conservative
+Stage 9.4 routing. See
+[`docs/STAGE9_PROVENANCE_MULTISTART_AND_CAUSAL_ABLATION.md`](docs/STAGE9_PROVENANCE_MULTISTART_AND_CAUSAL_ABLATION.md).

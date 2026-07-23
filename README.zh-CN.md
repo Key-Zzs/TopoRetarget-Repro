@@ -922,3 +922,9 @@ MANO/SMPL-X、ManipTrans、机器人资产和其他数据集继续遵循其自�
 profile；同时保留 Eq. (1)-(9)、Stage 9.2 和 Stage 10 boundary。当前 accepted-window
 replay 为 fail-closed：`SHADOW_BASELINE_NOT_NUMERICALLY_EQUIVALENT`；mandatory
 shadow profile 和 Stage 9.4 implementation 均未运行/授权。
+
+## Stage 9.3.4 provenance-rebased 因果实验
+
+Stage 9.3.4 是只读审计层，单独分离 historical lane 与 current-lineage
+baseline，并运行有界 multistart/base-seed 诊断及保守的 Stage 9.4 路由。详见
+[`docs/STAGE9_PROVENANCE_MULTISTART_AND_CAUSAL_ABLATION.md`](docs/STAGE9_PROVENANCE_MULTISTART_AND_CAUSAL_ABLATION.md)。

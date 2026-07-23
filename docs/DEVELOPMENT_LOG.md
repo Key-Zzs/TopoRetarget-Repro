@@ -513,3 +513,21 @@ predeclared caps. The Stage 10 manifest also records inconsistent commits
 `RETURN_TO_STAGE9_3_2_SHADOW_HARNESS_FIX`, `ENTER_STAGE9_4=NO`; mandatory
 shadow profiles ran zero times. Formal artifacts and Git index remained
 unchanged; code remains unstaged.
+
+## Stage 9.3.4 provenance-rebased causal experiments (2026-07-23)
+
+Added the isolated provenance audit, detached historical-lane contract,
+current-lineage baseline runner, bounded multistart/base-seed diagnostics,
+mandatory QuerySet/margin profiles, conservative readiness report, and HTML
+handoff. Historical replay is fail-closed when its exact environment is not
+available. Formal artifacts, Stage 10 manifest, manual acceptance, and Git
+index remain unchanged; all new outputs are diagnostic and unstaged.
+
+The current-lineage baseline passed all 60 frames: status 0, strict
+acceptance, contiguous checkpoint chain, finite full-512 audit, and zero raw
+penetration. Historical exact replay remained unavailable because the recorded
+package environment did not match. Five selected frames completed 60
+multistart variants, 60 base-seed final variants, and 15 formal mandatory
+profile variants; projection rows remain explicitly unsolved diagnostics. The
+final route is `STAGE9_3_4_INCONCLUSIVE` with `ENTER_STAGE9_4=NO` and a human
+decision gate. No accepted artifact or Git index was changed.

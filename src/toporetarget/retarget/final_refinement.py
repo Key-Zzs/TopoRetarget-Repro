@@ -165,8 +165,18 @@ class CollisionQueryProfile:
     def validate(self) -> CollisionQueryProfile:
         if self.mode not in {"full", "adaptive"}:
             raise ValueError("query profile mode must be full or adaptive")
-        if self.mode == "adaptive" and self.active_margin_m <= 0:
-            raise ValueError("adaptive active margin must be positive")
+        # Zero is reserved for explicitly versioned diagnostic profiles.  The
+        # formal adaptive profile remains at 10 mm; allowing zero here lets
+        # Stage 9.3.4 isolate the active-margin selection rule without
+        # changing Eq. (8)/(9), paper weights, or the strict acceptance gate.
+        if self.mode == "adaptive" and self.active_margin_m < 0:
+            raise ValueError("adaptive active margin must be non-negative")
+        if (
+            self.mode == "adaptive"
+            and self.active_margin_m == 0
+            and self.profile_id != "zero_active_margin_diagnostic_v1"
+        ):
+            raise ValueError("zero adaptive margin requires the versioned diagnostic profile")
         if self.max_active_set_rounds <= 0:
             raise ValueError("max_active_set_rounds must be positive")
         return self
@@ -2222,6 +2232,7 @@ def build_final_trajectory(
     start_frame: int = 0,
     end_frame: int | None = None,
     initial_previous: tuple[np.ndarray, np.ndarray] | None = None,
+    initial_query_sets: dict[int, CollisionQuerySet] | None = None,
     object_vertices: np.ndarray | None = None,
     object_faces: np.ndarray | None = None,
     warm_artifact_hash: str | None = None,
@@ -2309,9 +2320,25 @@ def build_final_trajectory(
         # has passed probe comparison. It is sufficient for initial QuerySet
         # selection; reference_sdf remains the independent persisted audit.
         initial_query = sdf.query_scene(initial_points, context.object_pose_scene)
-        query_set = build_query_set(
+        native_query_set = build_query_set(
             initial_query.signed_distance, surface.geometry_ids, query_profile
         )
+        query_set = native_query_set
+        if initial_query_sets is not None and local_index in initial_query_sets:
+            # Diagnostic callers may freeze the IDs/reasons selected by an
+            # official initial pass while retaining the current seed's signed
+            # distances for slack initialization.  The default formal path is
+            # unchanged when this mapping is omitted.
+            frozen = initial_query_sets[local_index].validate(surface.count)
+            query_set = CollisionQuerySet(
+                sample_ids=np.asarray(frozen.sample_ids, dtype=np.int64),
+                inclusion_reasons=tuple(frozen.inclusion_reasons),
+                active_round=np.asarray(frozen.active_round, dtype=np.int64),
+                initial_signed_distance=np.asarray(initial_query.signed_distance)[
+                    np.asarray(frozen.sample_ids, dtype=np.int64)
+                ],
+                query_hash=frozen.query_hash,
+            ).validate(surface.count)
         if query_profile.mode == "full":
             query_set = CollisionQuerySet(
                 query_set.sample_ids,

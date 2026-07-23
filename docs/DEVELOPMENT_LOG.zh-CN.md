@@ -444,3 +444,17 @@ SDF 差异远超预先声明的 cap。Stage 10 manifest 内部 commit provenance
 `SHADOW_BASELINE_NOT_NUMERICALLY_EQUIVALENT`、
 `RETURN_TO_STAGE9_3_2_SHADOW_HARNESS_FIX`、`ENTER_STAGE9_4=NO`；mandatory
 shadow profile 运行数为 0。正式 artifact 和 Git index 未改变，代码仍未 staged。
+
+## Stage 9.3.4 provenance-rebased 因果实验（2026-07-23）
+
+新增隔离的 provenance audit、detached historical lane contract、current-lineage
+baseline、有界 multistart/base-seed 诊断、QuerySet/margin mandatory profile、保守
+readiness report 和 HTML handoff。historical exact environment 不可用时 fail-closed；正式
+artifact、Stage 10 manifest、manual acceptance 和 Git index 保持不变，新增输出均为诊断且未 staged。
+
+current-lineage baseline 的 60 帧全部通过：status 0、strict acceptance、连续 checkpoint
+chain、finite full-512 audit，且 raw penetration 为 0。由于记录的 package environment 与当前
+环境不完全匹配，historical exact replay 保持 unavailable。5 个 selected frame 完成 60 个
+multistart variant、60 个 base-seed final variant 和 15 个 formal mandatory profile variant；
+projection 行明确标记为未求解 diagnostic。最终路由为 `STAGE9_3_4_INCONCLUSIVE`，
+`ENTER_STAGE9_4=NO`，等待人工决策。正式 artifact 和 Git index 未改变。
