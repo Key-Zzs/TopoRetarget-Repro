@@ -530,6 +530,7 @@ def _build_morphology_targets(
 def _project_residual(jacobian: np.ndarray, residual: np.ndarray) -> dict[str, Any]:
     j = np.asarray(jacobian, dtype=np.float64)
     r = np.asarray(residual, dtype=np.float64).reshape(-1)
+    singular: np.ndarray
     if j.size == 0:
         parallel = np.zeros_like(r)
         singular = np.empty(0)
@@ -548,7 +549,7 @@ def _project_residual(jacobian: np.ndarray, residual: np.ndarray) -> dict[str, A
         "residual_norm": float(np.linalg.norm(r)),
         "reachable_component_norm": float(np.linalg.norm(parallel)),
         "unreachable_component_norm": float(np.linalg.norm(orthogonal)),
-        "unreachable_ratio": float(np.linalg.norm(orthogonal) / max(np.linalg.norm(r), EPS)),
+        "unreachable_ratio": float(np.linalg.norm(orthogonal) / max(float(np.linalg.norm(r)), EPS)),
     }
 
 
@@ -803,7 +804,7 @@ def _frame_diagnostics(
                 "final_contact_proxy": float(np.mean(final_contact)),
                 "warm_to_final_change": float(np.mean(final_key - warm_key)),
                 "warm_fraction_of_final_keypoint_error": float(
-                    np.mean(warm_key) / max(np.mean(final_key), EPS)
+                    np.mean(warm_key) / max(float(np.mean(final_key)), EPS)
                 ),
                 "final_incremental_degradation_m": float(np.mean(final_key - warm_key)),
                 "joint_limit_min_margin_rad": float(
