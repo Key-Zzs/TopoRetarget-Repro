@@ -1,0 +1,16 @@
+schema_version: toporetarget.metric_registry.v1
+implementation: src/toporetarget/metrics/registry.py
+contactpose:
+  contact_precision_eq10: {semantics: PAPER_EXACT, unit: mm}
+  contact_alignment_eq11: {semantics: PAPER_EXACT, unit: degree}
+  max_penetration_eq12: {semantics: PAPER_EXACT, unit: mm}
+  penetration_rate_2mm_eq12: {semantics: PAPER_EXACT, unit: fraction}
+  solve_time_ms_per_unit: {semantics: ENGINEERING_DIAGNOSTIC, unit: ms/unit}
+grab:
+  contact_precision: {id: grab_contact_precision_proxy, semantics: DATASET_PROXY}
+  contact_alignment: {id: grab_contact_alignment_proxy, semantics: DATASET_PROXY}
+  retention_thresholds_mm: [2, 3, 5, 8, 10]
+common:
+  aggregate: equal_weight_per_unit_macro
+  dynamic_static: separate
+  missing: N/A_with_reason

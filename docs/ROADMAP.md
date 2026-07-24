@@ -13,7 +13,11 @@
 | 8 | Shared interaction graph and Laplacian coordinates | Eq. 3-7 implementation, source-only artifacts, RH/LH reports and views | Graph/loss tests, source integrity, identity/Jacobian checks, and bounded 60-frame acceptance pass; Eq. 8-9 remains out of scope | complete (bounded, with explicit assumptions) |
 | 9 | Constrained final optimization with slack variables | Eq. 8-9 implementation, QuerySets/slack, RH/LH bounded artifacts, independent audit | Constraint, determinism, source-integrity, and bounded 60-frame acceptance pass; assumptions remain explicit | complete (bounded, with explicit assumptions) |
 | 10 | GRAB → Arti-MANO end-to-end retargeting | Resumable bounded DAG, contact-window selector, provenance, review, reference export | Implementation and focused tests pass; accepted bounded contact-rich reference-runtime run with human acceptance | implemented; bounded reference-runtime accepted; preferred performance, production, and real-time scopes open |
-| 11 | Metrics and ContactPose evaluation | Eq. 10-12 | Metric fixtures and report | not started |
+| Q1–Q3 | Multi-dataset interaction benchmark and unified automatic evaluation | Frozen selection, Eq. 10-12 registry, GRAB proxies, automatic gates, baseline execution, aggregation, reports, dashboard | Selection is frozen before runs; applicable profiles execute or preserve failures; reports and integrity checks are generated | implemented, bounded; current local ContactPose gate blocks before freeze |
+| Q4 | Morphology-aware warm-start | Morphology gap analysis and a separately versioned warm-start extension | Cross-sequence evidence without changing Q1–Q3 | not started |
+| Q5 | Arti-MANO surface contact proxies | Robot surface/pad proxy validation | Proxy is distinct from source ground truth | not started |
+| Q6 | Contact-aware final extension | Versioned contact-aware objective extension | Separate method, tests, and rollback evidence | not started |
+| Q7 | Cross-trajectory automatic profile selection | Frozen-profile selection policy | Selection uses only predeclared cross-trajectory metrics | not started |
 | 12 | OakInk, DexYCB and HO-Cap adapters | Dataset adapters | Adapters validated | not started |
 | 13 | ARCTIC, OakInk2 and TACO extensions | Dataset adapters | Adapters validated | not started |
 | 14 | Arbitrary dexterous-hand plugin interface | URDF/MJCF interface | Plugin contract tested | not started |

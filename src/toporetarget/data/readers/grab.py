@@ -227,7 +227,9 @@ def _required_text(mapping: dict[str, Any], key: str, name: str) -> str:
     return value
 
 
-def read_grab_npz(sequence_path: str | Path) -> GrabSequenceRecord:
+def read_grab_npz(
+    sequence_path: str | Path, *, compute_source_hash: bool = True
+) -> GrabSequenceRecord:
     """Parse one explicit GRAB NPZ and preserve its native temporal contract."""
 
     source = Path(sequence_path).expanduser()
@@ -303,7 +305,11 @@ def read_grab_npz(sequence_path: str | Path) -> GrabSequenceRecord:
             object=object_record,
             table_metadata=table_metadata,
             contact_metadata=contact_metadata,
-            source_hash=sha256_file(source),
+            source_hash=(
+                sha256_file(source)
+                if compute_source_hash
+                else f"stat:{source.stat().st_size}:{source.stat().st_mtime_ns}"
+            ),
             start_frame=0,
         )
 

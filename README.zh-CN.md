@@ -48,7 +48,11 @@ Eq. (8)-(9) final refinement；仍未声称实现 RL pipeline 或论文实验结
 | 8 | 交互图与 Laplacian 坐标 | Complete，有界；假设显式 | source-only Eq. 3–7 图/loss、RH/LH artifact、identity/Jacobian 验证、报告和可视化通过；Eq. 8–9 仍属于 Stage 9。 |
 | 9 | 带 slack 的受限优化 | Complete，有界；假设显式 | Eq. 8–9 final refinement、full/adaptive QuerySet、slack、独立 full-surface audit、RH/LH artifact、CLI、测试和可视化通过；不包含 Stage 10。 |
 | 10 | GRAB→Arti-MANO 端到端重定向 | 已实现；bounded reference-runtime 已接受，preferred 性能仍开放 | 有界可恢复 DAG、官方 contact-window 选择、provenance、review/export，以及已接受的 `s1/airplane_lift` 右手 60 帧 reference-runtime milestone；preferred 性能、production 和 real-time 范围仍开放。 |
-| 11 | Metrics 与 ContactPose 评估 | TODO | 实现 Eq. 10–12 指标和报告 fixture。 |
+| Q1–Q3 | 多数据集交互 benchmark 与统一自动评价 | 已实现，有界；当前本地 ContactPose selection gate 在 freeze 前阻塞 | 冻结 selection contract、metric registry、自动 gate、绑定 manifest 的 profile、报告和 HTML dashboard。当前本地 audit 未发现可识别的 official ContactPose contact attribution，因此未运行 baseline；不声称论文完整 25-grasp ContactPose 结果。 |
+| Q4 | morphology-aware warm-start | 未开始 | 在不修改 Q1–Q3 冻结基线的前提下评估 morphology-aware 初始化。 |
+| Q5 | Arti-MANO surface contact proxies | 未开始 | 将机器人表面/pad proxy 与 source label 分开验证。 |
+| Q6 | contact-aware final extension | 未开始 | 在 Q4/Q5 证据后增加独立版本的 contact-aware 扩展。 |
+| Q7 | cross-trajectory 自动 profile 选择 | 未开始 | 只能根据冻结的跨轨迹证据选择 profile。 |
 | 12 | OakInk、DexYCB、HO-Cap adapter | TODO | 添加独立验证的数据集 adapter。 |
 | 13 | ARCTIC、OakInk2、TACO 扩展 | TODO | 添加独立验证的数据集 adapter。 |
 | 14 | 任意灵巧手 plugin interface | TODO | 测试 URDF/MJCF hand plugin contract。 |
@@ -59,7 +63,39 @@ Eq. (8)-(9) final refinement；仍未声称实现 RL pipeline 或论文实验结
 | 19 | 非论文扩展 | TODO | 将 MANO 清理、SPIDER 等扩展单独标识。 |
 
 维护中的路线图见 [docs/ROADMAP.md](docs/ROADMAP.md)，中文路线图见
-[docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md)。
+[docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md)。benchmark contract、统一自动评价和 Eq. (9)
+说明见 [docs/MULTI_DATASET_INTERACTION_BENCHMARK.zh-CN.md](docs/MULTI_DATASET_INTERACTION_BENCHMARK.zh-CN.md)、
+[docs/UNIFIED_AUTOMATIC_EVALUATION.zh-CN.md](docs/UNIFIED_AUTOMATIC_EVALUATION.zh-CN.md) 和
+[docs/EQ9_TEMPORAL_SCOPE_INTERPRETATIONS.zh-CN.md](docs/EQ9_TEMPORAL_SCOPE_INTERPRETATIONS.zh-CN.md)。
+
+### Q1–Q3 冻结 benchmark
+
+该 benchmark 是有界工程评价，不是论文完整结果复现声明。动态 GRAB clip 与静态 ContactPose
+grasp 分开统计；任何 profile 运行前先冻结 selection；ContactPose exact 公式与 GRAB contact
+proxy 分表。使用任务环境提供的本机路径或 `.local/config.yaml`：
+
+```bash
+export PYTHONNOUSERSITE=1 PYTHONPATH=src
+export GRAB_ROOT=/mnt/nas/storage/Ref2Dex_storage/GRAB/data/GRAB
+export CONTACTPOSE_ROOT=/mnt/nas/storage/Ref2Dex_storage/ContactPose/data
+export MANO_MODEL_ROOT=/mnt/nas/storage/Ref2Dex_storage/shared_assets/body_models/mano
+export ARTIMANO_ASSET_ROOT=.local/assets/artimano
+
+python -m toporetarget benchmark inspect-datasets \
+  --grab-root "$GRAB_ROOT" --contactpose-root "$CONTACTPOSE_ROOT" \
+  --output .local/benchmarks/hoi_benchmark_v1/dataset_audit.json
+python -m toporetarget benchmark select --config configs/benchmarks/hoi_benchmark_v1.yaml
+python -m toporetarget benchmark freeze
+python -m toporetarget benchmark run --resume
+python -m toporetarget benchmark evaluate --html
+python -m toporetarget benchmark dashboard
+```
+
+selection lock 在运行期间不可变，结果不能反过来挑选或替换 unit。当前本地 snapshot 中，固定
+clip 加 3 条 additional GRAB selection 通过，但 110 个 ContactPose candidate annotation 都
+没有可识别的 official attribution 字段，因此状态为 `Q1_CONTACTPOSE_SELECTION_BLOCKED`，没有
+生成 selection manifest、运行 baseline 或声称结果级 metrics；详见 `.local/benchmarks/hoi_benchmark_v1/`。
+Q4–Q7 仍未开始。
 
 ## 环境配置 Quickstart
 

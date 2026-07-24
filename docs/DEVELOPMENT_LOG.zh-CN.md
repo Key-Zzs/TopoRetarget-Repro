@@ -1,5 +1,23 @@
 # 开发日志
 
+## Q1–Q3 多数据集交互 benchmark（2026-07-24）
+
+新增版本化 `toporetarget.hoi_benchmark.v1` selection contract、lazy GRAB selector、
+ContactPose 目录/schema adapter、分离的 metric registry、Eq. (10)–(12) 实现、GRAB contact
+proxy、动态/静态适用性、绑定 manifest 的 baseline 执行、自动 gate、macro aggregation 和
+self-contained HTML dashboard。baseline 执行前先写入并锁定 selection；原始数据和 official
+artifact 只读。保留固定的 `s1/airplane_lift`、right、global `[240,300)` unit。本阶段不修改
+Eq. (1)–(9)，不做 per-unit tuning，也不宣称 Eq. (9) 的 author-exact 语义。
+
+本 checkout 的只读执行证据：GRAB/ContactPose/MANO/Arti-MANO required paths 和显式
+`topo-retarget` imports 通过 preflight。现有 GRAB index 有 1,334 条 non-fixed entry；有界
+16-entry native-contact probe 选择了 `s1/apple_eat_1 [212,272)`、`s1/banana_lift [1658,1718)`、
+`s1/alarmclock_lift [407,467)`，并保留 fixed `s1/airplane_lift [240,300)`。ContactPose 检查
+得到 110 条 annotation candidate、0 条 selected，110 条被记录为
+`official_contact_annotation_unavailable_or_unrecognized`（其中 12 条同时属于 diagnostic
+deep-concave exclusion）。状态为 `Q1_CONTACTPOSE_SELECTION_BLOCKED`；selection 未 freeze，未运行
+baseline/evaluation。
+
 本文件保存原中文 README 中的阶段状态和历史命令，作为开发快照。面向使用者的仓库概览、
 环境配置、功能 workflow 和路线图请查看根目录 [README.zh-CN.md](../README.zh-CN.md)。
 更详细的复现记录见 [REPRODUCTION_LOG.md](REPRODUCTION_LOG.md)。

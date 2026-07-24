@@ -195,9 +195,9 @@ items:
     paper_section: "Appendix A.3"
     pdf_page: 12
     evidence_summary: "Mean object-relative position error over ContactPose in-contact hand links."
-    implementation_targets: [src/toporetarget/metrics/contactpose.py]
+    implementation_targets: [src/toporetarget/metrics/contactpose.py, src/toporetarget/benchmark/evaluate.py]
     test_targets: [tests/unit/test_paper_fidelity.py]
-    status: specified_not_implemented
+    status: implemented_with_assumptions
     known_parameters: {equation_number: 10, unit: meters}
     unknowns: [ContactPose source annotation access]
     assumptions: [A_CONTACTPOSE_THRESHOLD_001]
@@ -208,9 +208,9 @@ items:
     paper_section: "Appendix A.3"
     pdf_page: 13
     evidence_summary: "Mean angular deviation between source and retargeted in-contact bone segments."
-    implementation_targets: [src/toporetarget/metrics/contactpose.py]
+    implementation_targets: [src/toporetarget/metrics/contactpose.py, src/toporetarget/benchmark/evaluate.py]
     test_targets: [tests/unit/test_paper_fidelity.py]
-    status: specified_not_implemented
+    status: implemented_with_assumptions
     known_parameters: {equation_number: 11, unit: radians}
     unknowns: [handling of zero-length bone segments]
     assumptions: []
@@ -221,9 +221,9 @@ items:
     paper_section: "Appendix A.3"
     pdf_page: 13
     evidence_summary: "Maximum positive penetration depth and fraction of frames above 2 mm."
-    implementation_targets: [src/toporetarget/metrics/penetration.py]
+    implementation_targets: [src/toporetarget/metrics/contactpose.py, src/toporetarget/metrics/common.py]
     test_targets: [tests/unit/test_paper_fidelity.py]
-    status: specified_not_implemented
+    status: implemented_with_assumptions
     known_parameters: {equation_number: 12, threshold_m: 0.002, unit: meters}
     unknowns: [robot surface sample count, signed-distance implementation]
     assumptions: [A_HAND_SURFACE_SAMPLES_001, A_SIGNED_DISTANCE_BACKEND_001]

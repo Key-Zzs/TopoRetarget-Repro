@@ -8,6 +8,14 @@ geometry foundation（保留显式假设）；阶段 7 已完成有界相对骨�
 阶段 8 已完成有界 source-only 交互图和 Laplacian loss，阶段 9 已完成有界 Eq. (8)-(9)
 final refinement（均保留显式假设）；阶段 10 的 bounded reference-runtime milestone 已接受，preferred 性能、production 和 real-time 范围仍开放；阶段 11–19 尚未开始，不能把规划内容描述为已实现算法。
 
+新的 Q1–Q7 路线边界为：
+
+Q1–Q3 多数据集交互 benchmark、统一自动评价和冻结 baseline 已实现为有界工程阶段；当前本地
+ContactPose gate 在 freeze 前阻塞；Q4
+morphology-aware warm-start、Q5 Arti-MANO surface contact proxies、Q6 contact-aware final
+extension、Q7 跨轨迹自动 profile 选择均未开始。Q1–Q3 不改变现有方法，不把 GRAB proxy 当作
+ContactPose 论文指标，也不把有界 ContactPose selection 当作完整 25-grasp 复现。
+
 长期阶段依次为：
 
 0. 仓库创建与架构搭建；1. 论文忠实度审计；2. canonical HOI schema 与坐标约定；3. MANO

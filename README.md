@@ -56,7 +56,11 @@ that stage; it does not imply full-dataset or result-level reproduction.
 | 8 | Interaction graph and Laplacian coordinates | Complete, bounded; assumptions explicit | Source-only Eq. 3–7 graph/loss, RH/LH artifacts, identity/Jacobian validation, reports, and views pass. Eq. 8–9 remains Stage 9. |
 | 9 | Constrained optimization with slack variables | Complete, bounded; assumptions explicit | Eq. 8–9 final refinement, full/adaptive collision QuerySet, slack, independent full-surface audit, RH/LH bounded trajectory artifacts, CLI, tests, and views pass; no Stage 10 behavior is included. |
 | 10 | GRAB → Arti-MANO end-to-end retargeting | Implemented, bounded reference-runtime accepted; preferred performance open | Resumable bounded DAG, official contact-window selection, provenance, review/export, and the accepted `s1/airplane_lift` right-hand 60-frame reference-runtime milestone; preferred performance, production, and real-time scopes remain open. |
-| 11 | Metrics and ContactPose evaluation | TODO | Implement Eq. 10–12 metrics and report fixtures. |
+| Q1–Q3 | Multi-dataset interaction benchmark and unified automatic evaluation | Implemented, bounded; current local ContactPose selection gate is blocked before freeze | Frozen-selection contract, metric registry, automatic gates, manifest-bound profiles, reports, and HTML dashboard. The current local audit found no recognized official ContactPose contact attribution, so no baseline was run. This is not the paper's full 25-grasp ContactPose result. |
+| Q4 | Morphology-aware warm-start | Not started | Evaluate morphology-aware initialization without changing the frozen Q1–Q3 baseline. |
+| Q5 | Arti-MANO surface contact proxies | Not started | Validate robot surface/pad proxies separately from source labels. |
+| Q6 | Contact-aware final extension | Not started | Add a separately versioned contact-aware extension after Q4/Q5 evidence. |
+| Q7 | Cross-trajectory automatic profile selection | Not started | Select a profile only from frozen cross-trajectory evidence. |
 | 12 | OakInk, DexYCB, and HO-Cap adapters | TODO | Add independently validated dataset adapters. |
 | 13 | ARCTIC, OakInk2, and TACO extensions | TODO | Add independently validated dataset adapters. |
 | 14 | Arbitrary dexterous-hand plugin interface | TODO | Test URDF/MJCF hand plugin contracts. |
@@ -67,7 +71,42 @@ that stage; it does not imply full-dataset or result-level reproduction.
 | 19 | Non-paper extensions | TODO | Keep MANO cleanup, SPIDER, and other extensions separately labeled. |
 
 The maintained roadmap with deliverables and status is [docs/ROADMAP.md](docs/ROADMAP.md); the
-Chinese roadmap is [docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md).
+Chinese roadmap is [docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md). The benchmark contract and
+automatic-evaluation notes are [docs/MULTI_DATASET_INTERACTION_BENCHMARK.md](docs/MULTI_DATASET_INTERACTION_BENCHMARK.md),
+[docs/UNIFIED_AUTOMATIC_EVALUATION.md](docs/UNIFIED_AUTOMATIC_EVALUATION.md), and
+[docs/EQ9_TEMPORAL_SCOPE_INTERPRETATIONS.md](docs/EQ9_TEMPORAL_SCOPE_INTERPRETATIONS.md), with
+Chinese counterparts alongside them.
+
+### Q1–Q3 frozen benchmark
+
+The benchmark is a bounded engineering evaluation, not a claim of full paper-result reproduction.
+It keeps dynamic GRAB clips and static ContactPose grasps separate, freezes selection before any
+profile run, and reports ContactPose exact formulas separately from GRAB contact proxies. Use the
+machine-local paths from the task environment or `.local/config.yaml`:
+
+```bash
+export PYTHONNOUSERSITE=1 PYTHONPATH=src
+export GRAB_ROOT=/mnt/nas/storage/Ref2Dex_storage/GRAB/data/GRAB
+export CONTACTPOSE_ROOT=/mnt/nas/storage/Ref2Dex_storage/ContactPose/data
+export MANO_MODEL_ROOT=/mnt/nas/storage/Ref2Dex_storage/shared_assets/body_models/mano
+export ARTIMANO_ASSET_ROOT=.local/assets/artimano
+
+python -m toporetarget benchmark inspect-datasets \
+  --grab-root "$GRAB_ROOT" --contactpose-root "$CONTACTPOSE_ROOT" \
+  --output .local/benchmarks/hoi_benchmark_v1/dataset_audit.json
+python -m toporetarget benchmark select --config configs/benchmarks/hoi_benchmark_v1.yaml
+python -m toporetarget benchmark freeze
+python -m toporetarget benchmark run --resume
+python -m toporetarget benchmark evaluate --html
+python -m toporetarget benchmark dashboard
+```
+
+The selection lock is immutable for a run: later solver results cannot choose or replace a unit.
+On the current local snapshot, GRAB selection passed for the fixed clip plus three additional
+clips, but ContactPose selection is `Q1_CONTACTPOSE_SELECTION_BLOCKED` because 110 indexed
+candidate annotations did not expose recognized official attribution fields. Therefore no
+selection manifest, baseline, or result-level metric table is claimed; see the generated report
+under `.local/benchmarks/hoi_benchmark_v1/`. Q4–Q7 remain unstarted.
 
 ## Quickstart
 

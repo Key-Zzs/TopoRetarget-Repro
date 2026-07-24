@@ -1,5 +1,25 @@
 # Development log
 
+## Q1–Q3 Multi-Dataset Interaction Benchmark (2026-07-24)
+
+The benchmark implementation adds a versioned `toporetarget.hoi_benchmark.v1` selection
+contract, a lazy GRAB selector, a ContactPose directory/schema adapter, a separated metric
+registry, Eq. (10)–(12) implementations, GRAB contact proxies, dynamic/static applicability,
+manifest-bound baseline execution, automatic gates, macro aggregation, and a self-contained HTML
+dashboard. Selection is written and locked before baseline execution; source data and official
+artifacts remain read-only. Existing `s1/airplane_lift`, right hand, global `[240,300)` is retained
+as the fixed unit. The new stage does not change Eq. (1)–(9), introduce per-unit tuning, or claim
+author-exact Eq. (9) semantics.
+
+Read-only execution evidence for this checkout: the required GRAB/ContactPose/MANO/Arti-MANO
+paths and explicit `topo-retarget` imports passed preflight. The existing GRAB index contains 1,334
+non-fixed entries; a bounded 16-entry native-contact probe selected `s1/apple_eat_1 [212,272)`,
+`s1/banana_lift [1658,1718)`, and `s1/alarmclock_lift [407,467)` alongside the fixed
+`s1/airplane_lift [240,300)`. ContactPose inspection found 110 annotation candidates, 0 selected,
+and 110 `official_contact_annotation_unavailable_or_unrecognized` rejections (12 also carry the
+diagnostic deep-concave exclusion reason). The recorded status is
+`Q1_CONTACTPOSE_SELECTION_BLOCKED`; selection was not frozen and no baseline/evaluation was run.
+
 This file preserves the former English README content as a chronological implementation snapshot.
 For the user-facing repository overview, workflows, setup instructions, and project roadmap, see
 the root [README](../README.md). The detailed reproduction record is in

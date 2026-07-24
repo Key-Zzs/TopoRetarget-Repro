@@ -248,6 +248,20 @@ engineering correction is the temporal-vector membership identified in the
 code map. Projection remains diagnostic-only. The repair subsequently received
 case-A human manual acceptance in the faithful finalization bundle.
 
+## Q1–Q3 metric and Eq. 9 benchmark boundary
+
+Q1–Q3 implements the Appendix A.3 formulas from the local paper copy. ContactPose attribution
+inputs are required: sigmoid-normalized/thresholded native contact annotations, nearest assignment
+to the 20 hand bones, and the ten-vertex link rule. If those fields or the source-to-robot link
+mapping are unavailable, the output is `N/A` and the unit is not silently promoted to `PAPER_EXACT`.
+GRAB has no equivalent official in-contact bone attribution in the canonical contract, so its
+contact metrics are separate `DATASET_PROXY` IDs and are never called Eq. (10) or Eq. (11).
+
+The frozen comparison keeps `scipy_slsqp_active_set_contact_rich_v2` as
+`literal_full_state_temporal` and `scipy_slsqp_active_set_contact_rich_v3_fixed` as
+`decomposed_finger_temporal_plus_base_priors`. Both are paper-consistent interpretations;
+`author_exact` remains unresolved. Any empirical preference is an engineering preference only.
+
 ## Faithful reproduction finalization
 
 The canonical faithful profile is

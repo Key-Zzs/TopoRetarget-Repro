@@ -1,0 +1,31 @@
+schema_version: toporetarget.hoi_benchmark.v1
+name: Multi-Dataset Interaction Benchmark v1
+random_seed: 20260724
+existing_grab:
+  sequence: s1/airplane_lift
+  hand: right
+  frame_range: [240, 300]
+grab:
+  additional_target: 3
+  additional_minimum: 2
+  window_length_native_frames: 60
+  minimum_contact_frame_ratio: 0.70
+  require_thumb: true
+  require_long_finger: true
+  minimum_contact_region_families: 2
+  strict_reference_winding_sdf: true
+  candidate_scan_limit: 16
+contactpose:
+  target: 4
+  minimum: 3
+  native_static_grasp: true
+  excluded_objects: [mug, scissors, Utah teapot]
+profiles:
+  - warm
+  - scipy_slsqp_active_set_contact_rich_v2
+  - scipy_slsqp_active_set_contact_rich_v3_fixed
+execution:
+  max_wall_time_seconds: 1800
+  resume: true
+  temporal_resampling: false
+  result_based_selection: false
