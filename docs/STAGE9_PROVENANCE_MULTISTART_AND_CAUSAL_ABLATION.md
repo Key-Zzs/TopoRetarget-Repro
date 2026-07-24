@@ -71,3 +71,8 @@ diagnostic state analyses. They do not claim a paper-specified causal
 mechanism, do not modify the formal objective or solver profiles, and cannot
 authorize Stage 9.4 without a separately declared accepted multi-frame branch
 rollout.
+
+The completed bounded closure and repair are recorded separately in
+[`STAGE9_ONE_SHOT_CAUSAL_CLOSURE_AND_REPAIR.md`](STAGE9_ONE_SHOT_CAUSAL_CLOSURE_AND_REPAIR.md),
+with the fixed C0--C7 sweep, one selected root cause, one repair candidate,
+and a full 60-frame validation bundle.

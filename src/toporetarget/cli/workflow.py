@@ -63,6 +63,7 @@ from toporetarget.workflows.stage9_3_5 import (
     run_scan,
     run_status,
 )
+from toporetarget.workflows.stage9_4 import run_one_shot
 from toporetarget.workflows.validation import (
     build_semantic_sanity_report,
     cross_stage_identity_report,
@@ -421,6 +422,17 @@ def stage9_causal_closure_status_command(
         typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
     except (OSError, ValueError, RuntimeError, Stage935Error) as exc:
         typer.echo(f"Stage 9.3.5 causal closure status failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("stage9-one-shot")
+def stage9_one_shot_command() -> None:
+    """Run the bounded Stage 9.3.6--9.4 causal closure and repair bundle."""
+    try:
+        value = run_one_shot()
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"Stage 9 one-shot closure failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
 

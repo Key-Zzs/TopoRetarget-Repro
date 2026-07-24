@@ -841,6 +841,9 @@ class _FrameContext:
     geometry_slices: tuple[tuple[int, int, int], ...]
     frame_id: int | str = -1
     context_hash: str = ""
+    temporal_scope: str = "base_and_finger"
+    fixed_base_to_seed: bool = False
+    fixed_qpos_to_seed: bool = False
     cache: RefinementEvaluationCache = field(
         default_factory=lambda: RefinementEvaluationCache(-1, "")
     )
@@ -855,6 +858,13 @@ class _FrameContext:
     _active_query_hash: str = field(default="__unbound__", init=False, repr=False)
 
     def __post_init__(self) -> None:
+        if self.temporal_scope not in {
+            "base_and_finger",
+            "finger_only",
+            "base_only",
+            "none",
+        }:
+            raise ValueError(f"unsupported temporal scope: {self.temporal_scope}")
         self._residual_model = InteractionMeshResidual(
             self.graph_frame.source_vertices,
             self.graph_frame.directed_source_index,
@@ -967,14 +977,20 @@ class _FrameContext:
             e_bone = (robot_features.adjacent_features - source_adj).square().sum()
         with self.timers.measure("temporal_base_slack_objective"):
             e_temporal = value.new_zeros(())
-            if self.previous_reference is not None:
+            if self.previous_reference is not None and self.temporal_scope != "none":
                 previous = torch.as_tensor(
                     self.previous_reference, dtype=value.dtype, device=value.device
                 )
-                e_temporal = (
-                    self.paper.lambda_reg
-                    * (value[: self.variable_size_without_slack] - previous).square().sum()
-                )
+                if self.temporal_scope == "finger_only":
+                    current_delta = value[6 : self.variable_size_without_slack]
+                    previous_delta = previous[6 : self.variable_size_without_slack]
+                elif self.temporal_scope == "base_only":
+                    current_delta = value[:6]
+                    previous_delta = previous[:6]
+                else:
+                    current_delta = value[: self.variable_size_without_slack]
+                    previous_delta = previous[: self.variable_size_without_slack]
+                e_temporal = self.paper.lambda_reg * (current_delta - previous_delta).square().sum()
             e_base_pos = self.paper.lambda_base_pos * delta_p.square().sum()
             e_base_rot = self.paper.lambda_base_rot * delta_w.square().sum()
             e_slack = 0.5 * self.paper.w_s * slack.square().sum()
@@ -1429,6 +1445,14 @@ def _solver_call(
             np.full(query_set.count, context.paper.b - context.paper.tau, dtype=np.float64),
         ]
     )
+    if context.fixed_base_to_seed:
+        lower_physical[:6] = 0.0
+        upper_physical[:6] = 0.0
+    if context.fixed_qpos_to_seed:
+        start = 6
+        stop = start + context.robot_model.num_dofs
+        lower_physical[start:stop] = context.seed_qpos
+        upper_physical[start:stop] = context.seed_qpos
     lower = lower_physical / variable_scales
     upper = upper_physical / variable_scales
     bounds = list(zip(lower, upper, strict=True))
@@ -1918,6 +1942,10 @@ def _make_context(
     paper: PaperRefinementWeights,
     local_index: int,
     previous: np.ndarray | None,
+    *,
+    temporal_scope: str = "base_and_finger",
+    fixed_base_to_seed: bool = False,
+    fixed_qpos_to_seed: bool = False,
 ) -> _FrameContext:
     frame = graph.frames[local_index]
     global_frame = int(graph.frame_indices[local_index])
@@ -1965,6 +1993,9 @@ def _make_context(
         geometry_slices=slices,
         frame_id=global_frame,
         context_hash=context_hash,
+        temporal_scope=temporal_scope,
+        fixed_base_to_seed=fixed_base_to_seed,
+        fixed_qpos_to_seed=fixed_qpos_to_seed,
         cache=RefinementEvaluationCache(global_frame, context_hash),
     )
 
@@ -2243,6 +2274,9 @@ def build_final_trajectory(
     pause_check: Callable[[int], bool] | None = None,
     source_frame_offset: int = 0,
     execution_profile: Any | None = None,
+    regularization_profile: str = "faithful_current_baseline",
+    fixed_base_to_seed: bool = False,
+    fixed_qpos_to_seed: bool = False,
 ) -> tuple[FinalRetargetTrajectory, dict[str, Any]]:
     warm.validate()
     graph.validate()
@@ -2252,6 +2286,16 @@ def build_final_trajectory(
         raise ValueError("warm-start and selected robot differ")
     if not np.array_equal(warm.arrays["timestamps"], graph.timestamps):
         raise ValueError("warm-start and graph timestamps differ")
+    temporal_scope_by_profile = {
+        "faithful_current_baseline": "base_and_finger",
+        "faithful_regularization_fix_v1": "finger_only",
+        "temporal_finger_only": "finger_only",
+        "temporal_base_only": "base_only",
+        "no_temporal": "none",
+    }
+    if regularization_profile not in temporal_scope_by_profile:
+        raise ValueError(f"unsupported regularization profile: {regularization_profile}")
+    temporal_scope = temporal_scope_by_profile[regularization_profile]
     point_jacobian_backend = str(
         getattr(execution_profile, "point_jacobian_backend", "reference_batched_torch_v1")
     )
@@ -2306,6 +2350,9 @@ def build_final_trajectory(
             paper,
             local_index,
             previous,
+            temporal_scope=temporal_scope,
+            fixed_base_to_seed=fixed_base_to_seed,
+            fixed_qpos_to_seed=fixed_qpos_to_seed,
         )
         initial_points = context.candidate_points(np.concatenate([np.zeros(6), context.seed_qpos]))
         with context.timers.measure("full_512_audit"):
@@ -2624,6 +2671,10 @@ def build_final_trajectory(
         "maxiter_provenance": solver_profile.maxiter_provenance,
         "stationarity_policy": solver_profile.stationarity_policy,
         "paper_weights": paper.as_dict(),
+        "regularization_profile": regularization_profile,
+        "temporal_scope": temporal_scope,
+        "fixed_base_to_seed": bool(fixed_base_to_seed),
+        "fixed_qpos_to_seed": bool(fixed_qpos_to_seed),
         "sdf_selection_report": sdf_report,
         "frame_range": [
             int(graph.frame_indices[processed_frame_indices[0]]),

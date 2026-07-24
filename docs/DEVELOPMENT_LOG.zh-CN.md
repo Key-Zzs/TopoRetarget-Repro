@@ -510,3 +510,10 @@ fraction 不能证明 `OFFICIAL_FINAL_MOVES_BEYOND_FEASIBILITY`。声明的 gate
 `ENTER_STAGE9_4=NO`、`HUMAN_DECISION_REQUIRED=YES`、
 `STOP_AFTER_STAGE9_3_5=TRUE`。没有修改正式 artifact、current-lineage
 baseline、Stage 10 artifact、manual acceptance 或 Git index。
+
+## 2026-07-24 -- Stage 9 一次性因果闭环
+
+完成了有界 projection contract、Eq. (9) implementation map、固定 C0--C7
+selected-frame sweep、单一 root cause 决策以及唯一允许的 faithful
+regularization repair。Projection 仍仅用于诊断；完整 60 帧验证和人工 review
+状态记录在 `.local/reports/stage9_one_shot/`。

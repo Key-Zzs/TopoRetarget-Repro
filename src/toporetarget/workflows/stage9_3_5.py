@@ -674,15 +674,28 @@ def _term_tensors(context: Any, value: Any) -> dict[str, Any]:
         context.source_features.adjacent_features, dtype=value.dtype, device=value.device
     )
     e_bone = (features.adjacent_features - source).square().sum(dim=(-2, -1))
-    if context.previous_reference is None:
+    if (
+        context.previous_reference is None
+        or getattr(context, "temporal_scope", "base_and_finger") == "none"
+    ):
         e_temporal = value[..., 0] * 0.0
     else:
         previous = torch.as_tensor(
             context.previous_reference, dtype=value.dtype, device=value.device
         )
-        e_temporal = context.paper.lambda_reg * (
-            value[..., : context.variable_size_without_slack] - previous
-        ).square().sum(dim=-1)
+        scope = getattr(context, "temporal_scope", "base_and_finger")
+        if scope == "finger_only":
+            current_delta = value[..., 6 : context.variable_size_without_slack]
+            previous_delta = previous[6 : context.variable_size_without_slack]
+        elif scope == "base_only":
+            current_delta = value[..., :6]
+            previous_delta = previous[:6]
+        else:
+            current_delta = value[..., : context.variable_size_without_slack]
+            previous_delta = previous[: context.variable_size_without_slack]
+        e_temporal = context.paper.lambda_reg * (current_delta - previous_delta).square().sum(
+            dim=-1
+        )
     e_base_pos = context.paper.lambda_base_pos * delta_p.square().sum(dim=-1)
     e_base_rot = context.paper.lambda_base_rot * delta_w.square().sum(dim=-1)
     e_slack = 0.5 * context.paper.w_s * slack.square().sum(dim=-1)
@@ -1832,7 +1845,49 @@ def _solve_projection_attempt(
         "phase": "A",
         "skipped": bool(pre["hard_violation_m"] <= 1e-8 and pre["soft_violation_m"] <= 1e-8),
     }
-    if not phase_a["skipped"]:
+    if phase_a["skipped"] and pre["soft_violation_m"] <= 1e-8:
+        identity_validation = dict(pre)
+        identity_validation.update(
+            {
+                "status_label": "ANALYTIC_IDENTITY_PROJECTION",
+                "solver_invocation_count": 0,
+                "projection_displacement": 0.0,
+                "objective": 0.0,
+            }
+        )
+        return {
+            "frame": frame,
+            "profile": profile,
+            "attempt": attempt,
+            "phase_a": {**phase_a, "analytic_identity": True},
+            "solver": "analytic_identity",
+            "solver_version": None,
+            "status": 0,
+            "success": True,
+            "message": "warm state is already soft-feasible",
+            "iterations": 0,
+            "function_evaluations": 0,
+            "runtime_s": 0.0,
+            "validation": identity_validation,
+        }
+    if with_slack and pre["hard_violation_m"] <= 1e-8:
+        required = np.clip(
+            -np.asarray(pre["metrics"]["full_signed_distance"], dtype=np.float64)
+            - context.paper.tau,
+            0.0,
+            context.paper.b - context.paper.tau,
+        )
+        restored = np.concatenate([restored[:n], required])
+        pre = _independent_projection_validation(
+            bundle, frame, profile, restored, True, 0, "legal slack candidate"
+        )
+        phase_a = {
+            "phase": "A",
+            "skipped": True,
+            "legal_slack_candidate": True,
+            "required_slack_max_m": float(np.max(required)),
+        }
+    elif not phase_a["skipped"]:
         restored, phase_a = _restore_candidate(bundle, frame, profile, restored)
 
     def physical(x: np.ndarray) -> np.ndarray:

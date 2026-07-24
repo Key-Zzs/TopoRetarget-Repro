@@ -933,3 +933,15 @@ parameter_contract:
     not_provided.tracked_link_list: {source: not_provided}
     not_provided.simulator_name: {source: not_provided}
     not_provided.physics_solver_settings: {source: not_provided}
+
+stage9_one_shot:
+  projection:
+    diagnostic_only: true
+    paper_method: false
+    accepted_reference: false
+    future_default_gate: false
+  repair:
+    profile: faithful_regularization_fix_v1
+    preserves_eq9_weights: true
+    preserves_base_priors: true
+    human_manual_acceptance: pending

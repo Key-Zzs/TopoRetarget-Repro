@@ -241,3 +241,9 @@ warm-to-final feasibility path, counterfactual states, objective/constraint
 attribution, and optional branch rollout are not paper-specified methods.
 They use the canonical full-512 reference-winding audit and cannot modify
 Eq. (1)-(9), formal solver profiles, accepted artifacts, or Stage 10 exports.
+
+Stage 9.4 closes the implementation audit with a versioned faithful repair.
+The repair preserves Eq. (9) weights and the separate base priors; the only
+engineering correction is the temporal-vector membership identified in the
+code map. Projection remains diagnostic-only, and the repair remains pending
+human manual acceptance until the final review bundle is approved.

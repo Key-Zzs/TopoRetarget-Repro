@@ -84,3 +84,8 @@ Directional and path-integrated attribution is numerical local/path evidence,
 not a complete game-theoretic causal proof. The final route must retain
 `ENTER_STAGE9_4=NO`, `HUMAN_DECISION_REQUIRED=YES`, and
 `STOP_AFTER_STAGE9_3_5=TRUE` until a human approves one Stage 9.4 direction.
+
+The one-shot closure that followed this decision boundary is recorded in
+[`STAGE9_ONE_SHOT_CAUSAL_CLOSURE_AND_REPAIR.md`](STAGE9_ONE_SHOT_CAUSAL_CLOSURE_AND_REPAIR.md).
+It preserves this diagnostic projection boundary and does not treat projection
+as a paper-method or accepted-reference result.

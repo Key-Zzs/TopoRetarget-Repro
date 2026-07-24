@@ -148,3 +148,8 @@ profiles, and does not run a branch rollout unless its declared long-finger
 gate passes. Outputs are isolated under `.local/runs/stage9_3_5_*` and
 `.local/reports/stage9_3_5/`; Stage 9.2 and Stage 10 artifacts remain
 read-only.
+
+The subsequent one-shot closure is documented in
+[`STAGE9_ONE_SHOT_CAUSAL_CLOSURE_AND_REPAIR.md`](STAGE9_ONE_SHOT_CAUSAL_CLOSURE_AND_REPAIR.md).
+It keeps projection diagnostic-only and records the single faithful
+regularization repair under the versioned Stage 9.4 and Stage 10 roots.

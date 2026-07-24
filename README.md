@@ -1006,3 +1006,9 @@ rollout. It is diagnostic-only and preserves Eq. (1)-(9), formal weights,
 official artifacts, and Stage 10. See the synchronized
 [`docs/PROJECTION_FEASIBILITY_AND_CAUSAL_CLOSURE.md`](docs/PROJECTION_FEASIBILITY_AND_CAUSAL_CLOSURE.md)
 for the exact commands and output roots.
+
+## Stage 9 one-shot closure and repair
+
+The completed fixed-profile causal sweep, Eq. (9) audit, single faithful
+repair, full 60-frame validation, and versioned Stage 10 review bundle are
+documented in [`docs/STAGE9_ONE_SHOT_CAUSAL_CLOSURE_AND_REPAIR.md`](docs/STAGE9_ONE_SHOT_CAUSAL_CLOSURE_AND_REPAIR.md).

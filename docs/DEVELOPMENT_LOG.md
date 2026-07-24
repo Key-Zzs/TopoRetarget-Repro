@@ -592,3 +592,11 @@ The assembled reports now classify frames 39, 30, 36, and 0 as
 `HUMAN_DECISION_REQUIRED=YES`, and `STOP_AFTER_STAGE9_3_5=TRUE`. No official
 artifact, current-lineage baseline, Stage 10 artifact, manual acceptance, or
 Git index was changed.
+
+## 2026-07-24 -- Stage 9 one-shot causal closure
+
+Completed the bounded projection contract, Eq. (9) implementation map, fixed
+C0--C7 selected-frame sweep, single-root-cause decision, and the one allowed
+faithful regularization repair. Projection remains diagnostic-only; full 60
+frame validation and human review status are recorded in
+`.local/reports/stage9_one_shot/`.
