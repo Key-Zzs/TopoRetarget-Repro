@@ -2255,15 +2255,24 @@ def run_projection(
                 "state_fraction": float(math.sqrt(max(state_num, 0.0) / max(state_den, 1e-30))),
                 "qpos_fraction": float(
                     np.linalg.norm(projection[6:28] - warm_value[6:28])
-                    / max(np.linalg.norm(final_value[6:28] - warm_value[6:28]), 1e-12)
+                    / max(
+                        float(np.linalg.norm(final_value[6:28] - warm_value[6:28])),
+                        1e-12,
+                    )
                 ),
                 "base_translation_fraction": float(
                     np.linalg.norm(projection[:3] - warm_value[:3])
-                    / max(np.linalg.norm(final_value[:3] - warm_value[:3]), 1e-12)
+                    / max(
+                        float(np.linalg.norm(final_value[:3] - warm_value[:3])),
+                        1e-12,
+                    )
                 ),
                 "base_rotation_fraction": float(
                     np.linalg.norm(projection[3:6] - warm_value[3:6])
-                    / max(np.linalg.norm(final_value[3:6] - warm_value[3:6]), 1e-12)
+                    / max(
+                        float(np.linalg.norm(final_value[3:6] - warm_value[3:6])),
+                        1e-12,
+                    )
                 ),
                 "long_finger_rmse_fraction": None,
                 "interaction_objective_fraction": None,
