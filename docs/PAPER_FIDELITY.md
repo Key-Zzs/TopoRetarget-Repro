@@ -245,5 +245,18 @@ Eq. (1)-(9), formal solver profiles, accepted artifacts, or Stage 10 exports.
 Stage 9.4 closes the implementation audit with a versioned faithful repair.
 The repair preserves Eq. (9) weights and the separate base priors; the only
 engineering correction is the temporal-vector membership identified in the
-code map. Projection remains diagnostic-only, and the repair remains pending
-human manual acceptance until the final review bundle is approved.
+code map. Projection remains diagnostic-only. The repair subsequently received
+case-A human manual acceptance in the faithful finalization bundle.
+
+## Faithful reproduction finalization
+
+The canonical faithful profile is
+`scipy_slsqp_active_set_contact_rich_v3_fixed`; it corrects the Eq. (9)
+temporal-vector membership and is classified as `validated_quality_neutral`.
+The old `scipy_slsqp_active_set_contact_rich_v2` profile is explicitly
+non-faithful because it includes base correction in temporal regularization,
+but remains `historical_accepted` as a legacy engineering comparison.
+Projection is not a paper method. No significant quality improvement is
+claimed. The new fixed Stage 10 reference received repository-valid case-A
+human acceptance and is the canonical faithful baseline. See
+[`FAITHFUL_REPRODUCTION_FINALIZATION.md`](FAITHFUL_REPRODUCTION_FINALIZATION.md).

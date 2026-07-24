@@ -944,4 +944,23 @@ stage9_one_shot:
     profile: faithful_regularization_fix_v1
     preserves_eq9_weights: true
     preserves_base_priors: true
-    human_manual_acceptance: pending
+    human_manual_acceptance: pass
+    human_decision_case: A
+
+faithful_reproduction_finalization:
+  stage_name: Faithful Reproduction Finalization
+  projection_is_paper_method: false
+  legacy_profile:
+    id: scipy_slsqp_active_set_contact_rich_v2
+    paper_faithful: false
+    status: historical_accepted
+    known_deviation: base correction included in temporal regularization
+  faithful_profile:
+    id: scipy_slsqp_active_set_contact_rich_v3_fixed
+    paper_faithful: true
+    status: validated_quality_neutral
+    canonical_faithful: true
+  quality_improvement_claimed: false
+  human_manual_acceptance: pass
+  human_decision_case: A
+  finalization_status: FAITHFUL_REPRODUCTION_FINALIZED_CASE_A

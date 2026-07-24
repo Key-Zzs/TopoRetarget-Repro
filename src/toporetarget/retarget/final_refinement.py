@@ -61,9 +61,22 @@ FULL_QUERY_PROFILE_ID = "full_collision_surface_reference_v1"
 ACTIVE_QUERY_PROFILE_ID = "adaptive_active_set_v1"
 SOLVER_PROFILE_ID = "scipy_slsqp_active_set_v1"
 CONTACT_RICH_SOLVER_PROFILE_ID = "scipy_slsqp_active_set_contact_rich_v2"
+FAITHFUL_CONTACT_RICH_SOLVER_PROFILE_ID = "scipy_slsqp_active_set_contact_rich_v3_fixed"
 FULL_SOLVER_PROFILE_ID = "scipy_slsqp_full_surface_reference_v1"
 STRICT_ACCEPTANCE_POLICY_ID = "strict_optimizer_converged_and_audits_v1"
 DEFERRED_STATIONARITY_POLICY_ID = "feasible_stationary_v1_deferred"
+
+
+def regularization_profile_for_solver(
+    solver_profile_id: str, requested_profile: str = "auto"
+) -> str:
+    """Bind the versioned faithful solver ID to its Eq. (9) temporal semantics."""
+
+    if requested_profile != "auto":
+        return requested_profile
+    if solver_profile_id == FAITHFUL_CONTACT_RICH_SOLVER_PROFILE_ID:
+        return "faithful_regularization_fix_v1"
+    return "faithful_current_baseline"
 
 
 def _as_np(value: Any) -> np.ndarray:
@@ -2274,7 +2287,7 @@ def build_final_trajectory(
     pause_check: Callable[[int], bool] | None = None,
     source_frame_offset: int = 0,
     execution_profile: Any | None = None,
-    regularization_profile: str = "faithful_current_baseline",
+    regularization_profile: str = "auto",
     fixed_base_to_seed: bool = False,
     fixed_qpos_to_seed: bool = False,
 ) -> tuple[FinalRetargetTrajectory, dict[str, Any]]:
@@ -2293,6 +2306,9 @@ def build_final_trajectory(
         "temporal_base_only": "base_only",
         "no_temporal": "none",
     }
+    regularization_profile = regularization_profile_for_solver(
+        solver_profile.profile_id, regularization_profile
+    )
     if regularization_profile not in temporal_scope_by_profile:
         raise ValueError(f"unsupported regularization profile: {regularization_profile}")
     temporal_scope = temporal_scope_by_profile[regularization_profile]
@@ -2632,7 +2648,11 @@ def build_final_trajectory(
     metadata = {
         "schema_version": (
             FINAL_REFINEMENT_SCHEMA_VERSION_V2
-            if solver_profile.profile_id == CONTACT_RICH_SOLVER_PROFILE_ID
+            if solver_profile.profile_id
+            in {
+                CONTACT_RICH_SOLVER_PROFILE_ID,
+                FAITHFUL_CONTACT_RICH_SOLVER_PROFILE_ID,
+            }
             else FINAL_REFINEMENT_SCHEMA_VERSION_V1
         ),
         "artifact_type": "final_interaction_preserving_robot_reference",
@@ -2763,6 +2783,7 @@ def build_final_trajectory(
 __all__ = [
     "ACTIVE_QUERY_PROFILE_ID",
     "CONTACT_RICH_SOLVER_PROFILE_ID",
+    "FAITHFUL_CONTACT_RICH_SOLVER_PROFILE_ID",
     "COORDINATE_PROFILE_ID",
     "CollisionQueryProfile",
     "CollisionQuerySet",
@@ -2778,6 +2799,7 @@ __all__ = [
     "RefinementCoordinateProfile",
     "RefinementResources",
     "RefinementSolverProfile",
+    "regularization_profile_for_solver",
     "SOLVER_PROFILE_ID",
     "STRICT_ACCEPTANCE_POLICY_ID",
     "active_set_is_monotonic",

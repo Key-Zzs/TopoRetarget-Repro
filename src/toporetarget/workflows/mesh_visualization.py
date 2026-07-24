@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import math
 import webbrowser
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -357,7 +358,7 @@ def _bounds(
     source_vertices: np.ndarray,
     object_vertices: np.ndarray,
     object_poses: np.ndarray,
-    robot_payloads: tuple[dict[str, Any], dict[str, Any]],
+    robot_payloads: Sequence[dict[str, Any]],
 ) -> list[list[float]]:
     chunks = [source_vertices.reshape(-1, 3)]
     if len(object_vertices):

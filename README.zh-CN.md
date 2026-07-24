@@ -941,3 +941,9 @@ Eq. (1)-(9)、正式权重、正式 artifact 与 Stage 10。实际命令和输�
 固定 C0--C7 因果 sweep、Eq. (9) 审计、单一 faithful 修复、完整 60 帧验证以及
 版本化 Stage 10 review bundle 见
 [`docs/STAGE9_ONE_SHOT_CAUSAL_CLOSURE_AND_REPAIR.md`](docs/STAGE9_ONE_SHOT_CAUSAL_CLOSURE_AND_REPAIR.md)。
+
+## Faithful reproduction 正式收口
+
+已接受的 canonical faithful v3-fixed profile、legacy v2 分类、质量中性人工验收、
+已正式收口的 versioned fixed Stage 10 export 以及 A/B/C 决策语义见
+[`docs/FAITHFUL_REPRODUCTION_FINALIZATION.zh-CN.md`](docs/FAITHFUL_REPRODUCTION_FINALIZATION.zh-CN.md)。

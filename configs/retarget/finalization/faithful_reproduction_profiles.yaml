@@ -1,0 +1,32 @@
+schema_version: toporetarget.faithful_reproduction_profiles.v1
+stage_name: Faithful Reproduction Finalization
+
+legacy_profile:
+  id: scipy_slsqp_active_set_contact_rich_v2
+  paper_faithful: false
+  canonical_faithful: false
+  status: historical_accepted
+  role: legacy_non_faithful_historical_engineering_reference
+  known_deviation:
+    - base correction included in temporal regularization
+
+faithful_profile:
+  id: scipy_slsqp_active_set_contact_rich_v3_fixed
+  paper_faithful: true
+  canonical_faithful: true
+  status: validated_quality_neutral
+  role: canonical_faithful_reproduction_profile
+  semantic_fix:
+    - Eq. (9) temporal q regularizes finger q only
+    - floating-base translation and rotation retain their separate paper-weighted priors
+  quality_claim:
+    - paper semantics corrected
+    - numerical quality neutral relative to the current-lineage baseline
+    - no significant quality improvement claimed
+  production_release_gate: human_manual_acceptance_required
+
+projection:
+  paper_method: false
+  diagnostic_only: true
+  accepted_reference: false
+  status: closed

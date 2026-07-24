@@ -47,8 +47,8 @@ Full-run validation, comparison metrics, bounded regression, final decision,
 and the versioned Stage 10 review bundle are generated under
 `.local/reports/stage9_one_shot/` and
 `.local/runs/stage10_faithful_regularization_fix_v1/`. Human manual acceptance
-remains a separate pending decision even when the machine validation gates
-pass.
+remains a separate gate from the machine validation; that later gate passed as
+case A in Faithful Reproduction Finalization.
 
 ## Reproduction and verification
 
@@ -67,3 +67,14 @@ repair quality gate rejected the candidate because mean long-finger RMSE
 increased by `0.0305 mm` while the safeguarded threshold required `1.5392 mm`
 improvement. The final machine status is therefore
 `REPAIR_CANDIDATE_REJECTED`; the current-lineage baseline remains recommended.
+
+## Faithful reproduction finalization note
+
+The rejection above belongs to the Stage 9 improvement gate: the candidate did
+not achieve the required `1.5392 mm` long-finger improvement. A subsequent
+four-state, 60-frame visual/numerical review found no visible old-to-fixed
+degradation and classified the v3 fixed profile as quality-neutral. The
+canonical paper-faithful/legacy profile split and the isolated fixed Stage 10
+candidate are documented in
+[`FAITHFUL_REPRODUCTION_FINALIZATION.md`](FAITHFUL_REPRODUCTION_FINALIZATION.md).
+The repository-valid human signature has passed with decision case A.

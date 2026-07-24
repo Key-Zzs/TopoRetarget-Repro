@@ -1012,3 +1012,10 @@ for the exact commands and output roots.
 The completed fixed-profile causal sweep, Eq. (9) audit, single faithful
 repair, full 60-frame validation, and versioned Stage 10 review bundle are
 documented in [`docs/STAGE9_ONE_SHOT_CAUSAL_CLOSURE_AND_REPAIR.md`](docs/STAGE9_ONE_SHOT_CAUSAL_CLOSURE_AND_REPAIR.md).
+
+## Faithful reproduction finalization
+
+The accepted canonical faithful v3-fixed profile, legacy v2 classification,
+quality-neutral human review, finalized versioned fixed Stage 10 export, and
+A/B/C decision semantics are documented in
+[`docs/FAITHFUL_REPRODUCTION_FINALIZATION.md`](docs/FAITHFUL_REPRODUCTION_FINALIZATION.md).

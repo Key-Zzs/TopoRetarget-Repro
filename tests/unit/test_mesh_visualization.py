@@ -2,6 +2,10 @@ from types import SimpleNamespace
 
 import numpy as np
 
+from toporetarget.workflows.four_state_review import (
+    _html_document as _four_state_html_document,
+)
+from toporetarget.workflows.four_state_review import build_review_keyframes
 from toporetarget.workflows.interaction_html import _html_document as _interaction_html_document
 from toporetarget.workflows.mesh_visualization import (
     _edge_category_codes,
@@ -88,3 +92,60 @@ def test_interaction_residual_summary_and_html_modes() -> None:
     assert "handObjectOnly" in html
     assert "modeInput.value=DATA.initial_mode||'mesh'" in html
     assert "function drawMeshLayers()" in html
+
+
+def test_four_state_review_html_contains_all_acceptance_layers() -> None:
+    html = _four_state_html_document(
+        {
+            "title": "four-state review",
+            "frame_count": 2,
+            "decision": {"final_status": "REPAIR_CANDIDATE_REJECTED"},
+        }
+    )
+
+    for label in (
+        "source MANO",
+        "Stage 7 warm",
+        "old current final",
+        "faithful fixed final",
+        "60-frame timeline",
+        "Per-finger aggregate comparison",
+        "Human acceptance checklist",
+    ):
+        assert label in html
+    assert "old→fixed vectors" in html
+    assert "URLSearchParams" in html
+    assert "https://" not in html
+
+
+def test_four_state_keyframes_include_required_and_metric_worst_frames() -> None:
+    frames = []
+    for frame in range(60):
+        frames.append(
+            {
+                "viewer_frame": frame,
+                "local_frame": frame,
+                "global_frame": frame + 240,
+                "old_long_finger_rmse_mm": 10.0 if frame != 10 else 20.0,
+                "fixed_long_finger_rmse_mm": 11.0 if frame != 11 else 21.0,
+                "old_weighted_e_im": 1.0 if frame != 12 else 4.0,
+                "fixed_weighted_e_im": 1.0 if frame != 13 else 5.0,
+                "old_weighted_e_bone": 1.0,
+                "fixed_weighted_e_bone": 1.0,
+                "old_base_translation_step_mm": float(frame == 14),
+                "fixed_base_translation_step_mm": float(frame == 15),
+                "old_base_rotation_step_rad": float(frame == 16),
+                "fixed_base_rotation_step_rad": float(frame == 17),
+                "old_q_step_rad": float(frame == 18),
+                "fixed_q_step_rad": float(frame == 19),
+                "old_contact_proxy": 0.0,
+                "fixed_contact_proxy": 0.0,
+            }
+        )
+
+    keyframes = build_review_keyframes(frames)
+    selected = {item["local_frame"] for item in keyframes}
+    assert {0, 10, 30, 36, 39, 59} <= selected
+    assert set(range(11, 20)) <= selected
+    frame_zero = next(item for item in keyframes if item["local_frame"] == 0)
+    assert any("all frames tied" in reason for reason in frame_zero["reasons"])

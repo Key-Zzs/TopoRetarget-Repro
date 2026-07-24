@@ -27,6 +27,8 @@ from toporetarget.workflows.contact_shadow_ablation import (
 from toporetarget.workflows.contact_window import select_contact_windows
 from toporetarget.workflows.executor import WorkflowExecutionError, run_workflow
 from toporetarget.workflows.export import export_reference
+from toporetarget.workflows.faithful_finalization import finalize_faithful_reproduction
+from toporetarget.workflows.four_state_review import render_four_state_review_html
 from toporetarget.workflows.gate import build_runtime_acceptance, evaluate_gate
 from toporetarget.workflows.mesh_visualization import render_mesh_html
 from toporetarget.workflows.planning import build_plan, write_plan
@@ -433,6 +435,31 @@ def stage9_one_shot_command() -> None:
         typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
     except (OSError, ValueError, RuntimeError) as exc:
         typer.echo(f"Stage 9 one-shot closure failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("finalize-faithful-reproduction")
+def finalize_faithful_reproduction_command(
+    manual_acceptance: Path | None = typer.Option(
+        None,
+        "--manual-acceptance",
+        help="Human-completed acceptance JSON. Omit to prepare a pending-signoff bundle.",
+    ),
+    output_root: Path | None = typer.Option(
+        None,
+        "--output-root",
+        help="Optional new Stage 10 run root; existing historical Stage 10 is never overwritten.",
+    ),
+) -> None:
+    """Prepare or human-finalize the faithful v3 fixed Stage 10 export."""
+    try:
+        value = finalize_faithful_reproduction(
+            output_root=output_root,
+            manual_acceptance=manual_acceptance,
+        )
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"Faithful reproduction finalization failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
 
@@ -1258,6 +1285,21 @@ def visualize_mesh_command(
     end_frame: int | None = typer.Option(None, "--end-frame", min=1),
     max_object_points: int = typer.Option(1200, "--max-object-points", min=1),
     asset_root: Path | None = typer.Option(None, "--asset-root"),
+    old_final: Path | None = typer.Option(
+        None,
+        "--old-final",
+        help="Current-lineage final for a four-state Stage 9 review.",
+    ),
+    comparison_final: Path | None = typer.Option(
+        None,
+        "--comparison-final",
+        help="Candidate final for a four-state Stage 9 review.",
+    ),
+    review_report_root: Path | None = typer.Option(
+        None,
+        "--review-report-root",
+        help="Stage 9 report root containing comparison and decision JSON files.",
+    ),
     interactive: bool = typer.Option(
         False,
         "--interactive",
@@ -1268,16 +1310,38 @@ def visualize_mesh_command(
     """Write a self-contained HTML viewer with source/warm/final hand meshes."""
 
     try:
-        result = render_mesh_html(
-            run,
-            output=output,
-            mode=mode,
-            start_frame=start_frame,
-            end_frame=end_frame,
-            max_object_points=max_object_points,
-            asset_root=asset_root,
-            open_browser=open_browser or interactive,
+        four_state_requested = any(
+            value is not None for value in (old_final, comparison_final, review_report_root)
         )
+        if four_state_requested:
+            if old_final is None or comparison_final is None or review_report_root is None:
+                raise ValueError(
+                    "--old-final, --comparison-final, and --review-report-root "
+                    "must be supplied together"
+                )
+            result = render_four_state_review_html(
+                run,
+                old_final=old_final,
+                comparison_final=comparison_final,
+                review_report_root=review_report_root,
+                output=output,
+                start_frame=start_frame,
+                end_frame=end_frame,
+                max_object_points=max_object_points,
+                asset_root=asset_root,
+                open_browser=open_browser or interactive,
+            )
+        else:
+            result = render_mesh_html(
+                run,
+                output=output,
+                mode=mode,
+                start_frame=start_frame,
+                end_frame=end_frame,
+                max_object_points=max_object_points,
+                asset_root=asset_root,
+                open_browser=open_browser or interactive,
+            )
         typer.echo(json.dumps(result, indent=2, sort_keys=True))
     except (OSError, ValueError, RuntimeError) as exc:
         typer.echo(f"workflow mesh visualization failed: {exc}", err=True)
