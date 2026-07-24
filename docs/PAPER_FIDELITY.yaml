@@ -55,6 +55,21 @@ audit_contracts:
     enter_stage9_4_requires_human_review: true
     assumptions: [A_SOLVER_EFFECTIVE_PROVENANCE_001, A_HISTORICAL_CURRENT_LANE_SEPARATION_001, A_REFINEMENT_MULTISTART_001, A_BASE_SEED_ABLATION_001, A_BASE_SEED_PRIOR_REFERENCE_002, A_CAUSAL_BRANCH_ROLLOUT_001, A_STAGE9_4_HUMAN_DECISION_GATE_001]
     notes: "Current-lineage baseline and bounded diagnostics are isolated under .local; incomplete causal evidence routes to STAGE9_3_4_INCONCLUSIVE."
+  stage9_3_5_projection_causal_closure:
+    profile: src/toporetarget/workflows/stage9_3_5.py
+    contract: toporetarget.stage9_3_5.v1
+    diagnostic_only: true
+    paper_method: false
+    projection_state_metric: toporetarget.projection_state_metric.v1
+    constraint_pressure_schema: toporetarget.constraint_pressure.v1
+    canonical_sdf: reference_triangle_winding
+    collision_sample_count: 512
+    modifies_equations_1_to_9: false
+    modifies_stage9_2_profiles: false
+    modifies_stage10_artifacts: false
+    branch_rollout_requires_gate: true
+    assumptions: [A_PROJECTION_STATE_METRIC_001, A_WARM_FINAL_PATH_FEASIBILITY_001, A_PROJECTION_FEASIBILITY_RESTORATION_001, A_OBJECTIVE_PATH_ATTRIBUTION_001, A_CONSTRAINT_PRESSURE_DIAGNOSTIC_001, A_PROJECTION_BRANCH_ROLLOUT_001, A_STAGE9_3_5_HUMAN_DECISION_GATE_001]
+    notes: "Warm/final path feasibility, state-only projections, counterfactuals, and attribution remain diagnostic and cannot authorize Stage 9.4."
 
 items:
   - id: equation_1

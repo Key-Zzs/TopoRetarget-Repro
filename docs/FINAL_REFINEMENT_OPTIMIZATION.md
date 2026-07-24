@@ -131,3 +131,20 @@ not accepted trajectories. See
 
 Stage 9.3.4 provenance-rebased causal diagnostics are documented in
 [`STAGE9_PROVENANCE_MULTISTART_AND_CAUSAL_ABLATION.md`](STAGE9_PROVENANCE_MULTISTART_AND_CAUSAL_ABLATION.md).
+
+## Stage 9.3.5 projection feasibility and causal closure
+
+Stage 9.3.5 adds an isolated, diagnostic-only projection and causal-closure
+workflow. It consumes the frozen current-lineage Stage 9.3.4 baseline and
+Stage 10 manifest, scans warm-to-final feasibility under the canonical
+full-512 reference winding, and persists state-only projection,
+counterfactual, objective-attribution, constraint-pressure, and branch-gate
+reports. The projection state metric is not Eq. (8)-(9), does not replace the
+formal solver, and is never an accepted trajectory.
+
+The workflow is fail-closed: it validates the known feasible final states
+before any projection, runs only the explicitly requested diagnostic SLSQP
+profiles, and does not run a branch rollout unless its declared long-finger
+gate passes. Outputs are isolated under `.local/runs/stage9_3_5_*` and
+`.local/reports/stage9_3_5/`; Stage 9.2 and Stage 10 artifacts remain
+read-only.

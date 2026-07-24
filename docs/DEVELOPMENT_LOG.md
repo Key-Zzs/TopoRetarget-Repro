@@ -531,3 +531,64 @@ multistart variants, 60 base-seed final variants, and 15 formal mandatory
 profile variants; projection rows remain explicitly unsolved diagnostics. The
 final route is `STAGE9_3_4_INCONCLUSIVE` with `ENTER_STAGE9_4=NO` and a human
 decision gate. No accepted artifact or Git index was changed.
+
+## Stage 9.3.5 projection feasibility and causal closure (2026-07-23)
+
+Added the isolated Stage 9.3.5 feasibility path scan, canonical full-512
+state projections, counterfactual states, objective and constraint
+attribution, gated branch-rollout contract, reports, HTML handoff, tests, and
+synchronized documentation. The workflow is diagnostic-only and preserves
+the formal Stage 9.2 solver contract, Stage 10 artifacts, and Git index.
+
+The bounded run completed the frame-10 1001-sample canonical full-512 path
+scan and read-only attribution bundle: 12 counterfactual states, 6 objective
+rows, and 512 constraint-pressure rows. The projection attempt was paused
+before a valid solver checkpoint because the CPU full-512 constraint evaluation
+did not complete within the bounded wall-time; no projection result is treated
+as accepted. Final route:
+`RETURN_TO_PROJECTION_DIAGNOSTIC_HARNESS_FIX`, `ENTER_STAGE9_4=NO`.
+
+## Stage 9.3.5 continuation and five-frame closure (2026-07-23)
+
+The diagnostic harness was repaired without changing the canonical evaluator:
+resume now validates and reuses full-512 path caches, and projection callbacks
+reuse the already cross-validated `convex_hull_exact_solver_only` solver-side
+backend while every candidate is independently checked with the canonical
+`reference_triangle_winding` backend. The minimal profile also received its
+zero-slack Jacobian padding fix. All changes remain diagnostic-only and
+unstaged.
+
+The requested selected frames `[10,39,30,36,0]` now each have a 1001-sample,
+512-sample path cache and compact feasibility report. Both projection profiles
+ran for all five frames (10 attempts total); 3 attempts are strict accepted
+projections and the remaining attempts are recorded as `status=9` solver
+failures, never as accepted solutions. Independent canonical validation passed
+finite/full-512, bounds, hard/soft, slack, and raw-penetration checks for the
+reported candidate states.
+
+The complete read-only causal bundle contains 90 counterfactual states, 90
+objective attribution rows, and 2,560 constraint-pressure rows. The bounded
+branch gate correctly returned `NOT_REQUIRED_BY_GATE` because no candidate met
+the improvement gate. Final route is
+`READY_FOR_STAGE9_4_REFINEMENT_ENGINEERING_REPAIR`, with
+`ENTER_STAGE9_4=NO`, `HUMAN_DECISION_REQUIRED=YES`, and
+`STOP_AFTER_STAGE9_3_5=TRUE`. Formal Stage 7/8/9/10 artifacts, current-lineage
+baseline, manual acceptance, and the Git index remain unchanged.
+
+## Stage 9.3.5 causal-gate correction (2026-07-23)
+
+The final-report audit found that the initial aggregate route above was too
+permissive: a low state fraction alone cannot establish
+`OFFICIAL_FINAL_MOVES_BEYOND_FEASIBILITY`. The declared gate also requires at
+least two representative frames and long-finger RMSE improvement of at least
+`max(1.0 mm, 10%)`, in addition to strict canonical feasibility and a
+projection closer to warm. The refreshed checkpoint validations show 3 strict
+accepted attempts on 2 distinct frames, but every reported long-finger
+improvement is negative; therefore zero frames pass the complete causal gate.
+
+The assembled reports now classify frames 39, 30, 36, and 0 as
+`WARM_ALREADY_FEASIBLE`, frame 10 as `INCONCLUSIVE`, and the aggregate route as
+`STAGE9_4_NOT_YET_JUSTIFIED`. `ENTER_STAGE9_4=NO`,
+`HUMAN_DECISION_REQUIRED=YES`, and `STOP_AFTER_STAGE9_3_5=TRUE`. No official
+artifact, current-lineage baseline, Stage 10 artifact, manual acceptance, or
+Git index was changed.

@@ -928,3 +928,10 @@ shadow profile 和 Stage 9.4 implementation 均未运行/授权。
 Stage 9.3.4 是只读审计层，单独分离 historical lane 与 current-lineage
 baseline，并运行有界 multistart/base-seed 诊断及保守的 Stage 9.4 路由。详见
 [`docs/STAGE9_PROVENANCE_MULTISTART_AND_CAUSAL_ABLATION.md`](docs/STAGE9_PROVENANCE_MULTISTART_AND_CAUSAL_ABLATION.md)。
+
+## Stage 9.3.5 Projection 与因果闭环
+
+Stage 9.3.5 增加 warm→final 可行性扫描、诊断 projection、状态
+counterfactual、目标/约束归因和 gated branch rollout。它仅用于诊断，保留
+Eq. (1)-(9)、正式权重、正式 artifact 与 Stage 10。实际命令和输出目录见同步文档
+[`docs/PROJECTION_FEASIBILITY_AND_CAUSAL_CLOSURE.zh-CN.md`](docs/PROJECTION_FEASIBILITY_AND_CAUSAL_CLOSURE.zh-CN.md)。

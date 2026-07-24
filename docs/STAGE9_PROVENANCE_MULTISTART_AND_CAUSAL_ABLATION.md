@@ -61,3 +61,13 @@ method.
 
 All changes remain unstaged; the historical worktree is detached and must not
 be committed.
+
+## Stage 9.3.5 handoff boundary
+
+Stage 9.3.5 continues only from the current-lineage baseline and the Stage 10
+manifest recorded above. Its warm-to-final path scan, projection states,
+counterfactuals, objective decomposition, and constraint-pressure reports are
+diagnostic state analyses. They do not claim a paper-specified causal
+mechanism, do not modify the formal objective or solver profiles, and cannot
+authorize Stage 9.4 without a separately declared accepted multi-frame branch
+rollout.

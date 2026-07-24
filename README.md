@@ -997,3 +997,12 @@ Stage 9.3.4 is an audit-only current-lineage experiment with a separate
 historical lane, bounded multistart/base-seed diagnostics, and conservative
 Stage 9.4 routing. See
 [`docs/STAGE9_PROVENANCE_MULTISTART_AND_CAUSAL_ABLATION.md`](docs/STAGE9_PROVENANCE_MULTISTART_AND_CAUSAL_ABLATION.md).
+
+## Stage 9.3.5 projection and causal closure
+
+Stage 9.3.5 adds warm-to-final feasibility scans, diagnostic projections,
+state counterfactuals, objective/constraint attribution, and a gated branch
+rollout. It is diagnostic-only and preserves Eq. (1)-(9), formal weights,
+official artifacts, and Stage 10. See the synchronized
+[`docs/PROJECTION_FEASIBILITY_AND_CAUSAL_CLOSURE.md`](docs/PROJECTION_FEASIBILITY_AND_CAUSAL_CLOSURE.md)
+for the exact commands and output roots.

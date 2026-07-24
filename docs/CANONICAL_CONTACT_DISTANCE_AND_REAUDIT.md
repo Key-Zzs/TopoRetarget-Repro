@@ -95,3 +95,12 @@ full-512 canonical SDF, QuerySet and constraint attribution, while retaining
 `source_contact_proxy` and `contact_retention_proxy` as proxies. A failed
 baseline returns `RETURN_TO_STAGE9_3_2_SHADOW_HARNESS_FIX` and runs zero
 mandatory shadow profiles.
+
+## Stage 9.3.5 reuse
+
+Stage 9.3.5 reuses this canonical reference-winding implementation for its
+diagnostic warm-to-final feasibility path and state-only projections. It
+requires the full 512-point grid and records the SDF backend and input
+lineage in every report. Projection feasibility, constraint pressure, and
+contact-retention proxies are not ground-truth contact labels and do not alter
+the canonical audit or any accepted artifact.

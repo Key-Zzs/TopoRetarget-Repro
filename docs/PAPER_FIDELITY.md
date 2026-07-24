@@ -235,3 +235,9 @@ be resolved at the Stage 9.3.2 shadow harness boundary.
 
 Stage 9.3.4 remains diagnostic-only: provenance, multistart, base-seed, and
 causal-ablation outputs cannot authorize Stage 9.4 or alter paper fidelity.
+
+Stage 9.3.5 remains diagnostic-only as well. Its `projection_state_metric`,
+warm-to-final feasibility path, counterfactual states, objective/constraint
+attribution, and optional branch rollout are not paper-specified methods.
+They use the canonical full-512 reference-winding audit and cannot modify
+Eq. (1)-(9), formal solver profiles, accepted artifacts, or Stage 10 exports.

@@ -50,6 +50,19 @@ from toporetarget.workflows.stage9_3_4 import (
     run_stage934,
     stage9_causal_status,
 )
+from toporetarget.workflows.stage9_3_5 import (
+    PROFILES as PROJECTION_PROFILES,
+)
+from toporetarget.workflows.stage9_3_5 import (
+    Stage935Error,
+    run_attribution,
+    run_branch,
+    run_constraints,
+    run_counterfactuals,
+    run_projection,
+    run_scan,
+    run_status,
+)
 from toporetarget.workflows.validation import (
     build_semantic_sanity_report,
     cross_stage_identity_report,
@@ -227,6 +240,187 @@ def stage9_3_4_command(
         typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
     except (OSError, ValueError, RuntimeError, Stage934Error) as exc:
         typer.echo(f"Stage 9.3.4 failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("scan-warm-final-feasibility")
+def scan_warm_final_feasibility_command(
+    current_lineage_manifest: Path = typer.Option(..., "--current-lineage-manifest"),
+    current_baseline: Path = typer.Option(..., "--current-baseline"),
+    output_root: Path = typer.Option(..., "--output-root"),
+    frames: str = typer.Option("auto", "--frames"),
+    samples: int = typer.Option(1001, "--samples", min=1001),
+    resume: bool = typer.Option(False, "--resume/--no-resume"),
+) -> None:
+    """Scan the warm-to-final path without invoking a solver."""
+    try:
+        selected = () if frames.strip().lower() == "auto" else _parse_frames(frames)
+        value = run_scan(
+            current_lineage_manifest,
+            current_baseline,
+            output_root,
+            frames=selected,
+            samples=samples,
+            resume=resume,
+        )
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, Stage935Error) as exc:
+        typer.echo(f"warm-final feasibility scan failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("run-feasibility-projection")
+def run_feasibility_projection_command(
+    current_lineage_manifest: Path = typer.Option(..., "--current-lineage-manifest"),
+    current_baseline: Path = typer.Option(..., "--current-baseline"),
+    path_scan_root: Path = typer.Option(..., "--path-scan-root"),
+    output_root: Path = typer.Option(..., "--output-root"),
+    frames: str = typer.Option("auto", "--frames"),
+    profiles: str = typer.Option(",".join(PROJECTION_PROFILES), "--profiles"),
+    full_512: bool = typer.Option(True, "--full-512/--no-full-512"),
+    resume: bool = typer.Option(False, "--resume/--no-resume"),
+    max_wall_time: float | None = typer.Option(None, "--max-wall-time", min=1.0),
+    solver_attempts: int = typer.Option(3, "--solver-attempts", min=1, max=8),
+) -> None:
+    """Run deterministic diagnostic minimal/official-slack projections."""
+    if not full_512:
+        typer.echo("Stage 9.3.5 projection requires full-512 constraints", err=True)
+        raise typer.Exit(code=2)
+    try:
+        selected = () if frames.strip().lower() == "auto" else _parse_frames(frames)
+        selected_profiles = tuple(item.strip() for item in profiles.split(",") if item.strip())
+        value = run_projection(
+            current_lineage_manifest,
+            current_baseline,
+            path_scan_root,
+            output_root,
+            frames=selected,
+            profiles=selected_profiles,
+            resume=resume,
+            max_wall_time=max_wall_time,
+            solver_attempts=solver_attempts,
+        )
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, Stage935Error) as exc:
+        typer.echo(f"feasibility projection failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("run-state-counterfactuals")
+def run_state_counterfactuals_command(
+    current_baseline: Path = typer.Option(..., "--current-baseline"),
+    current_lineage_manifest: Path = typer.Option(..., "--current-lineage-manifest"),
+    projection_root: Path | None = typer.Option(None, "--projection-root"),
+    output_root: Path = typer.Option(..., "--output-root"),
+    frames: str = typer.Option("auto", "--frames"),
+) -> None:
+    """Evaluate state counterfactuals without running a solver."""
+    try:
+        selected = () if frames.strip().lower() == "auto" else _parse_frames(frames)
+        value = run_counterfactuals(
+            current_lineage_manifest,
+            current_baseline,
+            output_root,
+            projection_root=projection_root,
+            frames=selected,
+        )
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, Stage935Error) as exc:
+        typer.echo(f"state counterfactuals failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("attribute-objective-constraints")
+def attribute_objective_constraints_command(
+    current_baseline: Path = typer.Option(..., "--current-baseline"),
+    current_lineage_manifest: Path = typer.Option(..., "--current-lineage-manifest"),
+    projection_root: Path | None = typer.Option(None, "--projection-root"),
+    counterfactual_root: Path = typer.Option(..., "--counterfactual-root"),
+    output_root: Path = typer.Option(..., "--output-root"),
+    constraint_output_root: Path | None = typer.Option(None, "--constraint-output-root"),
+    frames: str = typer.Option("auto", "--frames"),
+) -> None:
+    """Attribute objective terms and full-512 collision pressure."""
+    try:
+        selected = () if frames.strip().lower() == "auto" else _parse_frames(frames)
+        value = run_attribution(
+            current_lineage_manifest,
+            current_baseline,
+            counterfactual_root,
+            output_root,
+            projection_root=projection_root,
+            frames=selected,
+        )
+        constraint_root = constraint_output_root or (
+            output_root.parent.parent / "stage9_3_5_constraint_attribution"
+        )
+        constraints = run_constraints(
+            current_lineage_manifest,
+            current_baseline,
+            constraint_root,
+            projection_root=projection_root,
+            frames=selected,
+        )
+        value["constraints"] = {"row_count": len(constraints.get("rows", []))}
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, Stage935Error) as exc:
+        typer.echo(f"objective/constraint attribution failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("run-projection-branch")
+def run_projection_branch_command(
+    current_lineage_manifest: Path = typer.Option(..., "--current-lineage-manifest"),
+    current_baseline: Path = typer.Option(..., "--current-baseline"),
+    projection_root: Path = typer.Option(..., "--projection-root"),
+    output_root: Path = typer.Option(..., "--output-root"),
+    candidate: str = typer.Option("auto", "--candidate"),
+    max_frames: int = typer.Option(10, "--max-frames", min=1, max=10),
+    resume: bool = typer.Option(False, "--resume/--no-resume"),
+) -> None:
+    """Run the bounded branch gate and only roll out approved candidates."""
+    try:
+        value = run_branch(
+            current_lineage_manifest,
+            current_baseline,
+            projection_root,
+            output_root,
+            candidate=candidate,
+            max_frames=max_frames,
+            resume=resume,
+        )
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, Stage935Error) as exc:
+        typer.echo(f"projection branch failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("stage9-causal-closure-status")
+def stage9_causal_closure_status_command(
+    current_lineage_manifest: Path = typer.Option(..., "--current-lineage-manifest"),
+    current_baseline: Path = typer.Option(..., "--current-baseline"),
+    projection_root: Path = typer.Option(..., "--projection-root"),
+    counterfactual_root: Path = typer.Option(..., "--counterfactual-root"),
+    objective_root: Path = typer.Option(..., "--objective-root"),
+    constraint_root: Path = typer.Option(..., "--constraint-root"),
+    branch_root: Path = typer.Option(..., "--branch-root"),
+    output_root: Path = typer.Option(Path(".local/reports/stage9_3_5"), "--output-root"),
+) -> None:
+    """Assemble the Stage 9.3.5 causal closure, HTML, and Stage 9.4 gate."""
+    try:
+        value = run_status(
+            current_lineage_manifest,
+            current_baseline,
+            projection_root=projection_root,
+            counterfactual_root=counterfactual_root,
+            objective_root=objective_root,
+            constraint_root=constraint_root,
+            branch_root=branch_root,
+            output_root=output_root,
+        )
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, Stage935Error) as exc:
+        typer.echo(f"Stage 9.3.5 causal closure status failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
 

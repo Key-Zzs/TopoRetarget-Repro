@@ -93,3 +93,12 @@ the same reference-winding definition used by Stage 9.3.2. A feasible replay
 with a different state is not accepted as numerical equivalence, and status 9
 is never normalized to success. All shadow checkpoints are diagnostic-only and
 isolated under `.local/runs/stage9_3_3_shadow_*`.
+
+## Stage 9.3.5 diagnostic projection boundary
+
+The Stage 9.3.5 feasibility scan and projection use the same canonical
+reference-winding SDF and all 512 collision samples. They may report
+`projection_state_metric` values and bounded slack diagnostics, but these
+states are not QuerySet solver results and are never eligible for formal
+acceptance. The official full-512 QuerySet, slack bounds, and strict
+acceptance contract remain unchanged.

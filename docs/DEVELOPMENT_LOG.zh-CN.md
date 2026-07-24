@@ -458,3 +458,55 @@ chain、finite full-512 audit，且 raw penetration 为 0。由于记录的 pack
 multistart variant、60 个 base-seed final variant 和 15 个 formal mandatory profile variant；
 projection 行明确标记为未求解 diagnostic。最终路由为 `STAGE9_3_4_INCONCLUSIVE`，
 `ENTER_STAGE9_4=NO`，等待人工决策。正式 artifact 和 Git index 未改变。
+
+## Stage 9.3.5 可行性投影与因果闭环（2026-07-23）
+
+新增隔离的 Stage 9.3.5 可行性路径扫描、canonical full-512 状态投影、反事实状态、
+目标与约束归因、分支 rollout gate、报告、HTML handoff、测试和同步文档。该 workflow
+仅用于 diagnostic，保持正式 Stage 9.2 solver contract、Stage 10 artifact 和 Git index
+不变。
+
+本次有界运行完成了 frame-10 的 1001-sample canonical full-512 path scan，以及只读归因
+bundle：12 个 counterfactual state、6 条 objective row 和 512 条 constraint-pressure
+row。由于 CPU full-512 constraint evaluation 在 wall-time 内未完成，projection attempt
+在有效 solver checkpoint 前暂停；没有任何 projection result 被当作 accepted。最终路由为
+`RETURN_TO_PROJECTION_DIAGNOSTIC_HARNESS_FIX`，`ENTER_STAGE9_4=NO`。
+
+## Stage 9.3.5 continuation 与五帧闭环（2026-07-23）
+
+在不修改 canonical evaluator 的前提下修复了 diagnostic harness：resume 现在会验证并复用
+full-512 path cache；projection callback 复用已经 cross-validation 通过的
+`convex_hull_exact_solver_only` solver-side backend，而每个 candidate 仍由 canonical
+`reference_triangle_winding` 独立复核。minimal profile 同时修复了 zero-slack Jacobian
+padding 问题。所有修改仍为 diagnostic 且保持 unstaged。
+
+请求的 selected frames `[10,39,30,36,0]` 现在均有 1001-sample、512-sample path cache
+和 compact feasibility report。两个 projection profile 均在五个 frame 上运行（共 10 次
+attempt）；其中 3 次为 strict accepted projection，其余明确记录为 `status=9` solver
+failure，绝不把未收敛结果写成 accepted。独立 canonical validation 对报告的 candidate
+完成 finite/full-512、bounds、hard/soft、slack 与 raw-penetration 检查。
+
+完整只读因果 bundle 包含 90 个 counterfactual state、90 条 objective attribution row
+和 2,560 条 constraint-pressure row。bounded branch gate 正确返回
+`NOT_REQUIRED_BY_GATE`，因为没有 candidate 满足 improvement gate。最终路由为
+`READY_FOR_STAGE9_4_REFINEMENT_ENGINEERING_REPAIR`，并明确
+`ENTER_STAGE9_4=NO`、`HUMAN_DECISION_REQUIRED=YES`、
+`STOP_AFTER_STAGE9_3_5=TRUE`。正式 Stage 7/8/9/10 artifact、current-lineage
+baseline、manual acceptance 和 Git index 均保持不变。
+
+## Stage 9.3.5 因果门槛修正（2026-07-23）
+
+最终报告审计发现，上述初始 aggregate route 过于宽松：仅有较低的 state
+fraction 不能证明 `OFFICIAL_FINAL_MOVES_BEYOND_FEASIBILITY`。声明的 gate
+还要求至少 2 个 representative frame，long-finger RMSE 至少改善
+`max(1.0 mm, 10%)`，并同时满足 strict canonical feasibility 与 projection
+更接近 warm。刷新后的 checkpoint validation 显示 2 个 distinct frame 上有
+3 次 strict accepted attempt，但所有报告的 long-finger improvement 均为负，
+因此没有 frame 通过完整 causal gate。
+
+当前报告将 frame 39、30、36、0 分类为 `WARM_ALREADY_FEASIBLE`，frame 10
+分类为 `INCONCLUSIVE`，aggregate route 修正为
+`STAGE9_4_NOT_YET_JUSTIFIED`。明确
+`ENTER_STAGE9_4=NO`、`HUMAN_DECISION_REQUIRED=YES`、
+`STOP_AFTER_STAGE9_3_5=TRUE`。没有修改正式 artifact、current-lineage
+baseline、Stage 10 artifact、manual acceptance 或 Git index。
