@@ -23,9 +23,10 @@ Eq. (8)-(9) final refinement；仍未声称实现 RL pipeline 或论文实验结
 - lazy GRAB index、保留原生时间/网格的单序列 adapter、contact modes、validation、provenance
   和 raw/canonical 对比；
 - source/object/timestamp 保留报告，以及静态和本地交互式几何 viewer；
-- 论文忠实度审计、assumption 记录和本地 Arti-MANO 资产导入支持。
+- 论文忠实度审计、assumption 记录和 tracked Arti-MANO 资产 provenance 支持。
 
-仓库不分发外部数据、MANO/SMPL-X 模型、机器人资产或提取缓存。它们应放在仓库外部，
+Arti-MANO 的第一个 tracked 机器人手资产位于 `third_party/robot_hands/artimano/`。仓库不分发
+Wuji Hand2、外部数据、MANO/SMPL-X 模型或提取缓存。它们应放在仓库外部，
 通过 .local/ 配置。统一数据接口见
 [docs/HOI_DATA_INTERFACE.md](docs/HOI_DATA_INTERFACE.md)，坐标语义见
 [docs/COORDINATE_CONVENTIONS.md](docs/COORDINATE_CONVENTIONS.md)。
@@ -79,7 +80,7 @@ export PYTHONNOUSERSITE=1 PYTHONPATH=src
 export GRAB_ROOT=/mnt/nas/storage/Ref2Dex_storage/GRAB/data/GRAB
 export CONTACTPOSE_ROOT=/mnt/nas/storage/Ref2Dex_storage/ContactPose/data
 export MANO_MODEL_ROOT=/mnt/nas/storage/Ref2Dex_storage/shared_assets/body_models/mano
-export ARTIMANO_ASSET_ROOT=.local/assets/artimano
+export TOPORETARGET_ARTIMANO_ASSET_ROOT=...    # 可选显式资产 override
 
 python -m toporetarget benchmark inspect-datasets \
   --grab-root "$GRAB_ROOT" --contactpose-root "$CONTACTPOSE_ROOT" \
@@ -351,7 +352,7 @@ reference-runtime Stage 10 milestone 已接受；preferred 性能 gate 以及 pr
 toporetarget workflow run-grab \
   --sequence s1/airplane_lift --index .local/index/grab \
   --hand right --robot artimano_rh --auto-contact-window --window-length 60 \
-  --mano-model-root /path/to/MANO --asset-root .local/assets/artimano \
+  --mano-model-root /path/to/MANO --asset-root third_party/robot_hands/artimano \
   --run-root .local/runs/stage10 \
   --manual-acceptance .local/reports/stage9/manual_acceptance.json
 ```
@@ -695,20 +696,28 @@ toporetarget data visualize --dataset grab --index .local/index/grab \
   --interactive --show-mediapipe21 --show-mesh --show-table --show-contacts --show-axes
 ```
 
-### 6. Arti-MANO 资产导入
+### 6. Tracked Arti-MANO 资产设置
 
-从单独 checkout 的 ManipTrans 导入本地 Arti-MANO 资产树：
+默认运行使用仓库内的 tracked snapshot。先查看解析来源和 provenance：
 
 ```bash
-toporetarget assets import-artimano \
-  --source-root "$MANIPTRANS_ROOT" \
-  --destination .local/assets/artimano
-
-toporetarget doctor assets
+toporetarget robots resolve-assets
+toporetarget robots compare-assets \
+  --reference-root .local/assets/artimano
 ```
 
-导入器会把 hash 和 provenance 写入被忽略的本地 manifest，不会复制 ManipTrans Python 代码。
-见 [docs/UPSTREAM_REFERENCES.md](docs/UPSTREAM_REFERENCES.md) 和
+从固定版本的 ManipTrans checkout 重建 tracked snapshot：
+
+```bash
+toporetarget assets vendor-artimano \
+  --source-root "$MANIPTRANS_ROOT" \
+  --destination third_party/robot_hands/artimano \
+  --imported-at 2026-07-27T19:00:00+08:00
+```
+
+旧的 `import-artimano` 命令与 `.local/assets/artimano` 只用于兼容和迁移；fallback 时会输出 deprecation
+warning。见 [docs/TRACKED_ROBOT_HAND_ASSETS.md](docs/TRACKED_ROBOT_HAND_ASSETS.md)、
+[docs/THIRD_PARTY_ASSET_POLICY.md](docs/THIRD_PARTY_ASSET_POLICY.md)、
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ### 7. 目标机器人手资产配置与运动学检查
@@ -733,8 +742,8 @@ toporetarget robots anchors \
 ```
 
 对 `artimano_lh` 重复核心命令，以独立加载真实左手 URDF。registry list 不要求本地资产；
-inspect 和 validate 从 `--asset-root`、`ARTIMANO_ASSET_ROOT`、`.local/config.yaml` 或安全的
-本地默认路径解析资产根目录。
+inspect 和 validate 从 `--asset-root`、`TOPORETARGET_ARTIMANO_ASSET_ROOT`、tracked snapshot 或
+legacy fallback 解析资产根目录；可用 `toporetarget robots resolve-assets` 查看最终来源。
 
 Debug/Inspection 补充命令放在核心流程之后：
 
@@ -916,8 +925,9 @@ distance 和 contact-retention proxy 分开记录。开放 visual mesh 可以支
 
 ## License
 
-仓库代码和文档使用 GNU General Public License v3.0，见 [LICENSE](LICENSE)。外部 GRAB、
-MANO/SMPL-X、ManipTrans、机器人资产和其他数据集继续遵循其自身许可证，仓库不重新分发。
+仓库代码和文档使用 GNU General Public License v3.0，见 [LICENSE](LICENSE)。tracked Arti-MANO 的
+许可证和 notice 保存在 `third_party/robot_hands/artimano/`；外部 GRAB、MANO/SMPL-X、ManipTrans
+源码和其他数据集继续遵循其自身许可证。
 使用外部资源前请阅读 [docs/LICENSE_AND_DATA_POLICY.md](docs/LICENSE_AND_DATA_POLICY.md) 和
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 

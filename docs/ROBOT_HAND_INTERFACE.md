@@ -6,18 +6,21 @@ deliberately independent of Isaac Gym, MuJoCo, ROS, and any optimization backend
 ## Specification and loading
 
 `RobotHandSpec` is a serializable, hashable YAML schema containing the robot name/version, side,
-asset ID, URDF-relative path, `palm`-style base link, declared `dof_order`, neutral position,
-expected topology, semantic layout, anchor profile, visual/collision policy, provenance,
-assumptions, and notes. It never stores a machine-local asset root. The configuration hash is
-recorded by `inspect`, `validate`, and FK reports.
+asset bundle, root link, declared actuated-joint order, neutral position, joint limits, expected
+topology, semantic layout, anchor profile, visual/collision/surface policy, optional simulation
+mapping, provenance, assumptions, and notes. The companion contract objects are
+`RobotHandAssetBundle`, `RobotKinematicSpec`, `RobotSemanticAnchorProfile`, `RobotSurfaceProfile`,
+`RobotCollisionProfile`, and `RobotSimulationSpec`. They never store a machine-local asset root.
+The configuration hash is recorded by `inspect`, `validate`, and FK reports.
 
 `RobotHandRegistry` discovers `configs/robots/*.yaml`. `robots list` reads only these YAML files
 and checks the expected URDF/manifest paths; it does not parse URDFs or meshes. `inspect`,
 `validate`, FK, anchor, Jacobian, and visualization commands load the selected asset.
 
-Asset-root precedence remains the Stage 0 policy: explicit CLI option, `ARTIMANO_ASSET_ROOT`,
-`.local/config.yaml`, then `.local/assets/artimano`. Tracked configs contain only relative paths
-and upstream-relative provenance.
+Asset-root precedence is explicit CLI option, `TOPORETARGET_ARTIMANO_ASSET_ROOT`, tracked
+`third_party/robot_hands/artimano/`, then the legacy `.local/assets/artimano/` fallback. The old
+`ARTIMANO_ASSET_ROOT` environment variable remains a deprecated alias. Tracked configs contain
+only repository-relative paths and upstream-relative provenance.
 
 ## `RobotHandModel` API
 
@@ -32,8 +35,8 @@ forward_kinematics_base(qpos)
 forward_kinematics_scene(qpos, base_pose_scene)
 link_transform_base(qpos, link_name)
 link_transform_scene(qpos, base_pose_scene, link_name)
-keypoints_base(qpos, layout="mediapipe21")
-keypoints_scene(qpos, base_pose_scene, layout="mediapipe21")
+keypoints_base(qpos, layout=None)
+keypoints_scene(qpos, base_pose_scene, layout=None)
 keypoint_set_base(qpos), keypoint_set_scene(qpos, base_pose_scene)
 keypoint_jacobian_qpos(qpos, layout="mediapipe21")
 visual_geometry_instances(qpos, base_pose_scene=None)
@@ -49,8 +52,9 @@ expands renderable instances rather than a batched mesh scene.
 
 The primary FK backend is explicit Torch code. `forward_kinematics_reference` is an independent
 NumPy implementation used by validation; it has the same URDF equations but a separate backend.
-The Jacobian differentiates only finger DoFs. It has shape `[..., 21, 3, N]` and contains no base
-pose derivatives.
+The Jacobian differentiates only the selected hand's actuated DoFs. It has shape
+`[..., anchor_count, 3, N]` and contains no base pose derivatives; Arti-MANO currently has
+`anchor_count=21` and `N=22`.
 
 ## URDF contract
 

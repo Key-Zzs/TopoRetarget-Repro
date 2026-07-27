@@ -2,7 +2,8 @@ name: artimano_lh
 version: "1.0.0"
 side: left
 asset_id: artimano
-urdf_relative_path: lh_mano.urdf
+asset_root_relative_path: third_party/robot_hands/artimano
+urdf_relative_path: urdf/lh_mano.urdf
 base_link: palm
 semantic_keypoint_layout: mediapipe21
 keypoint_anchor_profile: artimano_mediapipe21
@@ -30,6 +31,29 @@ dof_order:
   - j_thumb2z
   - j_thumb3
 neutral_q: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+joint_limits:
+  j_index1y: [-0.1745329252, 0.1745329252]
+  j_index1z: [0, 1.5707963268]
+  j_index2: [0, 1.7453292510]
+  j_index3: [0, 1.3962634016]
+  j_middle1y: [-0.1745329252, 0.1745329252]
+  j_middle1z: [0, 1.5707963268]
+  j_middle2: [0, 1.7453292510]
+  j_middle3: [0, 1.3962634016]
+  j_pinky1y: [-0.1745329252, 0.1745329252]
+  j_pinky1z: [0, 1.5707963268]
+  j_pinky2: [0, 1.7453292510]
+  j_pinky3: [0, 1.3962634016]
+  j_ring1y: [-0.1745329252, 0.1745329252]
+  j_ring1z: [0, 1.5707963268]
+  j_ring2: [0, 1.7453292510]
+  j_ring3: [0, 1.3962634016]
+  j_thumb1x: [0, 1.0471975512]
+  j_thumb1y: [-0.2617993878, 1.0471975512]
+  j_thumb1z: [-1.0471975512, 1.0471975512]
+  j_thumb2y: [-0.1745329252, 0.1745329252]
+  j_thumb2z: [0, 1.5707963268]
+  j_thumb3: [0, 1.3962634016]
 expected_link_count: 28
 expected_total_joint_count: 27
 expected_actuated_joint_count: 22
@@ -46,7 +70,11 @@ self_collision:
   metadata_only: true
 upstream_provenance:
   repository: ManipTrans
+  upstream_repository: https://github.com/ManipTrans/ManipTrans.git
+  upstream_commit: a3d08cfe3c3a5868a7f057533bcaf759c5af4705
   relative_asset_path: maniptrans_envs/assets/mano_urdf/lh_mano.urdf
+  source_manifest_sha256: 1d14cce93e2ee09dedbfcda842b1d8aac29443f86b57a0a15f6289bd55e0f771
+  license: GPL-3.0 (upstream root LICENSE; no separate asset license found)
   implementation_reference: maniptrans_envs/lib/envs/dexhands/artimano.py
 assumptions:
   - A_ROBOT_KEYPOINT_ANCHORS_001

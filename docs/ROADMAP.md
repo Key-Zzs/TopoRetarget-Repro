@@ -1,5 +1,25 @@
 # Roadmap
 
+## Current foundation and forward sequence
+
+M0 is complete. F0 on `main` is complete: tracked Arti-MANO assets and the generic target-hand
+contract are implemented and validated without changing Stage 7–9 mathematics, solver profiles,
+or existing Stage 10 artifacts. The planned sequence is:
+
+| Milestone | Scope | Status |
+| --- | --- | --- |
+| F0 main | Tracked robot assets and generic target-hand contract; Arti-MANO first registry instance | complete |
+| P0 | Create `develop/pene-loss` and its worktree | next, not created by F0 |
+| W0/W1 main | Wuji Hand2 Beta1 tracked assets, generic registration, bounded GRAB→Wuji validation | planned |
+| S1 `develop/pene-loss` | Generic SDF penetration loss | planned |
+| I1 | Rebase pene-loss onto latest main; Arti/Wuji × baseline/SDF integration | planned |
+| W2/W3 | Multi-trajectory Wuji retargeting and Stage 10 export | planned |
+| R0/R1 | MJCF playback and PPO tracking | later |
+| CP | ContactPose formal evaluation | later |
+
+F0 deliberately does not add Wuji Hand2, SDF penetration loss, `develop/pene-loss`, RL, or new
+artifacts. See [`stages/F0_TARGET_HAND_FOUNDATION.md`](stages/F0_TARGET_HAND_FOUNDATION.md).
+
 | Stage | Objective | Major deliverables | Definition of done | Status |
 | --- | --- | --- | --- | --- |
 | 0 | Repository creation and architecture | Package, CLI, path policy, dataset discovery, Arti-MANO importer | CI-safe scaffold and local doctors pass | complete |

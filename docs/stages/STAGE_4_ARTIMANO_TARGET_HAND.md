@@ -11,7 +11,7 @@ base pose. It does not solve for q, convert MANO/MediaPipe to qpos, or implement
 | Area | Implementation |
 | --- | --- |
 | schema/model | `src/toporetarget/robots/spec.py`, `base.py` |
-| registry/Arti-MANO | `registry.py`, `artimano.py`, YAML configs |
+| contract/registry/Arti-MANO | `contracts.py`, `registry.py`, `paths/assets.py`, YAML configs |
 | URDF | `robots/urdf/parser.py`, `model.py`, `kinematics.py` |
 | geometry | `robots/urdf/geometry.py`, `robots/visualization.py` |
 | anchors/reports | `anchors.py`, `reports.py` |
@@ -25,13 +25,15 @@ is declared in YAML rather than inherited from XML order.
 
 ## Asset evidence
 
-The local asset import is from ManipTrans commit
+The tracked vendor snapshot is imported from ManipTrans commit
 `a3d08cfe3c3a5868a7f057533bcaf759c5af4705`. The manifest SHA-256 is
-`c8e2c885e95cf690ec362c45e10d77cd16a60d3760efa692856617f148fe212e`; RH/LH URDF hashes are
+`c9601ed490bcec6f6d672d1ae4d8fd3f08724e357bf977cf63553a94cbdc3cf2`; RH/LH URDF hashes are
 `21800ccf73b980ac7927b97d12921ce5498ac5c1579bd65e84d269a01ef5b660` and
 `472b84cfb2197ef7f818a66b62539b093f3fd5c93fd0fa8e5f8931d689eccd29`. The import contains 98
-files, including 96 meshes, and has zero unresolved references. `asset_integrity.json` reports
-`unchanged: true`; `.local/assets` remains ignored and untracked.
+files, including 96 meshes, and has zero unresolved references. The tracked URDFs only rebase mesh
+filenames from the upstream flat layout; `asset_comparison.json` and `numerical_regression.json`
+record exact payload, topology, FK, anchor, Jacobian, and mesh-transform equality against the
+legacy tree. `.local/assets` remains ignored and untracked for compatibility only.
 
 ## RH/LH validation
 
@@ -82,5 +84,6 @@ optimization or Stage 5 work is included.
 ## Definition of done
 
 The generic schema/parser/FK/reference backend, RH/LH configs, anchors, Jacobian, geometry,
-registry/CLI, synthetic tests, local validation, artifacts, and synchronized docs are complete.
+registry/CLI, tracked asset provenance, synthetic tests, local validation, artifacts, and
+synchronized docs are complete.
 Stage 4 intentionally ends before retargeting; Stage 5 remains not started.

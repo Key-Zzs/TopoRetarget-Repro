@@ -31,7 +31,7 @@ artifact.
 ## Acceptance
 
 The bounded real acceptance uses `s7/cubemedium_inspect_1`, frames `[0,60)`,
-native 120 FPS, and local Arti-MANO RH/LH assets. Definition of Done requires
+native 120 FPS, and registry-resolved tracked Arti-MANO RH/LH assets. Definition of Done requires
 20 bones/15 pairs, strict frame invariance, Jacobian agreement, bounded
 sequential solves, exact base-frame alignment, artifact round-trip, source
 integrity, bilingual documentation, and paper-fidelity status

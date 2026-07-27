@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 import typer
 
+from toporetarget.paths.assets import compare_asset_payloads, resolve_artimano_asset
 from toporetarget.robots.registry import get_robot_registry
 from toporetarget.robots.reports import jacobian_check, write_json
 from toporetarget.robots.visualization import render_robot_hand
@@ -76,6 +77,57 @@ def list_robots(
     _json_print(get_robot_registry(repo_root=_repo_root()).list(asset_root=asset_root))
 
 
+@app.command("resolve-assets")
+def resolve_assets(
+    robot: str | None = typer.Option(None, "--robot"),
+    asset_root: Path | None = typer.Option(None, "--asset-root"),
+) -> None:
+    """Show tracked/override/legacy resolution and provenance without running FK."""
+
+    registry = get_robot_registry(repo_root=_repo_root())
+    specs = [registry.get_spec(robot)] if robot else registry.specs()
+    rows = []
+    for spec in specs:
+        if spec.asset_id == "artimano":
+            resolution = resolve_artimano_asset(_repo_root(), asset_root=asset_root)
+            rows.append(
+                resolution.as_dict() | {"robot": spec.name, "urdf": spec.urdf_relative_path}
+            )
+        else:
+            rows.append(registry.availability(spec, asset_root=asset_root))
+    _json_print(rows)
+
+
+@app.command("compare-assets")
+def compare_assets(
+    robot: str = typer.Option("artimano_rh", "--robot"),
+    reference_root: Path | None = typer.Option(
+        None,
+        "--reference-root",
+        help="Reference asset root; defaults to legacy .local/assets/artimano.",
+    ),
+    asset_root: Path | None = typer.Option(None, "--asset-root"),
+) -> None:
+    """Compare tracked/override payload bytes against a legacy or upstream reference."""
+
+    try:
+        registry = get_robot_registry(repo_root=_repo_root())
+        spec = registry.get_spec(robot)
+        resolution = registry._asset_resolution(spec, asset_root)  # noqa: SLF001 - CLI audit command.
+        reference = reference_root or (_repo_root() / ".local" / "assets" / "artimano")
+        result = compare_asset_payloads(resolution.root, reference)
+        result["robot"] = robot
+        result["resolved_asset_source"] = resolution.source
+        _json_print(result)
+        if result["status"] != "match":
+            raise typer.Exit(code=1)
+    except typer.Exit:
+        raise
+    except (OSError, KeyError, ValueError, RuntimeError) as exc:
+        typer.echo(f"asset comparison failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
 @app.command("inspect")
 def inspect_robot(
     robot: str = typer.Option(..., "--robot"),
@@ -134,11 +186,12 @@ def fk(
     dtype: str = typer.Option("float64", "--dtype"),
     device: str = typer.Option("cpu", "--device"),
     output: Path | None = typer.Option(None, "--output"),
+    asset_root: Path | None = typer.Option(None, "--asset-root"),
 ) -> None:
     try:
         import torch
 
-        model = _load_model(robot, None)
+        model = _load_model(robot, asset_root)
         q = _pose_q(model, pose, seed, qpos_file)
         torch_dtype = getattr(torch, dtype)
         q_tensor = torch.tensor(q, dtype=torch_dtype, device=device)
@@ -245,9 +298,10 @@ def jacobian_check_command(
     dtype: str = typer.Option("float64", "--dtype"),
     epsilon: float = typer.Option(1e-6, "--epsilon"),
     report: Path | None = typer.Option(None, "--report"),
+    asset_root: Path | None = typer.Option(None, "--asset-root"),
 ) -> None:
     try:
-        model = _load_model(robot, None)
+        model = _load_model(robot, asset_root)
         q = _pose_q(model, pose, seed, qpos_file)
         result = jacobian_check(model, q, epsilon=epsilon, dtype=dtype)
         result["pose"] = pose
@@ -281,9 +335,10 @@ def visualize(
     show_base_frame: bool = typer.Option(False, "--show-base-frame"),
     show_link_frames: bool = typer.Option(False, "--show-link-frames"),
     show_joint_axes: bool = typer.Option(False, "--show-joint-axes"),
+    asset_root: Path | None = typer.Option(None, "--asset-root"),
 ) -> None:
     try:
-        model = _load_model(robot, None)
+        model = _load_model(robot, asset_root)
         q = _pose_q(model, pose, seed, qpos_file)
         if output is None and not show:
             raise typer.BadParameter("provide --output or pass --show")

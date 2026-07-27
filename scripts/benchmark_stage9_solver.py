@@ -116,7 +116,7 @@ def _load_case(case: dict[str, Any], repo: Path) -> dict[str, Any]:
         "graph": load_interaction_graph(graph_path),
         "robot": load_artimano_model(
             "rh" if robot_name.endswith("rh") else "lh",
-            asset_root=repo / ".local/assets/artimano",
+            asset_root=repo / "third_party/robot_hands/artimano",
         ),
         "surface": load_robot_surface_samples(Path(case["collision_samples"])),
         "canonical_hash": artifact_hash(canonical),

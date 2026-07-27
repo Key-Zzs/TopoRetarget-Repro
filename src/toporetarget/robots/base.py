@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 
 from toporetarget.keypoints.registry import get_layout
+from toporetarget.paths.assets import AssetResolution
 from toporetarget.utils.hashing import sha256_file
 
 from .anchors import AnchorProfile, RobotKeypointSet, load_anchor_profile
@@ -36,11 +37,13 @@ class RobotHandModel:
         asset_root: Path | None = None,
         asset_manifest: dict[str, Any] | None = None,
         config_root: Path | None = None,
+        asset_resolution: AssetResolution | None = None,
     ) -> None:
         self.spec = spec
         self.urdf = urdf_model
         self.asset_root = None if asset_root is None else asset_root.resolve()
         self._asset_manifest = asset_manifest
+        self.asset_resolution = asset_resolution
         self.config_root = config_root
         self._anchor_profile: AnchorProfile | None = None
         if spec.base_link != urdf_model.root_link:
@@ -121,6 +124,14 @@ class RobotHandModel:
         return sha256_file(manifest_path) if manifest_path.is_file() else None
 
     @property
+    def asset_source(self) -> str | None:
+        return None if self.asset_resolution is None else self.asset_resolution.source
+
+    @property
+    def asset_warnings(self) -> tuple[str, ...]:
+        return () if self.asset_resolution is None else self.asset_resolution.warnings
+
+    @property
     def anchor_profile(self) -> AnchorProfile:
         if self._anchor_profile is None:
             self._anchor_profile = load_anchor_profile(
@@ -186,7 +197,8 @@ class RobotHandModel:
     def link_transform_scene(self, qpos: Any, base_pose_scene: Any, link_name: str) -> Any:
         return self.forward_kinematics_scene(qpos, base_pose_scene)[link_name]
 
-    def keypoints_base(self, qpos: Any, layout: str = "mediapipe21") -> Any:
+    def keypoints_base(self, qpos: Any, layout: str | None = None) -> Any:
+        layout = self.spec.semantic_keypoint_layout if layout is None else layout
         if layout != self.spec.semantic_keypoint_layout:
             raise ValueError(
                 f"{self.name} only declares semantic layout {self.spec.semantic_keypoint_layout!r}"
@@ -213,7 +225,7 @@ class RobotHandModel:
                 points.append(link_transform[..., :3, :3] @ local + link_transform[..., :3, 3])
         return torch_stack(points, dim=-2)
 
-    def keypoints_scene(self, qpos: Any, base_pose_scene: Any, layout: str = "mediapipe21") -> Any:
+    def keypoints_scene(self, qpos: Any, base_pose_scene: Any, layout: str | None = None) -> Any:
         import torch
 
         q = self._qpos_tensor(qpos)
@@ -221,7 +233,8 @@ class RobotHandModel:
         points = self.keypoints_base(q, layout=layout)
         return points @ base[..., :3, :3].transpose(-1, -2) + base[..., None, :3, 3]
 
-    def keypoint_metadata(self, layout: str = "mediapipe21") -> dict[str, Any]:
+    def keypoint_metadata(self, layout: str | None = None) -> dict[str, Any]:
+        layout = self.spec.semantic_keypoint_layout if layout is None else layout
         if layout != self.spec.semantic_keypoint_layout:
             raise ValueError(f"unsupported semantic layout for {self.name}: {layout}")
         return {
@@ -234,22 +247,28 @@ class RobotHandModel:
             "anchor_profile_hash": self.anchor_profile.sha256,
             "urdf_hash": self.urdf_hash,
             "asset_manifest_hash": self.asset_manifest_hash,
+            "resolved_asset_source": self.asset_source,
+            "resolved_asset_root": None if self.asset_root is None else str(self.asset_root),
+            "legacy_fallback_used": bool(
+                self.asset_resolution is not None and self.asset_resolution.legacy_fallback_used
+            ),
+            "asset_warnings": list(self.asset_warnings),
         }
 
-    def keypoint_set_base(self, qpos: Any, layout: str = "mediapipe21") -> RobotKeypointSet:
+    def keypoint_set_base(self, qpos: Any, layout: str | None = None) -> RobotKeypointSet:
         return RobotKeypointSet(
             self.keypoints_base(qpos, layout=layout), self.keypoint_metadata(layout)
         )
 
     def keypoint_set_scene(
-        self, qpos: Any, base_pose_scene: Any, layout: str = "mediapipe21"
+        self, qpos: Any, base_pose_scene: Any, layout: str | None = None
     ) -> RobotKeypointSet:
         return RobotKeypointSet(
             self.keypoints_scene(qpos, base_pose_scene, layout=layout),
             self.keypoint_metadata(layout),
         )
 
-    def keypoint_jacobian_qpos(self, qpos: Any, layout: str = "mediapipe21") -> Any:
+    def keypoint_jacobian_qpos(self, qpos: Any, layout: str | None = None) -> Any:
         import torch
 
         value = self._qpos_tensor(qpos)
@@ -264,7 +283,8 @@ class RobotHandModel:
             )
             for item in flat
         ]
-        return torch.stack(jacobians).reshape(*value.shape[:-1], 21, 3, self.num_dofs)
+        anchor_count = len(self.anchor_profile.anchors)
+        return torch.stack(jacobians).reshape(*value.shape[:-1], anchor_count, 3, self.num_dofs)
 
     def visual_geometry_instances(
         self, qpos: Any, base_pose_scene: Any | None = None
@@ -316,6 +336,11 @@ class RobotHandModel:
             "side": self.side,
             "asset_id": self.spec.asset_id,
             "asset_root": None if self.asset_root is None else str(self.asset_root),
+            "resolved_asset_source": self.asset_source,
+            "legacy_fallback_used": bool(
+                self.asset_resolution is not None and self.asset_resolution.legacy_fallback_used
+            ),
+            "asset_warnings": list(self.asset_warnings),
             "asset_manifest_hash": self.asset_manifest_hash,
             "urdf": self.spec.urdf_relative_path,
             "urdf_path": str(self.urdf.urdf_path),
@@ -336,6 +361,14 @@ class RobotHandModel:
                 "id": self.anchor_profile.profile_id,
                 "version": self.anchor_profile.version,
                 "hash": self.anchor_profile.sha256,
+            },
+            "contract": {
+                "asset_bundle": self.spec.asset_bundle.as_dict(),
+                "kinematics": self.spec.kinematics.as_dict(),
+                "semantic_anchors": self.spec.semantic_anchors.as_dict(),
+                "surface": self.spec.surface_profile.as_dict(),
+                "collision": self.spec.collision_profile.as_dict(),
+                "simulation": self.spec.simulation.as_dict(),
             },
             "geometry": geometry_summary(self.urdf),
             "assumptions": list(self.spec.assumptions),

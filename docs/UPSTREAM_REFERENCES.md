@@ -9,6 +9,7 @@ Relevant upstream relative paths for future work:
 - `maniptrans_envs/lib/envs/dexhands/artimano.py`
 - `main/dataset/mano2dexhand.py`
 
-The current importer records the upstream commit, source license hash, and imported file hashes in
-the ignored local manifest at `.local/assets/artimano/asset_manifest.json`.
-
+F0 vendors the pinned Arti-MANO payload under `third_party/robot_hands/artimano/`. Its
+`SOURCE.yaml` records the upstream commit, source license hash, imported file hashes, and the
+path-rebasing transformation. The old ignored `.local/assets/artimano/asset_manifest.json` is
+retained only as a historical compatibility reference.

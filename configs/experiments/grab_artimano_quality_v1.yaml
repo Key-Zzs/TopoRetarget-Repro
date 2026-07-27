@@ -3,7 +3,7 @@ experiment_id: grab_artimano_quality_v1
 subject_scope: within-subject multi-object development benchmark
 grab_root: /mnt/nas/storage/Ref2Dex_storage/GRAB/data/GRAB
 mano_model_root: /mnt/nas/storage/Ref2Dex_storage/shared_assets/body_models/mano
-artimano_asset_root: .local/assets/artimano
+artimano_asset_root: third_party/robot_hands/artimano
 target_robot: artimano_rh
 target_hand: right
 native_fps: 120.0

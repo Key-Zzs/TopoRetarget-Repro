@@ -33,7 +33,7 @@ def freeze(
     mano_root: Path = typer.Option(
         Path("/mnt/nas/storage/Ref2Dex_storage/shared_assets/body_models/mano"), "--mano-model-root"
     ),
-    asset_root: Path = typer.Option(Path(".local/assets/artimano"), "--asset-root"),
+    asset_root: Path = typer.Option(Path("third_party/robot_hands/artimano"), "--asset-root"),
     experiment_root: Path = typer.Option(
         Path(f".local/experiments/{EXPERIMENT_ID}"), "--experiment-root"
     ),
@@ -51,7 +51,7 @@ def freeze(
 
 @app.command("build-contact-surfaces")
 def build_contact_surfaces(
-    asset_root: Path = typer.Option(Path(".local/assets/artimano"), "--asset-root"),
+    asset_root: Path = typer.Option(Path("third_party/robot_hands/artimano"), "--asset-root"),
     experiment_root: Path = typer.Option(
         Path(f".local/experiments/{EXPERIMENT_ID}"), "--experiment-root"
     ),
@@ -71,7 +71,7 @@ def run_a_to_e_command(
     mano_root: Path = typer.Option(
         Path("/mnt/nas/storage/Ref2Dex_storage/shared_assets/body_models/mano"), "--mano-model-root"
     ),
-    asset_root: Path = typer.Option(Path(".local/assets/artimano"), "--asset-root"),
+    asset_root: Path = typer.Option(Path("third_party/robot_hands/artimano"), "--asset-root"),
     index_path: Path = typer.Option(Path(".local/index/grab"), "--index"),
     experiment_root: Path = typer.Option(
         Path(f".local/experiments/{EXPERIMENT_ID}"), "--experiment-root"

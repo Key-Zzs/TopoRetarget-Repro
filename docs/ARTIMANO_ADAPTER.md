@@ -1,35 +1,42 @@
 # Arti-MANO target-hand adapter
 
-Stage 4 loads the two Arti-MANO URDFs as independent target-hand models. It does not distribute
-the assets and does not copy ManipTrans Python code.
+Stage 4 loads the two Arti-MANO URDFs as independent target-hand models. F0 distributes the
+asset payload as a tracked vendor snapshot and does not copy ManipTrans Python code.
 
 ## Asset provenance and integrity
 
-Acquire the assets with the Stage 0 importer:
+The tracked default is already available after checkout. To reproduce or update the vendor
+snapshot from the pinned ManipTrans checkout:
 
 ```bash
-toporetarget assets import-artimano \
+toporetarget assets vendor-artimano \
   --source-root /home/deepcybo/workspace/dex/retarget/ManipTrans \
-  --destination .local/assets/artimano
-toporetarget doctor assets
+  --destination third_party/robot_hands/artimano \
+  --imported-at 2026-07-27T19:00:00+08:00
+toporetarget robots resolve-assets
 ```
 
-The validated local import used for Stage 4 has:
+The old `toporetarget assets import-artimano --destination .local/assets/artimano` command remains
+available for local migration tests only. It is not the normal runtime path.
+
+The tracked vendor snapshot used by the default registry has:
 
 | Field | Value |
 | --- | --- |
 | upstream commit | `a3d08cfe3c3a5868a7f057533bcaf759c5af4705` |
 | imported files | 98 |
 | mesh files | 96 |
-| manifest SHA-256 | `c8e2c885e95cf690ec362c45e10d77cd16a60d3760efa692856617f148fe212e` |
-| RH URDF SHA-256 | `21800ccf73b980ac7927b97d12921ce5498ac5c1579bd65e84d269a01ef5b660` |
-| LH URDF SHA-256 | `472b84cfb2197ef7f818a66b62539b093f3fd5c93fd0fa8e5f8931d689eccd29` |
-| mesh aggregate SHA-256 | `bd89ccb1322ba80e62536e9585bc7123f8b61fa77816bcededeaca4ef4fddbc8` |
+| tracked manifest SHA-256 | `c9601ed490bcec6f6d672d1ae4d8fd3f08724e357bf977cf63553a94cbdc3cf2` |
+| source manifest SHA-256 | `1d14cce93e2ee09dedbfcda842b1d8aac29443f86b57a0a15f6289bd55e0f771` |
+| tracked RH URDF SHA-256 | `422f8a229e8f22cf7989a5447cbe68014202e896c24e26407771f230596b671a` |
+| tracked LH URDF SHA-256 | `9d83ed9cb3fd700a3d820582c3980b99e101ae44a768fb157c9af326c0e7bfbe` |
+| source RH/LH URDF hashes | preserved in `SOURCE.yaml` |
 | unresolved mesh references | 0 |
-| asset modified | false |
+| asset modification | URDF path rebasing only |
 
-The source and destination assets remain outside Git. The local integrity report is
-`.local/reports/stage4/asset_integrity.json`.
+The source ManipTrans checkout and legacy destination remain outside Git. F0 reports are in
+`.local/reports/f0/`; the tracked bundle's manifest and provenance are under
+`third_party/robot_hands/artimano/`.
 
 ## Configurations and topology
 

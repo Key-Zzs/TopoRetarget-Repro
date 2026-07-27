@@ -8,6 +8,15 @@ from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from typing import Any
 
+from .contracts import (
+    RobotCollisionProfile,
+    RobotHandAssetBundle,
+    RobotKinematicSpec,
+    RobotSemanticAnchorProfile,
+    RobotSimulationSpec,
+    RobotSurfaceProfile,
+)
+
 
 def _canonical(value: Any) -> Any:
     if isinstance(value, dict):
@@ -45,6 +54,11 @@ class RobotHandSpec:
     upstream_provenance: dict[str, Any] = field(default_factory=dict)
     assumptions: tuple[str, ...] = ()
     notes: str = ""
+    asset_root_relative_path: str = ""
+    optional_mjcf_relative_path: str | None = None
+    joint_limits: dict[str, tuple[float, float]] = field(default_factory=dict)
+    surface_contact_profile: dict[str, Any] = field(default_factory=dict)
+    simulator_joint_mapping: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         relative = PurePosixPath(self.urdf_relative_path)
@@ -87,6 +101,25 @@ class RobotHandSpec:
             upstream_provenance=dict(values.get("upstream_provenance", {})),
             assumptions=tuple(str(item) for item in values.get("assumptions", [])),
             notes=str(values.get("notes", "")),
+            asset_root_relative_path=str(
+                values.get(
+                    "asset_root_relative_path", f"third_party/robot_hands/{values['asset_id']}"
+                )
+            ),
+            optional_mjcf_relative_path=(
+                None
+                if values.get("optional_mjcf_relative_path") is None
+                else str(values["optional_mjcf_relative_path"])
+            ),
+            joint_limits={
+                str(name): (float(bounds[0]), float(bounds[1]))
+                for name, bounds in dict(values.get("joint_limits", {})).items()
+            },
+            surface_contact_profile=dict(values.get("surface_contact_profile", {})),
+            simulator_joint_mapping={
+                str(name): str(mapped)
+                for name, mapped in dict(values.get("simulator_joint_mapping", {})).items()
+            },
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -112,6 +145,13 @@ class RobotHandSpec:
             "upstream_provenance": _canonical(self.upstream_provenance),
             "assumptions": list(self.assumptions),
             "notes": self.notes,
+            "asset_root_relative_path": self.asset_root_relative_path,
+            "optional_mjcf_relative_path": self.optional_mjcf_relative_path,
+            "joint_limits": {
+                name: [bounds[0], bounds[1]] for name, bounds in sorted(self.joint_limits.items())
+            },
+            "surface_contact_profile": _canonical(self.surface_contact_profile),
+            "simulator_joint_mapping": dict(sorted(self.simulator_joint_mapping.items())),
         }
 
     @property
@@ -124,6 +164,55 @@ class RobotHandSpec:
     @property
     def config_hash(self) -> str:
         return self.sha256
+
+    @property
+    def asset_bundle(self) -> RobotHandAssetBundle:
+        return RobotHandAssetBundle(
+            asset_id=self.asset_id,
+            root_relative_path=self.asset_root_relative_path,
+            urdf_relative_path=self.urdf_relative_path,
+            optional_mjcf_relative_path=self.optional_mjcf_relative_path,
+            provenance=self.upstream_provenance,
+        )
+
+    @property
+    def kinematics(self) -> RobotKinematicSpec:
+        return RobotKinematicSpec(
+            root_link=self.base_link,
+            actuated_joint_order=self.dof_order,
+            neutral_q=self.neutral_q,
+            joint_limits=self.joint_limits,
+        )
+
+    @property
+    def semantic_anchors(self) -> RobotSemanticAnchorProfile:
+        return RobotSemanticAnchorProfile(
+            profile_id=self.keypoint_anchor_profile,
+            layout_name=self.semantic_keypoint_layout,
+            source=str(self.upstream_provenance.get("anchor_source", "")),
+            assumptions=self.assumptions,
+        )
+
+    @property
+    def surface_profile(self) -> RobotSurfaceProfile:
+        return RobotSurfaceProfile(
+            visual_geometry=self.visual_geometry_policy,
+            surface_contact=self.surface_contact_profile,
+        )
+
+    @property
+    def collision_profile(self) -> RobotCollisionProfile:
+        return RobotCollisionProfile(
+            geometry=self.collision_geometry_policy,
+            self_collision=self.self_collision,
+        )
+
+    @property
+    def simulation(self) -> RobotSimulationSpec:
+        return RobotSimulationSpec(
+            mjcf_relative_path=self.optional_mjcf_relative_path,
+            simulator_joint_mapping=self.simulator_joint_mapping,
+        )
 
 
 __all__ = ["RobotHandSpec"]

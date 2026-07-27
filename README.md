@@ -31,10 +31,11 @@ The main entry point is the `toporetarget` CLI. The code is organized around com
   canonical-frame alignment, and independent `toporetarget.warm_start.v1` artifacts;
 - source-only Eq. (3)-(7) interaction graphs with fixed 21+50 vertices, source-derived directed
   weights, shared Laplacians, frozen warm-start evaluation, qpos Jacobians, and RH/LH bounded reports;
-- paper-fidelity auditing, assumptions tracking, and local Arti-MANO asset import support.
+- paper-fidelity auditing, assumptions tracking, and tracked Arti-MANO asset provenance support.
 
-External datasets, MANO/SMPL-X models, robot assets, and extraction caches are not distributed with
-this repository. Keep them outside Git under `.local/`-configured paths. The canonical data
+Arti-MANO is the first tracked robot-hand asset under `third_party/robot_hands/artimano/`; Wuji
+Hand2, external datasets, MANO/SMPL-X models, and extraction caches are not distributed here. Keep
+machine-local data under `.local/`-configured paths. The canonical data
 interface is described in [`docs/HOI_DATA_INTERFACE.md`](docs/HOI_DATA_INTERFACE.md), and frame
 semantics are defined in [`docs/COORDINATE_CONVENTIONS.md`](docs/COORDINATE_CONVENTIONS.md).
 
@@ -89,7 +90,7 @@ export PYTHONNOUSERSITE=1 PYTHONPATH=src
 export GRAB_ROOT=/mnt/nas/storage/Ref2Dex_storage/GRAB/data/GRAB
 export CONTACTPOSE_ROOT=/mnt/nas/storage/Ref2Dex_storage/ContactPose/data
 export MANO_MODEL_ROOT=/mnt/nas/storage/Ref2Dex_storage/shared_assets/body_models/mano
-export ARTIMANO_ASSET_ROOT=.local/assets/artimano
+export TOPORETARGET_ARTIMANO_ASSET_ROOT=third_party/robot_hands/artimano
 
 python -m toporetarget benchmark inspect-datasets \
   --grab-root "$GRAB_ROOT" --contactpose-root "$CONTACTPOSE_ROOT" \
@@ -136,6 +137,7 @@ Do not put datasets or model files in the repository. Use environment variables 
 export GRAB_ROOT=/path/to/GRAB                 # contains grab/ and tools/object_meshes/
 export MANO_MODEL_ROOT=/path/to/MANO/models    # contains MANO_LEFT.pkl/MANO_RIGHT.pkl
 export MANIPTRANS_ROOT=/path/to/ManipTrans     # only needed for Arti-MANO import
+export TOPORETARGET_ARTIMANO_ASSET_ROOT=...    # optional explicit asset override
 ```
 
 The template is [`configs/paths.example.yaml`](configs/paths.example.yaml), and the data/license
@@ -436,7 +438,7 @@ real-time, online-control, and full-dataset claims remain false.
 toporetarget workflow run-grab \
   --sequence s1/airplane_lift --index .local/index/grab \
   --hand right --robot artimano_rh --auto-contact-window --window-length 60 \
-  --mano-model-root /path/to/MANO --asset-root .local/assets/artimano \
+  --mano-model-root /path/to/MANO --asset-root third_party/robot_hands/artimano \
   --run-root .local/runs/stage10 \
   --manual-acceptance .local/reports/stage9/manual_acceptance.json
 ```
@@ -752,21 +754,30 @@ toporetarget data visualize --dataset grab --index .local/index/grab \
   --interactive --show-mediapipe21 --show-mesh --show-table --show-contacts --show-axes
 ```
 
-### 6. Arti-MANO asset import
+### 6. Tracked Arti-MANO asset setup
 
-Import only the local Arti-MANO asset tree from a separately checked-out ManipTrans source:
+Normal execution uses the tracked snapshot. Inspect resolution and provenance with:
 
 ```bash
-toporetarget assets import-artimano \
-  --source-root "$MANIPTRANS_ROOT" \
-  --destination .local/assets/artimano
-
-toporetarget doctor assets
+toporetarget robots resolve-assets
+toporetarget robots compare-assets \
+  --reference-root .local/assets/artimano
 ```
 
-The importer records hashes and provenance in ignored local manifests. ManipTrans Python code is
-not copied into this repository. See [`docs/UPSTREAM_REFERENCES.md`](docs/UPSTREAM_REFERENCES.md)
-and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+To reproduce the tracked snapshot from the pinned ManipTrans checkout:
+
+```bash
+toporetarget assets vendor-artimano \
+  --source-root "$MANIPTRANS_ROOT" \
+  --destination third_party/robot_hands/artimano \
+  --imported-at 2026-07-27T19:00:00+08:00
+```
+
+The legacy `import-artimano` command and `.local/assets/artimano` directory remain only for
+compatibility and migration. The resolver emits a deprecation warning when it falls back to them.
+See [`docs/TRACKED_ROBOT_HAND_ASSETS.md`](docs/TRACKED_ROBOT_HAND_ASSETS.md),
+[`docs/THIRD_PARTY_ASSET_POLICY.md`](docs/THIRD_PARTY_ASSET_POLICY.md), and
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 ### 7. Target Hand Asset Setup and Kinematic Inspection
 
@@ -791,8 +802,9 @@ toporetarget robots anchors \
 ```
 
 Run the same core commands with `artimano_lh` to load the actual left-hand URDF independently.
-The registry list command does not require local assets; inspect and validation resolve the asset
-root from `--asset-root`, `ARTIMANO_ASSET_ROOT`, `.local/config.yaml`, or the safe local default.
+The registry list command does not parse local assets; inspect and validation resolve the asset root
+from `--asset-root`, `TOPORETARGET_ARTIMANO_ASSET_ROOT`, the tracked snapshot, or the legacy
+fallback. Use `toporetarget robots resolve-assets` to see the selected source.
 
 Debug/Inspection supplements after the core flow:
 
@@ -984,8 +996,9 @@ or Stage 10 artifact is changed. See
 ## License
 
 The repository code and documentation are released under the GNU General Public License v3.0;
-see [`LICENSE`](LICENSE). External GRAB, MANO/SMPL-X, ManipTrans, robot assets, and other datasets
-remain subject to their own licenses and are not redistributed here. See
+see [`LICENSE`](LICENSE). Tracked Arti-MANO retains the upstream license and notices under
+`third_party/robot_hands/artimano/`; external GRAB, MANO/SMPL-X, ManipTrans source, and other datasets
+remain subject to their own licenses. See
 [`docs/LICENSE_AND_DATA_POLICY.md`](docs/LICENSE_AND_DATA_POLICY.md) and
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) before using external resources.
 

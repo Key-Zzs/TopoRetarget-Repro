@@ -1,5 +1,24 @@
 # 路线图
 
+## 当前基础与后续顺序
+
+M0 已完成。`main` 上的 F0 已完成：tracked Arti-MANO 资产与通用 target-hand contract 已实现并
+验证，未修改 Stage 7–9 数学、正式 solver profile 或已有 Stage 10 artifact。后续顺序为：
+
+| 里程碑 | 范围 | 状态 |
+| --- | --- | --- |
+| F0 main | tracked 机器人手资产与通用 target-hand contract，Arti-MANO 首个 registry 实例 | 完成 |
+| P0 | 创建 `develop/pene-loss` 及其 worktree | 下一步，F0 未创建 |
+| W0/W1 main | Wuji Hand2 Beta1 tracked 资产、通用注册、有界 GRAB→Wuji 验证 | 计划 |
+| S1 `develop/pene-loss` | 通用 SDF penetration loss | 计划 |
+| I1 | 将 pene-loss 更新到最新 main，进行 Arti/Wuji × baseline/SDF 联合验证 | 计划 |
+| W2/W3 | 多轨迹 Wuji 重定向与 Stage 10 export | 计划 |
+| R0/R1 | MJCF playback 与 PPO tracking | 后置 |
+| CP | ContactPose 正式评价 | 后置 |
+
+F0 明确不加入 Wuji Hand2、SDF penetration loss、`develop/pene-loss`、RL 或新的 artifact。详见
+[`stages/F0_TARGET_HAND_FOUNDATION.md`](stages/F0_TARGET_HAND_FOUNDATION.md)。
+
 本项目当前完成阶段 0（仓库创建与架构搭建）、阶段 1（论文忠实度审计）、阶段 2A（统一
 HOI 数据接口）、阶段 2B 的有界真实 GRAB 检查、阶段 3 的有界 MANO→MediaPipe-style
 21 关键点 source-hand adapter、阶段 4 的通用机器人手运动学接口与 Arti-MANO 目标手

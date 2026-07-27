@@ -359,7 +359,7 @@ def audit_window(case: dict[str, Any], repo: Path) -> tuple[dict[str, Any], dict
     graph = load_interaction_graph(case["graph"])
     model = load_artimano_model(
         "rh" if case["robot"].endswith("rh") else "lh",
-        asset_root=repo / ".local/assets/artimano",
+        asset_root=repo / "third_party/robot_hands/artimano",
     )
     surface = load_robot_surface_samples(
         repo / ".local/cache/geometry/robot_surface" / f"{case['robot']}_neutral.npz"

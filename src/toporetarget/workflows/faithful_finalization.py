@@ -344,7 +344,7 @@ def build_visual_numeric_audit(repo: Path | None = None) -> dict[str, Any]:
             "source_field": key,
         }
 
-    model = get_robot_registry().load("artimano_rh", asset_root=repo / ".local/assets/artimano")
+    model = get_robot_registry().load("artimano_rh")
     semantic_contact = _semantic_contact_surface_audit(
         sequence=sequence,
         model=model,

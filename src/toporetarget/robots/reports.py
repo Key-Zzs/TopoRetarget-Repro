@@ -163,7 +163,13 @@ def validate_robot_model(
     layout = get_layout(model.spec.semantic_keypoint_layout)
     q_torch = torch.tensor(neutral, dtype=getattr(torch, dtype))
     points = model.keypoints_base(q_torch).detach().cpu().numpy()
-    _check(checks, "anchor_shape", points.shape == (21, 3), {"shape": list(points.shape)})
+    expected_anchor_shape = (len(model.anchor_profile.anchors), 3)
+    _check(
+        checks,
+        "anchor_shape",
+        points.shape == expected_anchor_shape,
+        {"shape": list(points.shape), "expected": list(expected_anchor_shape)},
+    )
     _check(checks, "anchor_finite", bool(np.isfinite(points).all()), {})
     edges = np.asarray(layout.edges, dtype=np.int64)
     lengths = np.linalg.norm(points[edges[:, 1]] - points[edges[:, 0]], axis=-1)

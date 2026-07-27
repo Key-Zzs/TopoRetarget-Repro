@@ -7,6 +7,23 @@ paper:
   page_count: 16
 
 audit_contracts:
+  f0_target_hand_foundation:
+    profile: src/toporetarget/robots/contracts.py
+    resolver: src/toporetarget/paths/assets.py
+    registry: src/toporetarget/robots/registry.py
+    contract: toporetarget.target_hand.v1
+    tracked_asset_root: third_party/robot_hands/artimano
+    status: implemented_with_assumptions
+    repository_infrastructure_only: true
+    modifies_equations_1_to_9: false
+    modifies_solver_profiles: false
+    adds_wuji: false
+    adds_penetration_loss: false
+    creates_stage10_artifacts: false
+    historical_artifacts_mutated: false
+    assumptions: [A_F0_TRACKED_ASSET_PROVENANCE_001, A_F0_URDF_PATH_REBASE_001, A_F0_LEGACY_ASSET_REBIND_001, A_F0_GENERIC_TARGET_CONTRACT_001]
+    evidence: [.local/reports/f0/license_audit.json, .local/reports/f0/asset_comparison.json, .local/reports/f0/numerical_regression.json, .local/reports/f0/historical_artifact_compatibility.json]
+    notes: "Tracked Arti-MANO is the first generic target-hand instance; Wuji and penetration-loss work remain future milestones."
   stage7_1_warm_start_audit:
     profile: src/toporetarget/workflows/warm_start_audit.py
     formal_stage7_objective_unchanged: true
@@ -757,15 +774,15 @@ items:
     known_parameters: {embodiments: [MANO, Wuji, Leap], per_case_retuning: false, unit: claim}
     unknowns: [robot assets and keypoint mappings]
     assumptions: [A_ROBOT_HAND_FRAME_001, A_WUJI_ASSET_001]
-    notes: "Only local Arti-MANO asset import infrastructure exists in Stage 0."
+    notes: "Tracked Arti-MANO infrastructure is available through F0; Wuji and Leap assets/mappings remain future embodiment work."
   - id: stage4_robot_keypoint_forward_kinematics
     kind: repository_adapter
     title: Generic robot-hand forward kinematics and Arti-MANO target adapter
     paper_section: "Sec. 3.1 input boundary and Sec. 3.2 robot variables"
     pdf_page: 3
     evidence_summary: "Stage 4 defines the target-hand P^r(q) infrastructure needed by later retargeting stages."
-    implementation_targets: [src/toporetarget/robots/base.py, src/toporetarget/robots/urdf/kinematics.py, configs/robots/artimano_rh.yaml, configs/robots/artimano_lh.yaml, docs/stages/STAGE_4_ARTIMANO_TARGET_HAND.md]
-    test_targets: [tests/integration/test_synthetic_robot_hand.py, tests/local_assets/test_artimano_assets.py]
+    implementation_targets: [src/toporetarget/robots/contracts.py, src/toporetarget/robots/base.py, src/toporetarget/robots/registry.py, src/toporetarget/robots/urdf/kinematics.py, src/toporetarget/paths/assets.py, configs/robots/artimano_rh.yaml, configs/robots/artimano_lh.yaml, third_party/robot_hands/artimano, docs/ROBOT_HAND_TARGET_CONTRACT.md, docs/stages/STAGE_4_ARTIMANO_TARGET_HAND.md]
+    test_targets: [tests/integration/test_synthetic_robot_hand.py, tests/local_assets/test_artimano_assets.py, tests/unit/test_target_hand_foundation.py]
     status: implemented_with_assumptions
     known_parameters: {target_layout: mediapipe21, rh_dofs: 22, lh_dofs: 22, base_link: palm, unit: meters}
     unknowns: [paper-author target anchor definition, exact paper wrist-centered robot frame, official qpos contract]

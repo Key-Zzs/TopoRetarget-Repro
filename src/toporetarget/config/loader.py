@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import warnings
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from toporetarget.config.models import PathConfig
 _ENV_KEYS = {
     "storage_root": "REF2DEX_STORAGE_ROOT",
     "maniptrans_root": "MANIPTRANS_ROOT",
-    "artimano_asset_root": "ARTIMANO_ASSET_ROOT",
+    "artimano_asset_root": "TOPORETARGET_ARTIMANO_ASSET_ROOT",
     "paper_path": "TOPORETARGET_PAPER_PATH",
 }
 
@@ -47,7 +48,7 @@ def load_path_config(
     defaults: dict[str, Path] = {
         "storage_root": root / ".local" / "external" / "Ref2Dex_storage",
         "maniptrans_root": root / ".local" / "external" / "ManipTrans",
-        "artimano_asset_root": root / ".local" / "assets" / "artimano",
+        "artimano_asset_root": root / "third_party" / "robot_hands" / "artimano",
         "paper_path": root / "docs" / "TopoRetarget.pdf",
     }
     resolved: dict[str, Path] = {}
@@ -56,6 +57,14 @@ def load_path_config(
         value: object = supplied.get(key)
         if value is None:
             value = env.get(env_key)
+        if value is None and key == "artimano_asset_root":
+            value = env.get("ARTIMANO_ASSET_ROOT")
+            if value is not None:
+                warnings.warn(
+                    "ARTIMANO_ASSET_ROOT is deprecated; use TOPORETARGET_ARTIMANO_ASSET_ROOT",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
         if value is None:
             value = local_values.get(key)
         if value is not None and not isinstance(value, (str, Path)):

@@ -15,7 +15,7 @@ from toporetarget.cli.retarget import app as retarget_app
 from toporetarget.cli.robots import app as robots_app
 from toporetarget.cli.workflow import app as workflow_app
 from toporetarget.config.loader import load_path_config
-from toporetarget.paths.assets import AssetImportError, import_artimano
+from toporetarget.paths.assets import AssetImportError, import_artimano, vendor_artimano
 
 app = typer.Typer(
     name="toporetarget",
@@ -47,9 +47,10 @@ def import_artimano_command(
     force: bool = typer.Option(False, "--force", help="Replace an existing destination."),
 ) -> None:
     repo_root = _repo_root()
+    legacy_destination = destination or (repo_root / ".local" / "assets" / "artimano")
     config = load_path_config(
         repo_root,
-        overrides={"maniptrans_root": source_root, "artimano_asset_root": destination},
+        overrides={"maniptrans_root": source_root, "artimano_asset_root": legacy_destination},
     )
     try:
         result = import_artimano(
@@ -60,5 +61,36 @@ def import_artimano_command(
         )
     except (AssetImportError, OSError) as exc:
         typer.echo(f"Arti-MANO import failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(json.dumps(result.as_dict(), indent=2, sort_keys=True))
+
+
+@assets_app.command("vendor-artimano")
+def vendor_artimano_command(
+    source_root: Path | None = typer.Option(None, "--source-root", help="ManipTrans checkout."),
+    destination: Path | None = typer.Option(
+        None,
+        "--destination",
+        help="Tracked vendor destination; defaults to third_party/robot_hands/artimano.",
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate and report without copying."),
+    force: bool = typer.Option(False, "--force", help="Replace an existing destination."),
+    imported_at: str | None = typer.Option(
+        None, "--imported-at", help="Stable ISO timestamp for reproducible provenance metadata."
+    ),
+) -> None:
+    repo_root = _repo_root()
+    config = load_path_config(repo_root, overrides={"maniptrans_root": source_root})
+    target = destination or (repo_root / "third_party" / "robot_hands" / "artimano")
+    try:
+        result = vendor_artimano(
+            config.maniptrans_root,
+            target,
+            dry_run=dry_run,
+            force=force,
+            imported_at=imported_at,
+        )
+    except (AssetImportError, OSError) as exc:
+        typer.echo(f"Tracked Arti-MANO vendor failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
     typer.echo(json.dumps(result.as_dict(), indent=2, sort_keys=True))

@@ -1,5 +1,28 @@
 # Development log
 
+## 2026-07-27 -- F0 tracked robot assets and generic target-hand foundation
+
+Completed F0 on `main`. Arti-MANO is now a tracked vendor snapshot at
+`third_party/robot_hands/artimano/`, pinned to ManipTrans commit
+`a3d08cfe3c3a5868a7f057533bcaf759c5af4705`. The snapshot contains the two URDFs and 96 mesh
+files plus `LICENSE`, `SOURCE.yaml`, `NOTICE.md`, and a hash manifest; no ManipTrans Python source
+was copied. The source manifest hash is
+`1d14cce93e2ee09dedbfcda842b1d8aac29443f86b57a0a15f6289bd55e0f771`.
+
+Extended the data-driven target-hand contract with asset bundle, kinematic, semantic-anchor,
+surface, collision, and simulation specs. `RobotHandRegistry` is now the construction path for
+Arti-MANO RH/LH; the legacy `load_artimano_model` API delegates to it. Resolution records tracked,
+explicit override, or deprecated legacy fallback, and the new `robots resolve-assets` and
+`compare-assets` commands expose provenance and migration state. Anchor/Jacobian shape logic is
+profile-driven rather than assuming every hand has 21 points or 22 DoFs.
+
+The F0 audit compared the tracked and pre-existing local payloads and found exact topology, qpos
+order, limits, FK, anchors, Jacobians, mesh transforms, and source bytes for both sides. Historical
+Stage 7–10 reports/exports remain read-only and rebind through source hashes; no solver was invoked
+and no historical artifact was rewritten. Evidence is under `.local/reports/f0/` and remains
+untracked. Wuji Hand2, `develop/pene-loss`, SDF penetration loss, solver-profile changes, and RL
+remain outside F0.
+
 ## 2026-07-24 -- GRAB Arti-MANO quality A–E
 
 Implemented the frozen G1–G4 quality experiment. Stage A binds the prescribed

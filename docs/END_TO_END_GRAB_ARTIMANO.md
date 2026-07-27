@@ -31,7 +31,7 @@ PYTHONNOUSERSITE=1 ~/miniconda3/envs/topo-retarget/bin/python -m toporetarget \
   --hand right --robot artimano_rh \
   --auto-contact-window --window-length 60 \
   --mano-model-root /path/to/MANO \
-  --asset-root .local/assets/artimano \
+  --asset-root third_party/robot_hands/artimano \
   --run-root .local/runs/stage10 \
   --manual-acceptance .local/reports/stage9/manual_acceptance.json
 ```

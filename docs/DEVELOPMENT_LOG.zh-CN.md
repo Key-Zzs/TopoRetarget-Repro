@@ -1,5 +1,26 @@
 # 开发日志
 
+## 2026-07-27 -- F0 tracked 机器人手资产与通用 target-hand foundation
+
+在 `main` 完成 F0。Arti-MANO 现在是仓库内 tracked vendor snapshot，路径为
+`third_party/robot_hands/artimano/`，固定到 ManipTrans commit
+`a3d08cfe3c3a5868a7f057533bcaf759c5af4705`。snapshot 含两个 URDF、96 个 mesh 文件以及
+`LICENSE`、`SOURCE.yaml`、`NOTICE.md` 和 hash manifest；没有复制 ManipTrans Python 源码。
+source manifest hash 为
+`1d14cce93e2ee09dedbfcda842b1d8aac29443f86b57a0a15f6289bd55e0f771`。
+
+通用 target-hand contract 新增 asset bundle、kinematic、semantic-anchor、surface、collision 和
+simulation spec。Arti-MANO RH/LH 统一由 `RobotHandRegistry` 构造，旧的
+`load_artimano_model` API 继续保留并委托 registry。resolver 会记录 tracked、显式 override 或
+deprecated legacy fallback；新增 `robots resolve-assets` 与 `compare-assets` 命令展示 provenance
+和迁移状态。anchor/Jacobian shape 改为由 profile 驱动，不再假定所有手都是 21 点或 22 DoF。
+
+F0 audit 对两侧 tracked 与原有本地 payload 比较了 topology、qpos 顺序、limits、FK、anchors、
+Jacobians、mesh transforms 和 source bytes，结果均 exact。Stage 7–10 历史报告/导出保持只读，
+通过 source hash 重绑定；没有调用 solver，也没有重写历史 artifact。证据位于 `.local/reports/f0/`
+且保持 untracked。Wuji Hand2、`develop/pene-loss`、SDF penetration loss、solver profile 修改和
+RL 均不属于 F0。
+
 ## 2026-07-24 -- GRAB Arti-MANO 质量 A–E
 
 实现固定的 G1–G4 质量实验。阶段 A 冻结原生帧范围并验证 right-hand identity，复用匹配的

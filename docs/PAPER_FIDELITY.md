@@ -67,12 +67,24 @@ engineering base is URDF root `palm`; the paper's exact robot wrist-centered ori
 [`ARTIMANO_ADAPTER.md`](ARTIMANO_ADAPTER.md), and
 [`stages/STAGE_4_ARTIMANO_TARGET_HAND.md`](stages/STAGE_4_ARTIMANO_TARGET_HAND.md).
 
+## F0 tracked target-hand foundation
+
+F0 is repository infrastructure, not a new paper-method implementation. It moves the audited
+Arti-MANO RH/LH payload into `third_party/robot_hands/artimano/`, records upstream provenance and
+license evidence, and adds a data-driven `RobotHandSpec`/asset-bundle contract with registry
+resolution and compatibility checks. The tracked URDFs rebase mesh filenames only; the F0 reports
+record exact payload, topology, FK, anchor, Jacobian, and mesh-transform equality against the
+historical local tree. F0 does not change Equations 1–9, add Wuji, add a penetration loss, alter
+solver profiles, or create new Stage 10 artifacts. See [`ROBOT_HAND_TARGET_CONTRACT.md`](ROBOT_HAND_TARGET_CONTRACT.md),
+[`THIRD_PARTY_ASSET_POLICY.md`](THIRD_PARTY_ASSET_POLICY.md), and the ignored reports under
+`.local/reports/f0/`.
+
 ## 9. Stage 4 target-hand boundary
 
 Stage 4 implements repository infrastructure for `P^r(q)`: a generic YAML/URDF robot-hand
 specification, differentiable Torch FK, an independent NumPy reference path, explicit visual and
 collision geometry instances, and MediaPipe-21-compatible Arti-MANO RH/LH joint/link anchors.
-It is validated with synthetic URDF fixtures and the locally imported Arti-MANO assets. The paper
+It is validated with synthetic URDF fixtures and the tracked Arti-MANO vendor assets. The paper
 does not publish the target-hand anchors, qpos ordering, or exact robot wrist frame, so the adapter
 is `implemented_with_assumptions`; it does not implement source-to-robot qpos retargeting, Eq. 1-9,
 or optimization. Stage 6 adds a separately scoped surface-sampling, collision-query, and SDF

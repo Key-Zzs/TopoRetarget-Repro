@@ -18,5 +18,18 @@ def test_config_precedence(tmp_path: Path) -> None:
 
 def test_defaults_are_repository_relative_without_scanning(tmp_path: Path) -> None:
     config = load_path_config(tmp_path, environ={})
-    assert config.artimano_asset_root == tmp_path / ".local" / "assets" / "artimano"
+    assert config.artimano_asset_root == tmp_path / "third_party" / "robot_hands" / "artimano"
     assert config.paper_path == tmp_path / "docs" / "TopoRetarget.pdf"
+
+
+def test_tracked_asset_override_environment_name(tmp_path: Path) -> None:
+    config = load_path_config(
+        tmp_path,
+        environ={"TOPORETARGET_ARTIMANO_ASSET_ROOT": "/explicit/artimano"},
+    )
+    assert config.artimano_asset_root == Path("/explicit/artimano")
+
+
+def test_legacy_asset_override_environment_name_is_accepted(tmp_path: Path) -> None:
+    config = load_path_config(tmp_path, environ={"ARTIMANO_ASSET_ROOT": "/legacy/artimano"})
+    assert config.artimano_asset_root == Path("/legacy/artimano")

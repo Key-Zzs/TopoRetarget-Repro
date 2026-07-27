@@ -109,7 +109,7 @@ def _run_one_grab(
         "--mano-model-root",
         str(os.environ.get("MANO_MODEL_ROOT", "")),
         "--asset-root",
-        str(repo_root / ".local/assets/artimano"),
+        str(repo_root / "third_party/robot_hands/artimano"),
         "--refinement-solver-profile",
         profile if profile != "warm" else "scipy_slsqp_active_set_v1",
         "--run-root",

@@ -1,0 +1,209 @@
+asset_id: artimano
+upstream_repository: https://github.com/ManipTrans/ManipTrans.git
+upstream_commit: a3d08cfe3c3a5868a7f057533bcaf759c5af4705
+upstream_path: maniptrans_envs/assets/mano_urdf
+license: GPL-3.0 (upstream root LICENSE; no separate asset license found)
+imported_at: '2026-07-27T19:00:00+08:00'
+included_paths:
+- lh_mano.urdf
+- lh_urdf_meshes/index1_collision.obj
+- lh_urdf_meshes/index1_vis.obj
+- lh_urdf_meshes/index2_collision.obj
+- lh_urdf_meshes/index2_vis.obj
+- lh_urdf_meshes/index3_collision.obj
+- lh_urdf_meshes/index3_vis.obj
+- lh_urdf_meshes/middle1_collision.obj
+- lh_urdf_meshes/middle1_vis.obj
+- lh_urdf_meshes/middle2_collision.obj
+- lh_urdf_meshes/middle2_vis.obj
+- lh_urdf_meshes/middle3_collision.obj
+- lh_urdf_meshes/middle3_vis.obj
+- lh_urdf_meshes/palm_collision.obj
+- lh_urdf_meshes/palm_vis.obj
+- lh_urdf_meshes/pinky1_collision.obj
+- lh_urdf_meshes/pinky1_vis.obj
+- lh_urdf_meshes/pinky2_collision.obj
+- lh_urdf_meshes/pinky2_vis.obj
+- lh_urdf_meshes/pinky3_collision.obj
+- lh_urdf_meshes/pinky3_vis.obj
+- lh_urdf_meshes/ring1_collision.obj
+- lh_urdf_meshes/ring1_vis.obj
+- lh_urdf_meshes/ring2_collision.obj
+- lh_urdf_meshes/ring2_vis.obj
+- lh_urdf_meshes/ring3_collision.obj
+- lh_urdf_meshes/ring3_vis.obj
+- lh_urdf_meshes/thumb1_collision.obj
+- lh_urdf_meshes/thumb1_vis.obj
+- lh_urdf_meshes/thumb2_collision.obj
+- lh_urdf_meshes/thumb2_vis.obj
+- lh_urdf_meshes/thumb3_collision.obj
+- lh_urdf_meshes/thumb3_vis.obj
+- lh_urdf_meshes_visonly/index1_vis.obj
+- lh_urdf_meshes_visonly/index2_vis.obj
+- lh_urdf_meshes_visonly/index3_vis.obj
+- lh_urdf_meshes_visonly/middle1_vis.obj
+- lh_urdf_meshes_visonly/middle2_vis.obj
+- lh_urdf_meshes_visonly/middle3_vis.obj
+- lh_urdf_meshes_visonly/palm_vis.obj
+- lh_urdf_meshes_visonly/pinky1_vis.obj
+- lh_urdf_meshes_visonly/pinky2_vis.obj
+- lh_urdf_meshes_visonly/pinky3_vis.obj
+- lh_urdf_meshes_visonly/ring1_vis.obj
+- lh_urdf_meshes_visonly/ring2_vis.obj
+- lh_urdf_meshes_visonly/ring3_vis.obj
+- lh_urdf_meshes_visonly/thumb1_vis.obj
+- lh_urdf_meshes_visonly/thumb2_vis.obj
+- lh_urdf_meshes_visonly/thumb3_vis.obj
+- rh_mano.urdf
+- rh_urdf_meshes/index1_collision.obj
+- rh_urdf_meshes/index1_vis.obj
+- rh_urdf_meshes/index2_collision.obj
+- rh_urdf_meshes/index2_vis.obj
+- rh_urdf_meshes/index3_collision.obj
+- rh_urdf_meshes/index3_vis.obj
+- rh_urdf_meshes/middle1_collision.obj
+- rh_urdf_meshes/middle1_vis.obj
+- rh_urdf_meshes/middle2_collision.obj
+- rh_urdf_meshes/middle2_vis.obj
+- rh_urdf_meshes/middle3_collision.obj
+- rh_urdf_meshes/middle3_vis.obj
+- rh_urdf_meshes/palm_collision.obj
+- rh_urdf_meshes/palm_vis.obj
+- rh_urdf_meshes/pinky1_collision.obj
+- rh_urdf_meshes/pinky1_vis.obj
+- rh_urdf_meshes/pinky2_collision.obj
+- rh_urdf_meshes/pinky2_vis.obj
+- rh_urdf_meshes/pinky3_collision.obj
+- rh_urdf_meshes/pinky3_vis.obj
+- rh_urdf_meshes/ring1_collision.obj
+- rh_urdf_meshes/ring1_vis.obj
+- rh_urdf_meshes/ring2_collision.obj
+- rh_urdf_meshes/ring2_vis.obj
+- rh_urdf_meshes/ring3_collision.obj
+- rh_urdf_meshes/ring3_vis.obj
+- rh_urdf_meshes/thumb1_collision.obj
+- rh_urdf_meshes/thumb1_vis.obj
+- rh_urdf_meshes/thumb2_collision.obj
+- rh_urdf_meshes/thumb2_vis.obj
+- rh_urdf_meshes/thumb3_collision.obj
+- rh_urdf_meshes/thumb3_vis.obj
+- rh_urdf_meshes_visonly/index1_vis.obj
+- rh_urdf_meshes_visonly/index2_vis.obj
+- rh_urdf_meshes_visonly/index3_vis.obj
+- rh_urdf_meshes_visonly/middle1_vis.obj
+- rh_urdf_meshes_visonly/middle2_vis.obj
+- rh_urdf_meshes_visonly/middle3_vis.obj
+- rh_urdf_meshes_visonly/palm_vis.obj
+- rh_urdf_meshes_visonly/pinky1_vis.obj
+- rh_urdf_meshes_visonly/pinky2_vis.obj
+- rh_urdf_meshes_visonly/pinky3_vis.obj
+- rh_urdf_meshes_visonly/ring1_vis.obj
+- rh_urdf_meshes_visonly/ring2_vis.obj
+- rh_urdf_meshes_visonly/ring3_vis.obj
+- rh_urdf_meshes_visonly/thumb1_vis.obj
+- rh_urdf_meshes_visonly/thumb2_vis.obj
+- rh_urdf_meshes_visonly/thumb3_vis.obj
+excluded_paths:
+- ManipTrans Python source and runtime environments
+per_file_sha256:
+  lh_mano.urdf: 472b84cfb2197ef7f818a66b62539b093f3fd5c93fd0fa8e5f8931d689eccd29
+  lh_urdf_meshes/index1_collision.obj: 2120e78a114f03e0ab3f546f62bb714516f41c4d871a673c359b235b34223a07
+  lh_urdf_meshes/index1_vis.obj: 2120e78a114f03e0ab3f546f62bb714516f41c4d871a673c359b235b34223a07
+  lh_urdf_meshes/index2_collision.obj: 81165804295781a30bb56a6337fbe3ca7efe12d94a64d2819158d3dbc9800217
+  lh_urdf_meshes/index2_vis.obj: 81165804295781a30bb56a6337fbe3ca7efe12d94a64d2819158d3dbc9800217
+  lh_urdf_meshes/index3_collision.obj: 3dc6c84348e788bdb2a56008891a04ebf34fee35732c38587a0e9c9db3fb8b93
+  lh_urdf_meshes/index3_vis.obj: 3dc6c84348e788bdb2a56008891a04ebf34fee35732c38587a0e9c9db3fb8b93
+  lh_urdf_meshes/middle1_collision.obj: e84883948de364d18c235a6f4affb724dba21ca8ac9146e1825f88bbf2ea0004
+  lh_urdf_meshes/middle1_vis.obj: ed2f5482189910a5c4fdc48f2e19d1b044cce9fcbaa61573e0a6f9da29a28235
+  lh_urdf_meshes/middle2_collision.obj: bd164d957492915a0a7a2c6a0ac44c7077f707af77b1f6425b611206f54ee86d
+  lh_urdf_meshes/middle2_vis.obj: bd164d957492915a0a7a2c6a0ac44c7077f707af77b1f6425b611206f54ee86d
+  lh_urdf_meshes/middle3_collision.obj: 35ad2d496cd098ab11b6eda01aa03347615d8d5c97ac3133658d2ee5bced1213
+  lh_urdf_meshes/middle3_vis.obj: 35ad2d496cd098ab11b6eda01aa03347615d8d5c97ac3133658d2ee5bced1213
+  lh_urdf_meshes/palm_collision.obj: afbacfeb4514797b34bcfcc8a328bdfcb74e23db95ab71ff95e9c0aaba7b9e66
+  lh_urdf_meshes/palm_vis.obj: afbacfeb4514797b34bcfcc8a328bdfcb74e23db95ab71ff95e9c0aaba7b9e66
+  lh_urdf_meshes/pinky1_collision.obj: 33702def84b9490780797a785405e11d71ca3e0f43129dc2d140812dba3c68b9
+  lh_urdf_meshes/pinky1_vis.obj: e80dae3bc7b36520a6381f78b3a1c4631031164c86cb581256c3629821431b50
+  lh_urdf_meshes/pinky2_collision.obj: a08befac7c854f72a93ddb153ebad561b0f5681cce6320972494fbbc64499628
+  lh_urdf_meshes/pinky2_vis.obj: a08befac7c854f72a93ddb153ebad561b0f5681cce6320972494fbbc64499628
+  lh_urdf_meshes/pinky3_collision.obj: f0985d15089c55fa0b0b7273cde61cfebebc1ec04a38dbdf72c74d61e60e9128
+  lh_urdf_meshes/pinky3_vis.obj: f0985d15089c55fa0b0b7273cde61cfebebc1ec04a38dbdf72c74d61e60e9128
+  lh_urdf_meshes/ring1_collision.obj: a2f657e474d55485b54c730a814f6497554c4cf3e0d92340e14d1b90e2a5660a
+  lh_urdf_meshes/ring1_vis.obj: 89fe64f5a58996cb5df96c1950892db084dc117b76ec34149b482c4f475de963
+  lh_urdf_meshes/ring2_collision.obj: 2931932527f942ba88e2e93988ff6b71e2666fb8ab41a200e33e3c581c60b213
+  lh_urdf_meshes/ring2_vis.obj: 2931932527f942ba88e2e93988ff6b71e2666fb8ab41a200e33e3c581c60b213
+  lh_urdf_meshes/ring3_collision.obj: 69f4719823fd8ef53a9609ad48eff6ebc1599673e8025abf29b9efa55de78eaa
+  lh_urdf_meshes/ring3_vis.obj: 69f4719823fd8ef53a9609ad48eff6ebc1599673e8025abf29b9efa55de78eaa
+  lh_urdf_meshes/thumb1_collision.obj: c63429778e1b8942827c73efafb735efe4a4681426c5c007515cff85a8c39b0f
+  lh_urdf_meshes/thumb1_vis.obj: c63429778e1b8942827c73efafb735efe4a4681426c5c007515cff85a8c39b0f
+  lh_urdf_meshes/thumb2_collision.obj: db7a63c771e185ca4339f63a56f06d2bf2a463b9d6d9a145e852c9fcdde2daa0
+  lh_urdf_meshes/thumb2_vis.obj: db7a63c771e185ca4339f63a56f06d2bf2a463b9d6d9a145e852c9fcdde2daa0
+  lh_urdf_meshes/thumb3_collision.obj: 2226b2afb602121fd6f9f8098a75297070398ab7a8aef640049b889f398b2891
+  lh_urdf_meshes/thumb3_vis.obj: 2226b2afb602121fd6f9f8098a75297070398ab7a8aef640049b889f398b2891
+  lh_urdf_meshes_visonly/index1_vis.obj: 597b21d58fe0863b9a611e922b360ebffcf52491269d40879b654d24cbfc789c
+  lh_urdf_meshes_visonly/index2_vis.obj: 9d92c9f419bb2ec6ebbd08c4d8f7eb7599df49c6ab89ddfdc888fe58807c7375
+  lh_urdf_meshes_visonly/index3_vis.obj: 91efb7a5c791766509ec09927236502ca7a77e47b75fb1775990cf32b125e808
+  lh_urdf_meshes_visonly/middle1_vis.obj: 7403330ce14c1e08ae0ac7b81d822e4d89746debdda05aa926d5ae6cbdbb7be0
+  lh_urdf_meshes_visonly/middle2_vis.obj: 299cb85bc0d643a6e7a7dfa4614bb61f609bed52c5d414b0cde5fe95320cbde7
+  lh_urdf_meshes_visonly/middle3_vis.obj: 8d42efd81da49480341645d01c50ff8438e10af3962704660bf5bb63995996cd
+  lh_urdf_meshes_visonly/palm_vis.obj: 8ca06eb530b08e6ec89d49d62f513e410f2b20499e26f94e0007dcdd6d667674
+  lh_urdf_meshes_visonly/pinky1_vis.obj: 71031d3234e79bf8b2d00579978cd0efcfe19f00b0317ed86cd27776bdda241d
+  lh_urdf_meshes_visonly/pinky2_vis.obj: 24590bb94c98a103b661bfdc3b85692e82dc1dd793476c5b6bf201c661905660
+  lh_urdf_meshes_visonly/pinky3_vis.obj: 0d8c16612b3805fbf44a07a8336c5692944b191839ad19df48153118c882bbd6
+  lh_urdf_meshes_visonly/ring1_vis.obj: f8e41f6671383b5d09e0071deaf93a5efe0a298200f0457c10e24deb7de04a01
+  lh_urdf_meshes_visonly/ring2_vis.obj: de3b86497a45120d0d8f7eeafd4bbff57b85ff7b56fe29f7cfc91a0919649316
+  lh_urdf_meshes_visonly/ring3_vis.obj: 030794f5c7070b628d19f69b78c9eb52052d020ff5a7e3b2583c38aaedd29e63
+  lh_urdf_meshes_visonly/thumb1_vis.obj: c5c782fe16784467b76dc4af90ccb1db86a490efc453f6579b7298c47448c369
+  lh_urdf_meshes_visonly/thumb2_vis.obj: 1384754cfce36e5d7439997106ce1db90a9c91af23d0406ac4b3844cfe06f4e3
+  lh_urdf_meshes_visonly/thumb3_vis.obj: 8894113edefd406e68c19193246ef7cdf4ed0df5e0fc164feb8c7b2f4ddc7b4c
+  rh_mano.urdf: 21800ccf73b980ac7927b97d12921ce5498ac5c1579bd65e84d269a01ef5b660
+  rh_urdf_meshes/index1_collision.obj: a911ee18eb9c64590a9b144cc72aba9981b6f2867e8b80e16bb8398763240abf
+  rh_urdf_meshes/index1_vis.obj: a911ee18eb9c64590a9b144cc72aba9981b6f2867e8b80e16bb8398763240abf
+  rh_urdf_meshes/index2_collision.obj: bfcf6293ed0c2e08166959d748e4a2f1d0ca3036a055149edb35ebddff69f4c0
+  rh_urdf_meshes/index2_vis.obj: bfcf6293ed0c2e08166959d748e4a2f1d0ca3036a055149edb35ebddff69f4c0
+  rh_urdf_meshes/index3_collision.obj: 1e7ff86ab723d40ec7561954ac162aab87c7486931f49409c4073ae66bb69a31
+  rh_urdf_meshes/index3_vis.obj: 1e7ff86ab723d40ec7561954ac162aab87c7486931f49409c4073ae66bb69a31
+  rh_urdf_meshes/middle1_collision.obj: 93edc3fc1583e1a03470a80ae7e356b8a80b9ee527aa094793ad269572f20727
+  rh_urdf_meshes/middle1_vis.obj: 97b8f7d481f618dfa77f0bb3ddbe0c6ea9942f7a52fa30d1f9b861355448b015
+  rh_urdf_meshes/middle2_collision.obj: 956e112a1d5952164ddba0d2c954a9a2d14acf949bc81eb2bd8a508df4293f7d
+  rh_urdf_meshes/middle2_vis.obj: 956e112a1d5952164ddba0d2c954a9a2d14acf949bc81eb2bd8a508df4293f7d
+  rh_urdf_meshes/middle3_collision.obj: 1bf71d2527d1abe84bec33d9716256cb9dbfd2e8a0bde979963ea1c2371b4265
+  rh_urdf_meshes/middle3_vis.obj: 1bf71d2527d1abe84bec33d9716256cb9dbfd2e8a0bde979963ea1c2371b4265
+  rh_urdf_meshes/palm_collision.obj: 5b08b662ae6f3a7559f3f72734137023a6d1495b2aa4bce7d5664ee6e2078fd3
+  rh_urdf_meshes/palm_vis.obj: 5b08b662ae6f3a7559f3f72734137023a6d1495b2aa4bce7d5664ee6e2078fd3
+  rh_urdf_meshes/pinky1_collision.obj: 8af7eb8c047aefd72f2053c8e67d7d0e210feaf43734570b1a960364d0520437
+  rh_urdf_meshes/pinky1_vis.obj: 8ca03e8138d98901cc400fd9d6b1ad4ef12f0a33a671abf871385326b3df0519
+  rh_urdf_meshes/pinky2_collision.obj: 43506d8cbb5bbffc6f5a4ec23fad2bbfcc916e1bb202cc1f5ab7af928a20045b
+  rh_urdf_meshes/pinky2_vis.obj: 43506d8cbb5bbffc6f5a4ec23fad2bbfcc916e1bb202cc1f5ab7af928a20045b
+  rh_urdf_meshes/pinky3_collision.obj: 395f761daf229e3d78a85ae9dfc3dff357ae87be6f1f1b37ad8f371cade0a1bd
+  rh_urdf_meshes/pinky3_vis.obj: 395f761daf229e3d78a85ae9dfc3dff357ae87be6f1f1b37ad8f371cade0a1bd
+  rh_urdf_meshes/ring1_collision.obj: b84966fe528dd9aaead4755d8015d82bb6b96aaef0581eb573029147bb411d88
+  rh_urdf_meshes/ring1_vis.obj: bd2a2f500440e4f4f561ba2058f6a47cf1713b3a43109215a01092765d6818b6
+  rh_urdf_meshes/ring2_collision.obj: bade13de13701089f2ceced18396fb1a51aef4c6aaf799709d8dc934912eec25
+  rh_urdf_meshes/ring2_vis.obj: bade13de13701089f2ceced18396fb1a51aef4c6aaf799709d8dc934912eec25
+  rh_urdf_meshes/ring3_collision.obj: 359691dba26946b039c900387b94df8b62424071a804ddce43394ee96b48d91b
+  rh_urdf_meshes/ring3_vis.obj: 359691dba26946b039c900387b94df8b62424071a804ddce43394ee96b48d91b
+  rh_urdf_meshes/thumb1_collision.obj: 90df8f9c75bbbbb05c5820e578c146309c9a67a8b670e65fa2fb924930d6092f
+  rh_urdf_meshes/thumb1_vis.obj: 90df8f9c75bbbbb05c5820e578c146309c9a67a8b670e65fa2fb924930d6092f
+  rh_urdf_meshes/thumb2_collision.obj: 28e3f9e0dd12b5a6df7c6079a236cd6b5c3523f87536b89506a408fb07c02110
+  rh_urdf_meshes/thumb2_vis.obj: 28e3f9e0dd12b5a6df7c6079a236cd6b5c3523f87536b89506a408fb07c02110
+  rh_urdf_meshes/thumb3_collision.obj: 2518cbbdab160b4a4e62fc047b9d918532ca148734eba052c30baae41b16017b
+  rh_urdf_meshes/thumb3_vis.obj: 2518cbbdab160b4a4e62fc047b9d918532ca148734eba052c30baae41b16017b
+  rh_urdf_meshes_visonly/index1_vis.obj: c3a4455eba4791ae20b14203d7d272152959ee7b93f28998590690a9ef006ceb
+  rh_urdf_meshes_visonly/index2_vis.obj: 9af0bcd030d1ffb2de6db061ef74b384e44ef9ed1342d85a598ca67b2259d386
+  rh_urdf_meshes_visonly/index3_vis.obj: ef530e13272cfadd81621399364fe4d1a2a6891ca64844faf634ce18b7158120
+  rh_urdf_meshes_visonly/middle1_vis.obj: 8a7cb36e945b924b4cd2760eff12b49fe71bccf0bc2f2fd23ff6db40d8d45e3a
+  rh_urdf_meshes_visonly/middle2_vis.obj: 52d41d1b5e2dbf10a26c0dc233643a2ce63d319414e5f9a937e7c9380243bb5c
+  rh_urdf_meshes_visonly/middle3_vis.obj: 6789b3004e83716b0e0fec2dd1ffbc1c8ce934ac3f81ba651a50fc6f0c67a3a9
+  rh_urdf_meshes_visonly/palm_vis.obj: 518087063c1037630d1a4106d6795d1c1950b1ddf36dd8e084265ebdd1bf636b
+  rh_urdf_meshes_visonly/pinky1_vis.obj: fdb4918e745cc6a26e3bd656d5f2c647b6429049be96b53f59cffaba941f7f27
+  rh_urdf_meshes_visonly/pinky2_vis.obj: b0a7a83383d873f09e13704ae4bd105bf41e8a33cb939c016f15715555e9fef3
+  rh_urdf_meshes_visonly/pinky3_vis.obj: 6f72230280ee873bf68d874c1701c4945b4f4f79fb969af076897ec203c810f0
+  rh_urdf_meshes_visonly/ring1_vis.obj: 120ad31c2c6d2f9440ac4d4e4c99b26e75e7b81445d02b600191fc6197278720
+  rh_urdf_meshes_visonly/ring2_vis.obj: 11f82b6ad6d9d48a1938540788a462fe9dd16e2ab23403a1e7b58280f0c84623
+  rh_urdf_meshes_visonly/ring3_vis.obj: 710332001b9f743f4dd752fae34cbe54341e342d3e660aac4992dbb46cc18fca
+  rh_urdf_meshes_visonly/thumb1_vis.obj: 1fc31307d30b2de36e5f9283714dadc26e99311b547ee83300f1a2475b6b32c7
+  rh_urdf_meshes_visonly/thumb2_vis.obj: b5e4257f7fd63d0f4626112fae9d32aaa28bd6d9fceb752275230324cb784ead
+  rh_urdf_meshes_visonly/thumb3_vis.obj: f39b74e6ec1c97aa427f471d4bad408df485d775251e149cbb01e06a2d09d3c4
+manifest_sha256: 1d14cce93e2ee09dedbfcda842b1d8aac29443f86b57a0a15f6289bd55e0f771
+import_tool_version: toporetarget.vendor_robot_hand_assets.v1
+layout: URDF references are rebased to ../meshes without changing geometry or kinematics

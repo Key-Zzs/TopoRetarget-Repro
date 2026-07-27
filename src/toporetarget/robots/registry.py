@@ -8,7 +8,11 @@ from typing import Any
 
 import yaml
 
-from toporetarget.config.loader import load_path_config
+from toporetarget.paths.assets import (
+    AssetResolution,
+    check_artimano_assets,
+    resolve_artimano_asset,
+)
 
 from .base import RobotHandModel
 from .spec import RobotHandSpec
@@ -56,24 +60,53 @@ class RobotHandRegistry:
                 return spec
         raise KeyError(f"unknown robot {name!r}; choose from {', '.join(self.names())}")
 
-    def _asset_root(self, spec: RobotHandSpec, override: str | Path | None) -> Path:
-        if override is not None:
-            return Path(override).expanduser().resolve()
-        return load_path_config(self.repo_root).artimano_asset_root
+    def _asset_resolution(
+        self, spec: RobotHandSpec, override: str | Path | None
+    ) -> AssetResolution:
+        if spec.asset_id == "artimano":
+            return resolve_artimano_asset(self.repo_root, asset_root=override)
+        root = (
+            Path(override).expanduser().resolve()
+            if override is not None
+            else self.repo_root / "third_party" / "robot_hands" / spec.asset_id
+        )
+        return AssetResolution(
+            spec.asset_id,
+            "override" if override is not None else "tracked",
+            root,
+            override is not None,
+            False,
+        )
 
     def availability(
         self, spec: RobotHandSpec, *, asset_root: str | Path | None = None
     ) -> dict[str, Any]:
-        root = self._asset_root(spec, asset_root)
-        urdf = root / spec.urdf_relative_path
+        resolution = self._asset_resolution(spec, asset_root)
+        root = resolution.root
+        urdf = self._find_urdf(root, spec)
         manifest = root / "asset_manifest.json"
         return {
             "asset_root": str(root),
+            "resolved_asset_source": resolution.source,
+            "resolved_asset_root": str(root),
+            "legacy_fallback_used": resolution.legacy_fallback_used,
+            "warnings": list(resolution.warnings),
+            "source_commit": resolution.as_dict().get("source_commit"),
+            "license": resolution.as_dict().get("license"),
+            "asset_manifest_hash": resolution.asset_manifest_hash,
             "urdf": spec.urdf_relative_path,
-            "urdf_exists": urdf.is_file(),
+            "resolved_urdf": None if urdf is None else str(urdf),
+            "urdf_exists": urdf is not None and urdf.is_file(),
             "manifest_exists": manifest.is_file(),
-            "available": urdf.is_file() and manifest.is_file(),
+            "available": urdf is not None and urdf.is_file() and manifest.is_file(),
         }
+
+    @staticmethod
+    def _find_urdf(root: Path, spec: RobotHandSpec) -> Path | None:
+        candidates = [root / spec.urdf_relative_path]
+        # Legacy .local imports kept the source-root flat layout.
+        candidates.append(root / Path(spec.urdf_relative_path).name)
+        return next((candidate for candidate in candidates if candidate.is_file()), None)
 
     def list(self, *, asset_root: str | Path | None = None) -> list[dict[str, Any]]:
         result = []
@@ -93,17 +126,18 @@ class RobotHandRegistry:
 
     def load(self, name: str, *, asset_root: str | Path | None = None) -> RobotHandModel:
         spec = self.get_spec(name)
-        root = self._asset_root(spec, asset_root)
+        resolution = self._asset_resolution(spec, asset_root)
+        root = resolution.root
         if spec.asset_id == "artimano":
-            from toporetarget.paths.assets import check_artimano_assets
-
             asset_check = check_artimano_assets(root)
             if asset_check.status != "ok":
                 raise RuntimeError(
                     f"{spec.name}: asset manifest check failed: {asset_check.message}; "
                     f"missing={asset_check.missing_files}, changed={asset_check.changed_files}"
                 )
-        urdf_path = root / spec.urdf_relative_path
+        urdf_path = self._find_urdf(root, spec)
+        if urdf_path is None:
+            raise FileNotFoundError(f"{spec.name}: URDF not found below {root}")
         urdf = parse_urdf(urdf_path, asset_root=root)
         manifest_path = root / "asset_manifest.json"
         manifest = None
@@ -113,7 +147,12 @@ class RobotHandRegistry:
                 raise ValueError(f"asset manifest must be a mapping: {manifest_path}")
             manifest = loaded
         return RobotHandModel(
-            spec, urdf, asset_root=root, asset_manifest=manifest, config_root=self.config_root
+            spec,
+            urdf,
+            asset_root=root,
+            asset_manifest=manifest,
+            config_root=self.config_root,
+            asset_resolution=resolution,
         )
 
 
