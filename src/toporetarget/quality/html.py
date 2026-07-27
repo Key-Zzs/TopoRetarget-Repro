@@ -134,7 +134,9 @@ def _robot_visual_payload(model: Any, qpos: np.ndarray, base: np.ndarray) -> dic
             instances = model.visual_geometry_instances(qpos[frame], base[frame])
             if len(instances) != len(first_instances):
                 raise ValueError("robot visual geometry topology changed across frames")
-            transforms.append(np.asarray(instances[instance_index].world_transform, dtype=np.float64))
+            transforms.append(
+                np.asarray(instances[instance_index].world_transform, dtype=np.float64)
+            )
         parts.append(
             {
                 "name": f"{first.link_name}:{instance_index}",
@@ -283,10 +285,15 @@ def render_clip_html(
             object_poses=object_poses,
         )
         payload["label"] = label
-        payload.update(_PROFILE_SEMANTICS.get(profile_id, {
-            "role": "quality profile",
-            "description": "质量实验 profile；具体 artifact 见 provenance。",
-        }))
+        payload.update(
+            _PROFILE_SEMANTICS.get(
+                profile_id,
+                {
+                    "role": "quality profile",
+                    "description": "质量实验 profile；具体 artifact 见 provenance。",
+                },
+            )
+        )
         payload["paper_method"] = profile_id.startswith(("paper", "scipy"))
         payload["paper_external_extension"] = profile_id.startswith(
             ("morphology", "contact", "combined")
@@ -378,18 +385,18 @@ def render_clip_html(
 def smoke_html(path: str | Path, *, expected_frames: int = 60, profiles: int = 1) -> dict[str, Any]:
     source = Path(path).read_text(encoding="utf-8")
     required = {
-        "id=\"frame\"": "frame slider",
-        "id=\"play\"": "play/pause",
+        'id="frame"': "frame slider",
+        'id="play"': "play/pause",
         "profileSelect": "profile selector",
         "meshSource": "mesh layer toggles",
         "recommended_profile": "recommended profile",
-        "id=\"metrics\"": "metrics panel",
+        'id="metrics"': "metrics panel",
         "source_mesh": "source mesh payload",
         "object_mesh": "object mesh payload",
         "drawMesh(": "triangle renderer",
         "DATA.bounds": "adaptive bounds",
         "pointerdown": "orbit interaction",
-        "id=\"mode\"": "visualization modes",
+        'id="mode"': "visualization modes",
         "graphSource": "graph layers",
         "edgeThreshold": "edge filters",
         "residualTarget": "residual diagnostic",
