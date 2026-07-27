@@ -107,6 +107,34 @@ def _decode_bytes(value: Any) -> str:
     return str(value)
 
 
+def _load_quality_extension(path: Path | None) -> dict[str, Any] | None:
+    """Load a versioned paper-external quality objective specification."""
+
+    if path is None:
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    kind = str(payload.get("kind", ""))
+    if kind == "morphology_position_prior":
+        from toporetarget.quality.morphology import load_morphology_objective_extension
+
+        return load_morphology_objective_extension(
+            payload["target_artifact"],
+            profile_id=str(payload["profile_id"]),
+            lambda_morph=float(payload["lambda_morph"]),
+        )
+    if kind == "contact_final":
+        from toporetarget.quality.contact import load_contact_objective_extension
+
+        return load_contact_objective_extension(
+            payload["target_artifact"],
+            payload["surface_profile"],
+            profile_id=str(payload["profile_id"]),
+            lambda_contact_pos=float(payload["lambda_contact_pos"]),
+            lambda_contact_dir=float(payload["lambda_contact_dir"]),
+        )
+    raise ValueError(f"unsupported quality extension specification: {path}")
+
+
 def _resolve_hand(sequence: Any, hand: str) -> str:
     if hand in {item.hand_id for item in sequence.hands}:
         return hand
@@ -996,6 +1024,7 @@ def _refinement_input_signature(
     robot: str,
     start_frame: int,
     end_frame: int,
+    geometry_signature: str | None = None,
 ) -> str:
     import hashlib
 
@@ -1012,6 +1041,7 @@ def _refinement_input_signature(
         "start_frame": int(start_frame),
         "end_frame": int(end_frame),
         "frame_range": [int(start_frame), int(end_frame)],
+        "geometry_signature": geometry_signature,
     }
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
@@ -1080,6 +1110,7 @@ def _checkpoint_manifest(
             "source_canonical_hash": warm.metadata.get("source_cache_hash"),
             "object_id": graph.metadata.get("object_id"),
             "object_mesh_hash": resources.mesh_hash,
+            "geometry_policy": resources.geometry_policy,
             "graph_artifact_hash": interaction_artifact_hash(graph.source_path)
             if graph.source_path
             else None,
@@ -1167,6 +1198,7 @@ def _run_checkpoint_refinement(
     progress_json: Path | None,
     progress_log: Path | None,
     force: bool,
+    quality_extension_path: Path | None = None,
 ) -> dict[str, Any]:
     sequence, warm, graph, model, surface, selected_samples = _refinement_components(
         canonical, warm_start, graph_path, robot, collision_samples, asset_root
@@ -1182,16 +1214,27 @@ def _run_checkpoint_refinement(
     query = CollisionQueryProfile.load(query_profile_id)
     coordinate = RefinementCoordinateProfile.load(coordinate_profile_id)
     paper = PaperRefinementWeights.load()
+    quality_extension = _load_quality_extension(quality_extension_path)
     resources = prepare_refinement_resources(
         sequence,
         graph,
         solver,
         sdf_tree_leaf_size=execution.sdf_tree_leaf_size,
+        geometry_artifact_root=checkpoint_root.parents[3] / "geometry",
     )
     source_frame_offset = _source_frame_offset(canonical)
     signature = _refinement_input_signature(
-        canonical, warm_start, graph_path, sample_path, robot, start_frame, stop
+        canonical,
+        warm_start,
+        graph_path,
+        sample_path,
+        robot,
+        start_frame,
+        stop,
+        geometry_signature=str(resources.geometry_policy["cache_signature"]),
     )
+    if quality_extension_path is not None:
+        signature = f"{signature}:{sha256_file(quality_extension_path)}"
     manifest = _checkpoint_manifest(
         sequence=sequence,
         warm=warm,
@@ -1214,6 +1257,24 @@ def _run_checkpoint_refinement(
         checkpoint_root=checkpoint_root,
         source_frame_offset=source_frame_offset,
     )
+    manifest["quality_extension"] = (
+        None
+        if quality_extension is None
+        else {
+            key: value
+            for key, value in quality_extension.items()
+            if key
+            not in {
+                "morphology_target_keypoints_scene",
+                "contact_target_relative",
+                "contact_target_direction",
+                "contact_active",
+                "contact_weights",
+                "contact_regions",
+            }
+        }
+    )
+    manifest["final_artifact_metadata"]["quality_extension"] = manifest["quality_extension"]
     store = CheckpointStore.open(checkpoint_root, manifest=manifest, resume=resume)
     assert store.manifest is not None
     manifest = dict(store.manifest)
@@ -1289,6 +1350,7 @@ def _run_checkpoint_refinement(
             frame_callback=on_frame,
             source_frame_offset=source_frame_offset,
             execution_profile=execution,
+            quality_extension=quality_extension,
         )
         previous = (
             np.asarray(trajectory.arrays["base_pose_scene"][-1], dtype=np.float64),
@@ -1807,6 +1869,7 @@ def refine_command(
     output: Path = typer.Option(..., "--output"),
     asset_root: Path | None = typer.Option(None, "--asset-root"),
     force: bool = typer.Option(False, "--force"),
+    quality_extension: Path | None = typer.Option(None, "--quality-extension"),
 ) -> None:
     try:
         if checkpoint_root is not None:
@@ -1831,6 +1894,7 @@ def refine_command(
                 progress_json=progress_json,
                 progress_log=progress_log,
                 force=force,
+                quality_extension_path=quality_extension,
             )
             _json_write(value, None)
             return
@@ -1838,6 +1902,7 @@ def refine_command(
             canonical, warm_start, graph, robot, collision_samples, asset_root
         )
         execution = RefinementExecutionProfile.load(execution_profile)
+        quality_extension_spec = _load_quality_extension(quality_extension)
         initial_previous = None
         if resume_from is not None:
             previous = load_final_trajectory(resume_from)
@@ -1865,6 +1930,7 @@ def refine_command(
             graph_artifact_hash=interaction_artifact_hash(graph),
             source_frame_offset=_source_frame_offset(canonical),
             execution_profile=execution,
+            quality_extension=quality_extension_spec,
         )
         trajectory.metadata["artifact_hash"] = final_artifact_hash(trajectory)
         save_final_trajectory(trajectory, output, force=force)

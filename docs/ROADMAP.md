@@ -14,10 +14,10 @@
 | 9 | Constrained final optimization with slack variables | Eq. 8-9 implementation, QuerySets/slack, RH/LH bounded artifacts, independent audit | Constraint, determinism, source-integrity, and bounded 60-frame acceptance pass; assumptions remain explicit | complete (bounded, with explicit assumptions) |
 | 10 | GRAB → Arti-MANO end-to-end retargeting | Resumable bounded DAG, contact-window selector, provenance, review, reference export | Implementation and focused tests pass; accepted bounded contact-rich reference-runtime run with human acceptance | implemented; bounded reference-runtime accepted; preferred performance, production, and real-time scopes open |
 | Q1–Q3 | Multi-dataset interaction benchmark and unified automatic evaluation | Frozen selection, Eq. 10-12 registry, GRAB proxies, automatic gates, baseline execution, aggregation, reports, dashboard | Selection is frozen before runs; applicable profiles execute or preserve failures; reports and integrity checks are generated | implemented, bounded; current local ContactPose gate blocks before freeze |
-| Q4 | Morphology-aware warm-start | Morphology gap analysis and a separately versioned warm-start extension | Cross-sequence evidence without changing Q1–Q3 | not started |
-| Q5 | Arti-MANO surface contact proxies | Robot surface/pad proxy validation | Proxy is distinct from source ground truth | not started |
-| Q6 | Contact-aware final extension | Versioned contact-aware objective extension | Separate method, tests, and rollback evidence | not started |
-| Q7 | Cross-trajectory automatic profile selection | Frozen-profile selection policy | Selection uses only predeclared cross-trajectory metrics | not started |
+| Q4 | Morphology-aware warm-start | Morphology gap analysis and separately versioned seed/prior candidates | Four-clip evidence without changing paper-core Eq. (1)–(9) | complete (bounded, diagnostic extension) |
+| Q5 | Arti-MANO surface contact proxies | Generic robot surface-region interface and deterministic Arti-MANO profile | Proxy is distinct from source ground truth and collision samples | complete (bounded, paper-external) |
+| Q6 | Contact-aware final extension | Fixed contact candidate grid, source/object-local targets, Huber/direction diagnostics | Separate method, tests, rejection lineage, and rollback evidence | complete (bounded; no accepted contact extension) |
+| Q7 | Cross-trajectory automatic profile selection | Frozen A–E 2×2 matrix, hard/regression/improvement/Pareto gates | Selection uses only predeclared cross-trajectory metrics | complete (bounded; baseline fallback retained) |
 | 12 | OakInk, DexYCB and HO-Cap adapters | Dataset adapters | Adapters validated | not started |
 | 13 | ARCTIC, OakInk2 and TACO extensions | Dataset adapters | Adapters validated | not started |
 | 14 | Arbitrary dexterous-hand plugin interface | URDF/MJCF interface | Plugin contract tested | not started |

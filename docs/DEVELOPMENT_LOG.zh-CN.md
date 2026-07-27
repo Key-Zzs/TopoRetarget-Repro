@@ -1,5 +1,30 @@
 # 开发日志
 
+## 2026-07-24 -- GRAB Arti-MANO 质量 A–E
+
+实现固定的 G1–G4 质量实验。阶段 A 冻结原生帧范围并验证 right-hand identity，复用匹配的
+airplane artifact，并通过 checkpoint/resume 运行保留的 v2/v3 solver profile。阶段 B 增加
+通用 visual surface contact contract 与确定性的 Arti-MANO region。阶段 C 增加 seed-only
+morphology candidate 和固定归一化 prior diagnostic。阶段 D 声明完整 contact grid，并在不
+削弱 collision constraint 的前提下记录 proxy gate。阶段 E 记录 E0–E3 lineage、Pareto gate、
+baseline fallback、报告和四个自包含 HTML viewer。
+
+所有新输出只在 `.local/experiments/grab_artimano_quality_v1/`；raw source 与历史 Stage 5–10
+artifact 保持只读，`.local` 不进入 Git。ContactPose 保持 deferred，结论仅限 `s1` 的
+within-subject multi-object development benchmark。
+
+第一次真实阶段 A 执行发现了通用的 active-set continuation 舍入问题：reference/solver SDF
+转换后，新 soft constraint 的初值可能约有 `2.7e-8 m` 的微小不可行量。已加入固定的
+`1e-9 m`、仅作用于初始化的 interior buffer；objective、solver YAML、tolerance、QuerySet、
+active margin 和 acceptance gate 均未改变。修复后 G2 的两个保留 profile 都完成了 `60/60`
+strict-accepted frame，并生成有效 full-512 artifact。随后按授权的
+`hybrid_original_distance_proxy_sign_v1` contract 处理 open banana mesh：原始 distance 和
+visual/contact 语义仍来自 source mesh，derived proxy 只用于 sign。proxy 通过固定 geometry
+gates，但首个 active QuerySet 仍有 3 个 sample 位于原始 boundary exclusion zone，其中 2 个
+落在 synthetic patch face。执行因此在 G3 以
+`hard_blocker=SIGN_PROXY_CONTACT_REGION_CONFLICT` fail-closed；没有修改 margin、frame、profile、
+raw mesh，也没有继续 G4/C–E。记录状态为 `GRAB_QUALITY_A_TO_E_BLOCKED`。
+
 ## Q1–Q3 多数据集交互 benchmark（2026-07-24）
 
 新增版本化 `toporetarget.hoi_benchmark.v1` selection contract、lazy GRAB selector、
@@ -535,3 +560,18 @@ baseline、Stage 10 artifact、manual acceptance 或 Git index。
 selected-frame sweep、单一 root cause 决策以及唯一允许的 faithful
 regularization repair。Projection 仍仅用于诊断；完整 60 帧验证和人工 review
 状态记录在 `.local/reports/stage9_one_shot/`。
+
+## 2026-07-24 —— G3 派生 sign proxy 与严格冲突审计
+
+新增确定性的 derived watertight sign-proxy 流程和
+original-distance/proxy-sign hybrid backend。banana 原始网格保持只读；
+Candidate 1 local repair 通过固定 20k surface gates，并保存 boundary loops、
+near-zero IDs、patch IDs、hash 和 provenance。G1/G2/G4 的 identity validation
+通过。
+
+恢复 A–E 后，G3 Stage A 到达正式 gate，随后正确 fail-closed 为
+`SIGN_PROXY_CONTACT_REGION_CONFLICT`：3 个 active QuerySet sample 位于原始
+boundary exclusion zone 内，其中 2 个最近 proxy face 是 synthetic patch。
+没有修改轨迹、margin、frame、原始资产或历史 Stage 10 artifact。G3 geometry
+audit HTML 及 first/middle/last PNG 已生成；G3 下游 C–E 和总 A–E 推荐结果仍
+无效。

@@ -69,3 +69,13 @@ Stage 9 uses this strict positive-outside reference contract for its final const
 interaction-preserving refinement and independent full-surface audit. Its QuerySet/slack policy is
 documented in [COLLISION_QUERY_SET_AND_SLACK.md](COLLISION_QUERY_SET_AND_SLACK.md); Stage 6
 sampling and SDF inputs remain read-only.
+
+## Open meshes in the quality lane
+
+The quality lane uses the [hybrid open-object contract](HYBRID_SIGNED_DISTANCE_FOR_OPEN_OBJECTS.md).
+The original mesh supplies closest points, original face IDs, normals, and the
+unsigned magnitude; a deterministic watertight proxy supplies only the sign.
+Results expose `proxy_closest_face_indices`,
+`proxy_closest_is_synthetic_patch`, `original_boundary_distance`, and
+`near_original_boundary`. Source-contact and active-QuerySet boundary conflicts
+fail closed as `SIGN_PROXY_CONTACT_REGION_CONFLICT`.

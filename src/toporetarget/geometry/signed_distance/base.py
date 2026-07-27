@@ -27,6 +27,11 @@ class SignedDistanceQueryResult:
     winding_value: np.ndarray | None = None
     non_smooth: np.ndarray | None = None
     gradient_valid: np.ndarray | None = None
+    proxy_closest_face_indices: np.ndarray | None = None
+    proxy_closest_is_synthetic_patch: np.ndarray | None = None
+    original_boundary_distance: np.ndarray | None = None
+    near_original_boundary: np.ndarray | None = None
+    geometry_metadata: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -51,6 +56,18 @@ class SignedDistanceQueryResult:
             result["non_smooth"] = self.non_smooth.tolist()
         if self.gradient_valid is not None:
             result["gradient_valid"] = self.gradient_valid.tolist()
+        if self.proxy_closest_face_indices is not None:
+            result["proxy_closest_face_indices"] = self.proxy_closest_face_indices.tolist()
+        if self.proxy_closest_is_synthetic_patch is not None:
+            result["proxy_closest_is_synthetic_patch"] = (
+                self.proxy_closest_is_synthetic_patch.tolist()
+            )
+        if self.original_boundary_distance is not None:
+            result["original_boundary_distance"] = self.original_boundary_distance.tolist()
+        if self.near_original_boundary is not None:
+            result["near_original_boundary"] = self.near_original_boundary.tolist()
+        if self.geometry_metadata is not None:
+            result["geometry_metadata"] = self.geometry_metadata
         return result
 
 

@@ -28,9 +28,13 @@ from toporetarget.geometry.robot_surface import (
     RobotSurfaceSampleSet,
     RobotSurfaceSamplingProfile,
 )
-from toporetarget.geometry.signed_distance.base import SignedDistanceQueryResult
-from toporetarget.geometry.signed_distance.reference import (
-    ReferenceSignedDistanceBackend,
+from toporetarget.geometry.signed_distance.base import (
+    SignedDistanceBackend,
+    SignedDistanceQueryResult,
+)
+from toporetarget.geometry.signed_distance.derived_proxy import (
+    ObjectSDFGeometryPolicy,
+    build_hybrid_signed_distance_backend,
 )
 from toporetarget.retarget.artifacts import WarmStartTrajectory
 from toporetarget.retarget.bones import (
@@ -65,6 +69,13 @@ FAITHFUL_CONTACT_RICH_SOLVER_PROFILE_ID = "scipy_slsqp_active_set_contact_rich_v
 FULL_SOLVER_PROFILE_ID = "scipy_slsqp_full_surface_reference_v1"
 STRICT_ACCEPTANCE_POLICY_ID = "strict_optimizer_converged_and_audits_v1"
 DEFERRED_STATIONARITY_POLICY_ID = "feasible_stationary_v1_deferred"
+# A newly expanded soft constraint is initialized from a reference-SDF value,
+# while the first SLSQP callback may use the solver-SDF backend.  Keep a tiny,
+# fixed interior margin so round-off between those two representations cannot
+# make an otherwise feasible continuation point start slightly infeasible.
+# This is initialization conditioning only; it is not an objective, tolerance,
+# active-margin, or acceptance-policy change.
+ACTIVE_SET_CONTINUATION_FEASIBILITY_BUFFER_M = 1.0e-9
 
 
 def regularization_profile_for_solver(
@@ -534,6 +545,7 @@ def continue_active_set_initial(
     signed_distance: np.ndarray,
     tau: float,
     b: float,
+    feasibility_buffer_m: float = 0.0,
 ) -> np.ndarray:
     """Build the next SLSQP initial point from the preceding result.
 
@@ -541,8 +553,10 @@ def continue_active_set_initial(
     values are looked up by stable query ID, so a deterministic reorder of the
     expanded set cannot change an existing slack value.  New slacks use the
     smallest bounded value that satisfies the soft constraint at the returned
-    candidate.  This helper is intentionally independent of the solver so the
-    continuation contract can be tested without importing a robot or mesh.
+    candidate, optionally with a fixed interior buffer for reference/solver
+    signed-distance round-off.  This helper is intentionally independent of the
+    solver so the continuation contract can be tested without importing a robot
+    or mesh.
     """
 
     previous_ids = np.asarray(previous_query_set.sample_ids, dtype=np.int64)
@@ -573,8 +587,16 @@ def continue_active_set_initial(
     upper = float(b - tau)
     if upper < 0:
         raise ValueError("hard slack bound must exceed soft tolerance")
+    if not np.isfinite(feasibility_buffer_m) or feasibility_buffer_m < 0:
+        raise ValueError("continuation feasibility buffer must be finite and non-negative")
     new_slack_by_id = {
-        int(query_id): float(np.clip(max(-float(tau) - float(phi[query_id]), 0.0), 0.0, upper))
+        int(query_id): float(
+            np.clip(
+                max(-float(tau) - float(phi[query_id]), 0.0) + float(feasibility_buffer_m),
+                0.0,
+                upper,
+            )
+        )
         for query_id in new_ids.tolist()
     }
     slack = np.asarray(
@@ -774,7 +796,7 @@ class ConvexHullSignedDistanceBackend:
 def choose_solver_sdf_backend(
     vertices: np.ndarray,
     faces: np.ndarray,
-    reference: ReferenceSignedDistanceBackend,
+    reference: SignedDistanceBackend,
     profile: RefinementSolverProfile,
     *,
     object_pose_scene: np.ndarray,
@@ -789,10 +811,13 @@ def choose_solver_sdf_backend(
     if profile.sdf_backend != "convex_hull_exact_solver_only":
         return reference, report
     try:
+        reference_mesh_hash = reference.describe().get("mesh_hash")
+        if not isinstance(reference_mesh_hash, str):
+            reference_mesh_hash = audit_mesh(vertices, faces).mesh_hash
         candidate = ConvexHullSignedDistanceBackend(
             vertices,
             faces,
-            reference.mesh_hash,
+            reference_mesh_hash,
             tree_leaf_size=tree_leaf_size,
         )
         rng = np.random.default_rng(20260720)
@@ -827,6 +852,14 @@ class FinalObjectiveBreakdown:
     weighted_e_im: float
     weighted_e_bone: float
     total: float
+    # Optional paper-external quality terms.  They default to zero so legacy
+    # paper-core artifacts retain the exact public breakdown contract.
+    e_morph: float = 0.0
+    weighted_e_morph: float = 0.0
+    e_contact_pos: float = 0.0
+    weighted_e_contact_pos: float = 0.0
+    e_contact_dir: float = 0.0
+    weighted_e_contact_dir: float = 0.0
 
     def as_dict(self) -> dict[str, float]:
         return dict(self.__dict__)
@@ -857,6 +890,7 @@ class _FrameContext:
     temporal_scope: str = "base_and_finger"
     fixed_base_to_seed: bool = False
     fixed_qpos_to_seed: bool = False
+    quality_extension: dict[str, Any] | None = None
     cache: RefinementEvaluationCache = field(
         default_factory=lambda: RefinementEvaluationCache(-1, "")
     )
@@ -1007,9 +1041,142 @@ class _FrameContext:
             e_base_pos = self.paper.lambda_base_pos * delta_p.square().sum()
             e_base_rot = self.paper.lambda_base_rot * delta_w.square().sum()
             e_slack = 0.5 * self.paper.w_s * slack.square().sum()
+        e_morph = value.new_zeros(())
+        weighted_morph = value.new_zeros(())
+        e_contact_pos = value.new_zeros(())
+        weighted_contact_pos = value.new_zeros(())
+        e_contact_dir = value.new_zeros(())
+        weighted_contact_dir = value.new_zeros(())
+        extension = self.quality_extension
+        if extension is not None:
+            target_keypoints = extension.get("morphology_target_keypoints_scene")
+            lambda_morph = float(extension.get("lambda_morph", 0.0))
+            morph_scale = max(float(extension.get("morphology_scale_m", 1.0)), 1e-12)
+            if target_keypoints is not None and lambda_morph > 0.0:
+                target = torch.as_tensor(target_keypoints, dtype=value.dtype, device=value.device)
+                e_morph = (robot_keypoints - target).square().sum(dim=-1).mean()
+                e_morph = e_morph / (morph_scale * morph_scale)
+                weighted_morph = lambda_morph * e_morph
+
+            regions = extension.get("contact_regions", ())
+            active = np.asarray(extension.get("contact_active", ()), dtype=bool)
+            targets = extension.get("contact_target_relative")
+            directions = extension.get("contact_target_direction")
+            weights = np.asarray(extension.get("contact_weights", ()), dtype=np.float64)
+            lambda_pos = float(extension.get("lambda_contact_pos", 0.0))
+            lambda_dir = float(extension.get("lambda_contact_dir", 0.0))
+            region_ids = tuple(
+                str(item)
+                for item in extension.get(
+                    "contact_region_ids", [item.get("region_id") for item in regions]
+                )
+            )
+            regions_by_id = {str(item["region_id"]): item for item in regions}
+            if (
+                regions
+                and targets is not None
+                and len(active) == len(region_ids)
+                and len(targets) == len(region_ids)
+            ):
+                fk = self.robot_model.forward_kinematics_base(qpos)
+                object_rotation = torch.as_tensor(
+                    self.object_pose_scene[:3, :3], dtype=value.dtype, device=value.device
+                )
+                object_translation = torch.as_tensor(
+                    self.object_pose_scene[:3, 3], dtype=value.dtype, device=value.device
+                )
+                position_terms: list[Any] = []
+                direction_terms: list[Any] = []
+                position_weights: list[float] = []
+                direction_weights: list[float] = []
+                target_relative = torch.as_tensor(targets, dtype=value.dtype, device=value.device)
+                target_direction = (
+                    None
+                    if directions is None
+                    else torch.as_tensor(directions, dtype=value.dtype, device=value.device)
+                )
+                for region_index, region_id in enumerate(region_ids):
+                    if not active[region_index]:
+                        continue
+                    region = regions_by_id[region_id]
+                    points = torch.as_tensor(
+                        region["points_link"], dtype=value.dtype, device=value.device
+                    )
+                    local_transform = torch.as_tensor(
+                        region["local_transform"], dtype=value.dtype, device=value.device
+                    )
+                    link_transform = fk[str(region["link"])]
+                    points = points @ local_transform[:3, :3].transpose(-1, -2)
+                    points = points + local_transform[:3, 3]
+                    points = points @ link_transform[:3, :3].transpose(-1, -2)
+                    points = points + link_transform[:3, 3]
+                    points = points @ base[:3, :3].transpose(-1, -2) + base[:3, 3]
+                    centroid = points.mean(dim=0)
+                    relative = (centroid - object_translation) @ object_rotation
+                    scale = extension.get("contact_position_scale_m", 0.01)
+                    position_terms.append(
+                        torch.linalg.vector_norm(
+                            (relative - target_relative[region_index]) / float(scale)
+                        )
+                    )
+                    position_weights.append(
+                        float(weights[region_index]) if len(weights) == len(regions) else 1.0
+                    )
+                    if target_direction is not None:
+                        semantic = torch.as_tensor(
+                            region["semantic_direction_link"],
+                            dtype=value.dtype,
+                            device=value.device,
+                        )
+                        direction = semantic @ link_transform[:3, :3].transpose(-1, -2)
+                        direction = direction @ base[:3, :3].transpose(-1, -2)
+                        direction = direction @ object_rotation
+                        direction = direction / torch.clamp(
+                            torch.linalg.vector_norm(direction), min=1e-12
+                        )
+                        source_direction = target_direction[region_index]
+                        dot = torch.clamp((direction * source_direction).sum(), -1.0, 1.0)
+                        direction_terms.append(1.0 - dot)
+                        direction_weights.append(
+                            float(weights[region_index]) if len(weights) == len(regions) else 1.0
+                        )
+                if position_terms:
+                    position_value = torch.stack(position_terms)
+                    # Huber delta is fixed at 1.0 in normalized 10 mm units.
+                    huber_value = torch.where(
+                        position_value.abs() <= 1.0,
+                        0.5 * position_value.square(),
+                        position_value.abs() - 0.5,
+                    )
+                    weight_value = torch.as_tensor(
+                        position_weights, dtype=value.dtype, device=value.device
+                    )
+                    e_contact_pos = (huber_value * weight_value).sum() / torch.clamp(
+                        weight_value.sum(), min=1e-12
+                    )
+                    weighted_contact_pos = lambda_pos * e_contact_pos
+                if direction_terms:
+                    direction_value = torch.stack(direction_terms)
+                    weight_value = torch.as_tensor(
+                        direction_weights, dtype=value.dtype, device=value.device
+                    )
+                    e_contact_dir = (direction_value * weight_value).sum() / torch.clamp(
+                        weight_value.sum(), min=1e-12
+                    )
+                    weighted_contact_dir = lambda_dir * e_contact_dir
         weighted_im = self.paper.lambda_im * e_im
         weighted_bone = self.paper.lambda_bone * e_bone
-        total = weighted_im + weighted_bone + e_temporal + e_base_pos + e_base_rot + e_slack
+        total = (
+            weighted_im
+            + weighted_bone
+            + e_temporal
+            + e_base_pos
+            + e_base_rot
+            + e_slack
+            + weighted_morph
+            + weighted_contact_pos
+            + weighted_contact_dir
+        )
         return total, FinalObjectiveBreakdown(
             e_im=float(e_im.detach().cpu()),
             e_bone=float(e_bone.detach().cpu()),
@@ -1020,6 +1187,12 @@ class _FrameContext:
             weighted_e_im=float(weighted_im.detach().cpu()),
             weighted_e_bone=float(weighted_bone.detach().cpu()),
             total=float(total.detach().cpu()),
+            e_morph=float(e_morph.detach().cpu()),
+            weighted_e_morph=float(weighted_morph.detach().cpu()),
+            e_contact_pos=float(e_contact_pos.detach().cpu()),
+            weighted_e_contact_pos=float(weighted_contact_pos.detach().cpu()),
+            e_contact_dir=float(e_contact_dir.detach().cpu()),
+            weighted_e_contact_dir=float(weighted_contact_dir.detach().cpu()),
         )
 
     def objective(
@@ -1746,6 +1919,7 @@ def refine_frame(
                 signed_distance=full_phi,
                 tau=context.paper.tau,
                 b=context.paper.b,
+                feasibility_buffer_m=ACTIVE_SET_CONTINUATION_FEASIBILITY_BUFFER_M,
             )
         else:
             # Preserve the v1 warm-seed reinitialization behavior exactly. It is
@@ -1959,6 +2133,7 @@ def _make_context(
     temporal_scope: str = "base_and_finger",
     fixed_base_to_seed: bool = False,
     fixed_qpos_to_seed: bool = False,
+    quality_extension: dict[str, Any] | None = None,
 ) -> _FrameContext:
     frame = graph.frames[local_index]
     global_frame = int(graph.frame_indices[local_index])
@@ -1983,6 +2158,14 @@ def _make_context(
             "source_feature_shape": list(np.asarray(source_features.adjacent_features).shape),
             "paper_hash": paper.config_hash,
             "surface_profile_hash": surface.profile.profile_hash,
+            "quality_extension": None
+            if quality_extension is None
+            else {
+                "profile_id": quality_extension.get("profile_id"),
+                "lambda_morph": quality_extension.get("lambda_morph", 0.0),
+                "lambda_contact_pos": quality_extension.get("lambda_contact_pos", 0.0),
+                "lambda_contact_dir": quality_extension.get("lambda_contact_dir", 0.0),
+            },
         }
     )
     return _FrameContext(
@@ -2009,8 +2192,32 @@ def _make_context(
         temporal_scope=temporal_scope,
         fixed_base_to_seed=fixed_base_to_seed,
         fixed_qpos_to_seed=fixed_qpos_to_seed,
+        quality_extension=quality_extension,
         cache=RefinementEvaluationCache(global_frame, context_hash),
     )
+
+
+def _quality_extension_for_frame(
+    quality_extension: dict[str, Any] | None, local_index: int
+) -> dict[str, Any] | None:
+    """Slice frame-varying quality targets without mutating the shared spec."""
+
+    if quality_extension is None:
+        return None
+    result = dict(quality_extension)
+    for key in (
+        "morphology_target_keypoints_scene",
+        "contact_target_relative",
+        "contact_target_direction",
+        "contact_active",
+        "contact_weights",
+    ):
+        value = result.get(key)
+        if value is not None:
+            array = np.asarray(value)
+            if array.ndim > 0 and array.shape[0] > local_index:
+                result[key] = array[local_index]
+    return result
 
 
 def _ragged(values: list[np.ndarray], width: int | None = None) -> tuple[np.ndarray, np.ndarray]:
@@ -2120,6 +2327,7 @@ class RefinementResources:
     reference_sdf: Any
     sdf: Any
     sdf_report: dict[str, Any]
+    geometry_policy: dict[str, Any]
     build_counts: dict[str, int]
 
 
@@ -2131,10 +2339,9 @@ def prepare_refinement_resources(
     object_vertices: np.ndarray | None = None,
     object_faces: np.ndarray | None = None,
     sdf_tree_leaf_size: int = 32,
+    geometry_artifact_root: str | Path | None = None,
 ) -> RefinementResources:
     """Build mesh/SDF resources once for a refinement run."""
-
-    from toporetarget.geometry.signed_distance.reference import build_signed_distance_backend
 
     paper = PaperRefinementWeights.load()
     if object_vertices is None or object_faces is None:
@@ -2144,15 +2351,26 @@ def prepare_refinement_resources(
     vertices = np.asarray(object_vertices, dtype=np.float64)
     faces = np.asarray(object_faces, dtype=np.int64)
     mesh_audit = audit_mesh(vertices, faces)
-    reference_sdf = build_signed_distance_backend(
+    source_path: Path | None = None
+    source_file = getattr(getattr(sequence, "metadata", None), "provenance", None)
+    source_file_value = getattr(source_file, "source_file", None)
+    object_mesh_relative = str(
+        getattr(sequence.rigid_object(str(graph.metadata["object_id"])), "metadata", {}).get(
+            "source_mesh", ""
+        )
+    )
+    if source_file_value and object_mesh_relative:
+        source_path = Path(str(source_file_value)).resolve().parents[2] / object_mesh_relative
+    geometry_policy = ObjectSDFGeometryPolicy.load()
+    geometry_output = None
+    if geometry_artifact_root is not None:
+        geometry_output = Path(geometry_artifact_root).expanduser() / mesh_audit.mesh_hash
+    reference_sdf, geometry = build_hybrid_signed_distance_backend(
         vertices,
         faces,
-        sign_mode="strict",
-        mesh_hash=mesh_audit.mesh_hash,
-        query_chunk_size=256,
-        face_chunk_size=4096,
-        closest_acceleration="tree",
-        winding_device="cpu",
+        policy=geometry_policy,
+        source_path=source_path,
+        artifact_root=geometry_output,
     )
     obj = sequence.rigid_object(str(graph.metadata["object_id"]))
     sdf, sdf_report = choose_solver_sdf_backend(
@@ -2171,6 +2389,11 @@ def prepare_refinement_resources(
         reference_sdf=reference_sdf,
         sdf=sdf,
         sdf_report=sdf_report,
+        geometry_policy=geometry.compact_dict(
+            artifact_root=None
+            if geometry_output is None
+            else str(Path(geometry_output).expanduser().resolve())
+        ),
         build_counts={
             "mesh_load_count": 1,
             "solver_sdf_build_count": 1,
@@ -2178,6 +2401,7 @@ def prepare_refinement_resources(
             "convex_hull_build_count": int(
                 getattr(sdf, "backend_id", "") == "convex_hull_exact_solver_only"
             ),
+            "derived_proxy_build_count": 1,
             "bvh_build_count": 1,
         },
     )
@@ -2290,6 +2514,7 @@ def build_final_trajectory(
     regularization_profile: str = "auto",
     fixed_base_to_seed: bool = False,
     fixed_qpos_to_seed: bool = False,
+    quality_extension: dict[str, Any] | None = None,
 ) -> tuple[FinalRetargetTrajectory, dict[str, Any]]:
     warm.validate()
     graph.validate()
@@ -2369,6 +2594,7 @@ def build_final_trajectory(
             temporal_scope=temporal_scope,
             fixed_base_to_seed=fixed_base_to_seed,
             fixed_qpos_to_seed=fixed_qpos_to_seed,
+            quality_extension=_quality_extension_for_frame(quality_extension, local_index),
         )
         initial_points = context.candidate_points(np.concatenate([np.zeros(6), context.seed_qpos]))
         with context.timers.measure("full_512_audit"):
@@ -2379,10 +2605,33 @@ def build_final_trajectory(
             raise ValueError("initial full-surface audit received invalid signed distance")
         context.full_audit_call_count = 1
         context.full_audit_call_reasons = ["frame_query_set_initialization"]
-        # The selected solver backend is exact for this audited convex mesh and
-        # has passed probe comparison. It is sufficient for initial QuerySet
-        # selection; reference_sdf remains the independent persisted audit.
+        # The selected solver backend preserves the original closest-point
+        # magnitude and uses the audited sign policy. It is sufficient for
+        # initial QuerySet selection; reference_sdf remains the independent
+        # persisted audit.
         initial_query = sdf.query_scene(initial_points, context.object_pose_scene)
+        if getattr(initial_query, "near_original_boundary", None) is not None:
+            boundary_mask = np.asarray(initial_query.near_original_boundary, dtype=bool)
+            patch_mask = (
+                np.zeros_like(boundary_mask, dtype=bool)
+                if initial_query.proxy_closest_is_synthetic_patch is None
+                else np.asarray(initial_query.proxy_closest_is_synthetic_patch, dtype=bool)
+            )
+            if query_profile.mode == "full":
+                active_boundary_mask = boundary_mask
+            else:
+                active_boundary_mask = boundary_mask & (
+                    np.asarray(initial_query.signed_distance) < query_profile.active_margin_m
+                )
+            if np.any(active_boundary_mask):
+                raise ValueError(
+                    "SIGN_PROXY_CONTACT_REGION_CONFLICT: active collision QuerySet contains "
+                    "samples in the original boundary exclusion zone; "
+                    "active_queryset_near_boundary_count="
+                    f"{int(np.count_nonzero(active_boundary_mask))}; "
+                    "active_queryset_proxy_patch_count="
+                    f"{int(np.count_nonzero(active_boundary_mask & patch_mask))}"
+                )
         native_query_set = build_query_set(
             initial_query.signed_distance, surface.geometry_ids, query_profile
         )
@@ -2560,6 +2809,12 @@ def build_final_trajectory(
         "e_slack": series("e_slack"),
         "weighted_e_im": series("weighted_e_im"),
         "weighted_e_bone": series("weighted_e_bone"),
+        "e_morph": series("e_morph"),
+        "weighted_e_morph": series("weighted_e_morph"),
+        "e_contact_pos": series("e_contact_pos"),
+        "weighted_e_contact_pos": series("weighted_e_contact_pos"),
+        "e_contact_dir": series("e_contact_dir"),
+        "weighted_e_contact_dir": series("weighted_e_contact_dir"),
         "total_objective": series("total"),
         "warm_e_im": warm_series("e_im"),
         "warm_e_bone": warm_series("e_bone"),
@@ -2695,6 +2950,21 @@ def build_final_trajectory(
         "temporal_scope": temporal_scope,
         "fixed_base_to_seed": bool(fixed_base_to_seed),
         "fixed_qpos_to_seed": bool(fixed_qpos_to_seed),
+        "quality_extension": None
+        if quality_extension is None
+        else {
+            key: value
+            for key, value in quality_extension.items()
+            if key
+            not in {
+                "morphology_target_keypoints_scene",
+                "contact_target_relative",
+                "contact_target_direction",
+                "contact_active",
+                "contact_weights",
+                "contact_regions",
+            }
+        },
         "sdf_selection_report": sdf_report,
         "frame_range": [
             int(graph.frame_indices[processed_frame_indices[0]]),

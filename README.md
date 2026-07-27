@@ -1058,3 +1058,33 @@ The accepted canonical faithful v3-fixed profile, legacy v2 classification,
 quality-neutral human review, finalized versioned fixed Stage 10 export, and
 A/B/C decision semantics are documented in
 [`docs/FAITHFUL_REPRODUCTION_FINALIZATION.md`](docs/FAITHFUL_REPRODUCTION_FINALIZATION.md).
+
+## GRAB Arti-MANO quality A–E
+
+The frozen four-trajectory quality experiment is implemented behind
+`toporetarget quality`. It uses G1–G4 from subject `s1` at native FPS, retains
+both paper-core Eq. (9) profiles, and writes all new artifacts to
+`.local/experiments/grab_artimano_quality_v1/`.
+
+```bash
+PYTHONNOUSERSITE=1 /home/deepcybo/miniconda3/envs/topo-retarget/bin/python \
+  -m toporetarget quality run-a-to-e \
+  --config configs/experiments/grab_artimano_quality_v1.yaml \
+  --resume --max-wall-time 1800 --generate-html
+```
+
+Use `toporetarget quality status` for the machine-readable recommendation and
+open `html/index.html` for the four self-contained viewers. GRAB contact values
+are dataset proxies, ContactPose is deferred, and the result scope is only a
+within-subject multi-object development benchmark. See
+[`docs/GRAB_ARTIMANO_QUALITY_EXPERIMENT.md`](docs/GRAB_ARTIMANO_QUALITY_EXPERIMENT.md)
+for the full A–E contract.
+
+For open-object geometry, the quality lane uses the documented
+[`hybrid_original_distance_proxy_sign_v1`](docs/HYBRID_SIGNED_DISTANCE_FOR_OPEN_OBJECTS.md)
+contract: the raw mesh is immutable, the original mesh supplies distance
+magnitude and closest points, and a derived watertight proxy supplies sign only.
+The current banana run is formally routed to
+`SIGN_PROXY_CONTACT_REGION_CONFLICT` after the strict active-QuerySet boundary
+gate; it is not an A–E completion claim. See
+[`docs/DERIVED_WATERTIGHT_SIGN_PROXY.md`](docs/DERIVED_WATERTIGHT_SIGN_PROXY.md).

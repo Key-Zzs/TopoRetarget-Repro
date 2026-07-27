@@ -71,6 +71,52 @@ audit_contracts:
     assumptions: [A_PROJECTION_STATE_METRIC_001, A_WARM_FINAL_PATH_FEASIBILITY_001, A_PROJECTION_FEASIBILITY_RESTORATION_001, A_OBJECTIVE_PATH_ATTRIBUTION_001, A_CONSTRAINT_PRESSURE_DIAGNOSTIC_001, A_PROJECTION_BRANCH_ROLLOUT_001, A_STAGE9_3_5_HUMAN_DECISION_GATE_001]
     notes: "Warm/final path feasibility, state-only projections, counterfactuals, and attribution remain diagnostic and cannot authorize Stage 9.4."
 
+quality_experiment_grab_artimano_v1:
+  experiment_id: grab_artimano_quality_v1
+  schema_version: toporetarget.quality_experiment.v1
+  scope: within_subject_multi_object_development_benchmark
+  hand: right
+  robot: artimano_rh
+  contactpose_status: deferred
+  contactpose_adapter_required: true
+  contactpose_not_a_blocker: true
+  paper_core_eq9_profiles:
+    - id: scipy_slsqp_active_set_contact_rich_v2
+      interpretation: literal_full_optimizer_state_temporal
+      paper_consistent_interpretation: true
+      author_exact: unresolved
+      historical_status: retained
+    - id: scipy_slsqp_active_set_contact_rich_v3_fixed
+      interpretation: finger_q_temporal_plus_independent_base_priors
+      paper_consistent_interpretation: true
+      author_exact: unresolved
+      engineering_status: validated_quality_neutral
+  extensions:
+    morphology_seed_only_v1:
+      paper_method: false
+      paper_external_extension: true
+      paper_objective_unchanged: true
+      changes_initialization_only: true
+    morphology_position_prior_v1:
+      paper_method: false
+      paper_external_extension: true
+      paper_objective_unchanged: false
+    artimano_surface_contact_v1:
+      paper_method: false
+      paper_external_extension: true
+      contact_semantics: DATASET_PROXY
+    contact_preserving_final_refinement:
+      paper_method: false
+      paper_external_extension: true
+  execution:
+    status: GRAB_QUALITY_A_TO_E_BLOCKED
+    stage_a: incomplete_g3_raw_banana_mesh_blocker
+    stage_b: standalone_surface_artifact_built
+    stages_c_to_e: not_run_due_to_stage_a_dependency
+    hard_blocker: raw_grab_object_mesh_not_watertight_for_strict_signed_distance
+    quality_improvement_claimed: false
+    notes: "This quality experiment does not infer author-exact Eq. (9), cross-subject generalization, ContactPose equivalence, RL, physics, sim-to-real, or paper runtime from partial results."
+
 items:
   - id: equation_1
     kind: equation
@@ -964,3 +1010,29 @@ faithful_reproduction_finalization:
   human_manual_acceptance: pass
   human_decision_case: A
   finalization_status: FAITHFUL_REPRODUCTION_FINALIZED_CASE_A
+
+quality_geometry_sign_proxy:
+  profile_id: hybrid_original_distance_proxy_sign_v1
+  schema_version: toporetarget.derived_sdf_proxy.v1
+  paper_status: paper_unspecified_geometry_engineering
+  raw_asset_modified: false
+  proxy_used_for_sign_only: true
+  original_mesh_semantics:
+    visualization: true
+    object_samples: true
+    closest_point: true
+    unsigned_distance: true
+    provenance: true
+  proxy_mesh_semantics:
+    sign_classification_only: true
+    accepted_convex_hull: false
+  fixed_gates:
+    surface_sample_count: 20000
+    p95_limit: max(0.001 m, 0.005 * bbox_diagonal)
+    max_limit: max(0.003 m, 0.015 * bbox_diagonal)
+    bbox_extent_relative_error: 0.01
+    candidate_1_patch_area_ratio: 0.05
+  contact_conflict_status:
+    source_contact_near_boundary: hard_fail
+    active_queryset_near_boundary: hard_fail
+    status_id: SIGN_PROXY_CONTACT_REGION_CONFLICT

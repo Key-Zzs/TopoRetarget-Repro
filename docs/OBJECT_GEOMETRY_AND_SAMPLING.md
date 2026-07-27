@@ -65,3 +65,12 @@ toporetarget geometry validate-samples --canonical "$GRAB_CACHE" --object-id pri
 The object viewer reuses the repository Matplotlib conventions and can show mesh, 50 samples,
 normals, IDs, object/scene frames, and a selected frame. It is a diagnostic viewer, not a new
 canonical-data representation.
+
+## Open-object sign proxy boundary
+
+For the frozen GRAB quality experiment, open objects use the documented
+[derived watertight sign proxy](DERIVED_WATERTIGHT_SIGN_PROXY.md). The original
+mesh remains the source for object samples, visualization, closest points,
+unsigned distance, and contact-position targets. Only the signed-distance sign
+comes from the derived watertight proxy. The proxy is never a replacement mesh
+and a convex hull is not an accepted proxy.

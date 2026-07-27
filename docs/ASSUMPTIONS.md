@@ -52,6 +52,7 @@ Each identifier is referenced from `docs/PAPER_FIDELITY.yaml` where it affects t
 | A_REFINEMENT_SOLVER_001 | constrained solver | P0 | Use float64 SciPy SLSQP with analytic objective and hybrid constraint Jacobians, URDF q bounds, slack bounds, and sequential per-frame solves. | Eq. 8; scipy_slsqp_active_set_v1.yaml | implemented_with_assumptions | Author's constrained solver. |
 | A_REFINEMENT_SOLVER_TOLERANCES_001 | solver termination | P1 | Record SLSQP maxiter=100, ftol=1e-7, constraint audit tolerance=1e-6 m, finite-difference epsilon=1e-6, and fail-fast policy. | Eq. 8; solver profile | implemented_with_assumptions | Author's termination and line-search details. |
 | A_REFINEMENT_SOLVER_CONTINUATION_002 | solver continuation | P0 | Preserve v1 warm-seed reinitialization for regression, and use v2 result.x continuation with query-ID slack remapping and minimum bounded initialization for newly added queries. | Stage 9.1 benchmark; final_refinement.py | implemented_with_assumptions | Paper does not disclose active-set continuation state. |
+| A_REFINEMENT_CONTINUATION_BUFFER_001 | solver continuation numerics | P1 | Add a fixed 1e-9 m interior buffer only to newly added soft-constraint slack during v2 result.x continuation, preventing reference/solver SDF round-off from making the SLSQP starting point infinitesimally infeasible; objective, solver tolerances, active margin, and acceptance gates are unchanged. | `final_refinement.py`; G2 frame-22 reproduction and 60-frame rerun | implemented_with_assumptions | Confirm the published active-set implementation and its cross-backend initialization precision policy. |
 | A_REFINEMENT_SOLVER_TERMINATION_002 | solver termination | P0 | Keep strict optimizer convergence separate from feasibility and full-surface audits; status 9 is rejected, while the fixed-grid uniform maxiter and deterministic repeats are recorded as provenance. | Stage 9.1 benchmark; solver_benchmark.py | implemented_with_assumptions | Paper does not disclose optimizer termination, stationarity, or KKT policy. |
 | A_REFINEMENT_PROFILE_HASH_001 | solver provenance | P0 | Preserve v1 hash `6affff2fdb425a0402f643c291c0b8904d4dbec6c5b69a5006cf9829dcc220aa`; register v2 hash `c42c21d894c54d07b1d30943b5a3338b13628bf0429ab203b5540cf934d09b7c` and bind it into Stage 10 signatures. | Stage 9.1 profile YAML and workflow planner | implemented_with_assumptions | Profile identity and termination behavior are engineering choices not disclosed by the paper. |
 | A_REFINEMENT_EVALUATION_CACHE_001 | execution performance | P1 | Use an exact float64 `x` identity within one immutable frame context; invalidate all cached layers on QuerySet change and never reuse across frames. | `refinement_performance.py`; Stage 9.2 report | implemented_with_assumptions | The paper does not specify callback reuse or cache identity. |
@@ -74,6 +75,7 @@ Each identifier is referenced from `docs/PAPER_FIDELITY.yaml` where it affects t
 | A_JOINT_LIMIT_001 | robot constraints | P0 | Record Eq. 8 constraint scope without inventing joint-limit equations. | Sec. 3.4 | pending_author_confirmation | Exact joint-limit and self-collision implementation. |
 | A_COLLISION_QUERY_SET_001 | collision | P0 | Keep `Q_t` construction blocked. | Sec. 3.4, Eq. 8 | pending_author_confirmation | Hand-object pair query construction. |
 | A_SIGNED_DISTANCE_BACKEND_001 | collision | P0 | Provide a reference triangle closest-point backend with strict watertight, generalized-winding, and explicit unsigned-only modes; no mesh repair is performed. | Sec. 3.4 and Appendix A.3 | implemented_with_assumptions | Author backend, gradient, and non-watertight policy. |
+
 | A_MESH_WATERTIGHT_POLICY_001 | collision | P0 | Strict sign rejects open/non-manifold meshes; generalized winding reports confidence; unsigned-only never fabricates a signed value. | Sec. 3.4 and Appendix A.3 | implemented_with_assumptions | Author mesh preprocessing and sign policy. |
 | A_HAND_SURFACE_SAMPLES_001 | metric | P1 | Use explicit engineering profile `engineering_collision_32_per_geometry` for Stage 6 only; it is not a paper sample count. | Appendix A.3, Eq. 12 | implemented_with_assumptions | Released metric code or explicit paper rule. |
 | A_CONTACTPOSE_THRESHOLD_001 | metric | P1 | Keep intensity threshold null; preserve all other attribution rules. | Appendix A.3 | not_provided | Contact intensity threshold from authors or ContactPose code. |
@@ -150,3 +152,21 @@ Each identifier is referenced from `docs/PAPER_FIDELITY.yaml` where it affects t
 | A_STAGE9_3_5_HUMAN_DECISION_GATE_001 | Stage 9.3.5 routing | P0 | Keep `ENTER_STAGE9_4=NO`, `HUMAN_DECISION_REQUIRED=YES`, and `STOP_AFTER_STAGE9_3_5=TRUE` until the complete causal bundle and immutability report receive human review. | `stage9_4_readiness.json`; `official_artifact_immutability.json` | implemented_with_assumptions | Human review is required for any next-stage choice. |
 | A_STAGE9_4_ONE_SHOT_CLOSURE_001 | Stage 9.4 closure | P0 | Keep projection diagnostic-only, execute only fixed C0--C7 profiles on `(0,10,30,36,39)`, select one root cause, and permit at most one faithful repair before the full 60-frame gate. | `stage9_one_shot_summary.json`; `stage9_final_decision.json` | implemented_with_assumptions | The paper does not specify this causal-ablation or repair protocol. |
 | A_STAGE9_4_EQ9_Q_MEMBERSHIP_001 | Stage 9.4 repair | P0 | Interpret Eq. (9) temporal `q` as finger joint correction and retain base position/rotation priors as separate terms; previous final is remapped to the current seed chart. | `formal_regularization_code_map.json`; `scipy_slsqp_active_set_contact_rich_v3_fixed.yaml` | implemented_with_assumptions | The paper notation does not publish the repository coordinate-vector expansion. |
+
+## Derived sign proxy for open GRAB objects
+
+The frozen quality lane uses `hybrid_original_distance_proxy_sign_v1` as
+paper-unspecified geometry engineering. Candidate selection is identity,
+deterministic local repair, then fixed 256-axis voxel marching-cubes fallback;
+convex hull is not an accepted proxy. The original mesh is immutable and
+remains the source for visualization, object samples, closest point, unsigned
+magnitude, contact-position target, and provenance. Only the sign comes from a
+strict watertight derived proxy. Boundary-loop, synthetic-patch, 20k deviation,
+source-contact, and active-QuerySet evidence are persisted under the experiment
+geometry directory.
+
+The current G3 retry proves proxy validity but routes to
+`SIGN_PROXY_CONTACT_REGION_CONFLICT` because active QuerySet samples intersect
+the fixed original-boundary exclusion zone. This is a formal fail-closed result,
+not evidence that the open mesh can be silently accepted and not an A–E
+completion claim.

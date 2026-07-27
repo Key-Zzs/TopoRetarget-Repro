@@ -10,6 +10,7 @@ from toporetarget.cli.data import app as data_app
 from toporetarget.cli.doctor import app as doctor_app
 from toporetarget.cli.geometry import app as geometry_app
 from toporetarget.cli.keypoints import app as keypoints_app
+from toporetarget.cli.quality import app as quality_app
 from toporetarget.cli.retarget import app as retarget_app
 from toporetarget.cli.robots import app as robots_app
 from toporetarget.cli.workflow import app as workflow_app
@@ -29,6 +30,7 @@ app.add_typer(geometry_app, name="geometry")
 app.add_typer(retarget_app, name="retarget")
 app.add_typer(workflow_app, name="workflow")
 app.add_typer(benchmark_app, name="benchmark")
+app.add_typer(quality_app, name="quality")
 assets_app = typer.Typer(help="Manage local robot assets.")
 app.add_typer(assets_app, name="assets")
 

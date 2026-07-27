@@ -16,6 +16,11 @@ morphology-aware warm-start、Q5 Arti-MANO surface contact proxies、Q6 contact-
 extension、Q7 跨轨迹自动 profile 选择均未开始。Q1–Q3 不改变现有方法，不把 GRAB proxy 当作
 ContactPose 论文指标，也不把有界 ContactPose selection 当作完整 25-grasp 复现。
 
+质量 A–E 阶段已在固定的四条 `s1` 轨迹上完成 bounded implementation：Q4 morphology-aware
+warm-start、Q5 Arti-MANO surface contact proxy、Q6 contact-preserving diagnostic grid、Q7
+自动 2×2 选择均保持 paper-core artifact 不变；contact extension 若未通过 gate，推荐 baseline
+是合法结果。ContactPose 继续 deferred，当前结论不是 cross-subject generalization。
+
 长期阶段依次为：
 
 0. 仓库创建与架构搭建；1. 论文忠实度审计；2. canonical HOI schema 与坐标约定；3. MANO

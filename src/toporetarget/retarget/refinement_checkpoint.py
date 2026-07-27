@@ -131,6 +131,12 @@ def frame_checkpoint_payload(
             frame.breakdown.weighted_e_im,
             frame.breakdown.weighted_e_bone,
             frame.breakdown.total,
+            frame.breakdown.e_morph,
+            frame.breakdown.weighted_e_morph,
+            frame.breakdown.e_contact_pos,
+            frame.breakdown.weighted_e_contact_pos,
+            frame.breakdown.e_contact_dir,
+            frame.breakdown.weighted_e_contact_dir,
             frame.warm_breakdown.e_im,
             frame.warm_breakdown.e_bone,
             frame.warm_breakdown.total,
@@ -562,7 +568,9 @@ def _independent_source_validation(
     """Re-query the reference SDF for every assembled frame."""
 
     from toporetarget.data.storage import load_hoi_sequence
-    from toporetarget.geometry.signed_distance.reference import build_signed_distance_backend
+    from toporetarget.geometry.signed_distance.derived_proxy import (
+        build_hybrid_signed_distance_backend,
+    )
     from toporetarget.retarget.interaction_artifacts import load_interaction_graph
     from toporetarget.robots.artimano import load_artimano_model
 
@@ -573,9 +581,15 @@ def _independent_source_validation(
     graph = load_interaction_graph(graph_path)
     object_id = str(graph.metadata["object_id"])
     obj = sequence.rigid_object(object_id)
-    backend = build_signed_distance_backend(
-        obj.mesh.vertices_local, obj.mesh.faces, sign_mode="strict"
+    backend, geometry = build_hybrid_signed_distance_backend(
+        obj.mesh.vertices_local,
+        obj.mesh.faces,
+        source_path=None,
+        artifact_root=None,
     )
+    expected_geometry = manifest.get("final_artifact_metadata", {}).get("geometry_policy") or {}
+    if expected_geometry.get("cache_signature") not in {None, geometry.cache_signature}:
+        raise CheckpointError("final independent geometry policy signature changed")
     robot_name = str(manifest["robot_name"])
     side = {"artimano_rh": "rh", "artimano_lh": "lh"}.get(
         robot_name, str(manifest.get("robot_side", "rh"))
@@ -602,6 +616,16 @@ def _independent_source_validation(
                 "sample_count": int(len(result.signed_distance)),
                 "max_abs_signed_distance_error_m": error,
                 "sign_valid": bool(np.all(result.sign_valid)),
+                "near_original_boundary_count": int(
+                    np.count_nonzero(result.near_original_boundary)
+                    if result.near_original_boundary is not None
+                    else 0
+                ),
+                "proxy_patch_count": int(
+                    np.count_nonzero(result.proxy_closest_is_synthetic_patch)
+                    if result.proxy_closest_is_synthetic_patch is not None
+                    else 0
+                ),
             }
         )
         if error > 1e-9 or not np.all(result.sign_valid):
@@ -647,6 +671,13 @@ def _assemble_arrays(
     hard, _ = ragged("hard_residual", np.float64)
     soft, _ = ragged("soft_residual", np.float64)
     components = stack("objective_components")
+    # Legacy checkpoints contain 12 components; expose zero-valued optional
+    # quality terms when assembling them into the current artifact schema.
+    if components.shape[1] == 12:
+        components = np.concatenate(
+            [components[:, :9], np.zeros((len(components), 6)), components[:, 9:]],
+            axis=1,
+        )
     frame_metadata = metadata
 
     def bool_array(name: str, default: bool = True) -> np.ndarray:
@@ -689,9 +720,15 @@ def _assemble_arrays(
         "weighted_e_im": components[:, 6],
         "weighted_e_bone": components[:, 7],
         "total_objective": components[:, 8],
-        "warm_e_im": components[:, 9],
-        "warm_e_bone": components[:, 10],
-        "warm_total_objective": components[:, 11],
+        "e_morph": components[:, 9],
+        "weighted_e_morph": components[:, 10],
+        "e_contact_pos": components[:, 11],
+        "weighted_e_contact_pos": components[:, 12],
+        "e_contact_dir": components[:, 13],
+        "weighted_e_contact_dir": components[:, 14],
+        "warm_e_im": components[:, 15],
+        "warm_e_bone": components[:, 16],
+        "warm_total_objective": components[:, 17],
         "query_ids_concat": query_ids,
         "query_offsets": query_offsets,
         "query_active_round_concat": query_round,

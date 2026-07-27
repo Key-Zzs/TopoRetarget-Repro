@@ -55,6 +55,22 @@ def test_active_set_continuation_new_slack_is_minimum_bounded_feasible_value() -
     assert continued[-1] == pytest.approx(0.029)
 
 
+def test_active_set_continuation_can_add_fixed_roundoff_buffer() -> None:
+    previous = _query_set([4])
+    expanded = _query_set([4, 2])
+    continued = continue_active_set_initial(
+        np.asarray([1.0, 0.7]),
+        previous,
+        expanded,
+        new_query_ids=np.asarray([2]),
+        signed_distance=np.asarray([0.0, 0.0, -0.0010000001, 0.0, 0.02]),
+        tau=0.001,
+        b=0.03,
+        feasibility_buffer_m=1.0e-9,
+    )
+    assert continued[-1] == pytest.approx(1.1e-9)
+
+
 def test_active_set_growth_is_monotonic_and_reorder_safe() -> None:
     previous = _query_set([5, 7])
     reordered = _query_set([7, 2, 5])

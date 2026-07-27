@@ -983,3 +983,30 @@ Eq. (1)-(9)、正式权重、正式 artifact 与 Stage 10。实际命令和输�
 已接受的 canonical faithful v3-fixed profile、legacy v2 分类、质量中性人工验收、
 已正式收口的 versioned fixed Stage 10 export 以及 A/B/C 决策语义见
 [`docs/FAITHFUL_REPRODUCTION_FINALIZATION.zh-CN.md`](docs/FAITHFUL_REPRODUCTION_FINALIZATION.zh-CN.md)。
+
+## GRAB Arti-MANO 质量 A–E 实验
+
+固定的四条质量实验轨迹已由 `toporetarget quality` 实现：四条轨迹都来自
+`s1`，保持原生帧率，并保留两个 paper-core Eq. (9) profile。所有新 artifact
+只写入 `.local/experiments/grab_artimano_quality_v1/`。
+
+```bash
+PYTHONNOUSERSITE=1 /home/deepcybo/miniconda3/envs/topo-retarget/bin/python \
+  -m toporetarget quality run-a-to-e \
+  --config configs/experiments/grab_artimano_quality_v1.yaml \
+  --resume --max-wall-time 1800 --generate-html
+```
+
+使用 `toporetarget quality status` 查看自动推荐，并打开 `html/index.html`
+查看四个自包含 viewer。GRAB contact 只属于 dataset proxy，ContactPose
+明确 deferred；结论仅限于 within-subject multi-object development benchmark。
+完整边界见
+[`docs/GRAB_ARTIMANO_QUALITY_EXPERIMENT.md`](docs/GRAB_ARTIMANO_QUALITY_EXPERIMENT.md)。
+
+对于 open-object geometry，质量 lane 使用文档化的
+[`hybrid_original_distance_proxy_sign_v1`](docs/HYBRID_SIGNED_DISTANCE_FOR_OPEN_OBJECTS.md)：
+原始网格保持不可变，original mesh 提供 distance magnitude 和 closest point，
+derived watertight proxy 只提供 sign。当前 banana run 在严格 active-QuerySet
+boundary gate 处正式路由为 `SIGN_PROXY_CONTACT_REGION_CONFLICT`，不是 A–E 完成
+声明。详见
+[`docs/DERIVED_WATERTIGHT_SIGN_PROXY.md`](docs/DERIVED_WATERTIGHT_SIGN_PROXY.md)。

@@ -1,5 +1,36 @@
 # Development log
 
+## 2026-07-24 -- GRAB Arti-MANO quality A–E
+
+Implemented the frozen G1–G4 quality experiment. Stage A binds the prescribed
+native ranges and right-hand identity, reuses matching airplane artifacts, and
+executes the retained v2/v3 solver profiles with checkpoint/resume. Stage B
+adds the generic visual surface contact contract and deterministic Arti-MANO
+regions. Stage C adds seed-only morphology candidates and fixed normalized-prior
+diagnostics. Stage D declares the complete fixed contact grid and records proxy
+gates without weakening collision constraints. Stage E records E0–E3 lineage,
+Pareto gates, baseline fallback, reports, and four self-contained HTML viewers.
+
+All new outputs are under `.local/experiments/grab_artimano_quality_v1/`;
+raw source and historical Stage 5–10 artifacts remain read-only and `.local`
+remains untracked. ContactPose is deferred and the result scope is limited to
+the `s1` within-subject multi-object development benchmark.
+
+The first real A-stage execution exposed a generic active-set continuation
+round-off defect: a new soft constraint could start approximately `2.7e-8 m`
+infeasible after reference/solver SDF conversion. A fixed `1e-9 m`
+initialization-only interior buffer was added without changing the objective,
+solver YAML, tolerance, QuerySet, active margin, or acceptance gate. The open
+banana mesh was then handled by the authorized
+`hybrid_original_distance_proxy_sign_v1` contract: original distance and
+visual/contact semantics remain source-mesh based, while the derived proxy is
+used only for sign. The proxy passes its fixed geometry gates, but the first
+active QuerySet still contains three samples in the original boundary
+exclusion zone (two on synthetic patch faces). The run therefore stops at G3
+with `hard_blocker=SIGN_PROXY_CONTACT_REGION_CONFLICT`; no margin, frame,
+profile, raw mesh, or G4/C–E continuation was changed. The recorded status is
+`GRAB_QUALITY_A_TO_E_BLOCKED`.
+
 ## Q1–Q3 Multi-Dataset Interaction Benchmark (2026-07-24)
 
 The benchmark implementation adds a versioned `toporetarget.hoi_benchmark.v1` selection
@@ -620,3 +651,18 @@ C0--C7 selected-frame sweep, single-root-cause decision, and the one allowed
 faithful regularization repair. Projection remains diagnostic-only; full 60
 frame validation and human review status are recorded in
 `.local/reports/stage9_one_shot/`.
+
+## 2026-07-24 -- G3 derived sign proxy and strict conflict audit
+
+Added the deterministic derived watertight sign-proxy workflow and hybrid
+original-distance/proxy-sign backend. The banana source mesh remained read-only;
+Candidate 1 local repair passed the fixed 20k surface gates and produced a
+watertight proxy with recorded boundary loops, near-zero IDs, patch IDs, hashes,
+and provenance. Identity validation passed for G1/G2/G4.
+
+The resumed A–E lane reached G3 Stage A and then correctly failed closed as
+`SIGN_PROXY_CONTACT_REGION_CONFLICT`: three active QuerySet samples were within
+the original boundary exclusion zone and two used synthetic patch faces. No
+trajectory, margin, frame, raw asset, or historical Stage 10 artifact was
+modified. The geometry audit HTML and first/middle/last PNGs were generated;
+G3 downstream C–E and the aggregate A–E recommendation remain invalid.

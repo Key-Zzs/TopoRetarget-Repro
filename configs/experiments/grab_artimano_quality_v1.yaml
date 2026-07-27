@@ -1,0 +1,29 @@
+schema_version: toporetarget.quality_experiment.v1
+experiment_id: grab_artimano_quality_v1
+subject_scope: within-subject multi-object development benchmark
+grab_root: /mnt/nas/storage/Ref2Dex_storage/GRAB/data/GRAB
+mano_model_root: /mnt/nas/storage/Ref2Dex_storage/shared_assets/body_models/mano
+artimano_asset_root: .local/assets/artimano
+target_robot: artimano_rh
+target_hand: right
+native_fps: 120.0
+frame_length: 60
+contactpose_status: deferred
+contactpose_adapter_required: true
+contactpose_not_a_blocker: true
+baseline_profiles:
+  - scipy_slsqp_active_set_contact_rich_v2
+  - scipy_slsqp_active_set_contact_rich_v3_fixed
+surface_contact_profile: artimano_surface_contact_v1
+morphology_profiles:
+  - paper_warm
+  - morphology_seed_only_v1
+  - morphology_position_prior_v1_lambda_0.1
+  - morphology_position_prior_v1_lambda_1
+contact_profiles:
+  - {id: P1, lambda_contact_pos: 0.25, lambda_contact_dir: 0.0}
+  - {id: P2, lambda_contact_pos: 1.0, lambda_contact_dir: 0.0}
+  - {id: P3, lambda_contact_pos: 4.0, lambda_contact_dir: 0.0}
+  - {id: PD1, lambda_contact_pos: 1.0, lambda_contact_dir: 0.1}
+  - {id: PD2, lambda_contact_pos: 1.0, lambda_contact_dir: 0.5}
+matrix_2x2: [E0, E1, E2, E3]

@@ -262,6 +262,23 @@ The frozen comparison keeps `scipy_slsqp_active_set_contact_rich_v2` as
 `decomposed_finger_temporal_plus_base_priors`. Both are paper-consistent interpretations;
 `author_exact` remains unresolved. Any empirical preference is an engineering preference only.
 
+## GRAB Arti-MANO A–E quality-extension boundary
+
+The frozen quality experiment retains both Eq. (9) interpretations above and
+does not claim `author_exact`. Its morphology seed, visual surface contact
+proxies, contact losses, and 2×2 selection are paper-external engineering
+extensions; GRAB contact values remain `DATASET_PROXY`. The active-set
+continuation buffer recorded in `ASSUMPTIONS.md` is initialization conditioning
+only and does not change Eq. (1)–(9), solver tolerances, collision queries, or
+strict acceptance.
+
+The initial local execution was not result-complete: G2 had valid 60-frame v2
+and v3 artifacts, while G3 was blocked before final solving by the open source
+banana mesh. The resumed run uses the separately documented derived sign proxy,
+but its strict active-QuerySet boundary gate currently routes to
+`SIGN_PROXY_CONTACT_REGION_CONFLICT`; no C–E result or recommendation may be
+inferred from that partial run.
+
 ## Faithful reproduction finalization
 
 The canonical faithful profile is
@@ -274,3 +291,14 @@ Projection is not a paper method. No significant quality improvement is
 claimed. The new fixed Stage 10 reference received repository-valid case-A
 human acceptance and is the canonical faithful baseline. See
 [`FAITHFUL_REPRODUCTION_FINALIZATION.md`](FAITHFUL_REPRODUCTION_FINALIZATION.md).
+
+## Open-object signed-distance engineering boundary
+
+The GRAB quality lane records `hybrid_original_distance_proxy_sign_v1` as
+paper-unspecified geometry engineering. The raw object mesh is unchanged; a
+derived watertight proxy supplies sign only, while the original mesh supplies
+closest point and unsigned distance. Convex hull is not an accepted proxy.
+Raw/proxy provenance, hashes, boundary loops, patch IDs, fixed deviation gates,
+and strict contact-region conflicts are retained in the geometry artifacts.
+This engineering policy does not change paper equations, solver profiles, or
+old Stage 10 artifacts.
