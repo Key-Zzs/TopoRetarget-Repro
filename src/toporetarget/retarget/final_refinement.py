@@ -76,6 +76,7 @@ DEFERRED_STATIONARITY_POLICY_ID = "feasible_stationary_v1_deferred"
 # This is initialization conditioning only; it is not an objective, tolerance,
 # active-margin, or acceptance-policy change.
 ACTIVE_SET_CONTINUATION_FEASIBILITY_BUFFER_M = 1.0e-9
+VIRTUAL_CLOSURE_QUERY_FRACTION_LIMIT = 0.02
 
 
 def regularization_profile_for_solver(
@@ -92,6 +93,165 @@ def regularization_profile_for_solver(
 
 def _as_np(value: Any) -> np.ndarray:
     return value.detach().cpu().numpy() if hasattr(value, "detach") else np.asarray(value)
+
+
+def _finite_difference_inputs(
+    current: np.ndarray,
+    *,
+    variable_count: int,
+    row_ids: np.ndarray,
+    epsilon: float,
+) -> tuple[np.ndarray, np.ndarray, float]:
+    value = np.asarray(current, dtype=np.float64).reshape(-1)
+    rows = np.asarray(row_ids, dtype=np.int64).reshape(-1)
+    step = float(epsilon)
+    if variable_count < 0 or variable_count > len(value):
+        raise ValueError("variable_count must select a prefix of current")
+    if np.any(rows < 0):
+        raise ValueError("row_ids must be non-negative")
+    if not np.isfinite(step) or step <= 0.0:
+        raise ValueError("epsilon must be finite and positive")
+    return value, rows, step
+
+
+def _batched_constraint_finite_difference(
+    residual: Callable[[np.ndarray], np.ndarray],
+    current: np.ndarray,
+    *,
+    variable_count: int,
+    row_ids: np.ndarray,
+    epsilon: float,
+) -> tuple[np.ndarray, int]:
+    """Evaluate each central-difference column once for every requested row."""
+
+    value, rows, step = _finite_difference_inputs(
+        current,
+        variable_count=variable_count,
+        row_ids=row_ids,
+        epsilon=epsilon,
+    )
+    output = np.empty((len(rows), variable_count), dtype=np.float64)
+    if len(rows) == 0 or variable_count == 0:
+        return output, 0
+    calls = 0
+    for column in range(variable_count):
+        plus = value.copy()
+        minus = value.copy()
+        plus[column] += step
+        minus[column] -= step
+        plus_values = np.asarray(residual(plus), dtype=np.float64).reshape(-1)
+        minus_values = np.asarray(residual(minus), dtype=np.float64).reshape(-1)
+        calls += 2
+        if int(rows.max()) >= len(plus_values) or len(minus_values) != len(plus_values):
+            raise ValueError("residual output does not cover row_ids consistently")
+        output[:, column] = (plus_values[rows] - minus_values[rows]) / (2.0 * step)
+    return output, calls
+
+
+def _vectorized_constraint_finite_difference(
+    residual_batch: Callable[[np.ndarray], np.ndarray],
+    current: np.ndarray,
+    *,
+    variable_count: int,
+    row_ids: np.ndarray,
+    epsilon: float,
+) -> tuple[np.ndarray, int]:
+    """Evaluate all central-difference perturbations in one batched callback."""
+
+    value, rows, step = _finite_difference_inputs(
+        current,
+        variable_count=variable_count,
+        row_ids=row_ids,
+        epsilon=epsilon,
+    )
+    output = np.empty((len(rows), variable_count), dtype=np.float64)
+    if len(rows) == 0 or variable_count == 0:
+        return output, 0
+    probes = np.repeat(value[None, :], 2 * variable_count, axis=0)
+    columns = np.arange(variable_count, dtype=np.int64)
+    probes[2 * columns, columns] += step
+    probes[2 * columns + 1, columns] -= step
+    residuals = np.asarray(residual_batch(probes), dtype=np.float64)
+    if residuals.ndim != 2 or residuals.shape[0] != len(probes):
+        raise ValueError("batched residual must return shape [probe_count, residual_count]")
+    if int(rows.max()) >= residuals.shape[1]:
+        raise ValueError("batched residual output does not cover row_ids")
+    plus_values = residuals[0::2][:, rows]
+    minus_values = residuals[1::2][:, rows]
+    output[:] = ((plus_values - minus_values) / (2.0 * step)).T
+    return output, 1
+
+
+def _column_sparse_constraint_finite_difference(
+    requested_residuals: Callable[[np.ndarray, list[np.ndarray]], list[np.ndarray]],
+    current: np.ndarray,
+    *,
+    dependency_mask: np.ndarray,
+    epsilon: float,
+) -> tuple[np.ndarray, int, int]:
+    """Batch only row/column pairs allowed by the structural dependency mask."""
+
+    dependencies = np.asarray(dependency_mask, dtype=bool)
+    if dependencies.ndim != 2:
+        raise ValueError("dependency_mask must have shape [row_count, variable_count]")
+    row_count, variable_count = dependencies.shape
+    value, _, step = _finite_difference_inputs(
+        current,
+        variable_count=variable_count,
+        row_ids=np.empty(0, dtype=np.int64),
+        epsilon=epsilon,
+    )
+    output = np.zeros((row_count, variable_count), dtype=np.float64)
+    probes: list[np.ndarray] = []
+    row_blocks: list[np.ndarray] = []
+    column_blocks: list[tuple[int, np.ndarray, int, int]] = []
+    for column in range(variable_count):
+        rows = np.flatnonzero(dependencies[:, column])
+        if len(rows) == 0:
+            continue
+        plus = value.copy()
+        minus = value.copy()
+        plus[column] += step
+        minus[column] -= step
+        plus_index = len(probes)
+        probes.extend((plus, minus))
+        row_blocks.extend((rows, rows))
+        column_blocks.append((column, rows, plus_index, plus_index + 1))
+    if not probes:
+        return output, 0, 0
+    values = np.stack(probes)
+    residual_blocks = requested_residuals(values, row_blocks)
+    if len(residual_blocks) != len(row_blocks):
+        raise ValueError("requested residual callback returned an inconsistent block count")
+    for column, rows, plus_index, minus_index in column_blocks:
+        plus_values = np.asarray(residual_blocks[plus_index], dtype=np.float64).reshape(-1)
+        minus_values = np.asarray(residual_blocks[minus_index], dtype=np.float64).reshape(-1)
+        if len(plus_values) != len(rows) or len(minus_values) != len(rows):
+            raise ValueError("requested residual callback returned an inconsistent block shape")
+        output[rows, column] = (plus_values - minus_values) / (2.0 * step)
+    probe_count = sum(len(rows) for rows in row_blocks)
+    return output, 1, int(probe_count)
+
+
+def _virtual_closure_query_gate(
+    synthetic_patch_mask: np.ndarray,
+    active_query_ids: np.ndarray,
+    *,
+    full_collision_sample_count: int,
+) -> tuple[int, int]:
+    """Count active synthetic-patch queries against a fixed 2% full-surface limit."""
+
+    if full_collision_sample_count <= 0:
+        raise ValueError("full_collision_sample_count must be positive")
+    patch_mask = np.asarray(synthetic_patch_mask, dtype=bool).reshape(-1)
+    query_ids = np.asarray(active_query_ids, dtype=np.int64).reshape(-1)
+    if len(patch_mask) != full_collision_sample_count:
+        raise ValueError("synthetic_patch_mask must cover the full collision sample set")
+    if np.any(query_ids < 0) or np.any(query_ids >= full_collision_sample_count):
+        raise ValueError("active_query_ids are outside the full collision sample set")
+    active_patch_count = int(np.count_nonzero(patch_mask[query_ids]))
+    limit = int(math.ceil(VIRTUAL_CLOSURE_QUERY_FRACTION_LIMIT * full_collision_sample_count))
+    return active_patch_count, limit
 
 
 def _sha256_bytes(value: bytes) -> str:
