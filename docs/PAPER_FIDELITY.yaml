@@ -23,7 +23,25 @@ audit_contracts:
     historical_artifacts_mutated: false
     assumptions: [A_F0_TRACKED_ASSET_PROVENANCE_001, A_F0_URDF_PATH_REBASE_001, A_F0_LEGACY_ASSET_REBIND_001, A_F0_GENERIC_TARGET_CONTRACT_001]
     evidence: [.local/reports/f0/license_audit.json, .local/reports/f0/asset_comparison.json, .local/reports/f0/numerical_regression.json, .local/reports/f0/historical_artifact_compatibility.json]
-    notes: "Tracked Arti-MANO is the first generic target-hand instance; Wuji and penetration-loss work remain future milestones."
+    notes: "Tracked Arti-MANO is the first generic target-hand instance; Wuji and penetration-loss work remain separate milestones."
+  w0_w1_wuji_hand2_target_integration:
+    profile: docs/stages/W0_W1_WUJI_HAND2_INTEGRATION.md
+    registry: src/toporetarget/robots/registry.py
+    contract: toporetarget.target_hand.v1
+    tracked_asset_root: third_party/robot_hands/wuji_hand2_beta1
+    status: implemented_with_assumptions
+    repository_infrastructure_only: true
+    modifies_equations_1_to_9: false
+    modifies_solver_profiles: false
+    adds_wuji_specific_adapter: false
+    adds_wuji_specific_solver: false
+    creates_stage10_artifacts: false
+    hardware_reproduction: false
+    full_retargeting_status: bounded_construction_only
+    required_w2_clip_count: 3
+    assumptions: [A_WUJI_HAND2_BETA1_SEMANTICS_001, A_WUJI_HAND2_BETA1_COLLISION_SEPARATION_001, A_ROBOT_KEYPOINT_ANCHORS_001, A_ROBOT_BASE_FRAME_001]
+    evidence: [third_party/robot_hands/wuji_hand2_beta1/SOURCE.yaml, docs/WUJI_HAND2_URDF_MJCF_CONSISTENCY.md, .local/reports/wuji_hand2/pipeline_smoke.json]
+    notes: "Both RH/LH generic target specs and bounded Stage 7/8/9 construction pass; formal Wuji retargeting remains W2."
   stage7_1_warm_start_audit:
     profile: src/toporetarget/workflows/warm_start_audit.py
     formal_stage7_objective_unchanged: true

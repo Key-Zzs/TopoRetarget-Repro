@@ -9,8 +9,9 @@ TopoRetarget-Repro 是一个非官方、独立、可追踪的
 
 当前实现已经覆盖 canonical HOI interface、有界 MANO→MediaPipe 风格 21 点 source-hand
 adapter、Stage 4 通用机器人手/Arti-MANO 目标运动学接口、有界的 Stage 5 GRAB 数据集
-adapter、Stage 8 source-only interaction graph/Laplacian loss，以及有界的 Stage 9
-Eq. (8)-(9) final refinement；仍未声称实现 RL pipeline 或论文实验结果。
+adapter、Stage 8 source-only interaction graph/Laplacian loss、有界 Stage 9 Eq. (8)-(9)
+final refinement，以及 W0/W1 通用 Wuji Hand2 Beta1 target-hand 集成；这些仍是有界实现，保留
+显式论文假设。W0/W1 不声称完整 Wuji 重定向、硬件复现、RL pipeline 或论文实验结果。
 
 ## 仓库概览
 
@@ -19,17 +20,20 @@ Eq. (8)-(9) final refinement；仍未声称实现 RL pipeline 或论文实验结
 - 统一的、与机器人无关的 HOISequence 数据结构、scene-frame 几何和显式 SE(3) 变换；
 - 对单条 GRAB NPZ 的只读检查，以及到 canonical Zarr 的转换；
 - 显式 MANO 语义 layout 和版本化 MANO→MediaPipe21 mapping profile；
-- 通用可微 URDF 手部 FK、命名 qpos、目标锚点和 Arti-MANO 左右手检查；
+- 通用可微 URDF 手部 FK、命名 qpos、目标锚点和 Arti-MANO/Wuji 左右手检查；
 - lazy GRAB index、保留原生时间/网格的单序列 adapter、contact modes、validation、provenance
   和 raw/canonical 对比；
 - source/object/timestamp 保留报告，以及静态和本地交互式几何 viewer；
 - 论文忠实度审计、assumption 记录和 tracked Arti-MANO 资产 provenance 支持。
 
-Arti-MANO 的第一个 tracked 机器人手资产位于 `third_party/robot_hands/artimano/`。仓库不分发
-Wuji Hand2、外部数据、MANO/SMPL-X 模型或提取缓存。它们应放在仓库外部，
+Arti-MANO 与 Wuji Hand2 Beta1 都是 tracked 机器人手资产，位于 `third_party/robot_hands/`；
+Wuji bundle 仅包含批准的 Hand2 Beta1 body 子集。仓库不分发外部数据、MANO/SMPL-X 模型或提取缓存。它们应放在仓库外部，
 通过 .local/ 配置。统一数据接口见
 [docs/HOI_DATA_INTERFACE.md](docs/HOI_DATA_INTERFACE.md)，坐标语义见
 [docs/COORDINATE_CONVENTIONS.md](docs/COORDINATE_CONVENTIONS.md)。
+
+Wuji target boundary 见 [docs/WUJI_HAND2_BETA1_TARGET.md](docs/WUJI_HAND2_BETA1_TARGET.md)，
+中文说明见 [docs/WUJI_HAND2_BETA1_TARGET.zh-CN.md](docs/WUJI_HAND2_BETA1_TARGET.zh-CN.md)。
 
 ## TODO 与完整路线图
 

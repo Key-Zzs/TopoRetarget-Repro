@@ -56,9 +56,14 @@ class RobotHandSpec:
     notes: str = ""
     asset_root_relative_path: str = ""
     optional_mjcf_relative_path: str | None = None
+    qpos_order_profile: str | None = None
+    surface_profile_path: str | None = None
+    urdf_collision_profile: str | None = None
+    mjcf_collision_profile: str | None = None
     joint_limits: dict[str, tuple[float, float]] = field(default_factory=dict)
     surface_contact_profile: dict[str, Any] = field(default_factory=dict)
     simulator_joint_mapping: dict[str, str] = field(default_factory=dict)
+    simulation_metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         relative = PurePosixPath(self.urdf_relative_path)
@@ -111,6 +116,24 @@ class RobotHandSpec:
                 if values.get("optional_mjcf_relative_path") is None
                 else str(values["optional_mjcf_relative_path"])
             ),
+            qpos_order_profile=(
+                None
+                if values.get("qpos_order_profile") is None
+                else str(values["qpos_order_profile"])
+            ),
+            surface_profile_path=(
+                None if values.get("surface_profile") is None else str(values["surface_profile"])
+            ),
+            urdf_collision_profile=(
+                None
+                if values.get("urdf_collision_profile") is None
+                else str(values["urdf_collision_profile"])
+            ),
+            mjcf_collision_profile=(
+                None
+                if values.get("mjcf_collision_profile") is None
+                else str(values["mjcf_collision_profile"])
+            ),
             joint_limits={
                 str(name): (float(bounds[0]), float(bounds[1]))
                 for name, bounds in dict(values.get("joint_limits", {})).items()
@@ -120,6 +143,7 @@ class RobotHandSpec:
                 str(name): str(mapped)
                 for name, mapped in dict(values.get("simulator_joint_mapping", {})).items()
             },
+            simulation_metadata=dict(values.get("simulation", {})),
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -147,11 +171,16 @@ class RobotHandSpec:
             "notes": self.notes,
             "asset_root_relative_path": self.asset_root_relative_path,
             "optional_mjcf_relative_path": self.optional_mjcf_relative_path,
+            "qpos_order_profile": self.qpos_order_profile,
+            "surface_profile": self.surface_profile_path,
+            "urdf_collision_profile": self.urdf_collision_profile,
+            "mjcf_collision_profile": self.mjcf_collision_profile,
             "joint_limits": {
                 name: [bounds[0], bounds[1]] for name, bounds in sorted(self.joint_limits.items())
             },
             "surface_contact_profile": _canonical(self.surface_contact_profile),
             "simulator_joint_mapping": dict(sorted(self.simulator_joint_mapping.items())),
+            "simulation": _canonical(self.simulation_metadata),
         }
 
     @property
@@ -209,9 +238,33 @@ class RobotHandSpec:
 
     @property
     def simulation(self) -> RobotSimulationSpec:
+        metadata = dict(self.simulation_metadata)
+        pair_values: list[tuple[str, str]] = []
+        for pair in metadata.get("excluded_collision_pairs", ()):
+            if len(pair) != 2:
+                raise ValueError("excluded_collision_pairs entries must contain two link names")
+            pair_values.append((str(pair[0]), str(pair[1])))
+        pairs = tuple(pair_values)
+        qpos_order = tuple(str(item) for item in metadata.get("qpos_order", self.dof_order))
+        actuator_order = tuple(str(item) for item in metadata.get("actuator_order", ()))
+        joint_mapping = dict(self.simulator_joint_mapping)
+        if not joint_mapping and len(qpos_order) == len(actuator_order):
+            joint_mapping = dict(zip(qpos_order, actuator_order, strict=True))
         return RobotSimulationSpec(
             mjcf_relative_path=self.optional_mjcf_relative_path,
-            simulator_joint_mapping=self.simulator_joint_mapping,
+            simulator_joint_mapping=joint_mapping,
+            root_link=metadata.get("root_link", self.base_link),
+            qpos_order=qpos_order,
+            actuator_order=actuator_order,
+            tip_sites=tuple(
+                str(item) for item in metadata.get("tip_sites", self.expected_tip_links)
+            ),
+            collision_source=metadata.get("collision_source"),
+            excluded_collision_pairs=pairs,
+            timestep_hints=dict(metadata.get("timestep_hints", {})),
+            known_limitations=tuple(str(item) for item in metadata.get("known_limitations", ())),
+            source_hash=metadata.get("source_hash"),
+            metadata=metadata,
         )
 
 

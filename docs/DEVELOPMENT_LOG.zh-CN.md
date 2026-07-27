@@ -21,6 +21,24 @@ Jacobians、mesh transforms 和 source bytes，结果均 exact。Stage 7–10 �
 且保持 untracked。Wuji Hand2、`develop/pene-loss`、SDF penetration loss、solver profile 修改和
 RL 均不属于 F0。
 
+## 2026-07-27 -- W0/W1 Wuji Hand2 Beta1 通用 target 集成
+
+在 `main` 完成 W0/W1。批准的 `wuji-technology/wuji-description` Hand2 Beta1 body 子集已跟踪到
+`third_party/robot_hands/wuji_hand2_beta1/`。请求的 `release/v2026.7.23` 解析到 commit
+`2b57d2621caed4e65207bb767ba25fc8eaec0881`；同版本号 tag 指向不同 commit，没有替换。`SOURCE.yaml`
+记录 MIT license、排除路径、import tool version、per-file hash 和 source manifest hash。
+
+增加独立的左右手 generic spec：26 links、25 joints、20 actuated joints、5 fixed joints，root 为
+`r_wrist`/`l_wrist`，显式 20-DoF qpos/URDF/MJCF/actuator order、MediaPipe-21 anchors、surface
+policy 及独立 URDF/MJCF collision profile。不依赖 MuJoCo 的 consistency check 在 neutral、midpoint
+和随机 qpos 上通过，覆盖 axes、limits、root、tip sites、link transform、anchors、mesh reference
+以及十个 MJCF contact-exclude pair。soft-pad tip mesh 保留为 visual payload，不静默加入 formal collision。
+
+Stage 7/8 通用路径已移除历史 22-DoF 假设。airplane `[240,243)` 有界窗口通过 warm-start、
+source-only graph/evaluation、collision QuerySet 和 Stage 9 objective/constraint/Jacobian construction
+smoke；报告明确 `optimization_performed=false`，不声称 W2 的完整多 clip Wuji 重定向。
+`develop/pene-loss` worktree、上游 checkout、canonical source、object samples 和历史 artifact 均未修改。
+
 ## 2026-07-24 -- GRAB Arti-MANO 质量 A–E
 
 实现固定的 G1–G4 质量实验。阶段 A 冻结原生帧范围并验证 right-hand identity，复用匹配的

@@ -11,9 +11,10 @@ The repository is intentionally transparent about scope: the current implementat
 canonical HOI interface, a bounded MANO-to-MediaPipe-style-21 source adapter, the Stage 4 generic
 robot-hand/Arti-MANO target kinematics interface, the bounded Stage 5 GRAB dataset adapter, a
 Stage 7 relative-bone-direction warm-start trajectory, the bounded Stage 8 source interaction
-graph/Laplacian loss, and the bounded Stage 9 Eq. (8)-(9) final refinement. Stages 7-9 are complete
-with explicit paper assumptions; the repository still does not claim the paper's RL pipeline or
-reported experimental result.
+graph/Laplacian loss, the bounded Stage 9 Eq. (8)-(9) final refinement, and the W0/W1 generic Wuji
+Hand2 Beta1 target-hand integration. Stages 7-9 remain bounded implementations with explicit
+paper assumptions; W0/W1 does not claim full Wuji retargeting, hardware reproduction, RL, or the
+paper's reported experimental result.
 
 ## Overview
 
@@ -23,7 +24,7 @@ The main entry point is the `toporetarget` CLI. The code is organized around com
   frame conversions;
 - read-only inspection of one GRAB NPZ sequence and conversion to a canonical Zarr cache;
 - explicit MANO semantic layouts and versioned MANO-to-MediaPipe21 mapping profiles;
-- generic differentiable URDF hand FK, named qpos, target anchors, and Arti-MANO RH/LH inspection;
+- generic differentiable URDF hand FK, named qpos, target anchors, and Arti-MANO/Wuji RH/LH inspection;
 - a lazy GRAB index, native-time/native-mesh single-sequence adapter, contact modes, validation,
   provenance, and raw/canonical comparison;
 - source/object/timestamp preservation reports and static or interactive geometry viewers;
@@ -33,11 +34,16 @@ The main entry point is the `toporetarget` CLI. The code is organized around com
   weights, shared Laplacians, frozen warm-start evaluation, qpos Jacobians, and RH/LH bounded reports;
 - paper-fidelity auditing, assumptions tracking, and tracked Arti-MANO asset provenance support.
 
-Arti-MANO is the first tracked robot-hand asset under `third_party/robot_hands/artimano/`; Wuji
-Hand2, external datasets, MANO/SMPL-X models, and extraction caches are not distributed here. Keep
-machine-local data under `.local/`-configured paths. The canonical data
+Arti-MANO and Wuji Hand2 Beta1 are tracked robot-hand assets under `third_party/robot_hands/`; the
+Wuji bundle is limited to the approved Hand2 Beta1 body subset. External datasets, MANO/SMPL-X
+models, and extraction caches are not distributed here. Keep machine-local data under `.local/`
+configured paths. The canonical data
 interface is described in [`docs/HOI_DATA_INTERFACE.md`](docs/HOI_DATA_INTERFACE.md), and frame
 semantics are defined in [`docs/COORDINATE_CONVENTIONS.md`](docs/COORDINATE_CONVENTIONS.md).
+
+The Wuji target boundary is documented in
+[`docs/WUJI_HAND2_BETA1_TARGET.md`](docs/WUJI_HAND2_BETA1_TARGET.md), with Chinese documentation
+in [`docs/WUJI_HAND2_BETA1_TARGET.zh-CN.md`](docs/WUJI_HAND2_BETA1_TARGET.zh-CN.md).
 
 ## TODO and roadmap
 

@@ -41,7 +41,7 @@ class WarmStartTrajectory:
         if self.schema_version != WARM_START_SCHEMA_VERSION:
             raise WarmStartArtifactError(f"unsupported warm-start schema: {self.schema_version!r}")
         required = {
-            "qpos": (2, 22),
+            "qpos": (2, None),
             "base_pose_scene": (3, 4, 4),
             "robot_keypoints_base": (3, 21, 3),
             "robot_keypoints_scene": (3, 21, 3),
@@ -64,12 +64,17 @@ class WarmStartTrajectory:
             if name not in self.arrays:
                 raise WarmStartArtifactError(f"warm-start artifact missing array: {name}")
             array = np.asarray(self.arrays[name])
-            if array.ndim != len(shape_tail) or tuple(array.shape[1:]) != shape_tail[1:]:
+            expected_tail = shape_tail[1:]
+            actual_tail = tuple(array.shape[1:])
+            if array.ndim != len(shape_tail) or any(
+                expected is not None and actual != expected
+                for actual, expected in zip(actual_tail, expected_tail, strict=True)
+            ):
                 raise WarmStartArtifactError(f"{name} has invalid shape {array.shape}")
             if array.shape[0] != frame_count:
                 raise WarmStartArtifactError(f"{name} frame count mismatch")
-        if self.arrays["qpos"].shape[1] != 22:
-            raise WarmStartArtifactError("Stage 7 artifact qpos must have 22 columns")
+        if self.arrays["qpos"].shape[1] <= 0:
+            raise WarmStartArtifactError("Stage 7 artifact qpos must have at least one DoF")
         if not np.all(np.isfinite(self.arrays["qpos"])):
             raise WarmStartArtifactError("qpos contains NaN or Inf")
         return self

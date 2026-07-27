@@ -49,6 +49,15 @@ class AssetResolution:
                     manifest = loaded
             except (OSError, json.JSONDecodeError):
                 manifest = {}
+        source: dict[str, Any] = {}
+        source_path = self.root / "SOURCE.yaml"
+        if source_path.is_file():
+            try:
+                loaded_source = yaml.safe_load(source_path.read_text(encoding="utf-8"))
+                if isinstance(loaded_source, dict):
+                    source = loaded_source
+            except (OSError, yaml.YAMLError):
+                source = {}
         return {
             "asset_id": self.asset_id,
             "resolved_asset_source": self.source,
@@ -56,8 +65,9 @@ class AssetResolution:
             "explicit_override": self.explicit,
             "legacy_fallback_used": self.legacy_fallback_used,
             "asset_manifest_hash": self.asset_manifest_hash,
-            "source_commit": manifest.get("upstream_commit"),
-            "license": manifest.get("license"),
+            "source_commit": manifest.get("upstream_commit")
+            or source.get("resolved_upstream_commit"),
+            "license": manifest.get("license") or source.get("license"),
             "warnings": list(self.warnings),
         }
 

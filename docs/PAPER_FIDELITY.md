@@ -79,6 +79,18 @@ solver profiles, or create new Stage 10 artifacts. See [`ROBOT_HAND_TARGET_CONTR
 [`THIRD_PARTY_ASSET_POLICY.md`](THIRD_PARTY_ASSET_POLICY.md), and the ignored reports under
 `.local/reports/f0/`.
 
+## W0/W1 Wuji Hand2 Beta1 target boundary
+
+W0/W1 adds a second generic `RobotHandSpec`/registry instance for the pinned Wuji Hand2 Beta1 RH/LH
+body assets. It records source provenance, explicit 20-DoF orders, URDF/MJCF consistency, semantic
+anchors, visual/collision separation, and bounded generic Stage 7/8/9 construction evidence. This
+is an engineering target-hand integration; it does not add a Wuji-specific adapter or solver, does
+not change Equations 1–9 or solver profiles, and does not reproduce Wuji hardware, calibration,
+MJCF playback, PPO, or the paper's zero-shot claim. At least three watertight clips are required for
+the future W2 full-retargeting milestone. See [`WUJI_HAND2_BETA1_TARGET.md`](WUJI_HAND2_BETA1_TARGET.md),
+[`WUJI_HAND2_SEMANTIC_MAPPING.md`](WUJI_HAND2_SEMANTIC_MAPPING.md), and
+[`stages/W0_W1_WUJI_HAND2_INTEGRATION.md`](stages/W0_W1_WUJI_HAND2_INTEGRATION.md).
+
 ## 9. Stage 4 target-hand boundary
 
 Stage 4 implements repository infrastructure for `P^r(q)`: a generic YAML/URDF robot-hand

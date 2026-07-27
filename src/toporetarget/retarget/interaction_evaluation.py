@@ -70,7 +70,7 @@ class InteractionEvaluationTrajectory:
             )
         shapes = {
             "timestamps": (t,),
-            "qpos": (t, 22),
+            "qpos": (t, None),
             "base_pose_scene": (t, 4, 4),
             "robot_keypoints_scene": (t, 21, 3),
             "robot_vertices": (t, GRAPH_VERTEX_COUNT, 3),
@@ -82,16 +82,22 @@ class InteractionEvaluationTrajectory:
             "per_hand_point_contribution": (t, 21),
             "per_object_point_contribution": (t, 50),
             "max_residual_vertex": (t,),
-            "qpos_jacobian": (t, GRAPH_VERTEX_COUNT * 3, 22),
+            "qpos_jacobian": (t, GRAPH_VERTEX_COUNT * 3, None),
             "base_translation_sensitivity": (t,),
             "base_rotation_sensitivity": (t,),
             "frame_valid": (t,),
         }
         for name, shape in shapes.items():
-            if tuple(getattr(self, name).shape) != shape:
+            actual = tuple(getattr(self, name).shape)
+            if len(actual) != len(shape) or any(
+                expected is not None and value != expected
+                for value, expected in zip(actual, shape, strict=True)
+            ):
                 raise InteractionEvaluationError(
                     f"{name} has shape {getattr(self, name).shape}, expected {shape}"
                 )
+        if self.qpos.shape[1] <= 0 or self.qpos_jacobian.shape[2] != self.qpos.shape[1]:
+            raise InteractionEvaluationError("qpos and qpos_jacobian DoF widths do not match")
         if len(self.frame_status) != t or not np.all(self.frame_valid):
             raise InteractionEvaluationError("evaluation contains invalid frames")
         if not np.all(np.isfinite(self.e_im)):

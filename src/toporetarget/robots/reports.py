@@ -11,7 +11,9 @@ from typing import Any
 import numpy as np
 
 from toporetarget.keypoints.registry import get_layout
+from toporetarget.utils.hashing import sha256_file
 
+from .simulation import validate_urdf_mjcf
 from .urdf.geometry import geometry_summary
 
 
@@ -80,6 +82,37 @@ def _random_q(model: Any, *, seed: int, count: int) -> np.ndarray:
     )
 
 
+def _check_generic_asset_manifest(root: Path) -> dict[str, Any]:
+    manifest_path = root / "asset_manifest.json"
+    if not manifest_path.is_file():
+        return {"status": "invalid", "message": "asset_manifest.json is missing"}
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        tracked = manifest.get("tracked_files", [])
+        missing: list[str] = []
+        changed: list[str] = []
+        for item in tracked:
+            relative = str(item["path"])
+            path = root / relative
+            if not path.is_file():
+                missing.append(relative)
+            elif sha256_file(path) != str(item["sha256"]):
+                changed.append(relative)
+        valid = not missing and not changed and bool(tracked)
+        return {
+            "status": "ok" if valid else "invalid",
+            "destination": str(root),
+            "manifest_present": True,
+            "tracked_file_count": len(tracked),
+            "missing_files": missing,
+            "changed_files": changed,
+            "source_manifest_sha256": manifest.get("source_manifest_sha256"),
+            "message": "Asset validation passed" if valid else "Asset validation failed",
+        }
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return {"status": "invalid", "message": f"invalid generic asset manifest: {exc}"}
+
+
 def validate_robot_model(
     model: Any, *, seed: int = 4, dtype: str = "float64"
 ) -> RobotValidationReport:
@@ -101,11 +134,16 @@ def validate_robot_model(
     _check(checks, "topology", actual == expected, {"actual": actual, "expected": expected})
     asset_integrity = None
     if model.asset_root is not None and (model.asset_root / "asset_manifest.json").is_file():
-        from toporetarget.paths.assets import check_artimano_assets
+        if model.spec.asset_id == "artimano":
+            from toporetarget.paths.assets import check_artimano_assets
 
-        asset_check = check_artimano_assets(model.asset_root)
-        asset_integrity = asset_check.as_dict()
-        _check(checks, "asset_manifest", asset_check.status == "ok", asset_integrity)
+            asset_check = check_artimano_assets(model.asset_root)
+            asset_integrity = asset_check.as_dict()
+            asset_ok = asset_check.status == "ok"
+        else:
+            asset_integrity = _check_generic_asset_manifest(model.asset_root)
+            asset_ok = asset_integrity["status"] == "ok"
+        _check(checks, "asset_manifest", asset_ok, asset_integrity)
     _check(
         checks,
         "base_link",
@@ -126,12 +164,13 @@ def validate_robot_model(
         neutral_valid,
         {"min_margin": float(np.min(np.minimum(neutral - lower, upper - neutral)))},
     )
-    q_samples = np.vstack([neutral, _random_q(model, seed=seed, count=3)])
+    midpoint = np.where(np.isfinite(lower) & np.isfinite(upper), (lower + upper) / 2.0, neutral)
+    q_samples = np.vstack([neutral, midpoint, _random_q(model, seed=seed, count=10)])
     _check(
         checks,
         "random_q_limits",
         bool(np.all(q_samples >= lower) and np.all(q_samples <= upper)),
-        {"seed": seed, "count": 3},
+        {"seed": seed, "count": 10, "includes": ["neutral", "midpoint", "random"]},
     )
     _check(
         checks,
@@ -208,11 +247,11 @@ def validate_robot_model(
     _check(
         checks,
         "fk_cross_check",
-        fk_translation_max <= 1e-8 and fk_rotation_max <= 1e-8,
+        fk_translation_max <= 1e-10 and fk_rotation_max <= 1e-10,
         {
             "translation_max_error": fk_translation_max,
             "rotation_geodesic_max_error": fk_rotation_max,
-            "tolerance": {"translation": 1e-8, "rotation": 1e-8},
+            "tolerance": {"translation": 1e-10, "rotation": 1e-10},
         },
     )
 
@@ -230,6 +269,13 @@ def validate_robot_model(
         equivariance <= 1e-8,
         {"max_point_error": equivariance, "tolerance": 1e-8},
     )
+    simulation = validate_urdf_mjcf(model, seed=seed, random_count=10)
+    _check(
+        checks,
+        "urdf_mjcf_consistency",
+        simulation["status"] in {"pass", "not_applicable"},
+        simulation,
+    )
     metrics = {
         "topology": actual,
         "geometry": geometry,
@@ -243,6 +289,7 @@ def validate_robot_model(
         "spec_hash": model.spec_hash,
         "anchor_profile_hash": model.anchor_profile.sha256,
         "asset_integrity": asset_integrity,
+        "urdf_mjcf": simulation,
         "seed": seed,
         "dtype": dtype,
     }

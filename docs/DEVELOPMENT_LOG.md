@@ -23,6 +23,29 @@ and no historical artifact was rewritten. Evidence is under `.local/reports/f0/`
 untracked. Wuji Hand2, `develop/pene-loss`, SDF penetration loss, solver-profile changes, and RL
 remain outside F0.
 
+## 2026-07-27 -- W0/W1 Wuji Hand2 Beta1 generic target integration
+
+Completed W0/W1 on `main`. The approved Hand2 Beta1 body subset from
+`wuji-technology/wuji-description` is tracked under `third_party/robot_hands/wuji_hand2_beta1/`.
+The requested `release/v2026.7.23` ref resolves to commit
+`2b57d2621caed4e65207bb767ba25fc8eaec0881`; the same-version tag is a different commit and was not
+substituted. `SOURCE.yaml` records the MIT license, exclusions, import tool version, per-file hashes,
+and source manifest hash.
+
+Added independent RH/LH generic specs: 26 links, 25 joints, 20 actuated joints, 5 fixed joints,
+roots `r_wrist`/`l_wrist`, explicit 20-DoF qpos/URDF/MJCF/actuator orders, MediaPipe-21 anchors,
+surface policies, and separate URDF/MJCF collision profiles. Backend-free consistency checks pass
+for neutral/midpoint/random qpos, including axes, limits, root, tip sites, link transforms, anchors,
+mesh references, and ten MJCF contact-exclude pairs. Soft-pad tip meshes remain visual payloads and
+are not silently promoted into formal collision.
+
+The generic Stage 7/8 paths were widened from historical 22-DoF assumptions. A bounded airplane
+window `[240,243)` passes warm-start validation, source-only graph/evaluation, collision QuerySet
+construction, and Stage 9 objective/constraint/Jacobian construction. The smoke reports
+`optimization_performed=false`; W2 full multi-clip Wuji retargeting is not claimed. The
+`develop/pene-loss` worktree, upstream checkout, canonical source, object samples, and historical
+artifacts remained unchanged.
+
 ## 2026-07-24 -- GRAB Arti-MANO quality A–E
 
 Implemented the frozen G1–G4 quality experiment. Stage A binds the prescribed

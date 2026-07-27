@@ -1,0 +1,26 @@
+profile_id: wuji_hand2_beta1_lh_surfaces_v1
+version: "1.0.0"
+robot_id: wuji_hand2_beta1_lh
+visual_source: urdf_visual
+visual_mesh_root: third_party/robot_hands/wuji_hand2_beta1/meshes/left
+contact_surface_source: official_mjcf_tip_sites
+tip_sites: [l_thumb_tip, l_index_finger_tip, l_middle_finger_tip, l_ring_finger_tip, l_pinky_tip]
+contact_surface_proxies:
+  - semantic: thumb_tip
+    site: l_thumb_tip
+    formal_collision: false
+  - semantic: index_tip
+    site: l_index_finger_tip
+    formal_collision: false
+  - semantic: middle_tip
+    site: l_middle_finger_tip
+    formal_collision: false
+  - semantic: ring_tip
+    site: l_ring_finger_tip
+    formal_collision: false
+  - semantic: pinky_tip
+    site: l_pinky_tip
+    formal_collision: false
+known_limitations:
+  - fingertip soft-pad STL payloads are retained but are not formal collision geometry
+  - tip query sites represent the official Beta1 query convention and may be offset from the physical pad

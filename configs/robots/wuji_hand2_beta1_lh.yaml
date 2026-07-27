@@ -1,0 +1,65 @@
+name: wuji_hand2_beta1_lh
+version: "1.0.0"
+side: left
+asset_id: wuji_hand2_beta1
+asset_root_relative_path: third_party/robot_hands/wuji_hand2_beta1
+urdf_relative_path: urdf/left.urdf
+optional_mjcf_relative_path: mjcf/left.xml
+base_link: l_wrist
+semantic_keypoint_layout: mediapipe21
+keypoint_anchor_profile: wuji_hand2_beta1_lh_mediapipe21
+qpos_order_profile: joint_orders/wuji_hand2_beta1_lh.yaml
+surface_profile: surfaces/wuji_hand2_beta1_lh.yaml
+urdf_collision_profile: collision/wuji_hand2_beta1_urdf_lh.yaml
+mjcf_collision_profile: collision/wuji_hand2_beta1_mjcf_lh.yaml
+dof_order: [l_thumb_cmc_flex, l_thumb_cmc_abd, l_thumb_mcp, l_thumb_ip, l_index_finger_mcp_flex, l_index_finger_mcp_abd, l_index_finger_pip, l_index_finger_dip, l_middle_finger_mcp_flex, l_middle_finger_mcp_abd, l_middle_finger_pip, l_middle_finger_dip, l_ring_finger_mcp_flex, l_ring_finger_mcp_abd, l_ring_finger_pip, l_ring_finger_dip, l_pinky_mcp_flex, l_pinky_mcp_abd, l_pinky_pip, l_pinky_dip]
+neutral_q: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+expected_link_count: 26
+expected_total_joint_count: 25
+expected_actuated_joint_count: 20
+expected_fixed_joint_count: 5
+expected_tip_links: [l_thumb_tip, l_index_finger_tip, l_middle_finger_tip, l_ring_finger_tip, l_pinky_tip]
+visual_geometry_policy:
+  profile_id: wuji_hand2_beta1_lh_surfaces_v1
+  source: urdf_visual
+  mesh_units: m
+  missing_geometry: report
+collision_geometry_policy:
+  default_source: mjcf_convex_hull
+  urdf_profile: collision/wuji_hand2_beta1_urdf_lh.yaml
+  mjcf_profile: collision/wuji_hand2_beta1_mjcf_lh.yaml
+  soft_pad_meshes_formal_collision: false
+  visual_tip_auto_collision: false
+self_collision:
+  supported: false
+  source: mjcf_contact_excludes
+  excluded_pair_count: 10
+surface_contact_profile:
+  profile_id: wuji_hand2_beta1_lh_surfaces_v1
+  tip_sites: [l_thumb_tip, l_index_finger_tip, l_middle_finger_tip, l_ring_finger_tip, l_pinky_tip]
+  formal_collision_source: mjcf_convex_hull
+upstream_provenance:
+  upstream_repository: https://github.com/wuji-technology/wuji-description.git
+  upstream_ref: release/v2026.7.23
+  resolved_upstream_commit: 2b57d2621caed4e65207bb767ba25fc8eaec0881
+  license: MIT
+  source_manifest_sha256: 69ed702aa29166d3a8992af0cae3904bf12d5247e04ebaa2fa16fc410414dd16
+  urdf_sha256: cec0a7eb6a34fd82e200def7b75c1d477fad790b2de903aec58e59991994c471
+  mjcf_sha256: ebaa3b07854c8df1847ffbf54d9d6527e82d838d02329e4c35c6ca667b8fef89
+  anchor_source: pinned Wuji Hand2 Beta1 URDF/MJCF
+assumptions:
+  - A_ROBOT_KEYPOINT_ANCHORS_001
+  - A_ROBOT_BASE_FRAME_001
+  - A_WUJI_HAND2_BETA1_SEMANTICS_001
+  - A_WUJI_HAND2_BETA1_COLLISION_SEPARATION_001
+notes: Wuji Hand2 Beta1 is a new target embodiment registered through the generic target-hand contract; no Wuji-specific retargeting solver exists.
+simulation:
+  root_link: l_wrist
+  qpos_order: [l_thumb_cmc_flex, l_thumb_cmc_abd, l_thumb_mcp, l_thumb_ip, l_index_finger_mcp_flex, l_index_finger_mcp_abd, l_index_finger_pip, l_index_finger_dip, l_middle_finger_mcp_flex, l_middle_finger_mcp_abd, l_middle_finger_pip, l_middle_finger_dip, l_ring_finger_mcp_flex, l_ring_finger_mcp_abd, l_ring_finger_pip, l_ring_finger_dip, l_pinky_mcp_flex, l_pinky_mcp_abd, l_pinky_pip, l_pinky_dip]
+  actuator_order: [l_THJ0, l_THJ1, l_THJ2, l_THJ3, l_FFJ0, l_FFJ1, l_FFJ2, l_FFJ3, l_MFJ0, l_MFJ1, l_MFJ2, l_MFJ3, l_RFJ0, l_RFJ1, l_RFJ2, l_RFJ3, l_LFJ0, l_LFJ1, l_LFJ2, l_LFJ3]
+  tip_sites: [l_thumb_tip, l_index_finger_tip, l_middle_finger_tip, l_ring_finger_tip, l_pinky_tip]
+  collision_source: mjcf_convex_hull
+  excluded_collision_pairs: [[l_thumb_proximal, l_wrist], [l_thumb_proximal_abd, l_wrist], [l_index_finger_proximal, l_wrist], [l_index_finger_proximal_abd, l_wrist], [l_middle_finger_proximal, l_wrist], [l_middle_finger_proximal_abd, l_wrist], [l_ring_finger_proximal, l_wrist], [l_ring_finger_proximal_abd, l_wrist], [l_pinky_proximal, l_wrist], [l_pinky_proximal_abd, l_wrist]]
+  timestep_hints: {timestep_s: 0.002, integrator: RK4, solver: Newton, tolerance: 1.0e-10}
+  known_limitations: [fingertip soft-pad meshes are not formal collision geometry, drive gains are inherited platform calibration]
+  source_hash: ebaa3b07854c8df1847ffbf54d9d6527e82d838d02329e4c35c6ca667b8fef89

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +21,10 @@ class AnchorDefinition:
     joint_name: str | None = None
     local_xyz: tuple[float, float, float] | None = None
     source: str = ""
+    parent: str | None = None
+    finger: str | None = None
+    confidence: float | None = None
+    provenance: dict[str, Any] = field(default_factory=dict)
     assumptions: tuple[str, ...] = ()
     notes: str = ""
 
@@ -39,6 +43,10 @@ class AnchorDefinition:
             joint_name=None if values.get("joint_name") is None else str(values["joint_name"]),
             local_xyz=local_xyz,
             source=str(values.get("source", "")),
+            parent=None if values.get("parent") is None else str(values["parent"]),
+            finger=None if values.get("finger") is None else str(values["finger"]),
+            confidence=(None if values.get("confidence") is None else float(values["confidence"])),
+            provenance=dict(values.get("provenance", {})),
             assumptions=tuple(str(item) for item in values.get("assumptions", [])),
             notes=str(values.get("notes", "")),
         )
@@ -51,6 +59,10 @@ class AnchorDefinition:
             "joint_name": self.joint_name,
             "local_xyz": None if self.local_xyz is None else list(self.local_xyz),
             "source": self.source,
+            "parent": self.parent,
+            "finger": self.finger,
+            "confidence": self.confidence,
+            "provenance": dict(self.provenance or {}),
             "assumptions": list(self.assumptions),
             "notes": self.notes,
         }
@@ -137,7 +149,11 @@ def load_anchor_profile(profile_id: str, *, config_root: str | Path | None = Non
         root = Path(__file__).resolve().parents[3] / "configs" / "robots"
     else:
         root = Path(config_root).expanduser()
-    candidates = [root / "keypoints" / f"{profile_id}.yaml", root / f"{profile_id}.yaml"]
+    candidates = [
+        root / "anchors" / f"{profile_id}.yaml",
+        root / "keypoints" / f"{profile_id}.yaml",
+        root / f"{profile_id}.yaml",
+    ]
     path = next((item for item in candidates if item.is_file()), None)
     if path is None:
         raise FileNotFoundError(f"anchor profile not found: {profile_id} below {root}")

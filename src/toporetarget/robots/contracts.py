@@ -105,6 +105,15 @@ class RobotSimulationSpec:
 
     mjcf_relative_path: str | None = None
     simulator_joint_mapping: dict[str, str] = field(default_factory=dict)
+    root_link: str | None = None
+    qpos_order: tuple[str, ...] = ()
+    actuator_order: tuple[str, ...] = ()
+    tip_sites: tuple[str, ...] = ()
+    collision_source: str | None = None
+    excluded_collision_pairs: tuple[tuple[str, str], ...] = ()
+    timestep_hints: dict[str, Any] = field(default_factory=dict)
+    known_limitations: tuple[str, ...] = ()
+    source_hash: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -117,6 +126,15 @@ class RobotSimulationSpec:
         return {
             "mjcf_relative_path": self.mjcf_relative_path,
             "simulator_joint_mapping": dict(sorted(self.simulator_joint_mapping.items())),
+            "root_link": self.root_link,
+            "qpos_order": list(self.qpos_order),
+            "actuator_order": list(self.actuator_order),
+            "tip_sites": list(self.tip_sites),
+            "collision_source": self.collision_source,
+            "excluded_collision_pairs": [list(pair) for pair in self.excluded_collision_pairs],
+            "timestep_hints": dict(self.timestep_hints),
+            "known_limitations": list(self.known_limitations),
+            "source_hash": self.source_hash,
             "metadata": dict(self.metadata),
         }
 

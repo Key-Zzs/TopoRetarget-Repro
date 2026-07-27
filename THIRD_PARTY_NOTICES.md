@@ -20,3 +20,16 @@ MANO/SMPL-X model files remain outside the repository and retain their own licen
 
 The old `.local/assets/artimano/` import is not tracked or required for normal execution. It remains
 as a compatibility fallback only and emits a deprecation warning.
+
+## Wuji Hand2 Beta1
+
+`third_party/robot_hands/wuji_hand2_beta1/` is a tracked subset of
+`wuji-technology/wuji-description` at `release/v2026.7.23`, resolved to commit
+`2b57d2621caed4e65207bb767ba25fc8eaec0881`. The imported body assets are MIT-licensed; retain
+`third_party/robot_hands/wuji_hand2_beta1/LICENSE`, `SOURCE.yaml`, and `NOTICE.md` when redistributing.
+The bundle contains the RH/LH URDF/MJCF files and referenced STL meshes only. The upstream source
+manifest, exclusions, and per-file hashes are recorded in `SOURCE.yaml`.
+
+The fingertip soft-pad STL payloads are retained as visual payloads and are not silently promoted
+into formal collision. The generic registry integration does not claim original Wuji hardware
+reproduction or deployment calibration.

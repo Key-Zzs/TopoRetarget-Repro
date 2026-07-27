@@ -86,7 +86,7 @@ from toporetarget.retarget.refinement_checkpoint import (
 )
 from toporetarget.retarget.refinement_performance import RefinementExecutionProfile
 from toporetarget.retarget.solver import WarmStartSolveError, load_solver_profile
-from toporetarget.robots.artimano import load_artimano_model
+from toporetarget.robots.registry import get_robot_registry
 from toporetarget.utils.hashing import sha256_file, sha256_tree
 
 app = typer.Typer(help="Stage 7-9 retargeting tools.")
@@ -145,8 +145,8 @@ def _resolve_hand(sequence: Any, hand: str) -> str:
 
 
 def _load_robot(name: str, asset_root: Path | None) -> Any:
-    side = {"artimano_rh": "rh", "artimano_lh": "lh"}.get(name, name)
-    return load_artimano_model(side, asset_root=asset_root)
+    repo_root = Path(__file__).resolve().parents[3]
+    return get_robot_registry(repo_root=repo_root).load(name, asset_root=asset_root)
 
 
 def _slice_sequence(sequence: Any, start: int, end: int | None) -> Any:

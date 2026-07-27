@@ -12,6 +12,7 @@ from toporetarget.paths.assets import AssetResolution
 from toporetarget.utils.hashing import sha256_file
 
 from .anchors import AnchorProfile, RobotKeypointSet, load_anchor_profile
+from .profiles import load_qpos_order_profile
 from .spec import RobotHandSpec
 from .urdf.geometry import (
     RobotGeometryInstance,
@@ -46,6 +47,7 @@ class RobotHandModel:
         self.asset_resolution = asset_resolution
         self.config_root = config_root
         self._anchor_profile: AnchorProfile | None = None
+        self._qpos_order_profile: dict[str, Any] | None = None
         if spec.base_link != urdf_model.root_link:
             configured = spec.base_link
             actual = urdf_model.root_link
@@ -59,6 +61,31 @@ class RobotHandModel:
             raise ValueError(f"{spec.name}: neutral_q length must equal configured DoF count")
         self._dof_index = {name: index for index, name in enumerate(spec.dof_order)}
         self._q_index_by_joint = {name: self._dof_index[name] for name in actual_dofs}
+        if spec.qpos_order_profile is not None:
+            self._qpos_order_profile = load_qpos_order_profile(
+                spec.qpos_order_profile,
+                config_root=self.config_root
+                or Path(__file__).resolve().parents[3] / "configs" / "robots",
+                expected_dof_order=spec.dof_order,
+            )
+
+    def _validate_anchor_references(self, profile: AnchorProfile | None = None) -> None:
+        joint_names = set(self.urdf.joint_names)
+        link_names = set(self.urdf.link_names)
+        selected = self._anchor_profile if profile is None else profile
+        if selected is None:
+            return
+        for anchor in selected.anchors:
+            if anchor.link_name is not None and anchor.link_name not in link_names:
+                raise ValueError(
+                    f"{self.name}: anchor {anchor.semantic_name} references unknown "
+                    f"link {anchor.link_name}"
+                )
+            if anchor.joint_name is not None and anchor.joint_name not in joint_names:
+                raise ValueError(
+                    f"{self.name}: anchor {anchor.semantic_name} references unknown "
+                    f"joint {anchor.joint_name}"
+                )
 
     @property
     def name(self) -> str:
@@ -137,7 +164,12 @@ class RobotHandModel:
             self._anchor_profile = load_anchor_profile(
                 self.spec.keypoint_anchor_profile, config_root=self.config_root
             )
+            self._validate_anchor_references(self._anchor_profile)
         return self._anchor_profile
+
+    @property
+    def qpos_order_profile(self) -> dict[str, Any] | None:
+        return self._qpos_order_profile
 
     def _qpos_tensor(
         self, qpos: Any, *, dtype: Any | None = None, device: Any | None = None
@@ -369,6 +401,13 @@ class RobotHandModel:
                 "surface": self.spec.surface_profile.as_dict(),
                 "collision": self.spec.collision_profile.as_dict(),
                 "simulation": self.spec.simulation.as_dict(),
+                "profile_paths": {
+                    "qpos_order": self.spec.qpos_order_profile,
+                    "surface": self.spec.surface_profile_path,
+                    "urdf_collision": self.spec.urdf_collision_profile,
+                    "mjcf_collision": self.spec.mjcf_collision_profile,
+                },
+                "qpos_order_profile": self.qpos_order_profile,
             },
             "geometry": geometry_summary(self.urdf),
             "assumptions": list(self.spec.assumptions),

@@ -1,0 +1,74 @@
+profile_id: wuji_hand2_beta1_rh_qpos_v1
+version: "1.0.0"
+robot_id: wuji_hand2_beta1_rh
+side: right
+source: tracked URDF/MJCF at release/v2026.7.23
+urdf_path: third_party/robot_hands/wuji_hand2_beta1/urdf/right.urdf
+mjcf_path: third_party/robot_hands/wuji_hand2_beta1/mjcf/right.xml
+dof_order:
+  - r_thumb_cmc_flex
+  - r_thumb_cmc_abd
+  - r_thumb_mcp
+  - r_thumb_ip
+  - r_index_finger_mcp_flex
+  - r_index_finger_mcp_abd
+  - r_index_finger_pip
+  - r_index_finger_dip
+  - r_middle_finger_mcp_flex
+  - r_middle_finger_mcp_abd
+  - r_middle_finger_pip
+  - r_middle_finger_dip
+  - r_ring_finger_mcp_flex
+  - r_ring_finger_mcp_abd
+  - r_ring_finger_pip
+  - r_ring_finger_dip
+  - r_pinky_mcp_flex
+  - r_pinky_mcp_abd
+  - r_pinky_pip
+  - r_pinky_dip
+urdf_joint_order: [r_thumb_cmc_flex, r_thumb_cmc_abd, r_thumb_mcp, r_thumb_ip, r_index_finger_mcp_flex, r_index_finger_mcp_abd, r_index_finger_pip, r_index_finger_dip, r_middle_finger_mcp_flex, r_middle_finger_mcp_abd, r_middle_finger_pip, r_middle_finger_dip, r_ring_finger_mcp_flex, r_ring_finger_mcp_abd, r_ring_finger_pip, r_ring_finger_dip, r_pinky_mcp_flex, r_pinky_mcp_abd, r_pinky_pip, r_pinky_dip]
+mjcf_joint_order: [r_thumb_cmc_flex, r_thumb_cmc_abd, r_thumb_mcp, r_thumb_ip, r_index_finger_mcp_flex, r_index_finger_mcp_abd, r_index_finger_pip, r_index_finger_dip, r_middle_finger_mcp_flex, r_middle_finger_mcp_abd, r_middle_finger_pip, r_middle_finger_dip, r_ring_finger_mcp_flex, r_ring_finger_mcp_abd, r_ring_finger_pip, r_ring_finger_dip, r_pinky_mcp_flex, r_pinky_mcp_abd, r_pinky_pip, r_pinky_dip]
+actuator_order: [r_THJ0, r_THJ1, r_THJ2, r_THJ3, r_FFJ0, r_FFJ1, r_FFJ2, r_FFJ3, r_MFJ0, r_MFJ1, r_MFJ2, r_MFJ3, r_RFJ0, r_RFJ1, r_RFJ2, r_RFJ3, r_LFJ0, r_LFJ1, r_LFJ2, r_LFJ3]
+semantic_mapping:
+  r_thumb_cmc_flex: thumb_cmc
+  r_thumb_cmc_abd: thumb_cmc
+  r_thumb_mcp: thumb_mcp
+  r_thumb_ip: thumb_ip
+  r_index_finger_mcp_flex: index_mcp
+  r_index_finger_mcp_abd: index_mcp
+  r_index_finger_pip: index_pip
+  r_index_finger_dip: index_dip
+  r_middle_finger_mcp_flex: middle_mcp
+  r_middle_finger_mcp_abd: middle_mcp
+  r_middle_finger_pip: middle_pip
+  r_middle_finger_dip: middle_dip
+  r_ring_finger_mcp_flex: ring_mcp
+  r_ring_finger_mcp_abd: ring_mcp
+  r_ring_finger_pip: ring_pip
+  r_ring_finger_dip: ring_dip
+  r_pinky_mcp_flex: pinky_mcp
+  r_pinky_mcp_abd: pinky_mcp
+  r_pinky_pip: pinky_pip
+  r_pinky_dip: pinky_dip
+limits:
+  r_thumb_cmc_flex: [-1.187, 1.291]
+  r_thumb_cmc_abd: [-1.484, 0.698]
+  r_thumb_mcp: [-1.047, 1.570]
+  r_thumb_ip: [-1.047, 1.570]
+  r_index_finger_mcp_flex: [-1.047, 1.570]
+  r_index_finger_mcp_abd: [-0.698, 0.698]
+  r_index_finger_pip: [-1.047, 2.094]
+  r_index_finger_dip: [-1.047, 1.570]
+  r_middle_finger_mcp_flex: [-1.047, 1.570]
+  r_middle_finger_mcp_abd: [-0.698, 0.698]
+  r_middle_finger_pip: [-1.047, 2.094]
+  r_middle_finger_dip: [-1.047, 1.570]
+  r_ring_finger_mcp_flex: [-1.047, 1.570]
+  r_ring_finger_mcp_abd: [-0.698, 0.698]
+  r_ring_finger_pip: [-1.047, 2.094]
+  r_ring_finger_dip: [-1.047, 1.570]
+  r_pinky_mcp_flex: [-1.047, 1.570]
+  r_pinky_mcp_abd: [-0.698, 0.698]
+  r_pinky_pip: [-1.047, 2.094]
+  r_pinky_dip: [-1.047, 1.570]
+qpos_order_hash: 6b539b05f881ff8aa8c10883ce4477fd934977a36db727d6576f796e3acdae32

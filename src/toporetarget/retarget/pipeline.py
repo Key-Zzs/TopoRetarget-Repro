@@ -115,6 +115,7 @@ def build_warm_start_trajectory(
         "native_fps": sequence.metadata.native_fps,
         "robot_name": robot_model.name,
         "robot_side": robot_model.side,
+        "robot_dof_count": robot_model.num_dofs,
         "robot_spec_hash": robot_model.spec_hash,
         "urdf_hash": robot_model.urdf_hash,
         "asset_manifest_hash": robot_model.asset_manifest_hash,

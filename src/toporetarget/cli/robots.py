@@ -32,6 +32,13 @@ def _load_model(robot: str, asset_root: Path | None):
     return get_robot_registry(repo_root=_repo_root()).load(robot, asset_root=asset_root)
 
 
+def _robot_name(option: str | None, argument: str | None) -> str:
+    value = option or argument
+    if not value:
+        raise typer.BadParameter("provide ROBOT or --robot")
+    return value
+
+
 def _json_print(value: Any) -> None:
     typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
 
@@ -130,12 +137,14 @@ def compare_assets(
 
 @app.command("inspect")
 def inspect_robot(
-    robot: str = typer.Option(..., "--robot"),
+    robot_arg: str | None = typer.Argument(None, metavar="ROBOT"),
+    robot: str | None = typer.Option(None, "--robot"),
     asset_root: Path | None = typer.Option(None, "--asset-root"),
     json_path: Path | None = typer.Option(None, "--json"),
 ) -> None:
     try:
-        model = _load_model(robot, asset_root)
+        robot_name = _robot_name(robot, robot_arg)
+        model = _load_model(robot_name, asset_root)
         result = model.describe()
         if json_path is not None:
             target = _output_path(json_path)
@@ -149,7 +158,8 @@ def inspect_robot(
 
 @app.command("validate")
 def validate_robot(
-    robot: str = typer.Option(..., "--robot"),
+    robot_arg: str | None = typer.Argument(None, metavar="ROBOT"),
+    robot: str | None = typer.Option(None, "--robot"),
     asset_root: Path | None = typer.Option(None, "--asset-root"),
     report: Path | None = typer.Option(None, "--report"),
     csv_report: Path | None = typer.Option(None, "--csv"),
@@ -157,7 +167,8 @@ def validate_robot(
     dtype: str = typer.Option("float64", "--dtype"),
 ) -> None:
     try:
-        model = _load_model(robot, asset_root)
+        robot_name = _robot_name(robot, robot_arg)
+        model = _load_model(robot_name, asset_root)
         result = model.validate(seed=seed, dtype=dtype)
         if report is not None:
             target = _output_path(report)
@@ -179,7 +190,8 @@ def validate_robot(
 
 @app.command("fk")
 def fk(
-    robot: str = typer.Option(..., "--robot"),
+    robot_arg: str | None = typer.Argument(None, metavar="ROBOT"),
+    robot: str | None = typer.Option(None, "--robot"),
     pose: str = typer.Option("neutral", "--pose"),
     seed: int = typer.Option(4, "--seed"),
     qpos_file: Path | None = typer.Option(None, "--qpos-file"),
@@ -191,13 +203,14 @@ def fk(
     try:
         import torch
 
-        model = _load_model(robot, asset_root)
+        robot_name = _robot_name(robot, robot_arg)
+        model = _load_model(robot_name, asset_root)
         q = _pose_q(model, pose, seed, qpos_file)
         torch_dtype = getattr(torch, dtype)
         q_tensor = torch.tensor(q, dtype=torch_dtype, device=device)
         transforms = model.forward_kinematics_base(q_tensor)
         result = {
-            "robot": robot,
+            "robot": robot_name,
             "pose": pose,
             "seed": seed,
             "dtype": dtype,
@@ -222,13 +235,15 @@ def fk(
 
 @app.command("anchors")
 def anchors(
-    robot: str = typer.Option(..., "--robot"),
+    robot_arg: str | None = typer.Argument(None, metavar="ROBOT"),
+    robot: str | None = typer.Option(None, "--robot"),
     asset_root: Path | None = typer.Option(None, "--asset-root"),
     json_path: Path | None = typer.Option(None, "--json"),
     csv_path: Path | None = typer.Option(None, "--csv"),
 ) -> None:
     try:
-        model = _load_model(robot, asset_root)
+        robot_name = _robot_name(robot, robot_arg)
+        model = _load_model(robot_name, asset_root)
         points = model.keypoints_base(model.neutral_q).detach().cpu().numpy()
         rows = []
         for index, (anchor, point) in enumerate(
@@ -252,7 +267,7 @@ def anchors(
             assert target is not None
             write_json(
                 {
-                    "robot": robot,
+                    "robot": robot_name,
                     "profile": model.anchor_profile.as_dict(),
                     "profile_hash": model.anchor_profile.sha256,
                     "anchors": rows,
@@ -283,7 +298,9 @@ def anchors(
                     row = dict(row)
                     row["assumptions"] = ";".join(row["assumptions"])
                     writer.writerow(row)
-        _json_print({"robot": robot, "profile_hash": model.anchor_profile.sha256, "anchors": rows})
+        _json_print(
+            {"robot": robot_name, "profile_hash": model.anchor_profile.sha256, "anchors": rows}
+        )
     except (OSError, KeyError, ValueError, RuntimeError) as exc:
         typer.echo(f"robot anchors failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -291,7 +308,8 @@ def anchors(
 
 @app.command("jacobian-check")
 def jacobian_check_command(
-    robot: str = typer.Option(..., "--robot"),
+    robot_arg: str | None = typer.Argument(None, metavar="ROBOT"),
+    robot: str | None = typer.Option(None, "--robot"),
     pose: str = typer.Option("random", "--pose"),
     seed: int = typer.Option(4, "--seed"),
     qpos_file: Path | None = typer.Option(None, "--qpos-file"),
@@ -301,7 +319,8 @@ def jacobian_check_command(
     asset_root: Path | None = typer.Option(None, "--asset-root"),
 ) -> None:
     try:
-        model = _load_model(robot, asset_root)
+        robot_name = _robot_name(robot, robot_arg)
+        model = _load_model(robot_name, asset_root)
         q = _pose_q(model, pose, seed, qpos_file)
         result = jacobian_check(model, q, epsilon=epsilon, dtype=dtype)
         result["pose"] = pose
@@ -322,7 +341,8 @@ def jacobian_check_command(
 
 @app.command("visualize")
 def visualize(
-    robot: str = typer.Option(..., "--robot"),
+    robot_arg: str | None = typer.Argument(None, metavar="ROBOT"),
+    robot: str | None = typer.Option(None, "--robot"),
     pose: str = typer.Option("neutral", "--pose"),
     seed: int = typer.Option(4, "--seed"),
     qpos_file: Path | None = typer.Option(None, "--qpos-file"),
@@ -338,7 +358,8 @@ def visualize(
     asset_root: Path | None = typer.Option(None, "--asset-root"),
 ) -> None:
     try:
-        model = _load_model(robot, asset_root)
+        robot_name = _robot_name(robot, robot_arg)
+        model = _load_model(robot_name, asset_root)
         q = _pose_q(model, pose, seed, qpos_file)
         if output is None and not show:
             raise typer.BadParameter("provide --output or pass --show")
@@ -357,7 +378,7 @@ def visualize(
         )
         _json_print(
             {
-                "robot": robot,
+                "robot": robot_name,
                 "pose": pose,
                 "seed": seed,
                 "geometry": geometry,

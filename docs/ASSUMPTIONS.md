@@ -1,5 +1,24 @@
 # Assumptions and unpublished details
 
+## W0/W1 Wuji Hand2 Beta1 boundary
+
+Wuji Hand2 Beta1 is a tracked target-hand asset and generic registry instance, not a hardware or
+deployment reproduction. The pinned upstream body subset, license, exclusions, and hashes are
+recorded in [`WUJI_HAND2_ASSET_PROVENANCE.md`](WUJI_HAND2_ASSET_PROVENANCE.md). The MediaPipe-21
+anchors are engineering semantics derived from URDF joint/link origins and official MJCF tip sites;
+the paper does not publish an author-exact mapping.
+
+URDF is the differentiable/reference kinematics source and MJCF is the simulation-facing
+actuator/tip/collision source. Formal collision uses the declared MJCF convex-hull geoms and ten
+contact excludes; soft-pad tip meshes are not auto-promoted. Visual/contact proxies, source contact
+labels, and signed-distance ground truth remain separate. The `engineering_collision_32_per_geometry`
+surface profile is not a paper-specified value.
+
+The W0/W1 bounded pipeline smoke checks generic construction only. It does not establish Wuji
+hardware calibration, MuJoCo playback, PD gains, PPO tracking, full multi-clip retargeting, or the
+paper's Wuji transfer claim. W2 requires at least three watertight clips; S1 and I1 remain separate
+branch milestones.
+
 This register intentionally records missing information instead of silently selecting values.
 Each identifier is referenced from `docs/PAPER_FIDELITY.yaml` where it affects traceability.
 

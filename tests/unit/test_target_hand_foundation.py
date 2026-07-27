@@ -33,7 +33,12 @@ def test_tracked_default_and_contract_are_generic() -> None:
 
 def test_registry_lists_resolution_provenance() -> None:
     rows = RobotHandRegistry(repo_root=REPO_ROOT).list()
-    assert {row["name"] for row in rows} == {"artimano_rh", "artimano_lh"}
+    assert {row["name"] for row in rows} == {
+        "artimano_rh",
+        "artimano_lh",
+        "wuji_hand2_beta1_rh",
+        "wuji_hand2_beta1_lh",
+    }
     assert all(row["asset"]["resolved_asset_source"] == "tracked" for row in rows)
     assert all(row["asset"]["source_commit"] for row in rows)
 

@@ -210,7 +210,8 @@ def validate_interaction_evaluation(
             and abs(e_im - float(evaluation.e_im[index])) <= 1e-12
             and scaled_errors[-1] <= 1e-12
             and object_error == 0.0
-            and evaluation.qpos_jacobian.shape[1:] == (213, 22)
+            and evaluation.qpos_jacobian.shape[1] == 213
+            and evaluation.qpos_jacobian.shape[2] == evaluation.qpos.shape[1]
         )
         all_valid &= valid
         rows.append(

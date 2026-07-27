@@ -1,0 +1,9 @@
+profile_id: wuji_hand2_beta1_urdf_rh_collision_v1
+version: "1.0.0"
+robot_id: wuji_hand2_beta1_rh
+source: urdf_collision
+mesh_root: third_party/robot_hands/wuji_hand2_beta1/meshes/right
+all_urdf_collision_geometry: true
+tip_visual_auto_collision: false
+soft_pad_meshes_formal_collision: false
+missing_collision_policy: report

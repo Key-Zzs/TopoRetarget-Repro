@@ -10,15 +10,22 @@ or existing Stage 10 artifacts. The planned sequence is:
 | --- | --- | --- |
 | F0 main | Tracked robot assets and generic target-hand contract; Arti-MANO first registry instance | complete |
 | P0 | Create `develop/pene-loss` and its worktree | next, not created by F0 |
-| W0/W1 main | Wuji Hand2 Beta1 tracked assets, generic registration, bounded GRAB→Wuji validation | planned |
+| W0/W1 main | Wuji Hand2 Beta1 tracked assets, generic registration, bounded GRAB→Wuji validation | complete (bounded) |
 | S1 `develop/pene-loss` | Generic SDF penetration loss | planned |
 | I1 | Rebase pene-loss onto latest main; Arti/Wuji × baseline/SDF integration | planned |
-| W2/W3 | Multi-trajectory Wuji retargeting and Stage 10 export | planned |
+| W2/W3 | At least three watertight-clip Wuji retargeting and Stage 10 export | planned |
 | R0/R1 | MJCF playback and PPO tracking | later |
 | CP | ContactPose formal evaluation | later |
 
 F0 deliberately does not add Wuji Hand2, SDF penetration loss, `develop/pene-loss`, RL, or new
 artifacts. See [`stages/F0_TARGET_HAND_FOUNDATION.md`](stages/F0_TARGET_HAND_FOUNDATION.md).
+
+W0/W1 is now complete on `main`: both Wuji Hand2 Beta1 sides are tracked, registered through the
+generic contract, and passed bounded Stage 7/8/9 construction checks. W2 is intentionally still
+open and requires at least three watertight clips with full Stage 7–9 execution and contact/collision
+audits. S1 remains isolated to `develop/pene-loss`, initially on Arti-MANO; I1 updates that branch
+to current `main` and validates Arti-MANO plus Wuji under baseline/SDF conditions. W3 is export,
+R0 is MJCF playback/PD, R1 is PPO tracking, and CP remains later.
 
 | Stage | Objective | Major deliverables | Definition of done | Status |
 | --- | --- | --- | --- | --- |

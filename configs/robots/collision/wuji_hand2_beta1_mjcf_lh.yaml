@@ -1,0 +1,19 @@
+profile_id: wuji_hand2_beta1_mjcf_lh_collision_v1
+version: "1.0.0"
+robot_id: wuji_hand2_beta1_lh
+source: mjcf_convex_hull
+mjcf_path: third_party/robot_hands/wuji_hand2_beta1/mjcf/left.xml
+collision_geometry: official_convex_hull_geoms
+tip_visual_auto_collision: false
+soft_pad_meshes_formal_collision: false
+excluded_collision_pairs:
+  - [l_thumb_proximal, l_wrist]
+  - [l_thumb_proximal_abd, l_wrist]
+  - [l_index_finger_proximal, l_wrist]
+  - [l_index_finger_proximal_abd, l_wrist]
+  - [l_middle_finger_proximal, l_wrist]
+  - [l_middle_finger_proximal_abd, l_wrist]
+  - [l_ring_finger_proximal, l_wrist]
+  - [l_ring_finger_proximal_abd, l_wrist]
+  - [l_pinky_proximal, l_wrist]
+  - [l_pinky_proximal_abd, l_wrist]

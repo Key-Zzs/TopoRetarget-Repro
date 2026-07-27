@@ -9,15 +9,21 @@ M0 已完成。`main` 上的 F0 已完成：tracked Arti-MANO 资产与通用 ta
 | --- | --- | --- |
 | F0 main | tracked 机器人手资产与通用 target-hand contract，Arti-MANO 首个 registry 实例 | 完成 |
 | P0 | 创建 `develop/pene-loss` 及其 worktree | 下一步，F0 未创建 |
-| W0/W1 main | Wuji Hand2 Beta1 tracked 资产、通用注册、有界 GRAB→Wuji 验证 | 计划 |
+| W0/W1 main | Wuji Hand2 Beta1 tracked 资产、通用注册、有界 GRAB→Wuji 验证 | 完成（有界） |
 | S1 `develop/pene-loss` | 通用 SDF penetration loss | 计划 |
 | I1 | 将 pene-loss 更新到最新 main，进行 Arti/Wuji × baseline/SDF 联合验证 | 计划 |
-| W2/W3 | 多轨迹 Wuji 重定向与 Stage 10 export | 计划 |
+| W2/W3 | 至少三个 watertight clip 的 Wuji 重定向与 Stage 10 export | 计划 |
 | R0/R1 | MJCF playback 与 PPO tracking | 后置 |
 | CP | ContactPose 正式评价 | 后置 |
 
 F0 明确不加入 Wuji Hand2、SDF penetration loss、`develop/pene-loss`、RL 或新的 artifact。详见
 [`stages/F0_TARGET_HAND_FOUNDATION.md`](stages/F0_TARGET_HAND_FOUNDATION.md)。
+
+W0/W1 现在已在 `main` 完成：左右手 Wuji Hand2 Beta1 已 tracked，并通过通用 contract 注册，
+Stage 7/8/9 construction smoke 通过。W2 仍未开始，必须至少使用三个 watertight clip 完成
+完整 Stage 7–9 及 contact/collision audit。S1 继续隔离在 `develop/pene-loss`，初始使用
+Arti-MANO；I1 更新该分支到最新 `main` 后验证 Arti-MANO 与 Wuji 的 baseline/SDF；W3 为 export，
+R0 为 MJCF playback/PD，R1 为 PPO tracking，CP 后置。
 
 本项目当前完成阶段 0（仓库创建与架构搭建）、阶段 1（论文忠实度审计）、阶段 2A（统一
 HOI 数据接口）、阶段 2B 的有界真实 GRAB 检查、阶段 3 的有界 MANO→MediaPipe-style
