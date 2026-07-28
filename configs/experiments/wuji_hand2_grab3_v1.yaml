@@ -1,0 +1,34 @@
+experiment_id: wuji_hand2_grab3_v1
+dataset: grab
+subject: s1
+hand: right
+robot: wuji_hand2_beta1_rh
+frame_profile: canonical_keypoint_wrist_v1
+bone_profile: mediapipe21_full_finger_chain_v1
+warm_solver_profile: paper_repro_scipy_trf
+graph_profile: strict_scipy_qhull_v1
+object_surface_profile: paper_strict_area_uniform
+collision_surface_profile: engineering_collision_32_per_geometry
+query_profile: adaptive_active_set_v1
+coordinate_profile: local_seed_delta_v1
+solver_profile: scipy_slsqp_active_set_contact_rich_v3_fixed
+execution_profile: cached_checkpoint_cpu_float64_v3
+units:
+  - unit_id: W1_s1__airplane_lift__right__wuji_hand2_beta1_rh__f000240_f000300
+    short_id: W1_airplane_lift
+    sequence: s1/airplane_lift
+    object: airplane
+    start_frame: 240
+    end_frame: 300
+  - unit_id: W2_s1__apple_eat_1__right__wuji_hand2_beta1_rh__f000212_f000272
+    short_id: W2_apple_eat_1
+    sequence: s1/apple_eat_1
+    object: apple
+    start_frame: 212
+    end_frame: 272
+  - unit_id: W3_s1__alarmclock_lift__right__wuji_hand2_beta1_rh__f000407_f000467
+    short_id: W3_alarmclock_lift
+    sequence: s1/alarmclock_lift
+    object: alarmclock
+    start_frame: 407
+    end_frame: 467

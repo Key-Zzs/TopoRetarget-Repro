@@ -59,3 +59,6 @@ warm-start、Q5 Arti-MANO surface contact proxy、Q6 contact-preserving diagnost
 阶段 9 的详细边界见 `stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md`。
 
 每阶段的 objective、major deliverables、definition of done 和 status 以英文路线图为准。
+
+Wuji 三轨迹实现现已由通用 `workflow run-grab-suite` 提供；是否完成只由实验
+根目录下运行生成的 `final_status.json` 决定。

@@ -1117,6 +1117,7 @@ def _checkpoint_manifest(
             "warm_start_artifact_hash": artifact_hash(warm_start),
             "robot_name": model.name,
             "robot_side": model.side,
+            "robot_dof_count": int(model.num_dofs),
             "robot_spec_hash": model.spec_hash,
             "robot_urdf_hash": model.urdf_hash,
             "robot_asset_manifest_hash": model.asset_manifest_hash,

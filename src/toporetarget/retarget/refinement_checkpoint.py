@@ -572,7 +572,7 @@ def _independent_source_validation(
         build_hybrid_signed_distance_backend,
     )
     from toporetarget.retarget.interaction_artifacts import load_interaction_graph
-    from toporetarget.robots.artimano import load_artimano_model
+    from toporetarget.robots.registry import get_robot_registry
 
     canonical = Path(str(manifest["canonical"])).expanduser()
     graph_path = Path(str(manifest["graph"])).expanduser()
@@ -591,10 +591,7 @@ def _independent_source_validation(
     if expected_geometry.get("cache_signature") not in {None, geometry.cache_signature}:
         raise CheckpointError("final independent geometry policy signature changed")
     robot_name = str(manifest["robot_name"])
-    side = {"artimano_rh": "rh", "artimano_lh": "lh"}.get(
-        robot_name, str(manifest.get("robot_side", "rh"))
-    )
-    model = load_artimano_model(side)
+    model = get_robot_registry(repo_root=Path(__file__).resolve().parents[3]).load(robot_name)
     surface = load_robot_surface_samples(surface_path)
     max_error = 0.0
     rows: list[dict[str, Any]] = []

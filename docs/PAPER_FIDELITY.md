@@ -326,3 +326,12 @@ Raw/proxy provenance, hashes, boundary loops, patch IDs, fixed deviation gates,
 and strict contact-region conflicts are retained in the geometry artifacts.
 This engineering policy does not change paper equations, solver profiles, or
 old Stage 10 artifacts.
+
+## Wuji target-hand boundary
+
+Wuji Hand2 Beta1 is a registered generic target-hand embodiment used for a
+fixed engineering reproduction lane. Its 20D qpos, anchor profile, formal
+collision profile, and asset provenance are explicit; using it is not a claim
+that the paper's original hardware has been reproduced. The solver remains
+paper-core Eq. (1)--(9), with no SDF penetration loss, contact attraction, or
+robot-specific objective term.

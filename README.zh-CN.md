@@ -1024,3 +1024,13 @@ derived watertight proxy 只提供 sign。当前 banana run 在严格 active-Que
 boundary gate 处正式路由为 `SIGN_PROXY_CONTACT_REGION_CONFLICT`，不是 A–E 完成
 声明。详见
 [`docs/DERIVED_WATERTIGHT_SIGN_PROXY.md`](docs/DERIVED_WATERTIGHT_SIGN_PROXY.md)。
+
+## Wuji Hand2 三轨迹重定向
+
+固定的 within-subject `s1` benchmark 使用 `airplane_lift`、`apple_eat_1` 和
+`alarmclock_lift`，目标手为 `wuji_hand2_beta1_rh`。运行命令见
+[`docs/WUJI_HAND2_GRAB_RETARGETING.md`](docs/WUJI_HAND2_GRAB_RETARGETING.md)。
+结果只写入 `.local/experiments/wuji_hand2_grab3_v1/`，包含 metrics、独立
+672 点 collision 验证、reference export 和 HTML viewer。这是 offline
+reference runtime；GRAB contact 是 dataset proxy，Wuji visual soft pad
+不属于 formal collision geometry。

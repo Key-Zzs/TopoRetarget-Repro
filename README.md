@@ -1107,3 +1107,13 @@ The current banana run is formally routed to
 `SIGN_PROXY_CONTACT_REGION_CONFLICT` after the strict active-QuerySet boundary
 gate; it is not an A–E completion claim. See
 [`docs/DERIVED_WATERTIGHT_SIGN_PROXY.md`](docs/DERIVED_WATERTIGHT_SIGN_PROXY.md).
+
+## Wuji Hand2 three-clip retargeting
+
+The fixed within-subject `s1` benchmark uses `airplane_lift`, `apple_eat_1`,
+and `alarmclock_lift` with `wuji_hand2_beta1_rh`. Run the generic suite with
+[`docs/WUJI_HAND2_GRAB_RETARGETING.md`](docs/WUJI_HAND2_GRAB_RETARGETING.md).
+Results are written to `.local/experiments/wuji_hand2_grab3_v1/`, including
+metrics, independent 672-sample collision validation, reference exports, and
+HTML viewers. This is an offline reference runtime; GRAB contact values are
+dataset proxies, and Wuji visual soft pads are not formal collision geometry.

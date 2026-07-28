@@ -30,6 +30,7 @@ from toporetarget.workflows.export import export_reference
 from toporetarget.workflows.faithful_finalization import finalize_faithful_reproduction
 from toporetarget.workflows.four_state_review import render_four_state_review_html
 from toporetarget.workflows.gate import build_runtime_acceptance, evaluate_gate
+from toporetarget.workflows.grab_suite import SuiteRunError, run_suite
 from toporetarget.workflows.mesh_visualization import render_mesh_html
 from toporetarget.workflows.planning import build_plan, write_plan
 from toporetarget.workflows.schema import WorkflowRequest, read_json, write_json
@@ -1092,6 +1093,83 @@ def run_grab_command(
         typer.echo(str(manifest))
     except (ValueError, OSError, RuntimeError, WorkflowExecutionError) as exc:
         typer.echo(f"workflow run failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("run-grab-suite")
+def run_grab_suite_command(
+    suite: Path = typer.Option(..., "--suite", help="Frozen YAML suite definition."),
+    grab_root: Path = typer.Option(..., "--grab-root"),
+    index: Path = typer.Option(..., "--index"),
+    mano_model_root: Path = typer.Option(..., "--mano-model-root"),
+    robot: str | None = typer.Option(None, "--robot"),
+    solver_profile: str | None = typer.Option(None, "--solver-profile"),
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/grab_suite"), "--experiment-root"
+    ),
+    resume: bool = typer.Option(True, "--resume/--no-resume"),
+    max_wall_time: float = typer.Option(1800.0, "--max-wall-time", min=1.0),
+    evaluate: bool = typer.Option(True, "--evaluate/--no-evaluate"),
+    export_reference: bool = typer.Option(True, "--export-reference/--no-export-reference"),
+    generate_html: bool = typer.Option(True, "--generate-html/--no-generate-html"),
+    unit: str | None = typer.Option(None, "--unit"),
+) -> None:
+    """Run a frozen multi-clip GRAB suite with generic Stage 5-9 components."""
+    try:
+        value = run_suite(
+            suite=suite,
+            grab_root=grab_root,
+            index=index,
+            mano_model_root=mano_model_root,
+            robot=robot,
+            solver_profile=solver_profile,
+            experiment_root=experiment_root,
+            resume=resume,
+            max_wall_time=max_wall_time,
+            evaluate=evaluate,
+            export_reference_bundles=export_reference,
+            generate_html=generate_html,
+            unit=unit,
+        )
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, SuiteRunError) as exc:
+        typer.echo(f"GRAB suite run failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("evaluate-retargeting-suite")
+def evaluate_retargeting_suite_command(
+    suite: Path = typer.Option(..., "--suite"),
+    grab_root: Path = typer.Option(..., "--grab-root"),
+    index: Path = typer.Option(..., "--index"),
+    mano_model_root: Path = typer.Option(..., "--mano-model-root"),
+    robot: str | None = typer.Option(None, "--robot"),
+    solver_profile: str | None = typer.Option(None, "--solver-profile"),
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/grab_suite"), "--experiment-root"
+    ),
+    unit: str | None = typer.Option(None, "--unit"),
+) -> None:
+    """Re-run independent validation, export, and HTML evaluation for fixed artifacts."""
+    try:
+        value = run_suite(
+            suite=suite,
+            grab_root=grab_root,
+            index=index,
+            mano_model_root=mano_model_root,
+            robot=robot,
+            solver_profile=solver_profile,
+            experiment_root=experiment_root,
+            resume=True,
+            max_wall_time=1.0,
+            evaluate=True,
+            export_reference_bundles=True,
+            generate_html=True,
+            unit=unit,
+        )
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, SuiteRunError) as exc:
+        typer.echo(f"suite evaluation failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
 

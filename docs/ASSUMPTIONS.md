@@ -193,3 +193,15 @@ The current G3 retry proves proxy validity but routes to
 the fixed original-boundary exclusion zone. This is a formal fail-closed result,
 not evidence that the open mesh can be silently accepted and not an A–E
 completion claim.
+
+## Wuji Hand2 three-clip boundary
+
+The W1/W2/W3 suite is fixed to subject `s1` and native 60-frame windows. It
+uses a generic target-hand registry with 20 DoF and `r_wrist`; no Wuji-only
+loss or solver branch is introduced. The formal collision surface excludes
+visual soft pads. Independent full-surface validation uses a fresh strict
+reference backend and reports GRAB semantic contacts as `DATASET_PROXY` only.
+
+The benchmark demonstrates within-subject multi-object behavior, not the
+paper's original hardware equivalence, cross-subject generalization, or
+real-time performance.

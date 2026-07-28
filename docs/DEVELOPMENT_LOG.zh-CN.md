@@ -614,3 +614,10 @@ boundary exclusion zone 内，其中 2 个最近 proxy face 是 synthetic patch�
 没有修改轨迹、margin、frame、原始资产或历史 Stage 10 artifact。G3 geometry
 audit HTML 及 first/middle/last PNG 已生成；G3 下游 C–E 和总 A–E 推荐结果仍
 无效。
+
+## 2026-07-28 —— Wuji Hand2 三轨迹通用 suite
+
+新增固定 W1/W2/W3 suite 配置和通用 `run-grab-suite` 编排器。Stage 9 前冻结
+source/MANO/object/robot/profile hashes，支持 checkpoint resume、独立 formal
+surface 验证、reference export、metrics 和自包含 HTML；写入范围不包含
+`pene-loss` worktree 与历史 artifacts。

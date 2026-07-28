@@ -1071,3 +1071,15 @@ quality_geometry_sign_proxy:
     source_contact_near_boundary: hard_fail
     active_queryset_near_boundary: hard_fail
     status_id: SIGN_PROXY_CONTACT_REGION_CONFLICT
+
+wuji_hand2_three_clip:
+  status: implemented_engineering_target_hand_lane
+  target_robot: wuji_hand2_beta1_rh
+  qpos_dimension: 20
+  root_link: r_wrist
+  scope: within_subject_s1_multi_object
+  paper_equations_preserved: true
+  sdf_penetration_loss: false
+  visual_soft_pad_formal_collision: false
+  grab_contact_semantics: DATASET_PROXY
+  real_time_claim: false

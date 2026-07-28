@@ -53,3 +53,7 @@ R0 is MJCF playback/PD, R1 is PPO tracking, and CP remains later.
 | 17 | Paper experiment reproduction | Tables/Figures | Result report | not started |
 | 18 | Performance optimization and v1.0 release | Packaging and benchmarks | Release criteria pass | not started |
 | 19 | Non-paper extensions | MANO cleanup, SPIDER, other extensions | Separately labeled extensions | not started |
+
+The Wuji three-clip implementation is available through the generic
+`workflow run-grab-suite` command; its completion status is determined only by
+the runtime `final_status.json` under the experiment root.

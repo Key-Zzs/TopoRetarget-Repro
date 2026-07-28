@@ -712,3 +712,11 @@ the original boundary exclusion zone and two used synthetic patch faces. No
 trajectory, margin, frame, raw asset, or historical Stage 10 artifact was
 modified. The geometry audit HTML and first/middle/last PNGs were generated;
 G3 downstream C–E and the aggregate A–E recommendation remain invalid.
+
+## 2026-07-28 -- Wuji Hand2 three-clip generic suite
+
+Added the frozen W1/W2/W3 suite configuration and generic `run-grab-suite`
+orchestrator. It binds source/MANO/object/robot/profile hashes before Stage 9,
+supports checkpoint resume, independent full formal-surface validation,
+reference export, metrics, and self-contained HTML. The implementation keeps
+the `pene-loss` worktree and all historical artifacts outside its write scope.

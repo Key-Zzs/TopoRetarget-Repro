@@ -2409,20 +2409,49 @@ class FinalRetargetTrajectory:
         }:
             raise ValueError(f"unsupported final artifact schema: {self.schema_version}")
         t = self.frame_count
+        qpos_value = np.asarray(self.arrays.get("qpos"))
+        if qpos_value.ndim != 2 or qpos_value.shape[0] != t or qpos_value.shape[1] <= 0:
+            raise ValueError(f"qpos has invalid shape {qpos_value.shape}")
+        dof_value = self.metadata.get("robot_dof_count")
+        robot_dof_count = qpos_value.shape[1] if dof_value is None else int(dof_value)
+        if robot_dof_count != qpos_value.shape[1]:
+            raise ValueError(
+                "qpos width does not match robot_dof_count: "
+                f"{qpos_value.shape[1]} != {robot_dof_count}"
+            )
+        collision_points_value = np.asarray(self.arrays.get("collision_points_scene"))
+        if (
+            collision_points_value.ndim != 3
+            or collision_points_value.shape[0] != t
+            or collision_points_value.shape[2] != 3
+            or collision_points_value.shape[1] <= 0
+        ):
+            raise ValueError(
+                f"collision_points_scene has invalid shape {collision_points_value.shape}"
+            )
+        sample_value = self.metadata.get("collision_surface_sample_count")
+        collision_sample_count = (
+            collision_points_value.shape[1] if sample_value is None else int(sample_value)
+        )
+        if collision_sample_count != collision_points_value.shape[1]:
+            raise ValueError(
+                "collision_points_scene width does not match collision_surface_sample_count: "
+                f"{collision_points_value.shape[1]} != {collision_sample_count}"
+            )
         required = {
             "timestamps": (t,),
-            "qpos": (t, 22),
+            "qpos": (t, robot_dof_count),
             "base_pose_scene": (t, 4, 4),
             "base_corrections": (t, 6),
             "robot_keypoints_base": (t, 21, 3),
             "robot_keypoints_scene": (t, 21, 3),
-            "collision_points_scene": (t, 512, 3),
+            "collision_points_scene": (t, collision_sample_count, 3),
             "slack_concat": (None,),
             "query_offsets": (t + 1,),
-            "full_signed_distance": (t, 512),
-            "full_closest_points": (t, 512, 3),
-            "full_surface_normals": (t, 512, 3),
-            "full_hard_residual": (t, 512),
+            "full_signed_distance": (t, collision_sample_count),
+            "full_closest_points": (t, collision_sample_count, 3),
+            "full_surface_normals": (t, collision_sample_count, 3),
+            "full_hard_residual": (t, collision_sample_count),
             "full_soft_violation_count": (t,),
             "unqueried_soft_violation_count": (t,),
             "active_set_converged": (t,),
@@ -3083,6 +3112,7 @@ def build_final_trajectory(
         "warm_start_artifact_hash": warm_artifact_hash,
         "robot_name": robot_model.name,
         "robot_side": robot_model.side,
+        "robot_dof_count": int(robot_model.num_dofs),
         "robot_spec_hash": robot_model.spec_hash,
         "robot_urdf_hash": robot_model.urdf_hash,
         "robot_asset_manifest_hash": robot_model.asset_manifest_hash,
