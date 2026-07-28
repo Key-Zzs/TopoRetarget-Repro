@@ -92,3 +92,11 @@ PYTHONNOUSERSITE=1 PYTHONPATH=src python -m toporetarget retarget refine \
 
 S1 remains a comparison only. It cannot change the paper baseline or claim
 paper-level contact-retention improvement.
+
+## S1.1 signal-rich follow-up
+
+The broader signal-rich evaluation is a separate experiment under
+`.local/experiments/s1_1_signal_rich_grab_v1/`. Its source-only stratification,
+backend gate, and fail-closed decision contract are specified in
+`docs/S1_1_SIGNAL_RICH_GRAB_EVALUATION.md`; the old two-clip S1 artifacts and
+profile remain preserved.

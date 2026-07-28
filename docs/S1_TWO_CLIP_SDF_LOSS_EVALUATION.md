@@ -34,3 +34,10 @@ The final decision is one of:
 
 No manual acceptance, G3/G4, ContactPose, raw-data modification, or main
 worktree artifact reuse is part of this stage.
+
+## Relationship to S1.1
+
+S1.1 is a later diagnostic lane and does not revise this frozen two-clip
+baseline. It excludes G1/G2 from source selection, preserves this artifact
+tree, and records any signal-rich result under its own experiment root. See
+`docs/stages/S1_1_SIGNAL_RICH_GRAB.md` for the dependency chain.

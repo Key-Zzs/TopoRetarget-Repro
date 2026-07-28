@@ -1,0 +1,70 @@
+experiment_id: s1_1_signal_rich_grab_v1
+stage: S1.1
+description: Source-only GRAB penetration stratification and fixed-profile signal-rich evaluation.
+repo_branch: develop/pene-loss
+grab_root: /mnt/nas/storage/Ref2Dex_storage/GRAB/data/GRAB
+mano_root: /mnt/nas/storage/Ref2Dex_storage/shared_assets/body_models/mano
+robot_id: artimano_rh
+robot_asset_root: third_party/robot_hands/artimano
+native_fps: 120.0
+frame_length: 60
+stress_count: 3
+g1_existing_s1_root: .local/experiments/s1_sdf_penetration_loss_v1/v2_deadzone1mm
+output_root: .local/experiments/s1_1_signal_rich_grab_v1
+frozen_s1_profile:
+  profile_id: dense_squared_hinge_deadzone1mm_v2
+  lambda_sdf: 0.1
+  penetration_tolerance_m: 0.001
+  normalization_depth_m: 0.001
+  loss: squared_one_sided_hinge
+  inner_solver_backend: convex_hull_exact_solver_only
+  validation_backend: reference_triangle_winding
+  query_surface: full_robot_collision_surface_512
+exclusions:
+  - s1/airplane_lift
+  - s1/apple_eat_1
+  - s1/banana_lift
+  - s1/alarmclock_lift
+shortlist_limits: [40, 80, all]
+probe:
+  frame_count: 12
+  selection_scope: source_contact_richness_only
+penetration_active_gate:
+  required_conditions: 2
+  min_frames_gt_1mm: 5
+  min_frames_max_gt_1_5mm: 3
+  min_frames_negative_fraction_gt_0_005: 5
+  mean_excess_depth_m: 0.00025
+  mean_e_sdf: 0.0001
+  strict_accepted_frames: 12
+backend_consistency_gate:
+  sign_agreement: 0.99
+  reference_gt_1mm_recall: 0.95
+  penetration_depth_correlation: 0.95
+  gradient_cosine: 0.90
+  all_finite: true
+acceptance_gate:
+  min_clip_improvement: 0.20
+  min_macro_improvement: 0.20
+  max_contact_f1_drop: 0.05
+  max_e_im_regression: 0.05
+  max_morphology_rmse_regression_m: 0.0005
+  max_jerk_regression: 0.20
+resource_limits:
+  worker_count: 1
+  max_wall_time_per_probe: 1800
+  max_wall_time_per_clip: 1800
+  omp_threads: 1
+  mkl_threads: 1
+  openblas_threads: 1
+  numexpr_threads: 1
+constraints:
+  source_only_selection: true
+  no_s1_leakage: true
+  no_result_based_reselection: true
+  no_mesh_repair: true
+  no_derived_proxy_for_eligibility: true
+  no_manual_acceptance: true
+  no_raw_data_modification: true
+  preserve_old_s1_artifacts: true
+  preserve_g3_g4_pause: true

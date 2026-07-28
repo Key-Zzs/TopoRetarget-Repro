@@ -13,3 +13,11 @@ The handoff must include the selection manifest, input and artifact hashes,
 unit-test output, lambda-zero report, fixed prescreen report, unified-profile
 decision, per-frame CSV/JSON metrics, full-audit integrity report, and the
 self-contained HTML comparison/dashboard.
+
+The S1.1 handoff is separate and lives under
+`.local/experiments/s1_1_signal_rich_grab_v1/`. It includes the source-only
+candidate scan, shortlist expansion record, E0 probe classifications, stress
+selection lock, fast/reference consistency bundle, full-run status, aggregate
+comparison, source-integrity and determinism reports, and HTML smoke result.
+The global default remains E0 until a formal decision explicitly routes a
+future stage.

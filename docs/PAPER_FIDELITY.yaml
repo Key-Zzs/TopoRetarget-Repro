@@ -87,6 +87,22 @@ audit_contracts:
     branch_rollout_requires_gate: true
     assumptions: [A_PROJECTION_STATE_METRIC_001, A_WARM_FINAL_PATH_FEASIBILITY_001, A_PROJECTION_FEASIBILITY_RESTORATION_001, A_OBJECTIVE_PATH_ATTRIBUTION_001, A_CONSTRAINT_PRESSURE_DIAGNOSTIC_001, A_PROJECTION_BRANCH_ROLLOUT_001, A_STAGE9_3_5_HUMAN_DECISION_GATE_001]
     notes: "Warm/final path feasibility, state-only projections, counterfactuals, and attribution remain diagnostic and cannot authorize Stage 9.4."
+  s1_1_signal_rich_grab:
+    profile: configs/experiments/s1_1_signal_rich_grab_v1.yaml
+    contract: toporetarget.s1_1.signal_rich_grab.v1
+    diagnostic_only: true
+    paper_method: false
+    global_default_profile: E0
+    source_only_selection: true
+    no_s1_leakage: true
+    fixed_sdf_profile: dense_squared_hinge_deadzone1mm_v2
+    optimizer_backend: convex_hull_exact_solver_only
+    validation_backend: reference_triangle_winding
+    collision_sample_count: 512
+    excluded_controls: [G1, G2, G3, G4]
+    raw_data_modified: false
+    manual_acceptance: false
+    notes: "Signal-rich routing experiment; failure or backend disagreement cannot authorize a paper-level SDF-loss claim."
 
 quality_experiment_grab_artimano_v1:
   experiment_id: grab_artimano_quality_v1
