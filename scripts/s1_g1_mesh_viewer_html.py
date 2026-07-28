@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Generate a reference-style self-contained G1 hand-mesh viewer.
+"""Generate reference-style self-contained G1/G2 hand-mesh viewers.
 
 The page is artifact-only: it loads canonical MANO plus completed E0 and S1
 trajectories and never invokes refinement.  Metric data is intentionally
@@ -31,15 +31,21 @@ from toporetarget.quality.html import _mesh_subset
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--experiment", type=Path, required=True)
+    parser.add_argument("--clip", choices=("G1", "G2"), default="G1")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
     experiment = args.experiment.resolve()
-    selection = experiment / "selection/G1"
+    clip = args.clip
+    sequence_label = {
+        "G1": "G1 airplane lift",
+        "G2": "G2 apple eat 1",
+    }[clip]
+    selection = experiment / f"selection/{clip}"
     canonical = selection / "canonical.zarr"
-    e0_path = experiment / "e0/G1/final.zarr"
-    final_s1_path = experiment / "artifacts/G1/S1_L01/final.zarr"
-    prescreen_s1_path = experiment / "artifacts/G1/S1_L01_prescreen/final.zarr"
+    e0_path = experiment / f"e0/{clip}/final.zarr"
+    final_s1_path = experiment / f"artifacts/{clip}/S1_L01/final.zarr"
+    prescreen_s1_path = experiment / f"artifacts/{clip}/S1_L01_prescreen/final.zarr"
     s1_path = final_s1_path if final_s1_path.exists() else prescreen_s1_path
     repo = Path(__file__).resolve().parents[1]
     asset_root = repo / "third_party/robot_hands/artimano"
@@ -57,7 +63,7 @@ def main() -> None:
         "robot": "artimano_rh",
         "asset_root": str(asset_root),
         "selected_frame_range": [0, s1.frame_count],
-        "source_sequence": "G1 airplane lift",
+        "source_sequence": sequence_label,
         "s1_artifact": "final" if s1_path == final_s1_path else "prescreen",
     }
     source_indices = _source_frame_indices(sequence, s1, manifest)
@@ -89,8 +95,8 @@ def main() -> None:
     }
     payload = {
         "schema_version": HTML_SCHEMA_VERSION,
-        "title": "G1 airplane lift · source/E0/S1 hand mesh viewer",
-        "source_sequence": "G1 airplane lift",
+        "title": f"{sequence_label} · source/E0/S1 hand mesh viewer",
+        "source_sequence": sequence_label,
         "robot": "artimano_rh",
         "frame_count": int(s1.frame_count),
         "source": {"vertices": source_vertices.round(6).tolist(), "faces": source_faces.tolist()},
@@ -114,6 +120,7 @@ def main() -> None:
     )
     document = document.replace("Warm-start robot mesh", "E0 robot mesh")
     document = document.replace("Final robot mesh", "S1 robot mesh")
+    document = document.replace("G1 airplane lift · source/E0/S1 hand mesh viewer", payload["title"])
     document = document.replace(
         '    <label><input id="object" type="checkbox" checked> '
         '<span class="legend" style="background:#64748b"></span>Object points</label>\n',
