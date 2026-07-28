@@ -177,7 +177,7 @@ def _robot_visual_payload(model: Any, qpos: np.ndarray, base: np.ndarray) -> dic
     parts: list[dict[str, Any]] = []
     for instance_index, first in enumerate(first_instances):
         vertices, faces = _primitive_mesh(first)
-        vertices, faces = _mesh_subset(
+        vertices, faces = _clustered_mesh_preview(
             vertices,
             faces,
             max_faces=_MAX_ROBOT_PART_FACES,
@@ -247,7 +247,7 @@ def _factor_robot_topology(profiles: dict[str, Any]) -> dict[str, Any]:
     return {
         "parts": topology_parts,
         "sampling": {
-            "method": "deterministic_per_part_face_subsample",
+            "method": "deterministic_per_part_vertex_clustering",
             "max_faces_per_part": _MAX_ROBOT_PART_FACES,
             "face_count": int(sum(len(part["faces"]) for part in topology_parts)),
         },
