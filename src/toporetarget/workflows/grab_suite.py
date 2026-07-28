@@ -212,7 +212,25 @@ def _last_json(text: str) -> dict[str, Any] | None:
             continue
         if isinstance(value, dict):
             candidates.append(value)
-    return candidates[-1] if candidates else None
+    # CLI payloads are nested manifests.  The old positional rule could pick
+    # the last nested profile object instead of the top-level checkpoint
+    # status, causing a completed continuous run to be reported as a failure.
+    preferred = [
+        value
+        for value in candidates
+        if "status" in value
+        and any(
+            key in value
+            for key in (
+                "accepted_frames",
+                "remaining_frames",
+                "final_artifact",
+                "frame_count",
+                "output",
+            )
+        )
+    ]
+    return preferred[-1] if preferred else (candidates[-1] if candidates else None)
 
 
 def _source_npz(grab_root: Path, clip: SuiteClip) -> Path:

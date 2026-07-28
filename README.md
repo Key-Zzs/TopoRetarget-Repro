@@ -1117,3 +1117,6 @@ Results are written to `.local/experiments/wuji_hand2_grab3_v1/`, including
 metrics, independent 672-sample collision validation, reference exports, and
 HTML viewers. This is an offline reference runtime; GRAB contact values are
 dataset proxies, and Wuji visual soft pads are not formal collision geometry.
+## Wuji Hand2 continuous retargeting
+
+The engineering profile `wuji_continuous_full_state_v1` runs the frozen W1/W2/W3 suite with previous-final correction transport, chart-consistent full-state temporal continuation, continuity acceptance, deterministic retry, and a bounded five-frame fallback. It does not modify the paper-core objective or use post-filtering. Run it with the command in [WUJI_CONTINUOUS_RETARGETING.md](docs/WUJI_CONTINUOUS_RETARGETING.md). Outputs are written to `.local/experiments/wuji_hand2_continuous_v1/`; the interactive review is under its `html/` directory. This is a three-clip `s1` engineering result, not a cross-subject or RL-ready claim.

@@ -1083,3 +1083,9 @@ wuji_hand2_three_clip:
   visual_soft_pad_formal_collision: false
   grab_contact_semantics: DATASET_PROXY
   real_time_claim: false
+wuji_continuous_full_state_v1:
+  paper_method: false
+  engineering_extension: true
+  paper_core_frame_objective: unchanged
+  paper_core_collision_constraints: unchanged
+  author_exact: unresolved

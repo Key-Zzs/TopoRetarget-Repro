@@ -57,3 +57,10 @@ R0 is MJCF playback/PD, R1 is PPO tracking, and CP remains later.
 The Wuji three-clip implementation is available through the generic
 `workflow run-grab-suite` command; its completion status is determined only by
 the runtime `final_status.json` under the experiment root.
+## W2.1 Wuji continuity repair
+
+The frozen Wuji Hand2 three-clip baseline is retained alongside the
+engineering-only continuous profile. See
+`docs/stages/W2_1_WUJI_CONTINUITY_REPAIR.md` for the state-chart, acceptance,
+retry, and five-frame-window contract. This milestone does not establish
+cross-subject generalization or RL readiness.

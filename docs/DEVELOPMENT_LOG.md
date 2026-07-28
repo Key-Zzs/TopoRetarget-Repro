@@ -1,5 +1,15 @@
 # Development log
 
+## 2026-07-28 -- W2.1 Wuji continuous correction repair
+
+Added the separate `wuji_continuous_full_state_v1` engineering profile. It
+audits and preserves the existing local seed-delta chart, transports the
+previous accepted correction through the current warm state, adds normalized
+base/finger correction temporal energy, separates single-frame feasibility
+from trajectory continuity, and records deterministic retry/window metadata.
+The historical v3 profile and artifacts remain unchanged; no post-filtering or
+paper-core objective change is permitted.
+
 ## 2026-07-27 -- F0 tracked robot assets and generic target-hand foundation
 
 Completed F0 on `main`. Arti-MANO is now a tracked vendor snapshot at

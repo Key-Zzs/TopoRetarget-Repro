@@ -62,3 +62,6 @@ warm-start、Q5 Arti-MANO surface contact proxy、Q6 contact-preserving diagnost
 
 Wuji 三轨迹实现现已由通用 `workflow run-grab-suite` 提供；是否完成只由实验
 根目录下运行生成的 `final_status.json` 决定。
+## W2.1 Wuji 连续性修复
+
+冻结的 Wuji Hand2 三轨迹 baseline 与工程 continuous profile 并存。状态图、连续性验收、重试和五帧窗口契约见 `docs/stages/W2_1_WUJI_CONTINUITY_REPAIR.md`。该里程碑不证明跨 subject 泛化，也不代表 RL-ready。

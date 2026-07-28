@@ -42,6 +42,21 @@ from toporetarget.retarget.bones import (
     BoneFeatures,
     extract_bone_features,
 )
+from toporetarget.retarget.continuous import (
+    BASE_CORRECTION_CONVENTION,
+    CONTINUOUS_PROFILE_ID,
+    LAMBDA_CORR,
+    S_POS_M,
+    S_Q_RAD,
+    S_ROT_RAD,
+    ContinuousRetargetProfile,
+    PropagatedRetargetState,
+    RecedingHorizonWindow,
+    continuity_metrics,
+    correction_temporal_energy,
+    encode_base_correction,
+    transport_previous_final_to_current_warm,
+)
 from toporetarget.retarget.frames import BoneDirectionFrameProfile
 from toporetarget.retarget.interaction_artifacts import (
     interaction_artifact_hash,
@@ -58,6 +73,7 @@ from toporetarget.retarget.refinement_performance import (
 
 FINAL_REFINEMENT_SCHEMA_VERSION_V1 = "toporetarget.final_retarget.v1"
 FINAL_REFINEMENT_SCHEMA_VERSION_V2 = "toporetarget.final_retarget.v2"
+FINAL_REFINEMENT_SCHEMA_VERSION_V3 = "toporetarget.final_retarget.v3"
 # Historical callers and v1 fixtures continue to use this public alias.
 FINAL_REFINEMENT_SCHEMA_VERSION = FINAL_REFINEMENT_SCHEMA_VERSION_V1
 COORDINATE_PROFILE_ID = "local_seed_delta_v1"
@@ -88,6 +104,8 @@ def regularization_profile_for_solver(
         return requested_profile
     if solver_profile_id == FAITHFUL_CONTACT_RICH_SOLVER_PROFILE_ID:
         return "faithful_regularization_fix_v1"
+    if solver_profile_id == CONTINUOUS_PROFILE_ID:
+        return "wuji_continuous_full_state_v1"
     return "faithful_current_baseline"
 
 
@@ -819,6 +837,28 @@ def so3_exp(vector: Any) -> Any:
     return eye + a[..., None] * k + b[..., None] * (k @ k)
 
 
+def _so3_log_torch(rotation: Any) -> Any:
+    """Differentiable SO(3) log used only by the continuous profile."""
+
+    import torch
+
+    cosine = torch.clamp(
+        (torch.diagonal(rotation, dim1=-2, dim2=-1).sum(-1) - 1.0) * 0.5, -1.0, 1.0
+    )
+    theta = torch.acos(cosine)
+    skew = torch.stack(
+        [
+            rotation[..., 2, 1] - rotation[..., 1, 2],
+            rotation[..., 0, 2] - rotation[..., 2, 0],
+            rotation[..., 1, 0] - rotation[..., 0, 1],
+        ],
+        dim=-1,
+    )
+    safe = torch.clamp(torch.sin(theta), min=1.0e-8)
+    scale = torch.where(theta < 1.0e-6, 0.5 - theta.square() / 12.0, theta / (2.0 * safe))
+    return skew * scale[..., None]
+
+
 def so3_log(rotation: np.ndarray) -> np.ndarray:
     value = np.asarray(rotation, dtype=np.float64)
     trace = np.clip((np.trace(value) - 1.0) * 0.5, -1.0, 1.0)
@@ -1051,6 +1091,11 @@ class _FrameContext:
     fixed_base_to_seed: bool = False
     fixed_qpos_to_seed: bool = False
     quality_extension: dict[str, Any] | None = None
+    continuous_prediction_base: np.ndarray | None = None
+    continuous_prediction_qpos: np.ndarray | None = None
+    trust_region_reference: np.ndarray | None = None
+    trust_region_limits: tuple[float, float, float] | None = None
+    initialization_source: str = "warm_reset"
     cache: RefinementEvaluationCache = field(
         default_factory=lambda: RefinementEvaluationCache(-1, "")
     )
@@ -1070,6 +1115,7 @@ class _FrameContext:
             "finger_only",
             "base_only",
             "none",
+            "continuous_full_state",
         }:
             raise ValueError(f"unsupported temporal scope: {self.temporal_scope}")
         self._residual_model = InteractionMeshResidual(
@@ -1184,7 +1230,32 @@ class _FrameContext:
             e_bone = (robot_features.adjacent_features - source_adj).square().sum()
         with self.timers.measure("temporal_base_slack_objective"):
             e_temporal = value.new_zeros(())
-            if self.previous_reference is not None and self.temporal_scope != "none":
+            if (
+                self.temporal_scope == "continuous_full_state"
+                and self.continuous_prediction_base is not None
+                and self.continuous_prediction_qpos is not None
+            ):
+                predicted = torch.as_tensor(
+                    self.continuous_prediction_base, dtype=value.dtype, device=value.device
+                )
+                predicted_q = torch.as_tensor(
+                    self.continuous_prediction_qpos, dtype=value.dtype, device=value.device
+                )
+                predicted_rotation = predicted[:3, :3]
+                predicted_translation = predicted[:3, 3]
+                base_error_translation = (
+                    predicted_rotation.T @ (base[:3, 3] - predicted_translation)
+                ) / S_POS_M
+                base_error_rotation = (
+                    _so3_log_torch(predicted_rotation.T @ base[:3, :3]) / S_ROT_RAD
+                )
+                finger_error = (qpos - predicted_q) / S_Q_RAD
+                e_temporal = LAMBDA_CORR * (
+                    base_error_translation.square().mean()
+                    + base_error_rotation.square().mean()
+                    + finger_error.square().mean()
+                )
+            elif self.previous_reference is not None and self.temporal_scope != "none":
                 previous = torch.as_tensor(
                     self.previous_reference, dtype=value.dtype, device=value.device
                 )
@@ -1641,6 +1712,13 @@ class FinalFrameResult:
     active_set_rounds: int
     jacobian_diagnostics: dict[str, Any]
     failure: str | None = None
+    single_frame_feasible: bool = False
+    trajectory_continuous: bool = True
+    continuity_metrics: dict[str, Any] = field(default_factory=dict)
+    initialization_source: str = "warm_reset"
+    retry_attempt: int = 0
+    retry_profile: str = "none"
+    window_used: bool = False
 
 
 def _surface_layout(
@@ -1777,6 +1855,30 @@ def _solver_call(
     def callback(value: np.ndarray) -> None:
         callback_iterates.append(physical(value).copy())
 
+    constraints: list[dict[str, Any]] = [{"type": "ineq", "fun": constraint, "jac": constraint_jac}]
+    if context.trust_region_reference is not None:
+        if context.trust_region_limits is None:
+            raise ValueError("trust-region reference requires trust-region limits")
+        reference = np.asarray(context.trust_region_reference, dtype=np.float64)
+        position_limit, rotation_limit, q_limit = context.trust_region_limits
+
+        def trust_region_constraint(value: np.ndarray) -> np.ndarray:
+            physical_value = physical(value)
+            delta = physical_value[: 6 + context.robot_model.num_dofs]
+            return np.concatenate(
+                [
+                    position_limit - np.abs(delta[:3] - reference[:3]),
+                    rotation_limit - np.abs(delta[3:6] - reference[3:6]),
+                    q_limit
+                    - np.abs(
+                        delta[6 : 6 + context.robot_model.num_dofs]
+                        - reference[6 : 6 + context.robot_model.num_dofs]
+                    ),
+                ]
+            )
+
+        constraints.append({"type": "ineq", "fun": trust_region_constraint})
+
     lower_physical = np.concatenate(
         [
             np.full(6, -np.inf),
@@ -1809,7 +1911,7 @@ def _solver_call(
             jac=objective_jacobian,
             method=solver.method,
             bounds=bounds,
-            constraints={"type": "ineq", "fun": constraint, "jac": constraint_jac},
+            constraints=constraints,
             options={"maxiter": solver.maxiter, "ftol": solver.ftol, "disp": solver.disp},
             callback=callback,
         )
@@ -1895,7 +1997,10 @@ def strict_acceptance_decision(
         "all_values_finite": bool(all_values_finite),
     }
     failures = [name for name, passed in checks.items() if not passed]
-    if acceptance_policy_id != STRICT_ACCEPTANCE_POLICY_ID:
+    if acceptance_policy_id not in {
+        STRICT_ACCEPTANCE_POLICY_ID,
+        "strict_optimizer_converged_audits_and_continuity_v1",
+    }:
         failures.append(f"unregistered_acceptance_policy:{acceptance_policy_id}")
     accepted = not failures
     return {
@@ -1919,6 +2024,10 @@ def refine_frame(
     active_margin_m: float = 0.010,
     point_jacobian_backend: str = "reference_batched_torch_v1",
     strict_recovery: str = "none",
+    initial_state_without_slack: np.ndarray | None = None,
+    initialization_source: str = "warm_reset",
+    retry_attempt: int = 0,
+    retry_profile: str = "none",
 ) -> FinalFrameResult:
     started = time.perf_counter()
     warm_value_without = np.concatenate([np.zeros(6), context.seed_qpos])
@@ -1927,7 +2036,15 @@ def refine_frame(
         0.0,
         context.paper.b - context.paper.tau,
     )
-    initial = np.concatenate([warm_value_without, warm_slack])
+    initial_value_without = warm_value_without
+    if initial_state_without_slack is not None:
+        initial_value_without = np.asarray(initial_state_without_slack, dtype=np.float64).reshape(
+            -1
+        )
+        if len(initial_value_without) != context.variable_size_without_slack:
+            raise ValueError("initial continuous state has the wrong dimension")
+    context.initialization_source = initialization_source
+    initial = np.concatenate([initial_value_without, warm_slack])
     query_rounds = 0
     result: Any = None
     full: SignedDistanceQueryResult | None = None
@@ -2273,6 +2390,11 @@ def refine_frame(
         active_set_rounds=query_rounds,
         jacobian_diagnostics=diagnostics,
         failure=failure,
+        single_frame_feasible=accepted,
+        trajectory_continuous=True,
+        initialization_source=initialization_source,
+        retry_attempt=int(retry_attempt),
+        retry_profile=retry_profile,
     )
 
 
@@ -2294,6 +2416,8 @@ def _make_context(
     fixed_base_to_seed: bool = False,
     fixed_qpos_to_seed: bool = False,
     quality_extension: dict[str, Any] | None = None,
+    continuous_prediction_base: np.ndarray | None = None,
+    continuous_prediction_qpos: np.ndarray | None = None,
 ) -> _FrameContext:
     frame = graph.frames[local_index]
     global_frame = int(graph.frame_indices[local_index])
@@ -2353,6 +2477,8 @@ def _make_context(
         fixed_base_to_seed=fixed_base_to_seed,
         fixed_qpos_to_seed=fixed_qpos_to_seed,
         quality_extension=quality_extension,
+        continuous_prediction_base=continuous_prediction_base,
+        continuous_prediction_qpos=continuous_prediction_qpos,
         cache=RefinementEvaluationCache(global_frame, context_hash),
     )
 
@@ -2378,6 +2504,266 @@ def _quality_extension_for_frame(
             if array.ndim > 0 and array.shape[0] > local_index:
                 result[key] = array[local_index]
     return result
+
+
+def _apply_continuity_gate(
+    frame: FinalFrameResult,
+    context: _FrameContext,
+    *,
+    frame_id: int,
+    retry_attempt: int,
+    retry_profile: str,
+    window_used: bool = False,
+) -> FinalFrameResult:
+    """Separate frame feasibility from trajectory continuity for v3 artifacts."""
+
+    frame.single_frame_feasible = bool(frame.accepted)
+    metrics: dict[str, Any]
+    if context.continuous_prediction_base is None or context.continuous_prediction_qpos is None:
+        metrics = {
+            "schema_version": "toporetarget.trajectory_continuity.v1",
+            "frame": int(frame_id),
+            "trajectory_continuous": True,
+            "continuity_failure_reasons": [],
+            "frame_zero_gate": True,
+        }
+        continuous = True
+    else:
+        predicted_keypoints = np.asarray(
+            context.robot_model.keypoints_scene(
+                context.continuous_prediction_qpos,
+                context.continuous_prediction_base,
+            ),
+            dtype=np.float64,
+        )
+        final_keypoints = np.asarray(
+            context.robot_model.keypoints_scene(frame.qpos, frame.base_pose_scene),
+            dtype=np.float64,
+        )
+        metrics = continuity_metrics(
+            context.continuous_prediction_base,
+            frame.base_pose_scene,
+            context.continuous_prediction_qpos,
+            frame.qpos,
+            predicted_keypoints_scene=predicted_keypoints,
+            final_keypoints_scene=final_keypoints,
+            frame=frame_id,
+        )
+        continuous = bool(metrics["trajectory_continuous"])
+    frame.trajectory_continuous = continuous
+    frame.continuity_metrics = metrics
+    frame.retry_attempt = int(retry_attempt)
+    frame.retry_profile = retry_profile
+    frame.window_used = bool(window_used)
+    frame.accepted = bool(frame.single_frame_feasible and continuous)
+    frame.solver_success = bool(frame.accepted)
+    if not frame.accepted:
+        frame.failure = frame.failure or "continuity gate failed: " + ",".join(
+            str(item) for item in metrics.get("continuity_failure_reasons", [])
+        )
+    frame.jacobian_diagnostics["continuity"] = metrics
+    return frame
+
+
+def _initial_query_set_for_context(
+    context: _FrameContext,
+    state_without_slack: np.ndarray,
+    query_profile: CollisionQueryProfile,
+) -> CollisionQuerySet:
+    """Build and independently audit one window frame's initial QuerySet."""
+
+    initial_value = np.concatenate(
+        [np.asarray(state_without_slack, dtype=np.float64), np.zeros(0, dtype=np.float64)]
+    )
+    initial_points = context.candidate_points(initial_value)
+    with context.timers.measure("full_512_audit"):
+        initial_full = context.reference_sdf.query_scene(initial_points, context.object_pose_scene)
+    if not np.all(initial_full.sign_valid):
+        raise ValueError("window initial full-surface audit received invalid signed distance")
+    context.full_audit_call_count = 1
+    context.full_audit_call_reasons = ["window_frame_query_set_initialization"]
+    initial_query = context.sdf.query_scene(initial_points, context.object_pose_scene)
+    return build_query_set(
+        initial_query.signed_distance,
+        context.surface.geometry_ids,
+        query_profile,
+    )
+
+
+def _window_joint_objective(
+    entries: list[tuple[_FrameContext, CollisionQuerySet, np.ndarray]],
+    solver: RefinementSolverProfile,
+    *,
+    point_jacobian_backend: str,
+) -> dict[str, Any]:
+    """Solve a bounded five-frame correction window in one SLSQP problem.
+
+    The formal single-frame solver remains the source of the persisted center
+    result.  This helper is only the deterministic Attempt-3 fallback: it
+    solves the center and future variables jointly, validates every frame's
+    active constraints through its own QuerySet, and returns future states as
+    hints.  No future final artifact is treated as ground truth.
+    """
+
+    from scipy.optimize import minimize
+
+    if not entries or len(entries) > 4:
+        raise ValueError("a five-frame window has one fixed left anchor and at most four variables")
+
+    def local_size(context: _FrameContext, query_set: CollisionQuerySet) -> int:
+        return context.variable_size_without_slack + query_set.count
+
+    def scales(context: _FrameContext, query_set: CollisionQuerySet) -> np.ndarray:
+        return np.concatenate(
+            [
+                np.full(3, 0.1, dtype=np.float64),
+                np.ones(3, dtype=np.float64),
+                np.maximum(
+                    np.asarray(context.robot_model.joint_upper)
+                    - np.asarray(context.robot_model.joint_lower),
+                    1e-6,
+                ),
+                np.full(query_set.count, context.paper.b - context.paper.tau),
+            ]
+        )
+
+    offsets = [0]
+    scale_rows: list[np.ndarray] = []
+    initial_rows: list[np.ndarray] = []
+    bounds: list[tuple[float, float]] = []
+    for context, query_set, state_without_slack in entries:
+        expected = context.variable_size_without_slack
+        state = np.asarray(state_without_slack, dtype=np.float64).reshape(-1)
+        if len(state) != expected:
+            raise ValueError("window initialization has the wrong state dimension")
+        warm_slack = np.clip(
+            np.maximum(-context.paper.tau - query_set.initial_signed_distance, 0.0),
+            0.0,
+            context.paper.b - context.paper.tau,
+        )
+        scale = scales(context, query_set)
+        scale_rows.append(scale)
+        initial_rows.append(np.concatenate([state, warm_slack]))
+        offsets.append(offsets[-1] + len(scale))
+        bounds.extend(
+            list(
+                zip(
+                    np.concatenate(
+                        [
+                            np.full(6, -np.inf),
+                            np.asarray(context.robot_model.joint_lower),
+                            np.zeros(query_set.count),
+                        ]
+                    )
+                    / scale,
+                    np.concatenate(
+                        [
+                            np.full(6, np.inf),
+                            np.asarray(context.robot_model.joint_upper),
+                            np.full(query_set.count, context.paper.b - context.paper.tau),
+                        ]
+                    )
+                    / scale,
+                    strict=True,
+                )
+            )
+        )
+
+    initial = np.concatenate(
+        [row / scale for row, scale in zip(initial_rows, scale_rows, strict=True)]
+    )
+
+    def split(value: np.ndarray) -> list[np.ndarray]:
+        result: list[np.ndarray] = []
+        for index, (_context, _query_set, _) in enumerate(entries):
+            start, stop = offsets[index], offsets[index + 1]
+            result.append(np.asarray(value[start:stop], dtype=np.float64) * scale_rows[index])
+        return result
+
+    def pose_from_state(context: _FrameContext, state: np.ndarray) -> np.ndarray:
+        import torch
+
+        return _as_np(context.base_pose_torch(torch.as_tensor(state, dtype=torch.float64)))
+
+    def objective(value: np.ndarray) -> float:
+        rows = split(value)
+        total = 0.0
+        poses: list[np.ndarray] = []
+        qposes: list[np.ndarray] = []
+        for (context, query_set, _), row in zip(entries, rows, strict=True):
+            total += float(context.objective(row, query_set.query_hash)[0])
+            poses.append(pose_from_state(context, row))
+            qposes.append(np.asarray(row[6 : 6 + context.robot_model.num_dofs]))
+        for previous, current in zip(range(len(entries) - 1), range(1, len(entries)), strict=True):
+            total += correction_temporal_energy(
+                poses[previous], poses[current], qposes[previous], qposes[current]
+            )
+        return float(total)
+
+    constraints: list[dict[str, Any]] = []
+    for index, (context, query_set, _) in enumerate(entries):
+        start, stop = offsets[index], offsets[index + 1]
+
+        def constraint(
+            value: np.ndarray,
+            *,
+            start=start,
+            stop=stop,
+            context=context,
+            query_set=query_set,
+            scale=scale_rows[index],
+        ) -> np.ndarray:
+            row = np.asarray(value[start:stop], dtype=np.float64) * scale
+            return context.constraint_values(row, query_set.sample_ids, query_set.query_hash)
+
+        constraints.append({"type": "ineq", "fun": constraint})
+
+    result = minimize(
+        objective,
+        initial,
+        method=solver.method,
+        bounds=bounds,
+        constraints=constraints,
+        options={"maxiter": solver.maxiter, "ftol": solver.ftol, "disp": solver.disp},
+    )
+    rows = split(np.asarray(result.x, dtype=np.float64))
+    full_surface_audits: list[dict[str, Any]] = []
+    for (context, _, _), row in zip(entries, rows, strict=True):
+        full = context.reference_sdf.query_scene(
+            context.candidate_points(row), context.object_pose_scene
+        )
+        hard = np.asarray(full.signed_distance, dtype=np.float64) + context.paper.b
+        soft = np.asarray(full.signed_distance, dtype=np.float64) + context.paper.tau
+        full_surface_audits.append(
+            {
+                "frame": int(context.frame_id),
+                "sign_valid": bool(np.all(full.sign_valid)),
+                "hard_pass": bool(np.all(hard >= -1e-6)),
+                "soft_pass": bool(np.all(soft >= -1e-6)),
+                "min_hard_residual": float(np.min(hard)),
+                "min_soft_residual": float(np.min(soft)),
+            }
+        )
+    return {
+        "success": bool(result.success)
+        and all(
+            item["sign_valid"] and item["hard_pass"] and item["soft_pass"]
+            for item in full_surface_audits
+        ),
+        "status": int(getattr(result, "status", -1)),
+        "message": str(result.message),
+        "iterations": int(getattr(result, "nit", 0)),
+        "objective": float(objective(np.asarray(result.x, dtype=np.float64))),
+        "states": [
+            row[: context.variable_size_without_slack].copy()
+            for row, (context, _, _) in zip(rows, entries, strict=True)
+        ],
+        "full_surface_audits": full_surface_audits,
+        "slacks": [
+            row[context.variable_size_without_slack :].copy()
+            for row, (context, _, _) in zip(rows, entries, strict=True)
+        ],
+    }
 
 
 def _ragged(values: list[np.ndarray], width: int | None = None) -> tuple[np.ndarray, np.ndarray]:
@@ -2406,6 +2792,7 @@ class FinalRetargetTrajectory:
         if self.schema_version not in {
             FINAL_REFINEMENT_SCHEMA_VERSION_V1,
             FINAL_REFINEMENT_SCHEMA_VERSION_V2,
+            FINAL_REFINEMENT_SCHEMA_VERSION_V3,
         }:
             raise ValueError(f"unsupported final artifact schema: {self.schema_version}")
         t = self.frame_count
@@ -2498,6 +2885,35 @@ class FinalRetargetTrajectory:
                 raise ValueError(
                     f"{name} has shape {np.asarray(self.arrays[name]).shape}, "
                     f"expected {optional_frame_arrays[name]}"
+                )
+        continuous_arrays = {
+            "single_frame_feasible": (t,),
+            "trajectory_continuous": (t,),
+            "final_accepted": (t,),
+            "continuity_failure_reasons": (t,),
+            "initialization_source": (t,),
+            "retry_attempt": (t,),
+            "retry_profile": (t,),
+            "window_used": (t,),
+            "continuity_base_translation_m": (t,),
+            "continuity_base_rotation_rad": (t,),
+            "continuity_finger_inf_rad": (t,),
+            "continuity_excess_keypoint_m": (t,),
+            "q_clamp_count": (t,),
+        }
+        continuous_present = set(continuous_arrays).intersection(self.arrays)
+        if self.schema_version == FINAL_REFINEMENT_SCHEMA_VERSION_V3 and continuous_present != set(
+            continuous_arrays
+        ):
+            raise ValueError(
+                "continuous final artifact is missing fields: "
+                + ", ".join(sorted(set(continuous_arrays) - continuous_present))
+            )
+        for name in continuous_present:
+            if tuple(np.asarray(self.arrays[name]).shape) != continuous_arrays[name]:
+                raise ValueError(
+                    f"{name} has shape {np.asarray(self.arrays[name]).shape}, "
+                    f"expected {continuous_arrays[name]}"
                 )
         return self
 
@@ -2664,6 +3080,7 @@ def load_final_trajectory(path: str | Path) -> FinalRetargetTrajectory:
     if schema_version not in {
         FINAL_REFINEMENT_SCHEMA_VERSION_V1,
         FINAL_REFINEMENT_SCHEMA_VERSION_V2,
+        FINAL_REFINEMENT_SCHEMA_VERSION_V3,
     }:
         raise ValueError("unsupported final artifact schema")
     metadata = json.loads(str(attributes["metadata_json"]))
@@ -2719,6 +3136,7 @@ def build_final_trajectory(
         "temporal_finger_only": "finger_only",
         "temporal_base_only": "base_only",
         "no_temporal": "none",
+        "wuji_continuous_full_state_v1": "continuous_full_state",
     }
     regularization_profile = regularization_profile_for_solver(
         solver_profile.profile_id, regularization_profile
@@ -2726,6 +3144,11 @@ def build_final_trajectory(
     if regularization_profile not in temporal_scope_by_profile:
         raise ValueError(f"unsupported regularization profile: {regularization_profile}")
     temporal_scope = temporal_scope_by_profile[regularization_profile]
+    continuous_profile = (
+        ContinuousRetargetProfile.load()
+        if solver_profile.profile_id == CONTINUOUS_PROFILE_ID
+        else None
+    )
     point_jacobian_backend = str(
         getattr(execution_profile, "point_jacobian_backend", "reference_batched_torch_v1")
     )
@@ -2750,6 +3173,7 @@ def build_final_trajectory(
         raise ValueError(f"invalid frame range [{start_frame},{stop})")
     frame_indices = list(range(start_frame, stop))
     frames: list[FinalFrameResult] = []
+    future_hints: dict[int, np.ndarray] = {}
     previous_base: np.ndarray | None = None
     previous_qpos: np.ndarray | None = None
     if initial_previous is not None:
@@ -2763,10 +3187,43 @@ def build_final_trajectory(
             paused = True
             break
         previous = None
+        propagated: PropagatedRetargetState | None = None
         if previous_base is not None and previous_qpos is not None:
             previous = map_previous_state_to_seed(
                 previous_base, previous_qpos, warm.arrays["base_pose_scene"][local_index]
             )
+        if continuous_profile is not None:
+            if previous_base is None or previous_qpos is None:
+                predicted_base = np.asarray(
+                    warm.arrays["base_pose_scene"][local_index], dtype=np.float64
+                )
+                predicted_qpos = np.asarray(warm.arrays["qpos"][local_index], dtype=np.float64)
+                propagated = PropagatedRetargetState(
+                    predicted_base_scene=predicted_base,
+                    predicted_qpos=predicted_qpos,
+                    base_correction=np.zeros(6, dtype=np.float64),
+                    q_correction=np.zeros_like(predicted_qpos),
+                    q_clamp_count=0,
+                    previous_frame=None,
+                    current_frame=int(graph.frame_indices[local_index]),
+                    initialization_source="warm_first_frame",
+                )
+            else:
+                previous_local = local_index - 1
+                if previous_local < 0:
+                    raise ValueError("continuous transport requires the previous warm frame")
+                propagated = transport_previous_final_to_current_warm(
+                    warm.arrays["base_pose_scene"][previous_local],
+                    previous_base,
+                    warm.arrays["base_pose_scene"][local_index],
+                    warm.arrays["qpos"][previous_local],
+                    previous_qpos,
+                    warm.arrays["qpos"][local_index],
+                    robot_model.joint_lower,
+                    robot_model.joint_upper,
+                    previous_frame=int(graph.frame_indices[previous_local]),
+                    current_frame=int(graph.frame_indices[local_index]),
+                )
         context = _make_context(
             sequence,
             graph,
@@ -2784,6 +3241,16 @@ def build_final_trajectory(
             fixed_base_to_seed=fixed_base_to_seed,
             fixed_qpos_to_seed=fixed_qpos_to_seed,
             quality_extension=_quality_extension_for_frame(quality_extension, local_index),
+            continuous_prediction_base=(
+                None
+                if propagated is None or propagated.previous_frame is None
+                else propagated.predicted_base_scene
+            ),
+            continuous_prediction_qpos=(
+                None
+                if propagated is None or propagated.previous_frame is None
+                else propagated.predicted_qpos
+            ),
         )
         initial_points = context.candidate_points(np.concatenate([np.zeros(6), context.seed_qpos]))
         with context.timers.measure("full_512_audit"):
@@ -2848,6 +3315,16 @@ def build_final_trajectory(
                 np.asarray(initial_query.signed_distance)[query_set.sample_ids],
                 query_set.query_hash,
             )
+        initial_state_without_slack = None
+        initialization_source = "warm_reset"
+        if propagated is not None:
+            initial_state_without_slack = np.concatenate(
+                [
+                    propagated.base_correction,
+                    propagated.predicted_qpos,
+                ]
+            )
+            initialization_source = propagated.initialization_source
         frame_result = refine_frame(
             context,
             query_set,
@@ -2856,7 +3333,270 @@ def build_final_trajectory(
             active_margin_m=query_profile.active_margin_m,
             point_jacobian_backend=point_jacobian_backend,
             strict_recovery=strict_recovery,
+            initial_state_without_slack=initial_state_without_slack,
+            initialization_source=initialization_source,
         )
+        if continuous_profile is not None:
+            frame_result = _apply_continuity_gate(
+                frame_result,
+                context,
+                frame_id=int(graph.frame_indices[local_index]),
+                retry_attempt=0,
+                retry_profile="continuous_propagated",
+            )
+            attempt_candidates = [frame_result]
+            if not frame_result.accepted:
+                if initial_state_without_slack is None:
+                    raise RuntimeError("continuous profile did not construct an initial state")
+                context.trust_region_reference = initial_state_without_slack
+                context.trust_region_limits = (S_POS_M, S_ROT_RAD, S_Q_RAD)
+                trust_result = refine_frame(
+                    context,
+                    query_set,
+                    solver_profile,
+                    max_rounds=query_profile.max_active_set_rounds,
+                    active_margin_m=query_profile.active_margin_m,
+                    point_jacobian_backend=point_jacobian_backend,
+                    strict_recovery=strict_recovery,
+                    initial_state_without_slack=initial_state_without_slack,
+                    initialization_source="propagated_previous_final",
+                    retry_attempt=1,
+                    retry_profile="propagated_trust_region",
+                )
+                trust_result = _apply_continuity_gate(
+                    trust_result,
+                    context,
+                    frame_id=int(graph.frame_indices[local_index]),
+                    retry_attempt=1,
+                    retry_profile="propagated_trust_region",
+                )
+                attempt_candidates.append(trust_result)
+                if trust_result.accepted:
+                    frame_result = trust_result
+                else:
+                    candidate_states: list[tuple[str, np.ndarray]] = [
+                        ("propagated_previous_final", initial_state_without_slack),
+                        (
+                            "current_warm",
+                            np.concatenate(
+                                [
+                                    np.zeros(6, dtype=np.float64),
+                                    np.asarray(warm.arrays["qpos"][local_index], dtype=np.float64),
+                                ]
+                            ),
+                        ),
+                    ]
+                    if local_index in future_hints:
+                        candidate_states.append(
+                            ("previous_window_future_hint", future_hints[local_index])
+                        )
+                    if previous_base is not None and previous_qpos is not None:
+                        candidate_states.append(
+                            (
+                                "last_active_set_feasible",
+                                np.concatenate(
+                                    [
+                                        encode_base_correction(
+                                            warm.arrays["base_pose_scene"][local_index],
+                                            frame_result.base_pose_scene,
+                                        ),
+                                        frame_result.qpos,
+                                    ]
+                                ),
+                            )
+                        )
+                        candidate_states.append(
+                            (
+                                "previous_absolute_final_reencoded",
+                                np.concatenate(
+                                    [
+                                        encode_base_correction(
+                                            warm.arrays["base_pose_scene"][local_index],
+                                            previous_base,
+                                        ),
+                                        previous_qpos,
+                                    ]
+                                ),
+                            )
+                        )
+                    multi_results: list[FinalFrameResult] = []
+                    seen: set[bytes] = set()
+                    for source, candidate_state in candidate_states:
+                        key = np.asarray(candidate_state, dtype=np.float64).tobytes()
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        multi = refine_frame(
+                            context,
+                            query_set,
+                            solver_profile,
+                            max_rounds=query_profile.max_active_set_rounds,
+                            active_margin_m=query_profile.active_margin_m,
+                            point_jacobian_backend=point_jacobian_backend,
+                            strict_recovery=strict_recovery,
+                            initial_state_without_slack=candidate_state,
+                            initialization_source=source,
+                            retry_attempt=2,
+                            retry_profile="deterministic_multi_start",
+                        )
+                        multi_results.append(
+                            _apply_continuity_gate(
+                                multi,
+                                context,
+                                frame_id=int(graph.frame_indices[local_index]),
+                                retry_attempt=2,
+                                retry_profile="deterministic_multi_start",
+                            )
+                        )
+                    attempt_candidates.extend(multi_results)
+                    accepted_candidates = [item for item in attempt_candidates if item.accepted]
+                    if accepted_candidates:
+                        frame_result = min(
+                            accepted_candidates,
+                            key=lambda item: (item.final_objective, item.retry_attempt),
+                        )
+                    else:
+                        window = RecedingHorizonWindow.for_target(
+                            local_index, warm.frame_count, window_size=5
+                        )
+                        # Attempt 3 is a genuine joint offline solve over
+                        # [t, t+1, t+2, t+3].  The center result is still
+                        # revalidated through the formal single-frame path;
+                        # future solutions become hints only.
+                        window_entries: list[
+                            tuple[_FrameContext, CollisionQuerySet, np.ndarray]
+                        ] = [(context, query_set, initial_state_without_slack)]
+                        window_previous_base = _as_np(
+                            context.base_pose_torch(
+                                __import__("torch").as_tensor(
+                                    np.concatenate(
+                                        [
+                                            initial_state_without_slack,
+                                            np.zeros(query_set.count),
+                                        ]
+                                    ),
+                                    dtype=__import__("torch").float64,
+                                )
+                            )
+                        )
+                        window_previous_qpos = np.asarray(
+                            initial_state_without_slack[6 : 6 + robot_model.num_dofs],
+                            dtype=np.float64,
+                        )
+                        try:
+                            for future_local in window.variable_frames[1:]:
+                                propagated_future = transport_previous_final_to_current_warm(
+                                    warm.arrays["base_pose_scene"][future_local - 1],
+                                    window_previous_base,
+                                    warm.arrays["base_pose_scene"][future_local],
+                                    warm.arrays["qpos"][future_local - 1],
+                                    window_previous_qpos,
+                                    warm.arrays["qpos"][future_local],
+                                    robot_model.joint_lower,
+                                    robot_model.joint_upper,
+                                    previous_frame=int(graph.frame_indices[future_local - 1]),
+                                    current_frame=int(graph.frame_indices[future_local]),
+                                )
+                                future_context = _make_context(
+                                    sequence,
+                                    graph,
+                                    warm,
+                                    robot_model,
+                                    surface,
+                                    sdf,
+                                    reference_sdf,
+                                    frame_profile,
+                                    bone_profile,
+                                    paper,
+                                    future_local,
+                                    None,
+                                    temporal_scope="continuous_full_state",
+                                    quality_extension=_quality_extension_for_frame(
+                                        quality_extension, future_local
+                                    ),
+                                    continuous_prediction_base=propagated_future.predicted_base_scene,
+                                    continuous_prediction_qpos=propagated_future.predicted_qpos,
+                                )
+                                future_state = np.concatenate(
+                                    [
+                                        propagated_future.base_correction,
+                                        propagated_future.predicted_qpos,
+                                    ]
+                                )
+                                future_query = _initial_query_set_for_context(
+                                    future_context, future_state, query_profile
+                                )
+                                window_entries.append((future_context, future_query, future_state))
+                                window_previous_base = propagated_future.predicted_base_scene
+                                window_previous_qpos = propagated_future.predicted_qpos
+
+                            joint = _window_joint_objective(
+                                window_entries,
+                                solver_profile,
+                                point_jacobian_backend=point_jacobian_backend,
+                            )
+                            for hint_local, hint_state in zip(
+                                window.variable_frames[1:], joint["states"][1:], strict=True
+                            ):
+                                future_hints[int(hint_local)] = np.asarray(
+                                    hint_state, dtype=np.float64
+                                )
+                            window_result = refine_frame(
+                                context,
+                                query_set,
+                                solver_profile,
+                                max_rounds=query_profile.max_active_set_rounds,
+                                active_margin_m=query_profile.active_margin_m,
+                                point_jacobian_backend=point_jacobian_backend,
+                                strict_recovery=strict_recovery,
+                                initial_state_without_slack=joint["states"][0],
+                                initialization_source="five_frame_window_joint_center",
+                                retry_attempt=3,
+                                retry_profile="five_frame_window",
+                            )
+                            window_result.jacobian_diagnostics["window_joint"] = {
+                                "success": bool(joint["success"]),
+                                "status": int(joint["status"]),
+                                "message": str(joint["message"]),
+                                "iterations": int(joint["iterations"]),
+                                "objective": float(joint["objective"]),
+                                "variable_frames": list(window.variable_frames),
+                                "future_hint_frames": list(window.variable_frames[1:]),
+                            }
+                        except Exception as exc:
+                            window_result = refine_frame(
+                                context,
+                                query_set,
+                                solver_profile,
+                                max_rounds=query_profile.max_active_set_rounds,
+                                active_margin_m=query_profile.active_margin_m,
+                                point_jacobian_backend=point_jacobian_backend,
+                                strict_recovery=strict_recovery,
+                                initial_state_without_slack=initial_state_without_slack,
+                                initialization_source="five_frame_window_failed_fallback",
+                                retry_attempt=3,
+                                retry_profile="five_frame_window",
+                            )
+                            window_result.jacobian_diagnostics["window_joint"] = {
+                                "success": False,
+                                "failure": type(exc).__name__ + ": " + str(exc),
+                                "variable_frames": list(window.variable_frames),
+                            }
+                        window_result = _apply_continuity_gate(
+                            window_result,
+                            context,
+                            frame_id=int(graph.frame_indices[local_index]),
+                            retry_attempt=3,
+                            retry_profile="five_frame_window",
+                            window_used=True,
+                        )
+                        window_result.jacobian_diagnostics["window"] = window.as_dict()
+                        frame_result = window_result
+            context.trust_region_reference = None
+            context.trust_region_limits = None
+            frame_result.jacobian_diagnostics["q_clamp_count"] = int(
+                0 if propagated is None else propagated.q_clamp_count
+            )
         frames.append(frame_result)
         query_summaries.append(
             {
@@ -2969,6 +3709,13 @@ def build_final_trajectory(
         dtype=np.int64,
     )
     lower, upper = robot_model.joint_lower, robot_model.joint_upper
+
+    def continuity_series(key: str, default: float = math.nan) -> np.ndarray:
+        return np.asarray(
+            [float(item.continuity_metrics.get(key, default)) for item in frames],
+            dtype=np.float64,
+        )
+
     arrays = {
         "timestamps": timestamps,
         "frame_indices": np.asarray(graph.frame_indices[processed_frame_indices], dtype=np.int64),
@@ -3078,6 +3825,45 @@ def build_final_trajectory(
             [item.stationarity_residual for item in frames], dtype=np.float64
         ),
         "accepted": np.asarray([item.accepted for item in frames], dtype=bool),
+        "single_frame_feasible": np.asarray(
+            [item.single_frame_feasible for item in frames], dtype=bool
+        ),
+        "trajectory_continuous": np.asarray(
+            [item.trajectory_continuous for item in frames], dtype=bool
+        ),
+        "final_accepted": np.asarray([item.accepted for item in frames], dtype=bool),
+        "continuity_failure_reasons": np.asarray(
+            [
+                ",".join(
+                    str(value)
+                    for value in item.continuity_metrics.get("continuity_failure_reasons", [])
+                )
+                for item in frames
+            ],
+            dtype="S512",
+        ),
+        "initialization_source": np.asarray(
+            [item.initialization_source for item in frames], dtype="S96"
+        ),
+        "retry_attempt": np.asarray([item.retry_attempt for item in frames], dtype=np.int64),
+        "retry_profile": np.asarray([item.retry_profile for item in frames], dtype="S96"),
+        "window_used": np.asarray([item.window_used for item in frames], dtype=bool),
+        "continuity_base_translation_m": continuity_series("delta_base_translation_m"),
+        "continuity_base_rotation_rad": continuity_series("delta_base_rotation_rad"),
+        "continuity_finger_inf_rad": continuity_series("delta_finger_inf_rad"),
+        "continuity_excess_keypoint_m": continuity_series("excess_keypoint_max_m"),
+        "q_clamp_count": np.asarray(
+            [
+                int(
+                    item.jacobian_diagnostics.get(
+                        "q_clamp_count",
+                        0,
+                    )
+                )
+                for item in frames
+            ],
+            dtype=np.int64,
+        ),
         "acceptance_reason": np.asarray([item.acceptance_reason for item in frames], dtype="S512"),
         "initial_objective": np.asarray(
             [item.initial_objective for item in frames], dtype=np.float64
@@ -3091,13 +3877,17 @@ def build_final_trajectory(
     object_mesh_hash = resources.mesh_hash
     metadata = {
         "schema_version": (
-            FINAL_REFINEMENT_SCHEMA_VERSION_V2
-            if solver_profile.profile_id
-            in {
-                CONTACT_RICH_SOLVER_PROFILE_ID,
-                FAITHFUL_CONTACT_RICH_SOLVER_PROFILE_ID,
-            }
-            else FINAL_REFINEMENT_SCHEMA_VERSION_V1
+            FINAL_REFINEMENT_SCHEMA_VERSION_V3
+            if continuous_profile is not None
+            else (
+                FINAL_REFINEMENT_SCHEMA_VERSION_V2
+                if solver_profile.profile_id
+                in {
+                    CONTACT_RICH_SOLVER_PROFILE_ID,
+                    FAITHFUL_CONTACT_RICH_SOLVER_PROFILE_ID,
+                }
+                else FINAL_REFINEMENT_SCHEMA_VERSION_V1
+            )
         ),
         "artifact_type": "final_interaction_preserving_robot_reference",
         "source_sequence_id": warm.metadata.get("source_sequence_id"),
@@ -3138,6 +3928,26 @@ def build_final_trajectory(
         "paper_weights": paper.as_dict(),
         "regularization_profile": regularization_profile,
         "temporal_scope": temporal_scope,
+        "base_correction_convention": BASE_CORRECTION_CONVENTION,
+        "continuous_profile": (
+            None if continuous_profile is None else continuous_profile.as_dict()
+        ),
+        "continuity_schema_version": (
+            None if continuous_profile is None else "toporetarget.trajectory_continuity.v1"
+        ),
+        "continuity_thresholds": (
+            None
+            if continuous_profile is None
+            else dict(continuous_profile.values.get("continuity", {}))
+        ),
+        "retry_profile": (
+            None if continuous_profile is None else dict(continuous_profile.values.get("retry", {}))
+        ),
+        "window_profile": (
+            None
+            if continuous_profile is None
+            else dict(continuous_profile.values.get("window", {}))
+        ),
         "fixed_base_to_seed": bool(fixed_base_to_seed),
         "fixed_qpos_to_seed": bool(fixed_qpos_to_seed),
         "quality_extension": None
@@ -3255,6 +4065,7 @@ __all__ = [
     "FULL_SOLVER_PROFILE_ID",
     "FINAL_REFINEMENT_SCHEMA_VERSION_V1",
     "FINAL_REFINEMENT_SCHEMA_VERSION_V2",
+    "FINAL_REFINEMENT_SCHEMA_VERSION_V3",
     "PaperRefinementWeights",
     "RefinementCoordinateProfile",
     "RefinementResources",
@@ -3273,6 +4084,7 @@ __all__ = [
     "load_final_trajectory",
     "load_robot_surface_samples",
     "map_previous_state_to_seed",
+    "_apply_continuity_gate",
     "prepare_refinement_resources",
     "save_final_trajectory",
     "so3_exp",

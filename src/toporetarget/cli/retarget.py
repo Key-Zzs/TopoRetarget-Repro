@@ -30,6 +30,7 @@ from toporetarget.retarget.bones import extract_bone_features, load_bone_profile
 from toporetarget.retarget.delaunay import load_delaunay_profile
 from toporetarget.retarget.final_refinement import (
     ACTIVE_QUERY_PROFILE_ID,
+    FINAL_REFINEMENT_SCHEMA_VERSION_V3,
     FULL_QUERY_PROFILE_ID,
     FULL_SOLVER_PROFILE_ID,
     SOLVER_PROFILE_ID,
@@ -1071,7 +1072,8 @@ def _checkpoint_manifest(
     checkpoint_root: Path,
     source_frame_offset: int,
 ) -> dict[str, Any]:
-    return {
+    continuous = solver.profile_id == "wuji_continuous_full_state_v1"
+    result = {
         "schema_version": "toporetarget.final_retarget_checkpoint.v1",
         "run_id": checkpoint_root.name,
         "input_signature": input_signature,
@@ -1099,7 +1101,9 @@ def _checkpoint_manifest(
             int(source_frame_offset + start_frame),
             int(source_frame_offset + end_frame),
         ],
-        "final_artifact_schema": "toporetarget.final_retarget.v2",
+        "final_artifact_schema": (
+            FINAL_REFINEMENT_SCHEMA_VERSION_V3 if continuous else "toporetarget.final_retarget.v2"
+        ),
         "paper_weights": paper.as_dict(),
         "resume_command": "toporetarget retarget refine --resume --checkpoint-root "
         + str(checkpoint_root),
@@ -1153,6 +1157,21 @@ def _checkpoint_manifest(
             ],
         },
     }
+    if continuous:
+        result["final_artifact_metadata"].update(
+            {
+                "base_correction_convention": "scene_local_seed_delta_exp_left",
+                "continuous_profile_id": solver.profile_id,
+                "continuity_schema_version": "toporetarget.trajectory_continuity.v1",
+                "continuity_acceptance": True,
+                "previous_final_correction_transport": True,
+                "receding_horizon_window": 5,
+                "paper_method": False,
+                "author_exact": "unresolved",
+                "engineering_extension": True,
+            }
+        )
+    return result
 
 
 def _checkpoint_status_payload(store: CheckpointStore) -> dict[str, Any]:

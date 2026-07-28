@@ -1,0 +1,33 @@
+schema_version: toporetarget.wuji_continuous_suite.v1
+experiment_id: wuji_hand2_continuous_v1
+robot: wuji_hand2_beta1_rh
+solver_profile: wuji_continuous_full_state_v1
+baseline_experiment_root: .local/experiments/wuji_hand2_grab3_v1
+continuous_experiment_root: .local/experiments/wuji_hand2_continuous_v1
+selection:
+  source_subject: s1
+  hand: right
+  native_fps: 120
+  fixed_no_reselection: true
+clips:
+  - unit_id: W1_s1__airplane_lift__right__wuji_hand2_beta1_rh__f000240_f000300
+    short_id: W1_airplane_lift
+    sequence: s1/airplane_lift
+    object_name: airplane
+    hand: right
+    start_frame: 240
+    end_frame: 300
+  - unit_id: W2_s1__apple_eat_1__right__wuji_hand2_beta1_rh__f000212_f000272
+    short_id: W2_apple_eat_1
+    sequence: s1/apple_eat_1
+    object_name: apple
+    hand: right
+    start_frame: 212
+    end_frame: 272
+  - unit_id: W3_s1__alarmclock_lift__right__wuji_hand2_beta1_rh__f000407_f000467
+    short_id: W3_alarmclock_lift
+    sequence: s1/alarmclock_lift
+    object_name: alarmclock
+    hand: right
+    start_frame: 407
+    end_frame: 467

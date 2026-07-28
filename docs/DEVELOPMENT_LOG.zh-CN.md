@@ -1,5 +1,13 @@
 # 开发日志
 
+## 2026-07-28 —— W2.1 Wuji 连续修复
+
+新增独立的 `wuji_continuous_full_state_v1` 工程 profile：审计并保留已有
+local seed-delta chart，将 previous accepted correction 传播到当前 warm
+state，加入归一化 base/finger correction temporal，分离单帧可行性与轨迹
+连续性，并记录确定性 retry/window 元数据。历史 v3 profile 与 artifact
+保持不变；禁止后处理滤波，也不改变 paper-core objective。
+
 ## 2026-07-27 -- F0 tracked 机器人手资产与通用 target-hand foundation
 
 在 `main` 完成 F0。Arti-MANO 现在是仓库内 tracked vendor snapshot，路径为

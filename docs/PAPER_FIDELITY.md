@@ -335,3 +335,9 @@ collision profile, and asset provenance are explicit; using it is not a claim
 that the paper's original hardware has been reproduced. The solver remains
 paper-core Eq. (1)--(9), with no SDF penetration loss, contact attraction, or
 robot-specific objective term.
+## Wuji continuous engineering extension
+
+`wuji_continuous_full_state_v1` is explicitly not the paper method. It keeps
+the paper-core frame objective and collision constraints unchanged and adds a
+separate continuation/continuity acceptance layer. The canonical faithful
+profile `scipy_slsqp_active_set_contact_rich_v3_fixed` remains immutable.

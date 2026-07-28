@@ -1,5 +1,13 @@
 # Assumptions and unpublished details
 
+## W2.1 Wuji continuous extension
+
+- The base chart is `scene_local_seed_delta_exp_left` at root `r_wrist`.
+- `author_exact` remains `unresolved`; the new profile is engineering-only.
+- Continuity is measured against propagated previous-final state, not against
+  source MANO or baseline final artifacts.
+- The five-frame fallback is bounded and cannot be expanded automatically.
+
 ## W0/W1 Wuji Hand2 Beta1 boundary
 
 Wuji Hand2 Beta1 is a tracked target-hand asset and generic registry instance, not a hardware or

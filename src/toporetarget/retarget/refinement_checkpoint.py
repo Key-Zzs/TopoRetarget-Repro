@@ -191,6 +191,18 @@ def frame_checkpoint_payload(
         "optimizer_iterations": int(frame.optimizer_iterations),
         "optimizer_converged": bool(frame.optimizer_converged),
         "strict_accepted": bool(frame.accepted),
+        "single_frame_feasible": bool(frame.single_frame_feasible),
+        "trajectory_continuous": bool(frame.trajectory_continuous),
+        "final_accepted": bool(frame.accepted),
+        "continuity_failure_reasons": list(
+            frame.continuity_metrics.get("continuity_failure_reasons", [])
+        ),
+        "initialization_source": frame.initialization_source,
+        "retry_attempt": int(frame.retry_attempt),
+        "retry_profile": frame.retry_profile,
+        "window_used": bool(frame.window_used),
+        "continuity_metrics": frame.continuity_metrics,
+        "q_clamp_count": int(frame.jacobian_diagnostics.get("q_clamp_count", 0)),
         "solver_success": bool(frame.solver_success),
         "qpos_bounds_pass": bool(frame.qpos_bounds_pass),
         "slack_bounds_pass": bool(frame.slack_bounds_pass),
@@ -773,6 +785,54 @@ def _assemble_arrays(
         "stationarity_checked": bool_array("stationarity_checked", False),
         "stationarity_residual": float_array("stationarity_residual"),
         "accepted": bool_array("strict_accepted", False),
+        "single_frame_feasible": bool_array("single_frame_feasible", False),
+        "trajectory_continuous": bool_array("trajectory_continuous", False),
+        "final_accepted": bool_array("final_accepted", False),
+        "continuity_failure_reasons": np.asarray(
+            [
+                ",".join(str(value) for value in row.get("continuity_failure_reasons", []))
+                for row in frame_metadata
+            ],
+            dtype="S512",
+        ),
+        "initialization_source": np.asarray(
+            [str(row.get("initialization_source", "warm_reset")) for row in frame_metadata],
+            dtype="S96",
+        ),
+        "retry_attempt": int_array("retry_attempt"),
+        "retry_profile": np.asarray(
+            [str(row.get("retry_profile", "none")) for row in frame_metadata], dtype="S96"
+        ),
+        "window_used": bool_array("window_used", False),
+        "continuity_base_translation_m": np.asarray(
+            [
+                float(row.get("continuity_metrics", {}).get("delta_base_translation_m", np.nan))
+                for row in frame_metadata
+            ],
+            dtype=np.float64,
+        ),
+        "continuity_base_rotation_rad": np.asarray(
+            [
+                float(row.get("continuity_metrics", {}).get("delta_base_rotation_rad", np.nan))
+                for row in frame_metadata
+            ],
+            dtype=np.float64,
+        ),
+        "continuity_finger_inf_rad": np.asarray(
+            [
+                float(row.get("continuity_metrics", {}).get("delta_finger_inf_rad", np.nan))
+                for row in frame_metadata
+            ],
+            dtype=np.float64,
+        ),
+        "continuity_excess_keypoint_m": np.asarray(
+            [
+                float(row.get("continuity_metrics", {}).get("excess_keypoint_max_m", np.nan))
+                for row in frame_metadata
+            ],
+            dtype=np.float64,
+        ),
+        "q_clamp_count": int_array("q_clamp_count"),
         "acceptance_reason": np.asarray(
             [item["acceptance_reason"] for item in frame_metadata], dtype="S512"
         ),

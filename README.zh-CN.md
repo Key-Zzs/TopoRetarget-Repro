@@ -1034,3 +1034,6 @@ boundary gate 处正式路由为 `SIGN_PROXY_CONTACT_REGION_CONFLICT`，不是 A
 672 点 collision 验证、reference export 和 HTML viewer。这是 offline
 reference runtime；GRAB contact 是 dataset proxy，Wuji visual soft pad
 不属于 formal collision geometry。
+## Wuji Hand2 连续重定向
+
+工程 profile `wuji_continuous_full_state_v1` 在冻结的 W1/W2/W3 三条轨迹上使用 previous-final correction transport、chart-consistent 全状态 temporal、连续性验收、确定性重试和有界五帧窗口。不修改 paper-core objective，也不使用后处理滤波。运行命令见 [WUJI_CONTINUOUS_RETARGETING.md](docs/WUJI_CONTINUOUS_RETARGETING.md)。输出位于 `.local/experiments/wuji_hand2_continuous_v1/`，交互式 review 位于其 `html/`。当前只是 `s1` 三轨迹工程结果，不代表 cross-subject 或 RL-ready。
