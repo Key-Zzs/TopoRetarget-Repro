@@ -1142,7 +1142,8 @@ def _path_metrics_from_cache(
         qpos = np.asarray(data["qpos"], dtype=np.float64)
         phi = np.asarray(data["phi"], dtype=np.float64)
         required_slack = np.asarray(data["required_slack"], dtype=np.float64)
-    dof_count = int(getattr(bundle["inputs"].get("model"), "num_dofs", qpos.shape[1]))
+    model_dof_count = getattr(bundle["inputs"].get("model"), "num_dofs", None)
+    dof_count = qpos.shape[1] if model_dof_count is None else int(model_dof_count)
     if (
         len(alphas) != int(sample_count)
         or bases.shape != (int(sample_count), 4, 4)
