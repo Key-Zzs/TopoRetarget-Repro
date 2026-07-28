@@ -2,6 +2,11 @@
 
 from .bones import BoneDirectionProfile, BoneFeatures, extract_bone_features, load_bone_profile
 from .frames import BoneDirectionFrameProfile, FrameDegeneracyError, load_frame_profile
+from .penetration_loss import (
+    DenseSDFPenetrationLoss,
+    PenetrationLossEvaluation,
+    PenetrationLossProfile,
+)
 
 __all__ = [
     "BoneDirectionFrameProfile",
@@ -11,4 +16,7 @@ __all__ = [
     "extract_bone_features",
     "load_bone_profile",
     "load_frame_profile",
+    "DenseSDFPenetrationLoss",
+    "PenetrationLossEvaluation",
+    "PenetrationLossProfile",
 ]

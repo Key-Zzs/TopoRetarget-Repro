@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,7 @@ from toporetarget.workflows.four_state_review import render_four_state_review_ht
 from toporetarget.workflows.gate import build_runtime_acceptance, evaluate_gate
 from toporetarget.workflows.mesh_visualization import render_mesh_html
 from toporetarget.workflows.planning import build_plan, write_plan
+from toporetarget.workflows.s1_penetration import run_s1, s1_status
 from toporetarget.workflows.schema import WorkflowRequest, read_json, write_json
 from toporetarget.workflows.shadow_equivalence import (
     PROFILES as SHADOW_EQUIVALENCE_PROFILES,
@@ -78,6 +80,97 @@ app = typer.Typer(help="Stage 10 bounded, resumable GRAB-to-Arti-MANO workflows.
 
 def _parse_frames(value: str) -> tuple[int, ...]:
     return tuple(int(item.strip()) for item in value.split(",") if item.strip())
+
+
+@app.command("run-s1-penetration-loss")
+def run_s1_penetration_loss_command(
+    run_root: Path = typer.Option(
+        Path(".local/experiments/s1_sdf_penetration_loss_v1"), "--run-root", "--experiment-root"
+    ),
+    config: Path = typer.Option(
+        Path("configs/experiments/s1_sdf_penetration_loss_v1.yaml"), "--config"
+    ),
+    max_wall_time: float = typer.Option(1800.0, "--max-wall-time", min=1.0),
+    resume: bool = typer.Option(True, "--resume/--no-resume"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    generate_html: bool = typer.Option(True, "--generate-html/--no-generate-html"),
+) -> None:
+    """Run the frozen two-clip G1/G2 S1 comparison without manual acceptance."""
+    try:
+        value = run_s1(
+            Path.cwd(),
+            config_path=config,
+            run_root=run_root,
+            max_wall_time=max_wall_time,
+            resume=resume,
+            dry_run=dry_run,
+        )
+        value["generate_html"] = generate_html
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+        typer.echo(f"S1 penetration-loss workflow failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("run-sdf-loss-comparison")
+def run_sdf_loss_comparison_command(
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/s1_sdf_penetration_loss_v1"), "--experiment-root"
+    ),
+    config: Path = typer.Option(
+        Path("configs/experiments/s1_sdf_penetration_loss_v1.yaml"), "--config"
+    ),
+    max_wall_time: float = typer.Option(1800.0, "--max-wall-time", min=1.0),
+    resume: bool = typer.Option(True, "--resume/--no-resume"),
+) -> None:
+    """Compatibility alias for the bounded S1 comparison entry point."""
+    value = run_s1(
+        Path.cwd(),
+        config_path=config,
+        run_root=experiment_root,
+        max_wall_time=max_wall_time,
+        resume=resume,
+    )
+    typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+
+
+@app.command("visualize-sdf-loss-comparison")
+def visualize_sdf_loss_comparison_command(
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/s1_sdf_penetration_loss_v1"), "--experiment-root"
+    ),
+) -> None:
+    """Report the self-contained S1 mesh-comparison HTML entry points."""
+    html_root = experiment_root / "html"
+    paths = sorted(str(path) for path in html_root.glob("*.html"))
+    if not paths:
+        typer.echo("S1 HTML is not available; complete run-s1-penetration-loss first.", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(json.dumps({"status": "pass", "html": paths}, indent=2))
+
+
+@app.command("s1-penetration-loss-status")
+def s1_penetration_loss_status_command(
+    run_root: Path = typer.Option(
+        Path(".local/experiments/s1_sdf_penetration_loss_v1"), "--run-root"
+    ),
+) -> None:
+    """Show S1 selection, decision, and checkpoint progress."""
+    try:
+        typer.echo(json.dumps(s1_status(run_root), indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        typer.echo(f"S1 penetration-loss status failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("sdf-loss-status")
+def sdf_loss_status_command(
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/s1_sdf_penetration_loss_v1"), "--experiment-root"
+    ),
+) -> None:
+    """Compatibility alias for S1 checkpoint/report status."""
+    typer.echo(json.dumps(s1_status(experiment_root), indent=2, sort_keys=True, default=str))
 
 
 @app.command("audit-solver-lineage")

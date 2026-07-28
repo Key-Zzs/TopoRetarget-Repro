@@ -1025,6 +1025,7 @@ def _refinement_input_signature(
     start_frame: int,
     end_frame: int,
     geometry_signature: str | None = None,
+    validation_sdf_backend: str = "configured",
 ) -> str:
     import hashlib
 
@@ -1042,6 +1043,7 @@ def _refinement_input_signature(
         "end_frame": int(end_frame),
         "frame_range": [int(start_frame), int(end_frame)],
         "geometry_signature": geometry_signature,
+        "validation_sdf_backend": validation_sdf_backend,
     }
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
@@ -1070,6 +1072,7 @@ def _checkpoint_manifest(
     collision_samples: Path,
     checkpoint_root: Path,
     source_frame_offset: int,
+    penetration_loss: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "schema_version": "toporetarget.final_retarget_checkpoint.v1",
@@ -1101,6 +1104,7 @@ def _checkpoint_manifest(
         ],
         "final_artifact_schema": "toporetarget.final_retarget.v2",
         "paper_weights": paper.as_dict(),
+        "penetration_loss": penetration_loss,
         "resume_command": "toporetarget retarget refine --resume --checkpoint-root "
         + str(checkpoint_root),
         "final_artifact_metadata": {
@@ -1143,6 +1147,7 @@ def _checkpoint_manifest(
             "maxiter_provenance": solver.maxiter_provenance,
             "stationarity_policy": solver.stationarity_policy,
             "paper_weights": paper.as_dict(),
+            "penetration_loss": penetration_loss,
             "native_fps": warm.metadata.get("native_fps"),
             "input_signature": input_signature,
             "source_frame_offset": int(source_frame_offset),
@@ -1199,6 +1204,9 @@ def _run_checkpoint_refinement(
     progress_log: Path | None,
     force: bool,
     quality_extension_path: Path | None = None,
+    penetration_loss_profile_id: str = "dense_squared_hinge_v1",
+    lambda_sdf: float = 0.0,
+    validation_sdf_backend: str = "configured",
 ) -> dict[str, Any]:
     sequence, warm, graph, model, surface, selected_samples = _refinement_components(
         canonical, warm_start, graph_path, robot, collision_samples, asset_root
@@ -1221,6 +1229,7 @@ def _run_checkpoint_refinement(
         solver,
         sdf_tree_leaf_size=execution.sdf_tree_leaf_size,
         geometry_artifact_root=checkpoint_root.parents[3] / "geometry",
+        validation_sdf_backend=validation_sdf_backend,
     )
     source_frame_offset = _source_frame_offset(canonical)
     signature = _refinement_input_signature(
@@ -1232,9 +1241,23 @@ def _run_checkpoint_refinement(
         start_frame,
         stop,
         geometry_signature=str(resources.geometry_policy["cache_signature"]),
+        validation_sdf_backend=validation_sdf_backend,
     )
     if quality_extension_path is not None:
         signature = f"{signature}:{sha256_file(quality_extension_path)}"
+    signature = f"{signature}:penetration:{penetration_loss_profile_id}:{float(lambda_sdf):.17g}"
+    if float(lambda_sdf) == 0.0:
+        signature = f"{signature}:diagnostic:independent_full_surface_v1"
+    penetration_loss_metadata = {
+        "profile_id": penetration_loss_profile_id,
+        "lambda_sdf": float(lambda_sdf),
+        "paper_method": float(lambda_sdf) == 0.0,
+        "paper_external_extension": float(lambda_sdf) != 0.0,
+        "extension_type": "dense_sdf_penetration_loss",
+        "paper_constraints_preserved": True,
+        "diagnostic_evaluation": "independent_full_surface_v1",
+        "diagnostic_version": "independent_full_surface_v1",
+    }
     manifest = _checkpoint_manifest(
         sequence=sequence,
         warm=warm,
@@ -1256,6 +1279,7 @@ def _run_checkpoint_refinement(
         collision_samples=sample_path,
         checkpoint_root=checkpoint_root,
         source_frame_offset=source_frame_offset,
+        penetration_loss=penetration_loss_metadata,
     )
     manifest["quality_extension"] = (
         None
@@ -1351,6 +1375,9 @@ def _run_checkpoint_refinement(
             source_frame_offset=source_frame_offset,
             execution_profile=execution,
             quality_extension=quality_extension,
+            penetration_loss_profile=penetration_loss_profile_id,
+            lambda_sdf=lambda_sdf,
+            validation_sdf_backend=validation_sdf_backend,
         )
         previous = (
             np.asarray(trajectory.arrays["base_pose_scene"][-1], dtype=np.float64),
@@ -1870,6 +1897,11 @@ def refine_command(
     asset_root: Path | None = typer.Option(None, "--asset-root"),
     force: bool = typer.Option(False, "--force"),
     quality_extension: Path | None = typer.Option(None, "--quality-extension"),
+    penetration_loss_profile: str = typer.Option(
+        "dense_squared_hinge_v1", "--penetration-loss-profile"
+    ),
+    lambda_sdf: float = typer.Option(0.0, "--lambda-sdf", min=0.0),
+    validation_sdf_backend: str = typer.Option("configured", "--validation-sdf-backend"),
 ) -> None:
     try:
         if checkpoint_root is not None:
@@ -1895,6 +1927,9 @@ def refine_command(
                 progress_log=progress_log,
                 force=force,
                 quality_extension_path=quality_extension,
+                penetration_loss_profile_id=penetration_loss_profile,
+                lambda_sdf=lambda_sdf,
+                validation_sdf_backend=validation_sdf_backend,
             )
             _json_write(value, None)
             return
@@ -1931,6 +1966,9 @@ def refine_command(
             source_frame_offset=_source_frame_offset(canonical),
             execution_profile=execution,
             quality_extension=quality_extension_spec,
+            penetration_loss_profile=penetration_loss_profile,
+            lambda_sdf=lambda_sdf,
+            validation_sdf_backend=validation_sdf_backend,
         )
         trajectory.metadata["artifact_hash"] = final_artifact_hash(trajectory)
         save_final_trajectory(trajectory, output, force=force)
@@ -2314,6 +2352,78 @@ def audit_penetration_command(
             raise typer.Exit(code=1)
     except (StorageError, ValueError, OSError, RuntimeError, WarmStartArtifactError) as exc:
         typer.echo(f"audit-penetration failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("validate-penetration-loss")
+def validate_penetration_loss_command(
+    final: Path = typer.Option(..., "--final"),
+    report: Path = typer.Option(..., "--report"),
+    csv_report: Path | None = typer.Option(None, "--csv"),
+    e0: Path | None = typer.Option(None, "--e0"),
+) -> None:
+    """Validate Dense SDF metadata and persisted deterministic full-512 audits."""
+    try:
+        paths = [("final", final)] if e0 is None else [("e0", e0), ("s1", final)]
+        rows: list[dict[str, Any]] = []
+        artifacts: dict[str, Any] = {}
+        for label, path in paths:
+            trajectory = load_final_trajectory(path)
+            arrays = trajectory.arrays
+            phi = np.asarray(arrays["full_signed_distance"], dtype=np.float64)
+            status = np.asarray(arrays.get("optimizer_status_code", []), dtype=np.int64)
+            if phi.ndim != 2 or phi.shape[1] != 512:
+                raise ValueError(
+                    f"{path}: expected full signed-distance shape [T,512], got {phi.shape}"
+                )
+            if not np.all(np.isfinite(phi)):
+                raise ValueError(f"{path}: full signed-distance audit contains non-finite values")
+            for index, values in enumerate(phi):
+                rows.append(
+                    {
+                        "label": label,
+                        "frame": index,
+                        "sample_count": 512,
+                        "min_signed_distance_m": float(np.min(values)),
+                        "negative_sample_count": int(np.count_nonzero(values < 0.0)),
+                        "status_9": int(status[index]) == 9 if len(status) > index else False,
+                    }
+                )
+            loss = trajectory.metadata.get("penetration_loss")
+            weighted_e_sdf = np.asarray(
+                arrays.get("weighted_e_sdf", np.zeros(len(phi))), dtype=np.float64
+            )
+            artifacts[label] = {
+                "path": str(path),
+                "frame_count": int(len(phi)),
+                "sample_count": 512,
+                "status_9_count": int(np.count_nonzero(status == 9)),
+                "penetration_loss": loss,
+                "finite": True,
+                "lambda_zero": bool(
+                    label == "e0" and np.all(np.isfinite(weighted_e_sdf) & (weighted_e_sdf == 0.0))
+                ),
+            }
+        value = {
+            "status": "pass"
+            if all(item["status_9_count"] == 0 for item in artifacts.values())
+            else "fail",
+            "full_audit_sample_count": 512,
+            "artifacts": artifacts,
+            "frames": rows,
+        }
+        _json_write(value, report)
+        if csv_report is not None:
+            _json_write({"rows": rows}, csv_report.with_suffix(".json"))
+            with csv_report.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=sorted(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
+        _json_write(value, None)
+        if value["status"] != "pass":
+            raise typer.Exit(code=1)
+    except (ValueError, OSError, RuntimeError) as exc:
+        typer.echo(f"validate-penetration-loss failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
 
 
