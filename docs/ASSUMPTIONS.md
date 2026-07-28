@@ -1,5 +1,24 @@
 # Assumptions and unpublished details
 
+## W2.2 Wuji continuity closeout
+
+- The closeout is diagnostic-only and writes under `closeout_v1`; formal
+  baseline/continuous/export artifacts and raw inputs are immutable.
+- W2 q-step attribution decomposes `final = warm + correction` in the local
+  seed-delta chart. `SOURCE_OR_WARM_DRIVEN`, `CORRECTION_DRIVEN`, `LIMIT_DRIVEN`,
+  `REACHABILITY_DRIVEN`, `MIXED`, and `NUMERICALLY_INCONCLUSIVE` are evidence
+  categories, not source-ground-truth labels.
+- B0/B1/B2 use the same QuerySet, collision profile, paper weights, and solver
+  budget. B1 changes only previous-final transport; B2 adds only the declared
+  correction temporal term in isolated mode. Retry/window evidence is kept
+  operationally separate from the isolated causal ablation.
+- The five-frame fallback fixes one left anchor, jointly optimizes the center
+  and three future states, persists only center diagnostics, and treats future
+  states as hints. Each frame keeps its own QuerySet, slack, and full-surface
+  audit. Failure is propagated to the recommendation gate.
+- The real W3 shadow currently returns SLSQP status 4 and fails the center
+  continuity gate; W3 penetration-rate regression also blocks recommendation.
+
 ## W2.1 Wuji continuous extension
 
 - The base chart is `scene_local_seed_delta_exp_left` at root `r_wrist`.

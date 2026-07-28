@@ -64,3 +64,17 @@ engineering-only continuous profile. See
 `docs/stages/W2_1_WUJI_CONTINUITY_REPAIR.md` for the state-chart, acceptance,
 retry, and five-frame-window contract. This milestone does not establish
 cross-subject generalization or RL readiness.
+
+## W2.2 Wuji continuity closeout
+
+W2.2 is complete as a diagnostic closeout, not as a recommendation. The
+closeout includes W2 q-step attribution, isolated B0/B1/B2 transport-versus-
+temporal evidence, seven fixed anomaly windows, synthetic routing, a real W3
+five-frame shadow, deterministic replay, HTML review, and artifact-integrity
+checks. The formal trajectories remain immutable. The recorded status is
+`WUJI_CONTINUOUS_PROFILE_NOT_RECOMMENDED_WINDOW_FALLBACK_FAILED` because the
+real window returns SLSQP status 4 and fails center continuity; a W3
+penetration-rate regression independently fails the quality gate. See
+`docs/stages/W2_2_WUJI_CONTINUITY_CLOSEOUT.md`. Further work must resolve
+these gates before the continuous profile is used for offline reference
+generation.

@@ -341,3 +341,13 @@ robot-specific objective term.
 the paper-core frame objective and collision constraints unchanged and adds a
 separate continuation/continuity acceptance layer. The canonical faithful
 profile `scipy_slsqp_active_set_contact_rich_v3_fixed` remains immutable.
+
+## W2.2 closeout boundary
+
+The W2.2 closeout is a diagnostic validation layer, not a paper result. Its
+B0/B1/B2 attribution, five-frame routing, analytic solver callbacks, HTML
+review, and gate reports do not alter Eq. (1)--(9), the formal QuerySet or
+collision profile, or any persisted formal trajectory. The real W3 shadow
+currently fails with SLSQP status 4 and a continuity-gate failure, while W3
+penetration rate regresses; the closeout therefore records
+`WUJI_CONTINUOUS_PROFILE_NOT_RECOMMENDED_WINDOW_FALLBACK_FAILED`.

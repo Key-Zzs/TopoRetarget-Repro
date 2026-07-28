@@ -1,5 +1,28 @@
 # Development log
 
+## 2026-07-29 -- W2.2 Wuji continuity closeout
+
+Completed the bounded W2.2 diagnostic closeout on `main`. Added explicit W2
+q-step decomposition/attribution, fixed B0/B1/B2 isolated and operational
+windows, deterministic synthetic routing, a real W3 five-frame shadow, static
+HTML review, screenshots, performance/failure reports, and source/formal
+artifact integrity checks. The closeout contains all 210 expected ablation
+rows and 42 solver checkpoints under
+`.local/experiments/wuji_hand2_continuous_v1/closeout_v1/`; formal baseline,
+continuous, export, source, MANO, and historical Stage-10 artifacts remain
+unchanged, as does the sibling `pene-loss` worktree.
+
+W2's 13 absolute q-step transitions are all source/warm-driven, with zero
+correction-driven or jump-and-return transitions. Formal W1/W2/W3 numerical,
+collision, bounds, and continuity gates pass. The recommendation remains
+`WUJI_CONTINUOUS_PROFILE_NOT_RECOMMENDED_WINDOW_FALLBACK_FAILED`: the real W3
+shadow produces future hints but its joint SLSQP returns status 4 and its
+center fails continuity; W3 penetration rate also regresses from 0.90 to
+0.95. The ablation conclusion is preserved as
+`ABLATION_INCONCLUSIVE_DUE_TO_SOLVER_FAILURE` because bounded B1/B2 rows fail.
+No formal artifact was overwritten and no git add/commit/push/reset/clean/tag
+was performed.
+
 ## 2026-07-28 -- W2.1 Wuji continuous correction repair
 
 Added the separate `wuji_continuous_full_state_v1` engineering profile. It

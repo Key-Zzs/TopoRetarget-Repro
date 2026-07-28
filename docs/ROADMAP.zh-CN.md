@@ -65,3 +65,7 @@ Wuji 三轨迹实现现已由通用 `workflow run-grab-suite` 提供；是否完
 ## W2.1 Wuji 连续性修复
 
 冻结的 Wuji Hand2 三轨迹 baseline 与工程 continuous profile 并存。状态图、连续性验收、重试和五帧窗口契约见 `docs/stages/W2_1_WUJI_CONTINUITY_REPAIR.md`。该里程碑不证明跨 subject 泛化，也不代表 RL-ready。
+
+## W2.2 Wuji 连续性收口
+
+W2.2 已完成为诊断收口，但没有完成 profile 推荐。收口包括 W2 q-step 归因、隔离 B0/B1/B2 transport-versus-temporal evidence、7 个固定 anomaly window、synthetic routing、真实 W3 五帧 shadow、deterministic replay、HTML review 和 artifact-integrity 检查。正式 trajectory 保持 immutable。记录状态为 `WUJI_CONTINUOUS_PROFILE_NOT_RECOMMENDED_WINDOW_FALLBACK_FAILED`：真实 window 返回 SLSQP status 4 且 center continuity 失败；W3 penetration-rate regression 也独立导致 quality gate 失败。见 `docs/stages/W2_2_WUJI_CONTINUITY_CLOSEOUT.zh-CN.md`。在这些 gate 解决前，不应将 continuous profile 用于离线 reference generation。

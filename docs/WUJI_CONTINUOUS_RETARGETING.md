@@ -33,3 +33,17 @@ PYTHONNOUSERSITE=1 PYTHONPATH=src \
 
 All generated experiment evidence is isolated under
 `.local/experiments/wuji_hand2_continuous_v1/`.
+
+## W2.2 closeout status
+
+The bounded closeout is documented in
+[`stages/W2_2_WUJI_CONTINUITY_CLOSEOUT.md`](stages/W2_2_WUJI_CONTINUITY_CLOSEOUT.md)
+and writes only to
+`.local/experiments/wuji_hand2_continuous_v1/closeout_v1/`. Its current status
+is `WUJI_CONTINUOUS_PROFILE_NOT_RECOMMENDED_WINDOW_FALLBACK_FAILED`: formal
+W1/W2/W3 trajectories pass their numerical and continuity gates, and W2's 13
+absolute q-step transitions are warm/source-driven, but the real W3 five-frame
+shadow returns SLSQP status 4 and fails the center continuity gate. W3's
+penetration rate also regresses from 0.90 to 0.95. The profile is therefore
+not recommended for offline reference generation until those gates are
+resolved.

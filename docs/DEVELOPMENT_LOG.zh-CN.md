@@ -1,5 +1,11 @@
 # 开发日志
 
+## 2026-07-29 —— W2.2 Wuji 连续性收口
+
+在 `main` 完成有界 W2.2 诊断收口。新增 W2 q-step 分解/归因、固定 B0/B1/B2 isolated 与 operational window、deterministic synthetic routing、真实 W3 五帧 shadow、静态 HTML review、截图、performance/failure report 以及 source/formal artifact integrity 检查。`.local/experiments/wuji_hand2_continuous_v1/closeout_v1/` 中包含预期的 210 个 ablation row 和 42 个 solver checkpoint；正式 baseline、continuous、export、source、MANO、历史 Stage-10 artifact 均未变化，sibling `pene-loss` worktree 也未变化。
+
+W2 的 13 个绝对 q-step transition 全部由 source/warm 驱动，correction-driven 和 jump-and-return 均为 0。正式 W1/W2/W3 的数值、碰撞、bounds 和 continuity gate 通过。推荐状态仍为 `WUJI_CONTINUOUS_PROFILE_NOT_RECOMMENDED_WINDOW_FALLBACK_FAILED`：真实 W3 shadow 产生 future hints，但联合 SLSQP 返回 status 4，center continuity 失败；W3 penetration rate 也从 0.90 退化到 0.95。由于 bounded B1/B2 row 存在 solver failure，ablation 结论保留为 `ABLATION_INCONCLUSIVE_DUE_TO_SOLVER_FAILURE`。未覆盖正式 artifact，也未执行 git add/commit/push/reset/clean/tag。
+
 ## 2026-07-28 —— W2.1 Wuji 连续修复
 
 新增独立的 `wuji_continuous_full_state_v1` 工程 profile：审计并保留已有

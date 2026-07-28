@@ -1120,3 +1120,12 @@ dataset proxies, and Wuji visual soft pads are not formal collision geometry.
 ## Wuji Hand2 continuous retargeting
 
 The engineering profile `wuji_continuous_full_state_v1` runs the frozen W1/W2/W3 suite with previous-final correction transport, chart-consistent full-state temporal continuation, continuity acceptance, deterministic retry, and a bounded five-frame fallback. It does not modify the paper-core objective or use post-filtering. Run it with the command in [WUJI_CONTINUOUS_RETARGETING.md](docs/WUJI_CONTINUOUS_RETARGETING.md). Outputs are written to `.local/experiments/wuji_hand2_continuous_v1/`; the interactive review is under its `html/` directory. This is a three-clip `s1` engineering result, not a cross-subject or RL-ready claim.
+
+The W2.2 bounded closeout is documented in
+[`docs/stages/W2_2_WUJI_CONTINUITY_CLOSEOUT.md`](docs/stages/W2_2_WUJI_CONTINUITY_CLOSEOUT.md)
+and is diagnostic-only under
+`.local/experiments/wuji_hand2_continuous_v1/closeout_v1/`. Its current status
+is `WUJI_CONTINUOUS_PROFILE_NOT_RECOMMENDED_WINDOW_FALLBACK_FAILED`: W2's 13
+absolute q-step transitions are source/warm-driven with zero correction-driven
+jumps, but the real W3 window fallback returns SLSQP status 4 and fails center
+continuity; W3 penetration rate also regresses. No formal artifact is replaced.

@@ -1037,3 +1037,12 @@ reference runtime；GRAB contact 是 dataset proxy，Wuji visual soft pad
 ## Wuji Hand2 连续重定向
 
 工程 profile `wuji_continuous_full_state_v1` 在冻结的 W1/W2/W3 三条轨迹上使用 previous-final correction transport、chart-consistent 全状态 temporal、连续性验收、确定性重试和有界五帧窗口。不修改 paper-core objective，也不使用后处理滤波。运行命令见 [WUJI_CONTINUOUS_RETARGETING.md](docs/WUJI_CONTINUOUS_RETARGETING.md)。输出位于 `.local/experiments/wuji_hand2_continuous_v1/`，交互式 review 位于其 `html/`。当前只是 `s1` 三轨迹工程结果，不代表 cross-subject 或 RL-ready。
+
+W2.2 有界 closeout 见
+[`docs/stages/W2_2_WUJI_CONTINUITY_CLOSEOUT.zh-CN.md`](docs/stages/W2_2_WUJI_CONTINUITY_CLOSEOUT.zh-CN.md)，
+仅作诊断，输出位于
+`.local/experiments/wuji_hand2_continuous_v1/closeout_v1/`。当前状态为
+`WUJI_CONTINUOUS_PROFILE_NOT_RECOMMENDED_WINDOW_FALLBACK_FAILED`：W2 的 13
+个绝对 q-step 全部由 source/warm 驱动，correction-driven jump 为 0；但真实
+W3 window fallback 返回 SLSQP status 4 且 center continuity 失败，W3
+penetration rate 也发生退化。不会替换任何正式 artifact。
