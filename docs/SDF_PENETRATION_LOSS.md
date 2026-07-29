@@ -100,3 +100,14 @@ The broader signal-rich evaluation is a separate experiment under
 backend gate, and fail-closed decision contract are specified in
 `docs/S1_1_SIGNAL_RICH_GRAB_EVALUATION.md`; the old two-clip S1 artifacts and
 profile remain preserved.
+
+## S1.2A E0 penetration stress discovery
+
+S1.2A is the bounded E0-active stress-set lane documented in
+`docs/S1_2A_E0_PENETRATION_STRESS_DISCOVERY.md`. It selects candidates from
+source-only GRAB eligibility, uses a fixed three-frame warm/E0 funnel, freezes
+the top three by E0 robot penetration, and then evaluates E0 versus the
+unchanged S1 profile on the same full 60-frame inputs. It does not use S1
+results for selection, alter the Eq. (8)/(9) constraints, or change the global
+default. A passing result is only
+`S1_CONDITIONALLY_ACCEPTED_ON_STRESS_SET` and remains stress-set scoped.

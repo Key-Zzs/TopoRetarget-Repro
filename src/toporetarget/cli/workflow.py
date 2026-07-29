@@ -35,6 +35,15 @@ from toporetarget.workflows.four_state_review import render_four_state_review_ht
 from toporetarget.workflows.gate import build_runtime_acceptance, evaluate_gate
 from toporetarget.workflows.mesh_visualization import render_mesh_html
 from toporetarget.workflows.planning import build_plan, write_plan
+from toporetarget.workflows.s1_2a_stress import (
+    DEFAULT_CONFIG as S1_2A_DEFAULT_CONFIG,
+)
+from toporetarget.workflows.s1_2a_stress import (
+    run_s1_2a,
+)
+from toporetarget.workflows.s1_2a_stress import (
+    status as s1_2a_status,
+)
 from toporetarget.workflows.s1_penetration import run_s1, s1_status
 from toporetarget.workflows.s1_signal_rich import (
     DEFAULT_CONFIG as S1_SIGNAL_RICH_DEFAULT_CONFIG,
@@ -103,6 +112,44 @@ app = typer.Typer(help="Stage 10 bounded, resumable GRAB-to-Arti-MANO workflows.
 
 def _parse_frames(value: str) -> tuple[int, ...]:
     return tuple(int(item.strip()) for item in value.split(",") if item.strip())
+
+
+@app.command("run-s1-2a-stress-discovery")
+def run_s1_2a_stress_discovery_command(
+    config: Path = typer.Option(S1_2A_DEFAULT_CONFIG, "--config"),
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/s1_2a_e0_penetration_stress_v1"), "--experiment-root"
+    ),
+    resume: bool = typer.Option(True, "--resume/--no-resume"),
+    generate_html: bool = typer.Option(True, "--generate-html/--no-generate-html"),
+) -> None:
+    """Run the complete S1.2A E0 stress discovery and E0/S1 comparison."""
+    try:
+        value = run_s1_2a(
+            Path.cwd(),
+            config_path=config,
+            experiment_root=experiment_root,
+            resume=resume,
+            generate=generate_html,
+        )
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+        typer.echo(f"S1.2A stress discovery failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("s1-2a-stress-status")
+def s1_2a_stress_status_command(
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/s1_2a_e0_penetration_stress_v1"), "--experiment-root"
+    ),
+) -> None:
+    """Show S1.2A source, warm, E0 probe, backend, and final state."""
+    try:
+        typer.echo(json.dumps(s1_2a_status(experiment_root), indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        typer.echo(f"S1.2A stress status failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
 
 
 @app.command("run-s1-penetration-loss")

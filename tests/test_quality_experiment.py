@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from toporetarget.quality.contact import CONTACT_GRID, _huber
+from toporetarget.quality.html import _HTML_TEMPLATE
 from toporetarget.quality.orchestrator import _classify_baseline_failure
 from toporetarget.quality.schema import CLIPS, QUALITY_SCHEMA_VERSION, profile_label
 
@@ -48,3 +49,11 @@ def test_baseline_failure_classification_preserves_data_vs_solver_blockers() -> 
         _classify_baseline_failure(RuntimeError("Inequality constraints incompatible"))
         == "solver_incompatible_constraints_at_fixed_configuration"
     )
+
+
+def test_object_surface_is_drawn_after_hand_mesh_layers() -> None:
+    hand_draw = "if(meshLayers.final.checked&&profile.robot_mesh?.parts?.length)drawRobot"
+    object_draw = "if(document.getElementById('objectSurface').checked)drawObjectSurface"
+    assert _HTML_TEMPLATE.index(object_draw) > _HTML_TEMPLATE.index(hand_draw)
+    assert "transformPoint(pose,p)" in _HTML_TEMPLATE
+    assert "transformPoint(p,pose)" not in _HTML_TEMPLATE
