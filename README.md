@@ -2,1023 +2,481 @@
 
 [中文 README](README.zh-CN.md)
 
-TopoRetarget-Repro is an unofficial, independent, paper-traceable reproduction repository for
+TopoRetarget-Repro is an unofficial, independent, paper-traceable reproduction of
 [*TopoRetarget: Interaction-Preserving Retargeting for Dexterous Manipulation*](https://arxiv.org/abs/2606.16272).
-It provides a robot-independent HOI data contract, explicit coordinate conventions, source-hand
-conversion tools, reproducibility audits, and a staged path toward full dexterous retargeting.
+It turns GRAB hand-object motion into offline dexterous-hand references through a canonical HOI
+contract, MANO semantic conversion, target-hand kinematics, geometry/SDF processing,
+relative-bone warm starts, interaction graphs, constrained refinement, validation, and
+manifest-bound export.
 
-The repository is intentionally transparent about scope: the current implementation reaches the
-canonical HOI interface, a bounded MANO-to-MediaPipe-style-21 source adapter, the Stage 4 generic
-robot-hand/Arti-MANO target kinematics interface, the bounded Stage 5 GRAB dataset adapter, a
-Stage 7 relative-bone-direction warm-start trajectory, the bounded Stage 8 source interaction
-graph/Laplacian loss, the bounded Stage 9 Eq. (8)-(9) final refinement, and the W0/W1 generic Wuji
-Hand2 Beta1 target-hand integration. Stages 7-9 remain bounded implementations with explicit
-paper assumptions; W0/W1 does not claim full Wuji retargeting, hardware reproduction, RL, or the
-paper's reported experimental result.
+The repository supports tracked Arti-MANO and Wuji Hand2 Beta1 target assets. External datasets
+and MANO/SMPL-X models are not redistributed. Implemented results are bounded engineering
+reproductions with explicit provenance and assumptions; they are not claims of author-exact,
+full-dataset, real-time, hardware-control, physics, or RL reproduction.
 
 ## Overview
 
-The main entry point is the `toporetarget` CLI. The code is organized around complete capabilities:
+The `toporetarget` CLI provides:
 
-- canonical, robot-independent `HOISequence` data with scene-frame geometry and explicit SE(3)
-  frame conversions;
-- read-only inspection of one GRAB NPZ sequence and conversion to a canonical Zarr cache;
-- explicit MANO semantic layouts and versioned MANO-to-MediaPipe21 mapping profiles;
-- generic differentiable URDF hand FK, named qpos, target anchors, and Arti-MANO/Wuji RH/LH inspection;
-- a lazy GRAB index, native-time/native-mesh single-sequence adapter, contact modes, validation,
-  provenance, and raw/canonical comparison;
-- source/object/timestamp preservation reports and static or interactive geometry viewers;
-- relative bone-direction Eq. (1), sequential Eq. (2) qpos warm starts, base observability reports,
-  canonical-frame alignment, and independent `toporetarget.warm_start.v1` artifacts;
-- source-only Eq. (3)-(7) interaction graphs with fixed 21+50 vertices, source-derived directed
-  weights, shared Laplacians, frozen warm-start evaluation, qpos Jacobians, and RH/LH bounded reports;
-- paper-fidelity auditing, assumptions tracking, and tracked Arti-MANO asset provenance support.
+- a robot-independent `HOISequence` schema with native timestamps, scene-frame geometry, and
+  explicit SE(3) conventions;
+- lazy GRAB indexing, bounded native-frame conversion, semantic contact handling, and
+  MANO-to-MediaPipe-style-21 conversion;
+- generic YAML-registered URDF target hands, differentiable/reference FK, named qpos, semantic
+  anchors, collision surfaces, and tracked Arti-MANO/Wuji assets;
+- deterministic object-surface sampling, signed-distance queries, collision QuerySets, and
+  independent full-surface audits;
+- relative-bone warm starts, frozen source interaction graphs/Laplacians, and constrained
+  interaction-preserving refinement;
+- resumable, content-hashed workflows, immutable source/provenance records, automatic validation,
+  human-review boundaries, and versioned robot-reference exports;
+- self-contained browser HTML for source/warm/final meshes, interaction graphs, continuity,
+  collision/contact diagnostics, metrics, and audit evidence.
 
-Arti-MANO and Wuji Hand2 Beta1 are tracked robot-hand assets under `third_party/robot_hands/`; the
-Wuji bundle is limited to the approved Hand2 Beta1 body subset. External datasets, MANO/SMPL-X
-models, and extraction caches are not distributed here. Keep machine-local data under `.local/`
-configured paths. The canonical data
-interface is described in [`docs/HOI_DATA_INTERFACE.md`](docs/HOI_DATA_INTERFACE.md), and frame
-semantics are defined in [`docs/COORDINATE_CONVENTIONS.md`](docs/COORDINATE_CONVENTIONS.md).
+Machine-local datasets, models, caches, reports, and runs belong under ignored `.local/` paths.
+The central contracts are [HOI data](docs/HOI_DATA_INTERFACE.md),
+[coordinate conventions](docs/COORDINATE_CONVENTIONS.md), and the
+[robot-hand target contract](docs/ROBOT_HAND_TARGET_CONTRACT.md).
 
-The Wuji target boundary is documented in
-[`docs/WUJI_HAND2_BETA1_TARGET.md`](docs/WUJI_HAND2_BETA1_TARGET.md), with Chinese documentation
-in [`docs/WUJI_HAND2_BETA1_TARGET.zh-CN.md`](docs/WUJI_HAND2_BETA1_TARGET.zh-CN.md).
+## TODO and complete roadmap
 
-## TODO and roadmap
+“Implemented” below means the bounded, documented repository contract, not complete paper-result
+reproduction. Detailed stage history and measured outcomes live in the documents indexed later,
+not in this README.
 
-The complete staged TODO list is below. “Complete” means the bounded definition documented for
-that stage; it does not imply full-dataset or result-level reproduction.
+| Stage | Scope | Status / remaining work |
+| ---: | --- | --- |
+| 0 | Repository architecture, CLI, path policy | Implemented |
+| 1 | Paper fidelity, equations, figures/tables, assumptions | Implemented; author-undisclosed details remain explicitly unresolved |
+| 2 | Canonical HOI schema, coordinates, bounded GRAB inspection | Implemented, bounded |
+| 3 | MANO to MediaPipe-style-21 source conversion | Implemented, bounded, with explicit semantic assumptions |
+| 4 / F0 | Generic target-hand interface and tracked Arti-MANO assets | Implemented |
+| 5 | Native-time GRAB dataset adapter and semantic contacts | Implemented, bounded |
+| 6 | Object geometry, deterministic samples, SDF, robot collision surfaces | Implemented, bounded |
+| 7 | Relative-bone-direction warm start | Implemented, bounded |
+| 8 | Source interaction graph and Laplacian interaction loss | Implemented, bounded |
+| 9 | Constrained final refinement, slack, checkpoints, independent collision audit | Implemented, bounded |
+| 10 | Resumable GRAB to target-hand workflow, review, provenance, export | Implemented for bounded offline reference generation |
+| Q1–Q3 | Frozen multi-dataset benchmark and unified automatic evaluation | Implemented, bounded; external-data eligibility gates may fail closed |
+| Q4–Q7 | Morphology/contact diagnostic extensions and frozen profile selection | Implemented, bounded, paper-external |
+| W0–W3 | Generic Wuji integration, fixed multi-clip retargeting, continuity and export | Implemented, bounded, offline-only |
+| 12 | OakInk, DexYCB, and HO-Cap adapters | TODO |
+| 13 | ARCTIC, OakInk2, and TACO adapters | TODO |
+| 14 | Broader arbitrary-hand URDF/MJCF plugin validation | TODO |
+| 15 | Fair OmniRetarget, Mink, DexPilot, and GeoRT baselines/ablations | TODO |
+| 16 | Reference-tracking PPO | TODO |
+| 17 | Full paper tables, figures, datasets, and seed reproduction | TODO |
+| 18 | Performance optimization, packaging, and v1.0 criteria | TODO |
+| 19 | Clearly separated non-paper extensions | TODO |
 
-| Stage | Capability | Status | Definition of done / remaining TODO |
-| ---: | --- | --- | --- |
-| 0 | Repository architecture and path policy | Complete | CLI scaffold, configuration, dataset discovery, and Arti-MANO importer pass. |
-| 1 | Paper fidelity audit | Complete | PDF manifest, equation/table/figure traceability, assumptions, and checker pass. |
-| 2 | Canonical HOI schema and coordinates | Complete, bounded | Schema, lazy Zarr storage, comparison views, and bounded GRAB inspection pass. |
-| 3 | MANO → MediaPipe-style 21 source adapter | Complete, bounded | Explicit layouts/profiles, converter, reports, viewers, synthetic tests, and bounded real GRAB checks pass; semantic and topology assumptions remain explicit. |
-| 4 | Arti-MANO robot adapter | Complete, with assumptions | Generic URDF/FK interface, explicit MediaPipe-21-compatible anchors, separate geometry inspection, RH/LH validation, Jacobian checks, and CLI pass; paper frame/mapping assumptions remain explicit. |
-| 5 | Full GRAB dataset adapter | Complete, bounded; fresh semantic closeout passed | Lazy index, native single-sequence/bimanual conversion, validation, provenance, raw/binary/official semantic contacts, and interactive HOI viewer; full-batch conversion remains out of scope. |
-| 6 | Object sampling, collision geometry, and SDF | Complete, bounded; assumptions explicit | Mesh audit, deterministic 50-point surface references, collision-only robot samples, SDF queries, probes, reports, visualizations, and bounded real-data acceptance pass; later interaction/optimization remains out of scope. |
-| 7 | Relative bone-direction initialization | Complete, with assumptions | 20-bone/15-pair Eq. 1, sequential bounded Eq. 2, frame audit, RH/LH acceptance, artifacts, validation, and visual diagnostics pass. |
-| 8 | Interaction graph and Laplacian coordinates | Complete, bounded; assumptions explicit | Source-only Eq. 3–7 graph/loss, RH/LH artifacts, identity/Jacobian validation, reports, and views pass. Eq. 8–9 remains Stage 9. |
-| 9 | Constrained optimization with slack variables | Complete, bounded; assumptions explicit | Eq. 8–9 final refinement, full/adaptive collision QuerySet, slack, independent full-surface audit, RH/LH bounded trajectory artifacts, CLI, tests, and views pass; no Stage 10 behavior is included. |
-| 10 | GRAB → Arti-MANO end-to-end retargeting | Implemented, bounded reference-runtime accepted; preferred performance open | Resumable bounded DAG, official contact-window selection, provenance, review/export, and the accepted `s1/airplane_lift` right-hand 60-frame reference-runtime milestone; preferred performance, production, and real-time scopes remain open. |
-| Q1–Q3 | Multi-dataset interaction benchmark and unified automatic evaluation | Implemented, bounded; current local ContactPose selection gate is blocked before freeze | Frozen-selection contract, metric registry, automatic gates, manifest-bound profiles, reports, and HTML dashboard. The current local audit found no recognized official ContactPose contact attribution, so no baseline was run. This is not the paper's full 25-grasp ContactPose result. |
-| Q4 | Morphology-aware warm-start | Not started | Evaluate morphology-aware initialization without changing the frozen Q1–Q3 baseline. |
-| Q5 | Arti-MANO surface contact proxies | Not started | Validate robot surface/pad proxies separately from source labels. |
-| Q6 | Contact-aware final extension | Not started | Add a separately versioned contact-aware extension after Q4/Q5 evidence. |
-| Q7 | Cross-trajectory automatic profile selection | Not started | Select a profile only from frozen cross-trajectory evidence. |
-| 12 | OakInk, DexYCB, and HO-Cap adapters | TODO | Add independently validated dataset adapters. |
-| 13 | ARCTIC, OakInk2, and TACO extensions | TODO | Add independently validated dataset adapters. |
-| 14 | Arbitrary dexterous-hand plugin interface | TODO | Test URDF/MJCF hand plugin contracts. |
-| 15 | Baselines and ablations | TODO | Add fair OmniRetarget, Mink, DexPilot, and GeoRT runs. |
-| 16 | Reference-tracking PPO | TODO | Add RL training and evaluation pipeline. |
-| 17 | Paper experiment reproduction | TODO | Reproduce tables, figures, seeds, and result reports. |
-| 18 | Performance optimization and v1.0 release | TODO | Establish benchmarks, packaging, and release criteria. |
-| 19 | Non-paper extensions | TODO | Keep MANO cleanup, SPIDER, and other extensions separately labeled. |
+The maintained deliverable-level roadmap is [docs/ROADMAP.md](docs/ROADMAP.md), with a Chinese
+counterpart at [docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md).
 
-The maintained roadmap with deliverables and status is [docs/ROADMAP.md](docs/ROADMAP.md); the
-Chinese roadmap is [docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md). The benchmark contract and
-automatic-evaluation notes are [docs/MULTI_DATASET_INTERACTION_BENCHMARK.md](docs/MULTI_DATASET_INTERACTION_BENCHMARK.md),
-[docs/UNIFIED_AUTOMATIC_EVALUATION.md](docs/UNIFIED_AUTOMATIC_EVALUATION.md), and
-[docs/EQ9_TEMPORAL_SCOPE_INTERPRETATIONS.md](docs/EQ9_TEMPORAL_SCOPE_INTERPRETATIONS.md), with
-Chinese counterparts alongside them.
+## Environment setup
 
-### Q1–Q3 frozen benchmark
+### Requirements and installation
 
-The benchmark is a bounded engineering evaluation, not a claim of full paper-result reproduction.
-It keeps dynamic GRAB clips and static ContactPose grasps separate, freezes selection before any
-profile run, and reports ContactPose exact formulas separately from GRAB contact proxies. Use the
-machine-local paths from the task environment or `.local/config.yaml`:
+- Linux, Git, and Python `>=3.10,<3.14`; Python 3.12 is the maintained local workflow.
+- SciPy, PyTorch, Zarr, trimesh, SMPL-X, and browser/visualization dependencies for the complete
+  pipeline.
+- GRAB and MANO files for real-data runs. Respect their upstream licenses.
+
+Create an isolated environment and install every implemented workflow extra:
 
 ```bash
-export PYTHONNOUSERSITE=1 PYTHONPATH=src
-export GRAB_ROOT=/mnt/nas/storage/Ref2Dex_storage/GRAB/data/GRAB
-export CONTACTPOSE_ROOT=/mnt/nas/storage/Ref2Dex_storage/ContactPose/data
-export MANO_MODEL_ROOT=/mnt/nas/storage/Ref2Dex_storage/shared_assets/body_models/mano
-export TOPORETARGET_ARTIMANO_ASSET_ROOT=third_party/robot_hands/artimano
-
-python -m toporetarget benchmark inspect-datasets \
-  --grab-root "$GRAB_ROOT" --contactpose-root "$CONTACTPOSE_ROOT" \
-  --output .local/benchmarks/hoi_benchmark_v1/dataset_audit.json
-python -m toporetarget benchmark select --config configs/benchmarks/hoi_benchmark_v1.yaml
-python -m toporetarget benchmark freeze
-python -m toporetarget benchmark run --resume
-python -m toporetarget benchmark evaluate --html
-python -m toporetarget benchmark dashboard
-```
-
-The selection lock is immutable for a run: later solver results cannot choose or replace a unit.
-On the current local snapshot, GRAB selection passed for the fixed clip plus three additional
-clips, but ContactPose selection is `Q1_CONTACTPOSE_SELECTION_BLOCKED` because 110 indexed
-candidate annotations did not expose recognized official attribution fields. Therefore no
-selection manifest, baseline, or result-level metric table is claimed; see the generated report
-under `.local/benchmarks/hoi_benchmark_v1/`. Q4–Q7 remain unstarted.
-
-## Quickstart
-
-### Requirements
-
-- Python 3.10–3.13
-- Git
-- External data/models only when using the corresponding workflows
-- A graphical backend for `--show` viewers; `MPLBACKEND=Agg` is suitable for headless smoke tests
-- SciPy for the Stage 7/9 numerical solvers
-
-Install the complete environment for the currently implemented data and visualization workflows:
-
-```bash
+conda create -n topo-retarget python=3.12 -y
+conda activate topo-retarget
+python -m pip install -U pip
 python -m pip install -e ".[dev,cache,viz,grab,robot,geometry,retarget]"
 ```
 
-For core schema/tests without Zarr, visualization, or GRAB support, `python -m pip install -e ".[dev]"`
-is sufficient.
-
 ### Configure local resources
 
-Do not put datasets or model files in the repository. Use environment variables or the ignored
-`.local/config.yaml`:
+Do not copy licensed data or model files into Git. Set paths directly or create the ignored
+`.local/config.yaml` from [configs/paths.example.yaml](configs/paths.example.yaml):
 
 ```bash
-export GRAB_ROOT=/path/to/GRAB                 # contains grab/ and tools/object_meshes/
-export MANO_MODEL_ROOT=/path/to/MANO/models    # contains MANO_LEFT.pkl/MANO_RIGHT.pkl
-export MANIPTRANS_ROOT=/path/to/ManipTrans     # only needed for Arti-MANO import
-export TOPORETARGET_ARTIMANO_ASSET_ROOT=...    # optional explicit asset override
+export GRAB_ROOT=/path/to/GRAB
+# GRAB_ROOT is the dataset root consumed by `toporetarget data index`.
+export MANO_MODEL_ROOT=/path/to/body_models/mano
+# MANO_MODEL_ROOT must contain MANO_LEFT.pkl and MANO_RIGHT.pkl.
+
+export PYTHONNOUSERSITE=1
+export PYTHONPATH=src
+export TOPORETARGET_PYTHON="${CONDA_PREFIX}/bin/python"
 ```
 
-The template is [`configs/paths.example.yaml`](configs/paths.example.yaml), and the data/license
-boundary is [`docs/LICENSE_AND_DATA_POLICY.md`](docs/LICENSE_AND_DATA_POLICY.md).
+Arti-MANO and Wuji assets are tracked under `third_party/robot_hands/`. Arti-MANO can be
+overridden with `TOPORETARGET_ARTIMANO_ASSET_ROOT`; otherwise the tracked bundle is used.
 
-### Check the installation
+### Verify the installation and assets
 
 ```bash
-toporetarget --help
-toporetarget data --help
-toporetarget keypoints --help
-toporetarget robots --help
-toporetarget robots list
-toporetarget doctor paper
+"$TOPORETARGET_PYTHON" -m toporetarget --help
+"$TOPORETARGET_PYTHON" -m toporetarget doctor paper
+"$TOPORETARGET_PYTHON" -m toporetarget robots list
+"$TOPORETARGET_PYTHON" -m toporetarget robots validate artimano_rh \
+  --asset-root third_party/robot_hands/artimano
+"$TOPORETARGET_PYTHON" -m toporetarget robots validate wuji_hand2_beta1_rh \
+  --asset-root third_party/robot_hands/wuji_hand2_beta1
 ```
 
-## Workflows
+## Complete workflow
 
-The sections below are organized by complete user-facing capabilities rather than by development
-stage. Each section starts with the core scripts/commands and then gives optional diagnostics.
+The main workflow below is command-oriented and contains no historical stage log. Raw GRAB and
+MANO inputs are read-only. Generated artifacts remain under `.local/`.
 
-Every `--interactive`/`--show` Matplotlib window in this repository installs the same responsive
-font handler: titles, axis labels, ticks, legends, annotations, frame labels, and widget labels
-scale with the window area. Static PNG/PDF output is unchanged.
+All required visualization is browser-based, self-contained HTML. The standard is a full-canvas
+scene with a right-side control panel, frame slider/playback, orbit/zoom, source/warm/final
+layers, graph/contact/collision filters, metrics, and provenance—matching the interaction style
+of
+`.local/experiments/wuji_hand2_continuous_v1/html/W1_airplane_lift_continuity_comparison.html`.
+PNG/GIF and temporary Matplotlib windows are not part of this README workflow.
 
-### Generate and Validate Relative Bone-Direction Warm Starts
+### 1. Select the source clip and target hand
 
-Stage 7 consumes a canonical MediaPipe-21 cache and writes a separate bounded
-initialization artifact. It does not read Stage 6 samples or SDF values as an
-optimization target.
+`SEQUENCE`, `START_FRAME`, and `END_FRAME` select the GRAB object/action and native half-open
+window. The examples below use right-hand 60-frame windows; choose another indexed sequence/range
+without resampling or result-based reselection.
 
 ```bash
-GRAB_CACHE=.local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr
-WARM_START=.local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr
+# Source object/action: change these three values together.
+export SEQUENCE=s1/airplane_lift
+export START_FRAME=240
+export END_FRAME=300
+export HAND=right
 
-toporetarget retarget inspect-bones \
-  --canonical "$GRAB_CACHE" --hand right --frame 0 \
-  --frame-profile canonical_keypoint_wrist_v1 \
-  --bone-profile mediapipe21_full_finger_chain_v1 \
-  --json .local/reports/stage7/source_bone_features_right.json \
-  --csv .local/reports/stage7/source_bone_features_right.csv
+# Other fixed examples:
+# apple:      SEQUENCE=s1/apple_eat_1      START_FRAME=212  END_FRAME=272
+# alarmclock: SEQUENCE=s1/alarmclock_lift  START_FRAME=407  END_FRAME=467
 
-toporetarget retarget compare-frame-profiles \
-  --canonical "$GRAB_CACHE" --hand right --robot artimano_rh --frame 0 \
-  --report .local/reports/stage7/frame_profile_comparison.json
+# Target family: artimano or wuji.
+export TARGET_FAMILY=artimano
 
-toporetarget retarget warm-start \
-  --canonical "$GRAB_CACHE" --hand right --robot artimano_rh \
-  --start-frame 0 --end-frame 60 \
-  --frame-profile canonical_keypoint_wrist_v1 \
-  --bone-profile mediapipe21_full_finger_chain_v1 \
-  --solver-profile paper_repro_scipy_trf --output "$WARM_START"
+case "${TARGET_FAMILY}:${HAND}" in
+  artimano:right)
+    export ROBOT=artimano_rh
+    export TARGET_ASSET_ROOT=third_party/robot_hands/artimano
+    ;;
+  artimano:left)
+    export ROBOT=artimano_lh
+    export TARGET_ASSET_ROOT=third_party/robot_hands/artimano
+    ;;
+  wuji:right)
+    export ROBOT=wuji_hand2_beta1_rh
+    export TARGET_ASSET_ROOT=third_party/robot_hands/wuji_hand2_beta1
+    ;;
+  wuji:left)
+    export ROBOT=wuji_hand2_beta1_lh
+    export TARGET_ASSET_ROOT=third_party/robot_hands/wuji_hand2_beta1
+    ;;
+  *)
+    echo "unsupported TARGET_FAMILY/HAND pair" >&2
+    return 2 2>/dev/null || exit 2
+    ;;
+esac
 
-toporetarget retarget validate-warm-start \
-  --canonical "$GRAB_CACHE" --warm-start "$WARM_START" \
-  --report .local/reports/stage7/artimano_rh_validation.json \
-  --csv .local/reports/stage7/artimano_rh_validation.csv
+export GRAB_INDEX=.local/index/grab
+export SOLVER_PROFILE=scipy_slsqp_active_set_contact_rich_v3_fixed
 ```
 
-For debugging, use `visualize-warm-start` with `--view scene` or
-`--view local-hand`, `--show-directions`, `--show-residuals`, and
-`--show-hand-frames`. See
-[`docs/RELATIVE_BONE_DIRECTION_INITIALIZATION.md`](docs/RELATIVE_BONE_DIRECTION_INITIALIZATION.md)
-and [`docs/WARM_START_OPTIMIZATION.md`](docs/WARM_START_OPTIMIZATION.md).
-
-The interactive viewer reuses the same scene/local layers and accepts the same display flags:
+The data/index and target-validation commands are shared by Arti-MANO and Wuji:
 
 ```bash
-toporetarget retarget visualize-warm-start \
-  --canonical "$GRAB_CACHE" --warm-start "$WARM_START" \
-  --view scene --start-frame 0 --end-frame 60 --interactive \
-  --show-source-hand --show-robot-hand \
-  --show-source-skeleton --show-robot-skeleton \
-  --show-hand-frames --show-labels --show-residuals \
-  --show-object-context
+"$TOPORETARGET_PYTHON" -m toporetarget data index \
+  --dataset grab --grab-root "$GRAB_ROOT" --output "$GRAB_INDEX"
+
+"$TOPORETARGET_PYTHON" -m toporetarget data validate \
+  --dataset grab --index "$GRAB_INDEX" --sequence "$SEQUENCE" \
+  --hands "$HAND" --mano-model-root "$MANO_MODEL_ROOT" \
+  --contact-mode semantic --start-frame "$START_FRAME" --end-frame "$END_FRAME" \
+  --report .local/reports/preflight/source_validation.json
+
+"$TOPORETARGET_PYTHON" -m toporetarget robots validate "$ROBOT" \
+  --asset-root "$TARGET_ASSET_ROOT" \
+  --report .local/reports/preflight/"${ROBOT}"_validation.json
 ```
 
-For the static first/middle/last-frame diagnostics, change `--frame` and `--output` as follows:
+### 2A. Run the complete Arti-MANO pipeline
+
+The manifest-driven Arti-MANO runner resolves and validates the source, converts canonical
+HOI/MANO semantics, audits object geometry, samples the object and robot collision surfaces,
+generates and validates the warm start, builds/evaluates the frozen interaction graph, performs
+final refinement, runs independent collision/semantic checks, and builds the review bundle.
+Select `TARGET_FAMILY=artimano` in section 1 before running this lane.
+
+Planning is solver-free:
 
 ```bash
-# Scene overlay: source/robot keypoints, skeleton, frames, residuals, object context.
-toporetarget retarget visualize-warm-start \
-  --canonical "$GRAB_CACHE" --warm-start "$WARM_START" \
-  --view scene --frame 0 \
-  --show-hand-frames --show-labels --show-residuals --show-object-context \
-  --output .local/reports/stage7/scene_first.png
+test "$TARGET_FAMILY" = artimano
+export RUN_ROOT=.local/runs/artimano
+export WINDOW_LENGTH="$((END_FRAME - START_FRAME))"
 
-# Local wrist-centered overlay with bone directions and adjacent features.
-toporetarget retarget visualize-warm-start \
-  --canonical "$GRAB_CACHE" --warm-start "$WARM_START" \
-  --view local-hand --frame 0 \
-  --show-directions --show-adjacent-features --show-labels --show-residuals \
-  --output .local/reports/stage7/local_first.png
+"$TOPORETARGET_PYTHON" -m toporetarget workflow plan-grab \
+  --sequence "$SEQUENCE" --index "$GRAB_INDEX" \
+  --hand "$HAND" --robot "$ROBOT" \
+  --start-frame "$START_FRAME" --end-frame "$END_FRAME" \
+  --window-length "$WINDOW_LENGTH" \
+  --refinement-solver-profile "$SOLVER_PROFILE" \
+  --mano-model-root "$MANO_MODEL_ROOT" --run-root "$RUN_ROOT" \
+  --output .local/reports/preflight/workflow_plan.json --dry-run
 ```
 
-Use `--frame 30` and `--frame 59` for middle/last frames. In the interactive window, all
-keypoint/skeleton/frame/label/residual fonts resize with the window; `--show-object-context` is
-display-only and does not enter the warm-start objective.
-
-### Stage 7.1. Audit warm-start fidelity and reachability
-
-The manifest-driven Stage 7.1 audit replays the accepted Stage 7 warm-start,
-checks source/robot mapping, thumb URDF ancestry and axes, frame/base alignment,
-joint limits, per-finger attribution, and bounded diagnostic-only reachability.
-It keeps formal Stage 7 fidelity separate from Stage 8/contact/task fidelity and
-does not modify official artifacts. See
-[`docs/WARM_START_FIDELITY_AND_REACHABILITY_AUDIT.md`](docs/WARM_START_FIDELITY_AND_REACHABILITY_AUDIT.md)
-for the full contract and current accepted-run result.
+Run or resume the complete DAG:
 
 ```bash
-env PYTHONNOUSERSITE=1 PYTHONPATH=src \
-  /home/deepcybo/miniconda3/envs/topo-retarget/bin/python \
-  -m toporetarget workflow audit-warm-start \
-  --run .local/runs/stage10_reference_runtime/s1__airplane_lift__right__artimano_rh__f000240_f000300/manifest.json \
-  --canonical-contact-audit .local/runs/stage9_3_2_canonical_reaudit/s1__airplane_lift__right__artimano_rh__f000240_f000300 \
-  --output-root .local/runs/stage7_1_warmstart_audit/s1__airplane_lift__right__artimano_rh__f000240_f000300 \
-  --html --run-reachability-diagnostics --diagnostic-frames auto
+"$TOPORETARGET_PYTHON" -m toporetarget workflow run-grab \
+  --sequence "$SEQUENCE" --index "$GRAB_INDEX" \
+  --hand "$HAND" --robot "$ROBOT" \
+  --start-frame "$START_FRAME" --end-frame "$END_FRAME" \
+  --window-length "$WINDOW_LENGTH" \
+  --refinement-solver-profile "$SOLVER_PROFILE" \
+  --mano-model-root "$MANO_MODEL_ROOT" --asset-root "$TARGET_ASSET_ROOT" \
+  --run-root "$RUN_ROOT" --resume
+
+RUN_ID="${SEQUENCE//\//__}__${HAND}__${ROBOT}__f$(printf '%06d' "$START_FRAME")_f$(printf '%06d' "$END_FRAME")"
+export RUN_DIR="$RUN_ROOT/$RUN_ID"
+export RUN_MANIFEST="$RUN_DIR/manifest.json"
 ```
 
-### Stage 8. Build and validate the shared interaction graph
+`workflow run-grab` currently validates Arti-MANO target names by design. Use the suite runner
+below for Wuji; do not substitute a Wuji robot name into this command.
 
-Stage 8 consumes the Stage 7 warm start and Stage 6 50-point sample artifact as separate,
-hash-checked inputs. It builds source-only graph artifacts, then evaluates the frozen Eq. (7)
-loss on the robot with the exact same connectivity and directed weights:
+### 2B. Run the complete Wuji pipeline
+
+The generic suite runner executes the same canonical conversion, geometry, warm-start,
+interaction-graph, refinement, validation, export, and HTML evaluation components for the
+frozen right-hand Wuji clips. Select one object with `--unit`, or omit it to run W1/W2/W3.
 
 ```bash
-toporetarget retarget audit-interaction-inputs \
-  --right-canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
-  --left-canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/semantic_left_f000000_f000060.zarr \
-  --right-warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
-  --left-warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_left_artimano_lh.zarr \
-  --object-samples .local/cache/geometry/object_surface/cubemedium_samples.npz \
-  --report .local/reports/stage8/input_audit.json
+export TARGET_FAMILY=wuji
+export HAND=right
+export ROBOT=wuji_hand2_beta1_rh
+export TARGET_ASSET_ROOT=third_party/robot_hands/wuji_hand2_beta1
+export WUJI_EXPERIMENT_ROOT=.local/experiments/wuji_hand2_grab3_v1
 
-toporetarget retarget build-interaction-graph \
-  --canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
-  --hand right --object-samples .local/cache/geometry/object_surface/cubemedium_samples.npz \
-  --output .local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right.zarr \
-  --report .local/reports/stage8/rh_graph_build.json
+"$TOPORETARGET_PYTHON" -m toporetarget workflow run-grab-suite \
+  --suite configs/experiments/wuji_hand2_grab3_v1.yaml \
+  --grab-root "$GRAB_ROOT" --index "$GRAB_INDEX" \
+  --mano-model-root "$MANO_MODEL_ROOT" \
+  --robot "$ROBOT" --solver-profile "$SOLVER_PROFILE" \
+  --experiment-root "$WUJI_EXPERIMENT_ROOT" \
+  --resume --max-wall-time 1800 \
+  --evaluate --export-reference --generate-html
 
-toporetarget retarget evaluate-interaction \
-  --graph .local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right.zarr \
-  --warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
-  --robot artimano_rh \
-  --output .local/cache/retarget/interaction_evaluation/s7_cubemedium_inspect_1_right_artimano_rh.zarr
+# To run only the selected airplane example, append:
+# --unit W1_s1__airplane_lift__right__wuji_hand2_beta1_rh__f000240_f000300
 ```
 
-Interactive graph inspection (use `--mode source` and omit `--evaluation` to inspect only the
-source graph):
+The Wuji suite writes its authoritative machine status to
+`$WUJI_EXPERIMENT_ROOT/reports/final_status.json`, exports under `exports/`, and the HTML entry
+point under `html/index.html`.
+
+### 3. Validate, audit, and export an Arti-MANO run
+
+The following checks are manifest-driven and do not alter raw data. JSON/CSV remains
+authoritative; HTML is the visual audit surface.
 
 ```bash
-toporetarget retarget visualize-interaction \
-  --graph .local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right.zarr \
-  --mode compare \
-  --evaluation .local/cache/retarget/interaction_evaluation/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
-  --start-frame 0 --end-frame 60 --interactive \
-  --show-laplacian --show-residuals --show-contributions \
-  --report .local/reports/stage8/rh_interactive_viewer.json
+"$TOPORETARGET_PYTHON" -m toporetarget workflow status --run "$RUN_MANIFEST"
+
+"$TOPORETARGET_PYTHON" -m toporetarget workflow validate \
+  --run "$RUN_MANIFEST" \
+  --report "$RUN_DIR/reports/end_to_end_validation.json" \
+  --csv "$RUN_DIR/reports/end_to_end_validation.csv"
+
+"$TOPORETARGET_PYTHON" -m toporetarget workflow audit-contact-retention \
+  --run "$RUN_MANIFEST" \
+  --output-dir "$RUN_DIR/audits/contact_retention" \
+  --surface-samples 8192 --thresholds-mm 1,2,3,5,8,10 \
+  --html --force
+
+"$TOPORETARGET_PYTHON" -m toporetarget workflow export-reference \
+  --run "$RUN_MANIFEST" --format zarr \
+  --output "$RUN_DIR/exports/robot_reference.zarr"
 ```
 
-See [`docs/INTERACTION_GRAPH.md`](docs/INTERACTION_GRAPH.md),
-[`docs/LAPLACIAN_INTERACTION_LOSS.md`](docs/LAPLACIAN_INTERACTION_LOSS.md), and the
-[`Stage 8 report`](docs/stages/STAGE_8_INTERACTION_GRAPH_LAPLACIAN.md).
+The exported `toporetarget.robot_reference.v1` is an offline trajectory artifact, not a robot
+command stream.
 
-### Stage 9. Generate and Validate Final Interaction-Preserving Robot References
+### 4. Generate the unified intermediate/final HTML review
 
-Stage 9 consumes the frozen Stage 7 warm-start, Stage 8 graph, and Stage 6 collision-surface
-artifacts. It evaluates Eq. (8)–(9) in explicit local seed-delta coordinates with SLSQP,
-positive-outside SDF hard/soft constraints, per-sample slack variables, monotonic adaptive
-QuerySets, and an independent full-surface audit. The solver-only convex-hull acceleration is
-accepted only after probe comparison with the Stage 6 reference backend; acceptance remains
-reference-backend based.
+One combined page covers the necessary intermediate and final views: source MANO mesh,
+warm-start target mesh, final target mesh, object context, frozen interaction graph,
+Figure-4-style hand-object edges, Laplacian residuals, per-frame refinement metrics, and
+provenance.
 
 ```bash
-toporetarget retarget inspect-query-set \
-  --canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
-  --warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
-  --robot artimano_rh --frame 0 --query-profile adaptive_active_set_v1 \
-  --json .local/reports/stage9/rh_query_set_frame0.json
-
-toporetarget retarget refine \
-  --canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
-  --warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
-  --graph .local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right.zarr \
-  --robot artimano_rh --query-profile adaptive_active_set_v1 \
-  --coordinate-profile local_seed_delta_v1 \
-  --solver-profile scipy_slsqp_active_set_v1 --start-frame 0 --end-frame 60 \
-  --output .local/cache/retarget/final/s7_cubemedium_inspect_1_right_artimano_rh.zarr
-
-toporetarget retarget validate-refinement \
-  --canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
-  --warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
-  --graph .local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right.zarr \
-  --final .local/cache/retarget/final/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
-  --report .local/reports/stage9/rh_validation.json \
-  --csv .local/reports/stage9/rh_validation.csv
-
-toporetarget retarget audit-penetration \
-  --canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
-  --warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
-  --final .local/cache/retarget/final/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
-  --robot artimano_rh --report .local/reports/stage9/rh_full_surface_audit.json
-
-toporetarget retarget visualize-refinement \
-  --canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
-  --warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
-  --graph .local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right.zarr \
-  --final .local/cache/retarget/final/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
-  --robot artimano_rh --frame 0 --output .local/reports/stage9/scene_first.png
-
-# Interactive bounded clip; omit --output because the window is live.
-toporetarget retarget visualize-refinement \
-  --canonical .local/cache/hoi/grab/cubemedium_inspect_1_rh_f000000_f000060_mp21.zarr \
-  --warm-start .local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
-  --graph .local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right.zarr \
-  --final .local/cache/retarget/final/s7_cubemedium_inspect_1_right_artimano_rh.zarr \
-  --robot artimano_rh --start-frame 0 --end-frame 60 --interactive \
-  --show-labels --show-frames --show-collision-samples --show-query-set \
-  --show-penetrations --show-slack --report .local/reports/stage9/rh_interactive_viewer.json
-```
-
-The full reference and solver comparison commands are documented in
-[`docs/stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md`](docs/stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md).
-
-The bounded RH/LH closeout on frames `[0,60)` passed full-surface validation and full-artifact
-determinism. Minimum full signed distance was `0.623582905 m` (RH) and `0.641271031 m` (LH),
-with zero penetration; adaptive/full comparison used 16/512 queries at frames `0/29/59`.
-Detailed metrics, hashes, Jacobian checks, solver comparisons, and visual reports are in the
-ignored `.local/reports/stage9/` directory. This closes Stage 9 only; RL, physics, ContactPose,
-and baseline reproduction remain TODO. Stage 10 orchestration is available through
-[`toporetarget workflow`](docs/END_TO_END_GRAB_ARTIMANO.md). The earlier
-`s7/cubemedium_inspect_1` contact-rich attempt stopped at the existing Stage 9 solver's
-iteration-limit failure; the later `s1/airplane_lift` right-hand `[240,300)` run is the accepted
-bounded reference-runtime milestone, limited to one offline 60-frame window.
-
-#### Stage 9.1 solver-robustness closeout
-
-The v1 profile remains unchanged. Contact-rich runs may return a feasible SLSQP
-candidate with status `9` / `Iteration limit reached`; strict acceptance still
-rejects it because optimizer convergence is a separate required field. The v2
-profile continues adaptive active-set solves from `result.x`, remaps old slack
-by query ID, initializes only new slack with the minimum bounded value, and
-persists the continuation trace. It preserves Eq. (8), Eq. (9), paper weights,
-base parameterization, q/slack bounds, signed-distance sign, and the full
-512-point audit.
-
-Use the explicit profile selector when resuming Stage 10:
-
-```bash
-toporetarget workflow run-grab \
-  --sequence s1/airplane_lift --index .local/index/grab \
-  --hand right --robot artimano_rh --start-frame 240 --end-frame 300 \
-  --refinement-solver-profile scipy_slsqp_active_set_contact_rich_v2 \
-  --run-root .local/runs/stage10
-```
-
-The fixed-grid benchmark, strict status fields, deterministic repeats, selected
-uniform maxiter, and profile hashes are recorded in
-`.local/reports/stage9_1/maxiter_benchmark.json`. Stage 10 signatures include
-the selected profile ID/hash; changing it invalidates Stage 9 and downstream
-nodes while Stage 5–8 inputs remain reusable. Solver/termination details remain
-paper-undisclosed implementation assumptions.
-The fixed benchmark currently selects uniform `maxiter=100` (35 records). v1 is
-`6affff2fdb425a0402f643c291c0b8904d4dbec6c5b69a5006cf9829dcc220aa`; v2 is
-`c42c21d894c54d07b1d30943b5a3338b13628bf0429ab203b5540cf934d09b7c`. The full
-60-frame real artifact and deterministic repeat are explicit opt-in gates; they
-are now backed by the Stage 9.2 contact-rich run and full fresh/resumed comparison.
-Stage 9.2 meets the reference-runtime minimum gate, while its preferred
-single-frame median/p95 target remains unmet. The bounded reference-runtime Stage 10 milestone is
-accepted; preferred performance debt remains open.
-
-#### Stage 9.2 performance and recoverable execution
-
-Stage 9.2 adds exact-x callback reuse, persistent SDF/FK resources, exact
-reference-SDF AABB acceleration, batched collision Jacobians, explicit solver
-conditioning, scheduled independent 512-point audits, atomic frame
-checkpoints, soft wall-time pause/resume, assembly, and fresh/resumed
-comparison. It preserves the Stage 9 math and strict status-9 policy. Use
-[`docs/REFINEMENT_PERFORMANCE.md`](docs/REFINEMENT_PERFORMANCE.md) and
-[`docs/REFINEMENT_CHECKPOINT_AND_RESUME.md`](docs/REFINEMENT_CHECKPOINT_AND_RESUME.md)
-for the profiling and recovery commands. The full 60-frame minimum runtime gate
-and deterministic-repeat evidence pass. The v3 first/repeat runs measure
-`10.766/38.711 s` and `10.773/39.052 s` median/p95, with `60/60` strict-accepted
-status-0 frames in each run and exact persisted-array equality excluding
-`solve_time_s`. The bounded reference-runtime Stage 10 milestone is accepted; the preferred
-performance gate and explicit production/real-time scopes remain open.
-
-### Stage 10. Run a bounded GRAB → Arti-MANO workflow
-
-The accepted bounded reference-runtime milestone is now materialized at
-`.local/runs/stage10_reference_runtime/s1__airplane_lift__right__artimano_rh__f000240_f000300/`.
-It reuses the accepted Stage 5–9 artifacts, records `solver_invocation_count=0`,
-and exports `exports/robot_reference.zarr` plus NPZ. The runtime decision is
-deliberately limited to this single offline 60-frame milestone; production,
-real-time, online-control, and full-dataset claims remain false.
-
-```bash
-toporetarget workflow run-grab \
-  --sequence s1/airplane_lift --index .local/index/grab \
-  --hand right --robot artimano_rh --auto-contact-window --window-length 60 \
-  --mano-model-root /path/to/MANO --asset-root third_party/robot_hands/artimano \
-  --run-root .local/runs/stage10 \
-  --manual-acceptance .local/reports/stage9/manual_acceptance.json
-```
-
-Use `workflow status`, `workflow validate`, `workflow visualize`, and
-`workflow export-reference` with the generated manifest. Resume and provenance rules are in
-[`docs/WORKFLOW_RESUME_AND_PROVENANCE.md`](docs/WORKFLOW_RESUME_AND_PROVENANCE.md).
-
-To inspect the actual source MANO mesh together with the warm-start and final Arti-MANO visual
-meshes in a browser, write a self-contained HTML file:
-
-```bash
-toporetarget workflow visualize-mesh \
-  --run .local/runs/stage10_reference_runtime/s1__airplane_lift__right__artimano_rh__f000240_f000300/manifest.json \
+"$TOPORETARGET_PYTHON" -m toporetarget workflow visualize-mesh \
+  --run "$RUN_MANIFEST" --mode combined \
+  --output "$RUN_DIR/review/trajectory_comparison.html" \
   --interactive
 ```
 
-The default output is `review/trajectory_mesh.html`. Blue, orange, and green are source,
-warm-start, and final meshes; the page also provides frame playback, orbit/zoom controls,
-object context points, and per-frame refinement metrics. This is a visual inspection aid and
-does not replace the numeric Stage 9/10 gates.
+The contact audit adds a second self-contained page at
+`$RUN_DIR/audits/contact_retention/trajectory_contact_audit.html`, with source/warm/final,
+visual/collision surfaces, QuerySet, semantic anchors, thresholds, frames, and link/region
+controls. Visual plausibility never replaces the numerical validation and collision reports.
 
-The same page also contains the frozen Stage 8 interaction graph and Laplacian diagnostics.
-Select a mode in the page, or choose the initial mode at generation time:
+For Wuji, `--generate-html` creates the corresponding full-canvas pages under
+`$WUJI_EXPERIMENT_ROOT/html/`. Open `index.html`; the per-clip pages provide source/warm/final
+layers and the same browser-oriented playback/control pattern.
+
+### 5. Complete the human-review boundary
+
+Machine validation cannot fabricate human acceptance. Generate a template, inspect the combined
+and contact-audit HTML across the required and worst frames, then have a named human reviewer fill
+the copied record:
 
 ```bash
-toporetarget workflow visualize-mesh \
-  --run .local/runs/stage10_reference_runtime/s1__airplane_lift__right__artimano_rh__f000240_f000300/manifest.json \
-  --mode combined \
-  --output .local/runs/stage10_reference_runtime/s1__airplane_lift__right__artimano_rh__f000240_f000300/review/trajectory_combined.html
+"$TOPORETARGET_PYTHON" -m toporetarget workflow review-template \
+  --run "$RUN_MANIFEST" --output "$RUN_DIR/review/manual_acceptance.template.json"
+
+cp "$RUN_DIR/review/manual_acceptance.template.json" \
+  "$RUN_DIR/review/manual_acceptance.json"
+# A human reviewer now fills manual_acceptance.json; do not auto-write a pass.
 ```
 
-Available modes are `mesh`, `full-graph`, `figure4-style`, `laplacian-diagnostic`, and
-`combined`; every mode keeps the source/warm-start/final mesh layers visible. Figure-4-style defaults to hand-object edges only; edge threshold/top-k,
-display weights, residual target/scope, scalar heat, vector arrows, labels, and
-source/warm/final graph states are controlled in the sidebar. The graph and object samples are
-read from the accepted Stage 8 artifacts; this viewer never rebuilds or modifies them.
-The complete explanation of the extra graph points/lines, residual overlays, sidebar controls,
-and review semantics is in [`docs/INTERACTION_MESH_VISUALIZATION.md`](docs/INTERACTION_MESH_VISUALIZATION.md).
+Resume the same `workflow run-grab` command from section 2A with:
 
-#### Visualize the entire trajectory
+```text
+--manual-acceptance "$RUN_DIR/review/manual_acceptance.json"
+```
 
-The existing `f000000_f000060` inputs and final artifacts contain only the half-open range
-`[0,60)`. `visualize-refinement` cannot recover omitted frames. To view the whole source sequence,
-first create one full canonical artifact, then run Stages 7–9 without frame bounds. This RH flow
-reuses the existing Stage 6 object and collision-surface artifacts read-only; replace `right`/
-`artimano_rh` with `left`/`artimano_lh` for the LH flow.
+Content hashes, selected frame range, source identity, robot/profile identity, solver status,
+collision/continuity gates, and manual-review lineage must all remain valid. A failed gate stays
+failed; do not skip frames, replace objects, or reselect from results.
+
+### 6. Reproduce the implemented evaluation lanes
+
+These are separate frozen evaluations, not hidden steps in the single-run workflow.
+
+Arti-MANO four-clip quality/morphology/contact evaluation:
 
 ```bash
-export FULL_CANONICAL=.local/cache/hoi/grab/s7/cubemedium_inspect_1/both_full_mp21.zarr
-export OBJECT_SAMPLES=.local/cache/geometry/object_surface/cubemedium_samples.npz
-export RH_WARM_FULL=.local/cache/retarget/warm_start/s7_cubemedium_inspect_1_right_artimano_rh_full.zarr
-export RH_GRAPH_FULL=.local/cache/retarget/interaction_graph/s7_cubemedium_inspect_1_right_full.zarr
-export RH_EVAL_FULL=.local/cache/retarget/interaction_evaluation/s7_cubemedium_inspect_1_right_full.zarr
-export RH_FINAL_FULL=.local/cache/retarget/final/s7_cubemedium_inspect_1_right_artimano_rh_full.zarr
-export RH_SURFACE=.local/cache/geometry/robot_surface/artimano_rh_neutral.npz
+PYTHONNOUSERSITE=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+"$TOPORETARGET_PYTHON" -m toporetarget quality run-a-to-e \
+  --config configs/experiments/grab_artimano_quality_v1.yaml \
+  --resume --max-wall-time 1800 --generate-html
 
-# 1. Convert and validate all frames. Omitting both frame flags means the full sequence.
-toporetarget data convert --dataset grab --index .local/index/grab \
-  --sequence s7/cubemedium_inspect_1 --hands both \
-  --include-table --contact-mode semantic --include-mediapipe21 \
-  --mano-model-root "$MANO_MODEL_ROOT" --output "$FULL_CANONICAL" --force
-toporetarget data validate --dataset grab --index .local/index/grab \
-  --sequence s7/cubemedium_inspect_1 --canonical "$FULL_CANONICAL" \
+"$TOPORETARGET_PYTHON" -m toporetarget quality status \
+  --experiment-root .local/experiments/grab_artimano_quality_v1
+# HTML: .local/experiments/grab_artimano_quality_v1/html/index.html
+```
+
+Wuji continuity evaluation and comparison HTML:
+
+```bash
+"$TOPORETARGET_PYTHON" -m toporetarget workflow run-grab-suite \
+  --suite configs/experiments/wuji_hand2_grab3_v1.yaml \
+  --grab-root "$GRAB_ROOT" --index "$GRAB_INDEX" \
   --mano-model-root "$MANO_MODEL_ROOT" \
-  --report .local/reports/stage5/grab_full_validation.json
-toporetarget geometry validate-samples --canonical "$FULL_CANONICAL" \
-  --object-id primary --samples "$OBJECT_SAMPLES" \
-  --report .local/reports/stage6/full_object_samples_validation.json
-
-# 2. Stage 7 full warm start.
-toporetarget retarget warm-start --canonical "$FULL_CANONICAL" \
-  --hand right --robot artimano_rh \
-  --frame-profile canonical_keypoint_wrist_v1 \
-  --bone-profile mediapipe21_full_finger_chain_v1 \
-  --solver-profile paper_repro_scipy_trf --output "$RH_WARM_FULL" --force
-
-# 3. Stage 8 full graph and frozen Eq. (7) evaluation.
-toporetarget retarget build-interaction-graph --canonical "$FULL_CANONICAL" \
-  --hand right --object-samples "$OBJECT_SAMPLES" \
-  --output "$RH_GRAPH_FULL" --report .local/reports/stage8/rh_full_graph_build.json --force
-toporetarget retarget evaluate-interaction --graph "$RH_GRAPH_FULL" \
-  --warm-start "$RH_WARM_FULL" --robot artimano_rh \
-  --output "$RH_EVAL_FULL" --force
-
-# 4. Stage 9 sequential full refinement, validation, and independent collision audit.
-toporetarget retarget refine --canonical "$FULL_CANONICAL" \
-  --warm-start "$RH_WARM_FULL" --graph "$RH_GRAPH_FULL" --robot artimano_rh \
-  --query-profile adaptive_active_set_v1 --coordinate-profile local_seed_delta_v1 \
-  --solver-profile scipy_slsqp_active_set_v1 --collision-samples "$RH_SURFACE" \
-  --output "$RH_FINAL_FULL" --force
-toporetarget retarget validate-refinement --canonical "$FULL_CANONICAL" \
-  --warm-start "$RH_WARM_FULL" --graph "$RH_GRAPH_FULL" --final "$RH_FINAL_FULL" \
-  --robot artimano_rh --collision-samples "$RH_SURFACE" \
-  --report .local/reports/stage9/rh_full_validation.json
-toporetarget retarget audit-penetration --canonical "$FULL_CANONICAL" \
-  --warm-start "$RH_WARM_FULL" --final "$RH_FINAL_FULL" --robot artimano_rh \
-  --collision-samples "$RH_SURFACE" \
-  --report .local/reports/stage9/rh_full_surface_audit.json
-
-# 5. The viewer defaults to every frame in the final artifact when bounds are omitted.
-toporetarget retarget visualize-refinement --canonical "$FULL_CANONICAL" \
-  --warm-start "$RH_WARM_FULL" --graph "$RH_GRAPH_FULL" --final "$RH_FINAL_FULL" \
-  --robot artimano_rh --interactive --show-labels --show-frames \
-  --show-collision-samples --show-query-set --show-penetrations --show-slack
+  --robot wuji_hand2_beta1_rh \
+  --solver-profile wuji_continuous_full_state_v1 \
+  --experiment-root .local/experiments/wuji_hand2_continuous_v1 \
+  --resume --max-wall-time 1800 \
+  --evaluate --export-reference --generate-html
+# HTML: .local/experiments/wuji_hand2_continuous_v1/html/index.html
 ```
 
-The indexed `s7/cubemedium_inspect_1` sequence has 951 frames at 120 FPS; the bounded clip is only
-frames 0–59. The 60-frame RH/LH bounded run took about 20 minutes per side on this workstation, so
-the full Stage 9 solve is roughly 5 h 17 min per side (about 10 h 34 min for both), excluding
-conversion and upstream stages. This is only a linear estimate; inspect per-frame diagnostics.
-The viewer does not run the solver: it only reads the final artifact. If the hand and object are still far
-apart after this process, inspect the canonical scene overlay and the final viewer's object,
-collision-sample, query-set, penetration, and slack layers. Do not enlarge the viewer bounds or
-alter object poses/samples to manufacture a collision; a large positive SDF and zero penetration
-mean the current source trajectory simply contains no collision at that frame.
-
-### 1. Synthetic canonical HOI workflow
-
-Create and inspect a deterministic canonical sequence:
+Frozen GRAB/ContactPose benchmark and unified dashboard:
 
 ```bash
-toporetarget data make-synthetic \
-  --output .local/cache/hoi/synthetic_demo.zarr \
-  --num-frames 8
+export CONTACTPOSE_ROOT=/path/to/ContactPose
 
-toporetarget data inspect \
-  --input .local/cache/hoi/synthetic_demo.zarr \
-  --frame 0
-
-toporetarget data compare \
-  --dataset synthetic \
-  --sequence demo \
-  --canonical .local/cache/hoi/synthetic_demo.zarr \
-  --layout side-by-side \
-  --frame 0 \
-  --output .local/reports/stage2a/synthetic_side_by_side.png \
-  --error-json .local/reports/stage2a/synthetic_side_by_side.json
+"$TOPORETARGET_PYTHON" -m toporetarget benchmark inspect-datasets \
+  --grab-root "$GRAB_ROOT" --contactpose-root "$CONTACTPOSE_ROOT" \
+  --output .local/benchmarks/hoi_benchmark_v1/dataset_audit.json
+"$TOPORETARGET_PYTHON" -m toporetarget benchmark select \
+  --config configs/benchmarks/hoi_benchmark_v1.yaml
+"$TOPORETARGET_PYTHON" -m toporetarget benchmark freeze
+"$TOPORETARGET_PYTHON" -m toporetarget benchmark run --resume
+"$TOPORETARGET_PYTHON" -m toporetarget benchmark evaluate --html
+"$TOPORETARGET_PYTHON" -m toporetarget benchmark dashboard
 ```
 
-Interactive comparison window:
+Selection and attribution gates fail closed. Static ContactPose units and dynamic GRAB units
+remain separate, and GRAB contact proxies are never relabeled as ContactPose ground truth.
+
+### 7. Repository-level audit
 
 ```bash
-toporetarget data compare \
-  --dataset synthetic --sequence demo \
-  --canonical .local/cache/hoi/synthetic_demo.zarr \
-  --layout side-by-side --start-frame 0 --end-frame 8 --show \
-  --show-keypoints --show-mesh --show-scene-frame --show-object-frame
-```
-
-Frame ranges are contiguous and half-open: `--start-frame 0 --end-frame 60` means frames 0–59.
-The comparison `--show` mode is interactive; `--output` creates a headless image.
-
-### 2. One GRAB NPZ to canonical Zarr
-
-The historical Stage 2B reader is intentionally sequence-scoped. It reads one explicit NPZ and
-selects one hand; the production Stage 5 adapter is documented below. For a full sequence, omit `--start-frame` and
-`--end-frame`. For a bounded clip, provide both.
-
-```bash
-export GRAB_SEQUENCE="$GRAB_ROOT/grab/<subject>/<sequence>.npz"
-
-toporetarget data describe \
-  --dataset grab \
-  --sequence-path "$GRAB_SEQUENCE" \
-  --grab-root "$GRAB_ROOT" \
-  --hand right \
-  --mano-model-root "$MANO_MODEL_ROOT"
-
-# Full trajectory: no --start-frame/--end-frame.
-toporetarget data convert \
-  --dataset grab \
-  --sequence-path "$GRAB_SEQUENCE" \
-  --grab-root "$GRAB_ROOT" \
-  --hand right \
-  --mano-model-root "$MANO_MODEL_ROOT" \
-  --output .local/cache/hoi/grab/sequence_rh_full.zarr
-
-# Optional bounded inspection: --end-frame is exclusive.
-toporetarget data convert \
-  --dataset grab \
-  --sequence-path "$GRAB_SEQUENCE" \
-  --grab-root "$GRAB_ROOT" \
-  --hand right \
-  --mano-model-root "$MANO_MODEL_ROOT" \
-  --start-frame 0 \
-  --end-frame 60 \
-  --output .local/cache/hoi/grab/sequence_rh_f000000_f000060.zarr
-```
-
-The canonical cache contains the selected hand's MANO/source geometry, wrist pose, object state,
-timestamps, and provenance. It is the input to the next workflow, not yet a MediaPipe21 cache.
-Use [`docs/GRAB_INSPECTION.md`](docs/GRAB_INSPECTION.md) for raw/canonical comparison commands.
-
-### 3. MANO source trajectory to MediaPipe21 trajectory
-
-The Stage 3 converter consumes a canonical Zarr cache and writes a separate cache with an explicit
-`mediapipe21` track. It performs named semantic mapping and explicit fingertip vertex mapping; it
-does not mirror, resample, smooth, recenter, normalize, or modify the source track.
-
-```bash
-toporetarget keypoints layouts
-toporetarget keypoints profiles
-toporetarget keypoints describe-profile \
-  --profile mano_v1_2_smplx_to_mediapipe21
-
-toporetarget keypoints convert \
-  --input .local/cache/hoi/grab/sequence_rh_full.zarr \
-  --output .local/cache/hoi/grab/sequence_rh_full_mp21.zarr \
-  --hand right \
-  --mano-model-root "$MANO_MODEL_ROOT"
-
-toporetarget keypoints validate \
-  --input .local/cache/hoi/grab/sequence_rh_full_mp21.zarr \
-  --hand right \
-  --layout mediapipe21 \
-  --report .local/reports/stage3/sequence_rh_full_validation.json \
-  --csv .local/reports/stage3/sequence_rh_full_validation.csv
-```
-
-This CLI processes one selected hand at a time. Run the same two conversion commands with
-`--hand left` for the left-hand trajectory. See [`docs/MANO_TO_MEDIAPIPE21.md`](docs/MANO_TO_MEDIAPIPE21.md)
-for the mapping profile and assumptions.
-
-### 4. Sequence visualization and debugging
-
-Static PNG rendering:
-
-```bash
-toporetarget keypoints visualize \
-  --input .local/cache/hoi/sequence_rh_full_mp21.zarr \
-  --hand right \
-  --layout mediapipe21 \
-  --view scene \
-  --frame 0 \
-  --show-source-layout \
-  --show-mesh \
-  --show-labels \
-  --output .local/reports/stage3/scene_first.png
-```
-
-Local interactive viewer:
-
-```bash
-toporetarget keypoints visualize \
-  --input .local/cache/hoi/sequence_rh_full_mp21.zarr \
-  --hand right \
-  --layout mediapipe21 \
-  --view scene \
-  --start-frame 0 \
-  --end-frame <num-frames> \
-  --show \
-  --show-source-layout \
-  --show-mesh \
-  --show-labels
-```
-
-The viewer provides a frame slider, previous/next buttons, scene/wrist switching, MANO mesh,
-source MANO joints, MediaPipe21, skeleton edges, semantic labels, object mesh, and axes toggles.
-It displays frame, timestamp, and mapping profile ID. Display transforms use temporary arrays and
-do not change canonical keypoint coordinates. The detailed viewer contract is in
-[`docs/MANO_TO_MEDIAPIPE21.md`](docs/MANO_TO_MEDIAPIPE21.md).
-
-### 5. Production GRAB dataset adapter
-
-Build a filename-first index, query it without loading frame arrays, and convert one right, left,
-or bimanual sequence while retaining source timestamps, native meshes, personalized MANO `vtemp`,
-object/table poses, and source, binary, or official semantic contacts:
-
-```bash
-toporetarget data index --dataset grab --output .local/index/grab
-toporetarget data list --dataset grab --index .local/index/grab --subject s7 --limit 20
-toporetarget data describe --dataset grab --index .local/index/grab \
-  --sequence s7/cubemedium_inspect_1
-toporetarget data convert --dataset grab --index .local/index/grab \
-  --sequence s7/cubemedium_inspect_1 --hands both --start-frame 0 --end-frame 60 \
-  --include-table --contact-mode source --include-mediapipe21 \
-  --mano-model-root "$MANO_MODEL_ROOT" \
-  --output .local/cache/hoi/grab/s7/cubemedium_inspect_1/both_f000000_f000060.zarr
-toporetarget data validate --dataset grab --index .local/index/grab \
-  --sequence s7/cubemedium_inspect_1 \
-  --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/both_f000000_f000060.zarr \
-  --mano-model-root "$MANO_MODEL_ROOT" \
-  --report .local/reports/stage5/grab_validation.json
-```
-
-Use `--contact-mode semantic` to retain the raw GRAB labels, derive the binary mask, and attach
-the verified official 0--55 body/hand mapping from `configs/datasets/grab_contact_parts.yaml`:
-
-```bash
-toporetarget data convert --dataset grab --index .local/index/grab \
-  --sequence s7/cubemedium_inspect_1 --hands both --start-frame 0 --end-frame 60 \
-  --include-table --contact-mode semantic --include-mediapipe21 \
-  --mano-model-root "$MANO_MODEL_ROOT" \
-  --output .local/cache/hoi/grab/s7/cubemedium_inspect_1/semantic_f000000_f000060.zarr
-```
-
-The adapter has no temporal resampling, spatial/object surface sampling, raw-source writes, or
-full-batch conversion. Use `toporetarget data visualize` for raw/canonical/compare modes, overlay
-or side-by-side layouts, frame slider/keyboard playback, scene/object/wrist references, semantic
-contact colors, and headless PNG output. The canonical CLI flag is `--reference-frame`; the older
-`--reference` spelling remains a deprecated compatibility alias. See
-[`docs/GRAB_DATASET_ADAPTER.md`](docs/GRAB_DATASET_ADAPTER.md) and
-[`docs/GRAB_INTERACTIVE_VISUALIZATION.md`](docs/GRAB_INTERACTIVE_VISUALIZATION.md).
-
-For an interactive canonical-scene check of the bounded clip:
-
-```bash
-toporetarget data visualize --dataset grab --index .local/index/grab \
-  --sequence s7/cubemedium_inspect_1 \
-  --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/both_f000000_f000060.zarr \
-  --mode canonical --reference-frame scene --start-frame 0 --end-frame 60 \
-  --interactive --show-mediapipe21 --show-mesh --show-table --show-contacts --show-axes
-```
-
-### 6. Tracked Arti-MANO asset setup
-
-Normal execution uses the tracked snapshot. Inspect resolution and provenance with:
-
-```bash
-toporetarget robots resolve-assets
-toporetarget robots compare-assets \
-  --reference-root .local/assets/artimano
-```
-
-To reproduce the tracked snapshot from the pinned ManipTrans checkout:
-
-```bash
-toporetarget assets vendor-artimano \
-  --source-root "$MANIPTRANS_ROOT" \
-  --destination third_party/robot_hands/artimano \
-  --imported-at 2026-07-27T19:00:00+08:00
-```
-
-The legacy `import-artimano` command and `.local/assets/artimano` directory remain only for
-compatibility and migration. The resolver emits a deprecation warning when it falls back to them.
-See [`docs/TRACKED_ROBOT_HAND_ASSETS.md`](docs/TRACKED_ROBOT_HAND_ASSETS.md),
-[`docs/THIRD_PARTY_ASSET_POLICY.md`](docs/THIRD_PARTY_ASSET_POLICY.md), and
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
-
-### 7. Target Hand Asset Setup and Kinematic Inspection
-
-The Stage 4 workflow uses the imported Arti-MANO assets as a target-hand model. Core inspection
-commands are:
-
-```bash
-toporetarget robots list
-toporetarget robots inspect \
-  --robot artimano_rh \
-  --json .local/reports/stage4/artimano_rh_inspect.json
-toporetarget robots validate \
-  --robot artimano_rh \
-  --report .local/reports/stage4/artimano_rh_validation.json \
-  --csv .local/reports/stage4/artimano_rh_validation.csv
-toporetarget robots fk \
-  --robot artimano_rh --pose neutral --dtype float64 \
-  --output .local/reports/stage4/artimano_rh_neutral_fk.json
-toporetarget robots anchors \
-  --robot artimano_rh \
-  --csv .local/reports/stage4/artimano_rh_anchors.csv
-```
-
-Run the same core commands with `artimano_lh` to load the actual left-hand URDF independently.
-The registry list command does not parse local assets; inspect and validation resolve the asset root
-from `--asset-root`, `TOPORETARGET_ARTIMANO_ASSET_ROOT`, the tracked snapshot, or the legacy
-fallback. Use `toporetarget robots resolve-assets` to see the selected source.
-
-Debug/Inspection supplements after the core flow:
-
-```bash
-toporetarget robots jacobian-check \
-  --robot artimano_rh --pose random --seed 4 --dtype float64 \
-  --report .local/reports/stage4/artimano_rh_jacobian.json
-toporetarget robots visualize \
-  --robot artimano_rh --pose neutral --geometry visual \
-  --show-keypoints --show-skeleton --show-labels --show-base-frame \
-  --output .local/reports/stage4/artimano_rh_neutral_visual.png
-toporetarget robots visualize \
-  --robot artimano_rh --pose neutral --geometry collision \
-  --show-keypoints --show-skeleton \
-  --output .local/reports/stage4/artimano_rh_neutral_collision.png
-toporetarget robots visualize \
-  --robot artimano_rh --pose random --seed 4 --geometry both \
-  --show-keypoints --show-skeleton --show-labels --show-joint-axes \
-  --output .local/reports/stage4/artimano_rh_random_overlay.png
-```
-
-To open the same neutral collision view locally, replace `--output ...png` with `--show`; its
-window text also scales responsively.
-
-The interface reports missing collision geometry and does not synthesize it. It defines `palm` as
-the engineering URDF base frame; it does not choose the paper's unresolved wrist-frame
-parameterization or perform MANO-to-Arti-MANO retargeting. See
-[`docs/ROBOT_HAND_INTERFACE.md`](docs/ROBOT_HAND_INTERFACE.md) and
-[`docs/ARTIMANO_ADAPTER.md`](docs/ARTIMANO_ADAPTER.md).
-
-### 8. Inspect Object Geometry, Generate Surface References, and Validate Signed Distance
-
-This bounded geometry workflow keeps the existing canonical object-local mesh and Stage 4
-collision geometry contracts. The paper fixes the object count at 50; the sampler, seed, temporal
-reuse, normals, SDF backend, and robot collision count are explicit engineering assumptions.
-
-```bash
-toporetarget geometry inspect-mesh \
-  --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/right_f000000_f000060.zarr \
-  --object-id primary --json .local/reports/stage6/grab_object_mesh_audit.json
-toporetarget geometry sample-object \
-  --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/right_f000000_f000060.zarr \
-  --object-id primary --profile paper_strict_area_uniform \
-  --output .local/cache/geometry/object_surface/object.npz \
-  --report .local/reports/stage6/object_samples.json
-toporetarget geometry validate-samples --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/right_f000000_f000060.zarr \
-  --object-id primary --samples .local/cache/geometry/object_surface/object.npz \
-  --report .local/reports/stage6/object_samples_validation.json
-toporetarget geometry validate-sdf --shape sphere \
-  --report .local/reports/stage6/sdf_sphere_validation.json
-toporetarget geometry sample-robot --robot artimano_rh --pose neutral \
-  --profile engineering_collision_32_per_geometry \
-  --output .local/cache/geometry/robot_surface/artimano_rh.npz
-toporetarget geometry probe-collision \
-  --robot-samples .local/cache/geometry/robot_surface/artimano_rh.npz \
-  --object-shape cube --report .local/reports/stage6/synthetic_collision_probe.json
-
-# Visualize the fixed 50 object samples and their IDs/normals.
-toporetarget geometry visualize-object \
-  --canonical .local/cache/hoi/grab/s7/cubemedium_inspect_1/right_f000000_f000060.zarr \
-  --object-id cubemedium \
-  --samples .local/cache/geometry/object_surface/cubemedium_samples.npz \
-  --frame 0 \
-  --output .local/reports/stage6/object_samples_frame0_ids.png \
-  --show-ids --show-normals --show-object-frame --show-scene-frame
-
-# Repeat with --frame 29 and --frame 59 for middle/last-frame overlays.
-
-# Static SDF slice and collision-surface diagnostics.
-toporetarget geometry visualize-sdf \
-  --shape sphere --slice-axis z --slice-value 0 \
-  --output .local/reports/stage6/sdf_sphere_slice_z0.png
-toporetarget geometry visualize-robot-surface \
-  --robot artimano_rh --pose neutral \
-  --profile engineering_collision_32_per_geometry \
-  --samples .local/cache/geometry/robot_surface/artimano_rh_neutral.npz \
-  --output .local/reports/stage6/artimano_rh_collision_surface.png \
-  --show-sample-normals
-```
-
-The object viewer displays the fixed 50 sample IDs and normals; `--frame 29` and `--frame 59`
-produce middle/last-frame overlays using the same face+barycentric identities and only changing
-the object pose. Other debug visualizations include SDF slices and RH/LH collision surface samples.
-See [`OBJECT_GEOMETRY_AND_SAMPLING.md`](docs/OBJECT_GEOMETRY_AND_SAMPLING.md),
-[`SIGNED_DISTANCE_AND_COLLISION_QUERIES.md`](docs/SIGNED_DISTANCE_AND_COLLISION_QUERIES.md), and
-[`stages/STAGE_6_OBJECT_GEOMETRY_SDF.md`](docs/stages/STAGE_6_OBJECT_GEOMETRY_SDF.md).
-
-### 9. Paper traceability and reproduction audit
-
-Run the repository-local paper audit and inspect the machine-readable fidelity configuration:
-
-```bash
-python scripts/check_paper_fidelity.py
-toporetarget doctor paper
-```
-
-The audited PDF, equation/table/figure traceability, and unresolved assumptions are documented in
-[`docs/PAPER_FIDELITY.md`](docs/PAPER_FIDELITY.md),
-[`docs/PAPER_FIDELITY.yaml`](docs/PAPER_FIDELITY.yaml), and
-[`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md).
-
-### 10. Development validation
-
-```bash
-ruff check .
-ruff format --check .
-mypy src
-pytest -q
-python scripts/check_paper_fidelity.py
+"$TOPORETARGET_PYTHON" scripts/check_paper_fidelity.py
+"$TOPORETARGET_PYTHON" -m pytest -m "not licensed_data"
+"$TOPORETARGET_PYTHON" -m ruff check .
+"$TOPORETARGET_PYTHON" -m ruff format --check .
+"$TOPORETARGET_PYTHON" -m mypy src
 git diff --check
 ```
 
-Licensed-data tests are opt-in and require local GRAB/MANO resources:
-
-```bash
-GRAB_SEQUENCE="$GRAB_SEQUENCE" \
-MANO_MODEL_ROOT="$MANO_MODEL_ROOT" \
-pytest -q tests/licensed_data
-```
-
-## Stage 9.3 contact-retention audit
-
-The audit is a manifest-driven, solver-free diagnostic over the accepted
-Stage 9.2/Stage 10 artifacts. It compares source, warm-start, final, visual
-robot geometry, collision geometry, QuerySet provenance, same-definition
-objective terms, and a non-optimizing warm-to-final interpolation path.
-
-```bash
-conda run -n topo-retarget env PYTHONNOUSERSITE=1 \
-  python -m toporetarget workflow audit-contact-retention \
-  --run .local/runs/stage10_reference_runtime/<run>/manifest.json \
-  --output-dir .local/runs/stage9_3_contact_audit/<run> \
-  --surface-samples 8192 --thresholds-mm 1,2,3,5,8,10 --html --force
-```
-
-The output records input immutability, positive-outside signed-distance
-conventions, proxy assumptions, per-frame/per-link CSVs, root-cause analysis,
-and a self-contained HTML review. Source contact and semantic-anchor retention
-are explicitly diagnostic proxies, not ground-truth contact labels. See
-[`docs/CONTACT_RETENTION_AUDIT.md`](docs/CONTACT_RETENTION_AUDIT.md) and the
-[中文说明](docs/CONTACT_RETENTION_AUDIT.zh-CN.md).
-
-For signed-distance reconciliation and the fail-closed maximum-three-frame
-shadow boundary, see
-[`docs/CONTACT_METRIC_RECONCILIATION_AND_SHADOW_ABLATION.md`](docs/CONTACT_METRIC_RECONCILIATION_AND_SHADOW_ABLATION.md).
-The current reference-runtime closeout blocks shadow execution because the
-legacy Stage 9.3 convex-hull metric does not share the Stage 9.2 reference SDF
-definition.
-
-### Stage 9.3.2 canonical re-audit
-
-The formal audit source is now the versioned
-[`reference_winding_v1`](configs/audit/contact_distance/reference_winding_v1.yaml)
-reference winding SDF. Solver-side SDF acceleration is a separate contract;
-the legacy convex-hull report is diagnostic-only and superseded for formal
-contact/penetration claims. The v2 audit keeps raw penetration, tau/hard/soft
-residuals, visual approximation, collision distance, and contact-retention
-proxy semantics separate. Open visual meshes allow unsigned coverage audits
-but do not prove inflated/inset direction. Shadow profiles are diagnostic-only
-and can run only after the canonical 60x512 gate; no Stage 9.4 implementation
-or Stage 10 artifact is changed. See
-[`docs/CANONICAL_CONTACT_DISTANCE_AND_REAUDIT.md`](docs/CANONICAL_CONTACT_DISTANCE_AND_REAUDIT.md).
+Licensed-data tests are opt-in and require the configured local GRAB/MANO resources.
 
 ## Documentation map
 
-- [Roadmap](docs/ROADMAP.md) / [中文路线图](docs/ROADMAP.zh-CN.md)
-- [Canonical HOI interface](docs/HOI_DATA_INTERFACE.md)
-- [Coordinate conventions](docs/COORDINATE_CONVENTIONS.md)
-- [GRAB inspection](docs/GRAB_INSPECTION.md)
-- [GRAB dataset adapter](docs/GRAB_DATASET_ADAPTER.md) / [interactive visualization](docs/GRAB_INTERACTIVE_VISUALIZATION.md)
-- [MANO-to-MediaPipe21 adapter](docs/MANO_TO_MEDIAPIPE21.md)
-- [Generic robot-hand interface](docs/ROBOT_HAND_INTERFACE.md)
-- [Arti-MANO target adapter](docs/ARTIMANO_ADAPTER.md)
-- [Stage 4 report](docs/stages/STAGE_4_ARTIMANO_TARGET_HAND.md)
-- [Stage 5 report](docs/stages/STAGE_5_GRAB_DATASET_ADAPTER.md)
-- [Object geometry and sampling](docs/OBJECT_GEOMETRY_AND_SAMPLING.md)
-- [Signed distance and collision queries](docs/SIGNED_DISTANCE_AND_COLLISION_QUERIES.md)
-- [Stage 6 report](docs/stages/STAGE_6_OBJECT_GEOMETRY_SDF.md)
-- [Interaction graph](docs/INTERACTION_GRAPH.md) / [中文交互图](docs/INTERACTION_GRAPH.zh-CN.md)
-- [Laplacian interaction loss](docs/LAPLACIAN_INTERACTION_LOSS.md) /
-  [中文 Laplacian loss](docs/LAPLACIAN_INTERACTION_LOSS.zh-CN.md)
-- [Stage 8 report](docs/stages/STAGE_8_INTERACTION_GRAPH_LAPLACIAN.md) /
-  [中文 Stage 8 报告](docs/stages/STAGE_8_INTERACTION_GRAPH_LAPLACIAN.zh-CN.md)
-- [Paper fidelity](docs/PAPER_FIDELITY.md)
-- [Data and license policy](docs/LICENSE_AND_DATA_POLICY.md)
-- [Development log](docs/DEVELOPMENT_LOG.md) / [中文开发日志](docs/DEVELOPMENT_LOG.zh-CN.md)
-- [Contributing](CONTRIBUTING.md) / [third-party notices](THIRD_PARTY_NOTICES.md)
+- Project planning and history:
+  [roadmap](docs/ROADMAP.md) /
+  [中文路线图](docs/ROADMAP.zh-CN.md),
+  [development log](docs/DEVELOPMENT_LOG.md) /
+  [中文开发日志](docs/DEVELOPMENT_LOG.zh-CN.md),
+  [reproduction log](docs/REPRODUCTION_LOG.md)
+- Paper and contracts:
+  [paper fidelity](docs/PAPER_FIDELITY.md),
+  [implementation specification](docs/PAPER_IMPLEMENTATION_SPEC.md),
+  [assumptions](docs/ASSUMPTIONS.md),
+  [open author questions](docs/OPEN_QUESTIONS_FOR_AUTHORS.md)
+- Data and geometry:
+  [data layout](docs/DATA_LAYOUT.md),
+  [GRAB adapter](docs/GRAB_DATASET_ADAPTER.md),
+  [MANO conversion](docs/MANO_TO_MEDIAPIPE21.md),
+  [object geometry/sampling](docs/OBJECT_GEOMETRY_AND_SAMPLING.md),
+  [signed distance](docs/SIGNED_DISTANCE_AND_COLLISION_QUERIES.md)
+- Retargeting:
+  [relative-bone initialization](docs/RELATIVE_BONE_DIRECTION_INITIALIZATION.md),
+  [interaction graph](docs/INTERACTION_GRAPH.md),
+  [Laplacian loss](docs/LAPLACIAN_INTERACTION_LOSS.md),
+  [final refinement](docs/CONTACT_PRESERVING_FINAL_REFINEMENT.md),
+  [workflow resume/provenance](docs/WORKFLOW_RESUME_AND_PROVENANCE.md)
+- HTML review and audits:
+  [trajectory visualization](docs/TRAJECTORY_VISUALIZATION.md),
+  [interaction-mesh HTML](docs/INTERACTION_MESH_VISUALIZATION.md),
+  [contact-retention audit](docs/CONTACT_RETENTION_AUDIT.md),
+  [warm-start audit](docs/WARM_START_FIDELITY_AND_REACHABILITY_AUDIT.md)
+- Target hands and evaluations:
+  [tracked robot assets](docs/TRACKED_ROBOT_HAND_ASSETS.md),
+  [Arti-MANO adapter](docs/ARTIMANO_ADAPTER.md),
+  [Wuji target](docs/WUJI_HAND2_BETA1_TARGET.md) /
+  [中文 Wuji 目标手](docs/WUJI_HAND2_BETA1_TARGET.zh-CN.md),
+  [Arti-MANO A–E evaluation](docs/GRAB_ARTIMANO_QUALITY_EXPERIMENT.md),
+  [Wuji GRAB retargeting](docs/WUJI_HAND2_GRAB_RETARGETING.md),
+  [Wuji continuity](docs/WUJI_CONTINUOUS_RETARGETING.md)
+- Repository policy:
+  [data/license policy](docs/LICENSE_AND_DATA_POLICY.md),
+  [third-party asset policy](docs/THIRD_PARTY_ASSET_POLICY.md),
+  [contributing](CONTRIBUTING.md),
+  [third-party notices](THIRD_PARTY_NOTICES.md)
+
+Detailed numbered-stage reports remain under [`docs/stages/`](docs/stages/) and are intentionally
+not duplicated in the main README.
 
 ## License
 
-The repository code and documentation are released under the GNU General Public License v3.0;
-see [`LICENSE`](LICENSE). Tracked Arti-MANO retains the upstream license and notices under
-`third_party/robot_hands/artimano/`; external GRAB, MANO/SMPL-X, ManipTrans source, and other datasets
-remain subject to their own licenses. See
-[`docs/LICENSE_AND_DATA_POLICY.md`](docs/LICENSE_AND_DATA_POLICY.md) and
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) before using external resources.
+Repository code and documentation are released under the GNU General Public License v3.0; see
+[LICENSE](LICENSE). Tracked third-party assets retain their upstream licenses and notices under
+`third_party/robot_hands/`. GRAB, MANO/SMPL-X, ContactPose, ManipTrans, and other external
+resources remain subject to their own terms. Read
+[docs/LICENSE_AND_DATA_POLICY.md](docs/LICENSE_AND_DATA_POLICY.md) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) before use.
 
 ## Acknowledgments
 
-This repository acknowledges:
+We thank:
 
-- the authors of [*TopoRetarget: Interaction-Preserving Retargeting for Dexterous Manipulation*](https://toporetarget2026.github.io/TopoRetarget/);
-- [the ManipTrans project](https://maniptrans.github.io/), whose local Arti-MANO asset tree is used only as an acquisition-side
-  source;
-- the GRAB dataset and the MANO/SMPL-X model ecosystem used by the bounded data workflows;
+- the authors of [TopoRetarget](https://toporetarget2026.github.io/TopoRetarget/);
+- the GRAB, MANO/SMPL-X, and ContactPose authors and maintainers;
+- the ManipTrans project and the upstream Arti-MANO asset contributors;
+- the Wuji Hand2 upstream asset contributors identified in the tracked provenance manifests.
 
-Please preserve upstream attribution and comply with each external project's terms when using
-those resources.
+Preserve upstream attribution and comply with every dataset, model, code, and asset license.
 
 ## Citation
 
@@ -1035,121 +493,6 @@ If this repository or its implementation notes are useful, cite the TopoRetarget
 }
 ```
 
-Also cite GRAB, MANO/SMPL-X, and ManipTrans when using their data, models, or assets. The local
-paper copy is [`docs/TopoRetarget.pdf`](docs/TopoRetarget.pdf), and upstream acquisition notes are
-in [`docs/UPSTREAM_REFERENCES.md`](docs/UPSTREAM_REFERENCES.md).
-
-## Stage 9.3.3 shadow equivalence
-
-The diagnostic Stage 9.3.3 boundary is documented in
-[`docs/SHADOW_EQUIVALENCE_AND_LONG_FINGER_ABLATION.md`](docs/SHADOW_EQUIVALENCE_AND_LONG_FINGER_ABLATION.md).
-It requires an official numerical-equivalence gate before running six bounded
-shadow profiles and preserves the Eq. (1)-(9)/Stage 9.2/Stage 10 boundaries. The
-current accepted-window replay is fail-closed with
-`SHADOW_BASELINE_NOT_NUMERICALLY_EQUIVALENT`; no mandatory shadow profile or
-Stage 9.4 implementation is authorized.
-
-## Stage 9.3.4 provenance-rebased causal experiments
-
-Stage 9.3.4 is an audit-only current-lineage experiment with a separate
-historical lane, bounded multistart/base-seed diagnostics, and conservative
-Stage 9.4 routing. See
-[`docs/STAGE9_PROVENANCE_MULTISTART_AND_CAUSAL_ABLATION.md`](docs/STAGE9_PROVENANCE_MULTISTART_AND_CAUSAL_ABLATION.md).
-
-## Stage 9.3.5 projection and causal closure
-
-Stage 9.3.5 adds warm-to-final feasibility scans, diagnostic projections,
-state counterfactuals, objective/constraint attribution, and a gated branch
-rollout. It is diagnostic-only and preserves Eq. (1)-(9), formal weights,
-official artifacts, and Stage 10. See the synchronized
-[`docs/PROJECTION_FEASIBILITY_AND_CAUSAL_CLOSURE.md`](docs/PROJECTION_FEASIBILITY_AND_CAUSAL_CLOSURE.md)
-for the exact commands and output roots.
-
-## Stage 9 one-shot closure and repair
-
-The completed fixed-profile causal sweep, Eq. (9) audit, single faithful
-repair, full 60-frame validation, and versioned Stage 10 review bundle are
-documented in [`docs/STAGE9_ONE_SHOT_CAUSAL_CLOSURE_AND_REPAIR.md`](docs/STAGE9_ONE_SHOT_CAUSAL_CLOSURE_AND_REPAIR.md).
-
-## Faithful reproduction finalization
-
-The accepted canonical faithful v3-fixed profile, legacy v2 classification,
-quality-neutral human review, finalized versioned fixed Stage 10 export, and
-A/B/C decision semantics are documented in
-[`docs/FAITHFUL_REPRODUCTION_FINALIZATION.md`](docs/FAITHFUL_REPRODUCTION_FINALIZATION.md).
-
-## GRAB Arti-MANO quality A–E
-
-The frozen four-trajectory quality experiment is implemented behind
-`toporetarget quality`. It uses G1–G4 from subject `s1` at native FPS, retains
-both paper-core Eq. (9) profiles, and writes all new artifacts to
-`.local/experiments/grab_artimano_quality_v1/`.
-
-```bash
-PYTHONNOUSERSITE=1 /home/deepcybo/miniconda3/envs/topo-retarget/bin/python \
-  -m toporetarget quality run-a-to-e \
-  --config configs/experiments/grab_artimano_quality_v1.yaml \
-  --resume --max-wall-time 1800 --generate-html
-```
-
-Use `toporetarget quality status` for the machine-readable recommendation and
-open `html/index.html` for the four self-contained viewers. GRAB contact values
-are dataset proxies, ContactPose is deferred, and the result scope is only a
-within-subject multi-object development benchmark. See
-[`docs/GRAB_ARTIMANO_QUALITY_EXPERIMENT.md`](docs/GRAB_ARTIMANO_QUALITY_EXPERIMENT.md)
-for the full A–E contract.
-
-For open-object geometry, the quality lane uses the documented
-[`hybrid_original_distance_proxy_sign_v1`](docs/HYBRID_SIGNED_DISTANCE_FOR_OPEN_OBJECTS.md)
-contract: the raw mesh is immutable, the original mesh supplies distance
-magnitude and closest points, and a derived watertight proxy supplies sign only.
-The current banana run is formally routed to
-`SIGN_PROXY_CONTACT_REGION_CONFLICT` after the strict active-QuerySet boundary
-gate; it is not an A–E completion claim. See
-[`docs/DERIVED_WATERTIGHT_SIGN_PROXY.md`](docs/DERIVED_WATERTIGHT_SIGN_PROXY.md).
-
-## Wuji Hand2 three-clip retargeting
-
-The fixed within-subject `s1` benchmark uses `airplane_lift`, `apple_eat_1`,
-and `alarmclock_lift` with `wuji_hand2_beta1_rh`. Run the generic suite with
-[`docs/WUJI_HAND2_GRAB_RETARGETING.md`](docs/WUJI_HAND2_GRAB_RETARGETING.md).
-Results are written to `.local/experiments/wuji_hand2_grab3_v1/`, including
-metrics, independent 672-sample collision validation, reference exports, and
-HTML viewers. This is an offline reference runtime; GRAB contact values are
-dataset proxies, and Wuji visual soft pads are not formal collision geometry.
-## Wuji Hand2 continuous retargeting
-
-The engineering profile `wuji_continuous_full_state_v1` runs the frozen W1/W2/W3 suite with previous-final correction transport, chart-consistent full-state temporal continuation, continuity acceptance, deterministic retry, and a bounded five-frame fallback. It does not modify the paper-core objective or use post-filtering. Run it with the command in [WUJI_CONTINUOUS_RETARGETING.md](docs/WUJI_CONTINUOUS_RETARGETING.md). Outputs are written to `.local/experiments/wuji_hand2_continuous_v1/`; the interactive review is under its `html/` directory. This is a three-clip `s1` engineering result, not a cross-subject or RL-ready claim.
-
-The W2.2 bounded closeout is documented in
-[`docs/stages/W2_2_WUJI_CONTINUITY_CLOSEOUT.md`](docs/stages/W2_2_WUJI_CONTINUITY_CLOSEOUT.md)
-and is diagnostic-only under
-`.local/experiments/wuji_hand2_continuous_v1/closeout_v1/`. Its current status
-is `WUJI_CONTINUOUS_PROFILE_NOT_RECOMMENDED_WINDOW_FALLBACK_FAILED`: W2's 13
-absolute q-step transitions are source/warm-driven with zero correction-driven
-jumps, but the real W3 window fallback returns SLSQP status 4 and fails center
-continuity; W3 penetration rate also regresses. No formal artifact is replaced.
-
-W2.3 sequential finalization is a separately named candidate derived from the
-continuous profile. It disables the production five-frame fallback, keeps the
-window as a nonblocking diagnostic shadow, and writes all new evidence and
-versioned exports under
-`.local/experiments/wuji_hand2_continuous_v1/w2_3_finalization/`. See
-[`docs/stages/W2_3_WUJI_SEQUENTIAL_FINALIZATION.md`](docs/stages/W2_3_WUJI_SEQUENTIAL_FINALIZATION.md).
-
-The recommended profile is `wuji_continuous_sequential_v1` for offline
-reference generation only. Resume it with:
-
-```bash
-PYTHONNOUSERSITE=1 PYTHONPATH=src \
-  /home/deepcybo/miniconda3/bin/python scripts/wuji_w2_3_finalization.py
-```
-
-The current sequential status is
-`WUJI_CONTINUOUS_SEQUENTIAL_PROFILE_RECOMMENDED_WITH_SECONDARY_PENETRATION_WARNING`.
-The window remains `WINDOW_FALLBACK_EXPERIMENTAL_UNRESOLVED_NONBLOCKING`; it
-does not block the sequential gate. The multi-threshold audit evidence is
-under `.local/experiments/wuji_hand2_continuous_v1/w2_3_finalization/penetration_audit/`.
-The five new HTML pages are under the same output root's `html/` directory.
-This lane is not RL-ready, not realtime-ready, not cross-subject validated,
-and does not establish author-exact reproduction.
+Also cite each dataset, body model, target-hand asset, and upstream implementation used in your
+experiment. The local paper copy is [docs/TopoRetarget.pdf](docs/TopoRetarget.pdf), and upstream
+references are listed in [docs/UPSTREAM_REFERENCES.md](docs/UPSTREAM_REFERENCES.md).
