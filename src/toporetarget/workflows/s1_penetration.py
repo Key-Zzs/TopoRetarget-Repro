@@ -552,9 +552,7 @@ def _refine_until_complete(
         identity_mismatch = "checkpoint identity mismatch for input_signature" in str(
             result.get("stderr_tail", "")
         )
-        if identity_mismatch and not str(effective_label_override or "").endswith(
-            "_rebuild_v2"
-        ):
+        if identity_mismatch and not str(effective_label_override or "").endswith("_rebuild_v2"):
             effective_label_override = f"{label}_rebuild_v2"
             checkpoint = _checkpoint_path(run_root, clip, effective_label_override)
             previous_state = None

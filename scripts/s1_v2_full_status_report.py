@@ -49,8 +49,7 @@ def main() -> None:
     deterministic = json.loads((reports / "determinism.json").read_text())
     gradient = json.loads((reports / "gradient_validation.json").read_text())
     final_artifacts = {
-        clip: artifact(experiment / f"artifacts/{clip}/S1_L01/final.zarr")
-        for clip in ("G1", "G2")
+        clip: artifact(experiment / f"artifacts/{clip}/S1_L01/final.zarr") for clip in ("G1", "G2")
     }
     checkpoints = {
         clip: checkpoint(experiment / f"checkpoints/{clip}/S1_L01_rebuild_v2")

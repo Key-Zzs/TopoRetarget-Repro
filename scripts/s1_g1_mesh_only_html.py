@@ -30,7 +30,9 @@ canvas{display:block;width:100%;height:auto;background:#0b1220;border:1px solid 
 <h1>G1 mesh/surface view — E0 vs S1</h1>
 <p>Final optimizer trajectories; G1 lambda=.1 prescreen candidate. Visual-only review page.</p>
 <div class="controls">
-<label>trajectory <select id="mode"><option value="e0">E0</option><option value="s1">S1</option></select></label>
+<label>trajectory <select id="mode">
+<option value="e0">E0</option><option value="s1">S1</option>
+</select></label>
 <label>time <input id="frame" type="range" min="0" max="59" value="0"></label>
 <button id="play">Play</button><button id="reset">Reset view</button>
 <label><input id="overlay" type="checkbox" checked> overlay other trajectory</label>
@@ -39,7 +41,8 @@ canvas{display:block;width:100%;height:auto;background:#0b1220;border:1px solid 
 <label><input id="closest" type="checkbox" checked> closest surface points</label>
 <label><input id="penetrating" type="checkbox" checked> penetrating samples</label>
 </div>
-<div class="legend">object surface purple · source hand cyan · E0 blue · S1 green · collision amber/red · query yellow · closest gray</div>
+<div class="legend">object surface purple · source hand cyan · E0 blue · S1 green ·
+collision amber/red · query yellow · closest gray</div>
 <canvas id="scene" width="1400" height="760"></canvas>
 <script>
 const V=__VISUAL__;
@@ -67,12 +70,16 @@ function draw(){
   ctx.clearRect(0,0,c.width,c.height);
   const sets=pointsFor(i,mode),all=[].concat(...sets);
   if(!all.length)return;
-  const colors=['#a78bfa','#38bdf8',mode==='e0'?'#60a5fa':'#34d399',mode==='e0'?'#34d399':'#60a5fa','#f59e0b','#fde047','#9ca3af','#f87171'];
+  const colors=[
+    '#a78bfa','#38bdf8',mode==='e0'?'#60a5fa':'#34d399',
+    mode==='e0'?'#34d399':'#60a5fa','#f59e0b','#fde047','#9ca3af','#f87171'
+  ];
   sets.forEach((pts,k)=>pts.forEach((p,j)=>{
     ctx.fillStyle=k===4?(V.phi[i][j]<0?'#f87171':'#f59e0b'):colors[k];
     const q=project(p,all),r=k===0?2.2:3.2;ctx.fillRect(q[0],q[1],r,r);
   }));
-  ctx.fillStyle='#e5e7eb';ctx.fillText('G1 · '+mode.toUpperCase()+' · visual-only mesh/surface review',24,28);
+  ctx.fillStyle='#e5e7eb';
+  ctx.fillText('G1 · '+mode.toUpperCase()+' · visual-only mesh/surface review',24,28);
 }
 $('frame').oninput=draw;$('mode').onchange=draw;
 ['overlay','collision','query','closest','penetrating'].forEach(id=>$(id).onchange=draw);

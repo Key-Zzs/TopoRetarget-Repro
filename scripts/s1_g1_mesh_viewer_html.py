@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 
 from toporetarget.data.storage import load_hoi_sequence
+from toporetarget.quality.html import _mesh_subset
 from toporetarget.retarget.final_refinement import load_final_trajectory
 from toporetarget.robots.registry import get_robot_registry
 from toporetarget.workflows.mesh_visualization import (
@@ -22,10 +23,8 @@ from toporetarget.workflows.mesh_visualization import (
     _bounds,
     _html_document,
     _robot_payload,
-    _source_frame_indices,
     _source_mesh,
 )
-from toporetarget.quality.html import _mesh_subset
 
 
 def main() -> None:
@@ -66,7 +65,6 @@ def main() -> None:
         "source_sequence": sequence_label,
         "s1_artifact": "final" if s1_path == final_s1_path else "prescreen",
     }
-    source_indices = _source_frame_indices(sequence, s1, manifest)
     source_vertices, source_faces = _source_mesh(sequence, s1, manifest)
     model = get_robot_registry().load("artimano_rh", asset_root=asset_root)
     e0_payload = _robot_payload(
@@ -88,9 +86,7 @@ def main() -> None:
     object_payload = {
         "vertices": object_vertices.round(6).tolist(),
         "faces": object_faces.tolist(),
-        "poses": np.asarray(object_track.pose_scene.pose_scene, dtype=np.float64)
-        .round(8)
-        .tolist(),
+        "poses": np.asarray(object_track.pose_scene.pose_scene, dtype=np.float64).round(8).tolist(),
         "object_id": str(object_track.object_id),
     }
     payload = {
@@ -114,13 +110,15 @@ def main() -> None:
     document = _html_document(payload)
     document = document.replace(
         '<h2>Frame metrics</h2>\n    <pre id="metrics"></pre>',
-        '<h2>Mesh-only review</h2>\n'
+        "<h2>Mesh-only review</h2>\n"
         '    <div class="hint">Only source MANO, E0, and S1 hand meshes are shown.</div>\n'
         '    <pre id="metrics" style="display:none"></pre>',
     )
     document = document.replace("Warm-start robot mesh", "E0 robot mesh")
     document = document.replace("Final robot mesh", "S1 robot mesh")
-    document = document.replace("G1 airplane lift · source/E0/S1 hand mesh viewer", payload["title"])
+    document = document.replace(
+        "G1 airplane lift · source/E0/S1 hand mesh viewer", payload["title"]
+    )
     document = document.replace(
         '    <label><input id="object" type="checkbox" checked> '
         '<span class="legend" style="background:#64748b"></span>Object points</label>\n',
@@ -135,8 +133,14 @@ def main() -> None:
         r"function drawObject\(index, width, height\) \{.*?\n\}\nfunction draw\(\)",
         """function drawObject(index, width, height) {
   const pose = DATA.object.poses[index], points = DATA.object.vertices;
-  const world = points.map(p => [pose[0][0]*p[0]+pose[0][1]*p[1]+pose[0][2]*p[2]+pose[0][3], pose[1][0]*p[0]+pose[1][1]*p[1]+pose[1][2]*p[2]+pose[1][3], pose[2][0]*p[0]+pose[2][1]*p[1]+pose[2][2]*p[2]+pose[2][3]]);
-  if (DATA.object.faces?.length) { drawMesh(world, DATA.object.faces, '#7c3aed', 0.28, width, height); return; }
+  const world = points.map(p => [
+    pose[0][0]*p[0]+pose[0][1]*p[1]+pose[0][2]*p[2]+pose[0][3],
+    pose[1][0]*p[0]+pose[1][1]*p[1]+pose[1][2]*p[2]+pose[1][3],
+    pose[2][0]*p[0]+pose[2][1]*p[1]+pose[2][2]*p[2]+pose[2][3]
+  ]);
+  if (DATA.object.faces?.length) {
+    drawMesh(world, DATA.object.faces, '#7c3aed', 0.28, width, height); return;
+  }
   ctx.fillStyle = '#7c3aed'; ctx.globalAlpha = 0.45;
   for (const q of world) { const s = project(q,width,height); ctx.fillRect(s[0]-1,s[1]-1,2,2); }
   ctx.globalAlpha = 1;
