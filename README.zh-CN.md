@@ -36,6 +36,17 @@ author-exact、全数据集、实时、真实硬件控制、physics 或 RL 复�
 [坐标约定](docs/COORDINATE_CONVENTIONS.md)和
 [机器人手目标契约](docs/ROBOT_HAND_TARGET_CONTRACT.md)。
 
+## 当前状态
+
+阶段 0–10 已在各自文档化的有界范围内完成。Stage 11 Core Contract Freeze 已完成：
+Canonical HOI v2、DatasetAdapter v1、RobotHandPlugin v1、RobotReference v2 和
+MetricRegistry v1 已冻结，并提供 compatibility migration 与测试。GRAB 是第一个
+dataset-adapter 实例；Arti-MANO 与 Wuji Hand2 Beta1 是第一个 robot-plugin 实例。
+
+当前 Wuji 已可生成 offline reference，但不是 RL-ready、不是 realtime，也没有完成
+cross-dataset validation。ContactPose/OakInk/DexYCB adapter、SDF loss、PPO 与新的
+重定向运行均不属于 Stage 11。
+
 ## TODO 与完整路线图
 
 下表的“已实现”仅表示仓库中有界且有文档约束的 contract，不代表论文结果已完整复现。
@@ -54,17 +65,18 @@ author-exact、全数据集、实时、真实硬件控制、physics 或 RL 复�
 | 8 | Source interaction graph 与 Laplacian interaction loss | 已实现，有界 |
 | 9 | 带 slack 的受限 final refinement、checkpoint 和独立 collision audit | 已实现，有界 |
 | 10 | 可恢复 GRAB→目标手 workflow、review、provenance 与 export | 已实现，用于有界离线 reference generation |
+| 11 | Canonical HOI v2、DatasetAdapter v1、RobotHandPlugin v1、RobotReference v2、MetricRegistry v1 | 已实现，core contract freeze |
 | Q1–Q3 | 冻结的多数据集 benchmark 与统一自动评价 | 已实现，有界；外部数据 eligibility gate 可 fail closed |
 | Q4–Q7 | Morphology/contact 诊断扩展与冻结 profile 选择 | 已实现，有界，属于 paper-external |
 | W0–W3 | 通用 Wuji 集成、固定多 clip 重定向、连续性与 export | 已实现，有界，仅离线 |
-| 12 | OakInk、DexYCB、HO-Cap adapter | TODO |
-| 13 | ARCTIC、OakInk2、TACO adapter | TODO |
-| 14 | 更广泛的任意机器人手 URDF/MJCF plugin 验证 | TODO |
-| 15 | 公平的 OmniRetarget、Mink、DexPilot、GeoRT baseline/ablation | TODO |
-| 16 | Reference-tracking PPO | TODO |
-| 17 | 完整论文 table、figure、dataset 与 seed 复现 | TODO |
-| 18 | 性能优化、打包与 v1.0 标准 | TODO |
-| 19 | 与论文方法清晰隔离的非论文扩展 | TODO |
+| 12 | Dataset Adapter Expansion | TODO：OakInk、DexYCB、HO-Cap |
+| 13 | Complex HOI Expansion | TODO：ARCTIC、OakInk2、TACO |
+| 14 | Universal Robot Hand Plugin | TODO：更广泛的任意手 URDF/MJCF 验证 |
+| 15 | Baseline Comparison | TODO：公平的 OmniRetarget、Mink、DexPilot、GeoRT |
+| 16 | Reference Tracking PPO | TODO |
+| 17 | Paper Experiment Reproduction | TODO：完整 table、figure、dataset 与 seed |
+| 18 | Performance Optimization | TODO：打包、benchmark 与 v1.0 标准 |
+| 19 | Non-paper Extensions | TODO；与论文方法清晰隔离 |
 
 可维护的 deliverable 级路线图见 [docs/ROADMAP.md](docs/ROADMAP.md)，中文版本见
 [docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md)。

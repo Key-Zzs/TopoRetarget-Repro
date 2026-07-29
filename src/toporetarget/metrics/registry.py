@@ -24,8 +24,16 @@ class MetricDefinition:
     aggregation_rule: str
     implementation_version: str = "1.0.0"
 
+    @property
+    def metric_type(self) -> str:
+        """Stage 11 name for the historical ``semantics`` field."""
+
+        return self.semantics
+
     def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        value = asdict(self)
+        value["metric_type"] = self.metric_type
+        return value
 
 
 def _m(

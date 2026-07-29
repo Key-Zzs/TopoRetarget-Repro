@@ -1,0 +1,19 @@
+contract_version: toporetarget.dataset_adapter.v1
+required_methods:
+  - discover
+  - index
+  - describe
+  - load_sequence
+  - convert_to_canonical
+  - validate
+  - visualize
+capability_fields:
+  - canonical_hoi
+  - contact_annotation
+  - articulated_object
+  - bimanual
+  - body_model
+  - rgb
+  - depth
+registered_instances:
+  - grab

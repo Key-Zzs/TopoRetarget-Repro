@@ -1,5 +1,20 @@
 # 开发日志
 
+## 2026-07-29 —— Stage 11 contract freeze
+
+在不增加数据集、也不运行新的重定向的前提下冻结扩展接口。
+`toporetarget.contracts` 现在提供 Canonical HOI v2（含无损 v1 facade/migration）、
+DatasetAdapter v1、RobotHandPlugin v1、RobotReference v2 和 MetricRegistry v1。
+GRAB 通过新的 dataset facade 注册；Arti-MANO 与 Wuji Hand2 Beta1 通过通用 robot plugin
+registry 暴露。已有 `data.*`、`robots.*` 和 metric API 保持可用。
+
+RobotReference v2 支持 NPZ/Zarr，并验证 qpos、base/object/link 坐标、timestamps/FPS、joint
+order、robot hash 与 dataset provenance。metric 明确区分 `PAPER_EXACT`、`DATASET_PROXY`、
+`GENERIC_GEOMETRIC` 和 `ENGINEERING_DIAGNOSTIC`，proxy 不能声明 ground truth。migration
+report 从已有 Stage 10 canonical cache/reference 生成，只写入隔离的
+`.local/reports/stage11_*`；Stage 5–10 历史 artifact 与重定向数值保持不变。Stage 12–19
+现在作为后续路线。
+
 ## 2026-07-29 —— W2.2 Wuji 连续性收口
 
 在 `main` 完成有界 W2.2 诊断收口。新增 W2 q-step 分解/归因、固定 B0/B1/B2 isolated 与 operational window、deterministic synthetic routing、真实 W3 五帧 shadow、静态 HTML review、截图、performance/failure report 以及 source/formal artifact integrity 检查。`.local/experiments/wuji_hand2_continuous_v1/closeout_v1/` 中包含预期的 210 个 ablation row 和 42 个 solver checkpoint；正式 baseline、continuous、export、source、MANO、历史 Stage-10 artifact 均未变化，sibling `pene-loss` worktree 也未变化。

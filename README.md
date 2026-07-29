@@ -38,6 +38,18 @@ The central contracts are [HOI data](docs/HOI_DATA_INTERFACE.md),
 [coordinate conventions](docs/COORDINATE_CONVENTIONS.md), and the
 [robot-hand target contract](docs/ROBOT_HAND_TARGET_CONTRACT.md).
 
+## Current Status
+
+Stage 0–10 are complete within their documented bounded scopes. Stage 11,
+Core Contract Freeze, is complete: Canonical HOI v2, DatasetAdapter v1,
+RobotHandPlugin v1, RobotReference v2, and MetricRegistry v1 are frozen with
+compatibility migration and tests. GRAB is the first dataset-adapter instance;
+Arti-MANO and Wuji Hand2 Beta1 are the first robot-plugin instances.
+
+Wuji offline reference generation is ready. It is not RL-ready, not real-time,
+and not cross-dataset validated. ContactPose/OakInk/DexYCB adapters, SDF loss,
+PPO, and new retargeting runs remain outside Stage 11.
+
 ## TODO and complete roadmap
 
 “Implemented” below means the bounded, documented repository contract, not complete paper-result
@@ -57,17 +69,18 @@ not in this README.
 | 8 | Source interaction graph and Laplacian interaction loss | Implemented, bounded |
 | 9 | Constrained final refinement, slack, checkpoints, independent collision audit | Implemented, bounded |
 | 10 | Resumable GRAB to target-hand workflow, review, provenance, export | Implemented for bounded offline reference generation |
+| 11 | Canonical HOI v2, DatasetAdapter v1, RobotHandPlugin v1, RobotReference v2, MetricRegistry v1 | Implemented; core contract freeze |
 | Q1–Q3 | Frozen multi-dataset benchmark and unified automatic evaluation | Implemented, bounded; external-data eligibility gates may fail closed |
 | Q4–Q7 | Morphology/contact diagnostic extensions and frozen profile selection | Implemented, bounded, paper-external |
 | W0–W3 | Generic Wuji integration, fixed multi-clip retargeting, continuity and export | Implemented, bounded, offline-only |
-| 12 | OakInk, DexYCB, and HO-Cap adapters | TODO |
-| 13 | ARCTIC, OakInk2, and TACO adapters | TODO |
-| 14 | Broader arbitrary-hand URDF/MJCF plugin validation | TODO |
-| 15 | Fair OmniRetarget, Mink, DexPilot, and GeoRT baselines/ablations | TODO |
+| 12 | Dataset Adapter Expansion | TODO: OakInk, DexYCB, and HO-Cap |
+| 13 | Complex HOI Expansion | TODO: ARCTIC, OakInk2, and TACO |
+| 14 | Universal Robot Hand Plugin | TODO: broader arbitrary-hand URDF/MJCF validation |
+| 15 | Baseline Comparison | TODO: fair OmniRetarget, Mink, DexPilot, and GeoRT runs |
 | 16 | Reference-tracking PPO | TODO |
-| 17 | Full paper tables, figures, datasets, and seed reproduction | TODO |
-| 18 | Performance optimization, packaging, and v1.0 criteria | TODO |
-| 19 | Clearly separated non-paper extensions | TODO |
+| 17 | Paper Experiment Reproduction | TODO: full tables, figures, datasets, and seeds |
+| 18 | Performance Optimization | TODO: packaging, benchmarks, and v1.0 criteria |
+| 19 | Non-paper Extensions | TODO; keep extensions clearly separated |
 
 The maintained deliverable-level roadmap is [docs/ROADMAP.md](docs/ROADMAP.md), with a Chinese
 counterpart at [docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md).

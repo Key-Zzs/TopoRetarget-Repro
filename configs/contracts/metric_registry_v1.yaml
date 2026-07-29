@@ -1,0 +1,8 @@
+schema_version: toporetarget.metric_registry.v1
+metric_types:
+  - PAPER_EXACT
+  - DATASET_PROXY
+  - GENERIC_GEOMETRIC
+  - ENGINEERING_DIAGNOSTIC
+proxy_policy:
+  ground_truth_label_forbidden: true

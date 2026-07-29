@@ -1,5 +1,24 @@
 # Development log
 
+## 2026-07-29 -- Stage 11 contract freeze
+
+Frozen the extension interfaces without adding a dataset or running a new
+retargeting job. `toporetarget.contracts` now exposes Canonical HOI v2 with a
+lossless v1 facade/migration, DatasetAdapter v1, RobotHandPlugin v1,
+RobotReference v2, and MetricRegistry v1. GRAB is registered through the new
+dataset facade; Arti-MANO and Wuji Hand2 Beta1 are exposed through the generic
+robot plugin registry. Existing `data.*`, `robots.*`, and metric APIs remain
+available.
+
+RobotReference v2 supports NPZ/Zarr and validates qpos, base/object/link
+coordinates, timestamps/FPS, joint order, robot hash, and dataset provenance.
+Metric declarations distinguish `PAPER_EXACT`, `DATASET_PROXY`,
+`GENERIC_GEOMETRIC`, and `ENGINEERING_DIAGNOSTIC`; proxy labels cannot claim
+ground truth. A migration report is generated from an existing Stage 10
+canonical cache/reference and writes only isolated `.local/reports/stage11_*`
+outputs. Historical Stage 5–10 artifacts and retargeting numerics remain
+unchanged. Stage 12–19 are now the forward roadmap.
+
 ## 2026-07-29 -- W2.2 Wuji continuity closeout
 
 Completed the bounded W2.2 diagnostic closeout on `main`. Added explicit W2
