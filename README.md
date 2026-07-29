@@ -1129,3 +1129,27 @@ is `WUJI_CONTINUOUS_PROFILE_NOT_RECOMMENDED_WINDOW_FALLBACK_FAILED`: W2's 13
 absolute q-step transitions are source/warm-driven with zero correction-driven
 jumps, but the real W3 window fallback returns SLSQP status 4 and fails center
 continuity; W3 penetration rate also regresses. No formal artifact is replaced.
+
+W2.3 sequential finalization is a separately named candidate derived from the
+continuous profile. It disables the production five-frame fallback, keeps the
+window as a nonblocking diagnostic shadow, and writes all new evidence and
+versioned exports under
+`.local/experiments/wuji_hand2_continuous_v1/w2_3_finalization/`. See
+[`docs/stages/W2_3_WUJI_SEQUENTIAL_FINALIZATION.md`](docs/stages/W2_3_WUJI_SEQUENTIAL_FINALIZATION.md).
+
+The recommended profile is `wuji_continuous_sequential_v1` for offline
+reference generation only. Resume it with:
+
+```bash
+PYTHONNOUSERSITE=1 PYTHONPATH=src \
+  /home/deepcybo/miniconda3/bin/python scripts/wuji_w2_3_finalization.py
+```
+
+The current sequential status is
+`WUJI_CONTINUOUS_SEQUENTIAL_PROFILE_RECOMMENDED_WITH_SECONDARY_PENETRATION_WARNING`.
+The window remains `WINDOW_FALLBACK_EXPERIMENTAL_UNRESOLVED_NONBLOCKING`; it
+does not block the sequential gate. The multi-threshold audit evidence is
+under `.local/experiments/wuji_hand2_continuous_v1/w2_3_finalization/penetration_audit/`.
+The five new HTML pages are under the same output root's `html/` directory.
+This lane is not RL-ready, not realtime-ready, not cross-subject validated,
+and does not establish author-exact reproduction.

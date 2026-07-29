@@ -40,6 +40,17 @@
 This log does not claim that numerical results, private Pen-Spin data, Wuji hardware transfer, or
 later algorithm stages have been reproduced.
 
+## 2026-07-29 -- W2.3 Wuji sequential finalization
+
+Added the separately named `wuji_continuous_sequential_v1` candidate and the
+bounded finalization harness. W1/W2/W3 formal artifacts are audited as
+immutable inputs; selected-frame replay, multi-threshold signed-distance
+audits, the W3 window oracle, nonblocking window shadow, versioned exports,
+HTML smoke, and final integrity evidence are isolated under
+`.local/experiments/wuji_hand2_continuous_v1/w2_3_finalization/`. The scope is
+offline reference generation only; author-exact, RL, real-time, and
+cross-subject claims remain unresolved.
+
 ## 2026-07-19 — Stage 3
 
 - Audited the existing real `cubemedium_inspect_1` right-hand cache: `mano16`, `[60,16,3]`,

@@ -753,3 +753,11 @@ orchestrator. It binds source/MANO/object/robot/profile hashes before Stage 9,
 supports checkpoint resume, independent full formal-surface validation,
 reference export, metrics, and self-contained HTML. The implementation keeps
 the `pene-loss` worktree and all historical artifacts outside its write scope.
+
+## 2026-07-29 -- W2.3 sequential finalization
+
+Added `wuji_continuous_sequential_v1`, with window fallback disabled in the
+production sequential path and a separate fixed-anchor five-frame diagnostic
+shadow. The bounded runner writes replay, penetration, oracle, export, HTML,
+and integrity evidence only to the W2.3 output root; no formal artifact is
+replaced and no Git mutation is performed.

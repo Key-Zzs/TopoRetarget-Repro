@@ -342,6 +342,17 @@ the paper-core frame objective and collision constraints unchanged and adds a
 separate continuation/continuity acceptance layer. The canonical faithful
 profile `scipy_slsqp_active_set_contact_rich_v3_fixed` remains immutable.
 
+## W2.3 sequential profile boundary
+
+`wuji_continuous_sequential_v1` is an engineering extension for offline
+reference generation, not a paper-method or author-exact claim. It preserves
+the full-state objective, temporal terms, constraints, and formal artifacts;
+only the production window-fallback flag differs. The five-frame repair,
+multi-threshold penetration interpretation, exports, and HTML are diagnostic
+evidence and do not change Eq. (1)--(9), baseline/source/warm/graph data, or
+historical Stage 10 outputs. RL, realtime, and cross-subject claims remain
+false, and `author_exact` remains unresolved.
+
 ## W2.2 closeout boundary
 
 The W2.2 closeout is a diagnostic validation layer, not a paper result. Its

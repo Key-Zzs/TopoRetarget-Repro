@@ -27,6 +27,7 @@ from toporetarget.retarget.artifacts import (
     save_warm_start,
 )
 from toporetarget.retarget.bones import extract_bone_features, load_bone_profile
+from toporetarget.retarget.continuous import is_continuous_profile
 from toporetarget.retarget.delaunay import load_delaunay_profile
 from toporetarget.retarget.final_refinement import (
     ACTIVE_QUERY_PROFILE_ID,
@@ -1072,7 +1073,7 @@ def _checkpoint_manifest(
     checkpoint_root: Path,
     source_frame_offset: int,
 ) -> dict[str, Any]:
-    continuous = solver.profile_id == "wuji_continuous_full_state_v1"
+    continuous = is_continuous_profile(solver.profile_id)
     result = {
         "schema_version": "toporetarget.final_retarget_checkpoint.v1",
         "run_id": checkpoint_root.name,

@@ -1089,3 +1089,18 @@ wuji_continuous_full_state_v1:
   paper_core_frame_objective: unchanged
   paper_core_collision_constraints: unchanged
   author_exact: unresolved
+wuji_continuous_sequential_v1:
+  paper_method: false
+  engineering_extension: true
+  derived_from: wuji_continuous_full_state_v1
+  paper_core_frame_objective: unchanged
+  paper_core_collision_constraints: unchanged
+  only_solver_semantic_difference: window.fallback_enabled true_to_false
+  scope: offline_reference_generation
+  window_profile: wuji_five_frame_window_experimental_v1
+  window_fallback_enabled: false
+  window_fallback_status: unresolved_experimental_nonblocking
+  rl_ready: false
+  realtime_ready: false
+  cross_subject_validated: false
+  author_exact: unresolved

@@ -19,12 +19,20 @@ import yaml
 from toporetarget.geometry.se3 import invert_transform
 
 CONTINUOUS_PROFILE_ID = "wuji_continuous_full_state_v1"
+SEQUENTIAL_PROFILE_ID = "wuji_continuous_sequential_v1"
+CONTINUOUS_PROFILE_IDS = frozenset({CONTINUOUS_PROFILE_ID, SEQUENTIAL_PROFILE_ID})
 CONTINUITY_SCHEMA_VERSION = "toporetarget.trajectory_continuity.v1"
 BASE_CORRECTION_CONVENTION = "scene_local_seed_delta_exp_left"
 S_POS_M = 0.010
 S_ROT_RAD = float(np.deg2rad(5.0))
 S_Q_RAD = 0.050
 LAMBDA_CORR = 0.25
+
+
+def is_continuous_profile(profile_id: str) -> bool:
+    """Return whether ``profile_id`` uses the Wuji continuity contract."""
+
+    return str(profile_id) in CONTINUOUS_PROFILE_IDS
 
 
 def _sha256(data: bytes) -> str:
@@ -308,14 +316,14 @@ class ContinuousRetargetProfile:
     source_path: Path
 
     @classmethod
-    def load(cls, root: Path | None = None) -> ContinuousRetargetProfile:
+    def load(
+        cls, root: Path | None = None, profile_id: str = CONTINUOUS_PROFILE_ID
+    ) -> ContinuousRetargetProfile:
         repo = root or Path(__file__).resolve().parents[3]
-        path = (
-            repo / "configs" / "retarget" / "refinement_solvers" / f"{CONTINUOUS_PROFILE_ID}.yaml"
-        )
+        path = repo / "configs" / "retarget" / "refinement_solvers" / f"{profile_id}.yaml"
         raw = path.read_bytes()
         values = yaml.safe_load(raw) or {}
-        if not isinstance(values, dict) or values.get("profile_id") != CONTINUOUS_PROFILE_ID:
+        if not isinstance(values, dict) or values.get("profile_id") != profile_id:
             raise ValueError("invalid Wuji continuous profile")
         return cls(dict(values), _sha256(raw), path)
 
@@ -351,6 +359,7 @@ __all__ = [
     "BASE_CORRECTION_CONVENTION",
     "CONTINUITY_SCHEMA_VERSION",
     "CONTINUOUS_PROFILE_ID",
+    "CONTINUOUS_PROFILE_IDS",
     "ContinuousRetargetProfile",
     "LAMBDA_CORR",
     "PropagatedRetargetState",
@@ -358,11 +367,13 @@ __all__ = [
     "S_POS_M",
     "S_Q_RAD",
     "S_ROT_RAD",
+    "SEQUENTIAL_PROFILE_ID",
     "continuity_metrics",
     "correction_temporal_energy",
     "correction_temporal_residual",
     "decode_base_correction",
     "encode_base_correction",
+    "is_continuous_profile",
     "so3_log_np",
     "transport_previous_final_to_current_warm",
     "transport_round_trip_report",

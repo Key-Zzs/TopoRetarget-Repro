@@ -47,3 +47,24 @@ shadow returns SLSQP status 4 and fails the center continuity gate. W3's
 penetration rate also regresses from 0.90 to 0.95. The profile is therefore
 not recommended for offline reference generation until those gates are
 resolved.
+
+## W2.3 sequential finalization
+
+W2.3 adds the derived `wuji_continuous_sequential_v1` candidate. Its only
+solver-semantic difference from the full-state profile is that the
+five-frame fallback is disabled on the production sequential path. The
+window remains an isolated, nonblocking diagnostic shadow with a fixed-left
+anchor and normalized coordinates. Run the bounded finalization with:
+
+```bash
+PYTHONNOUSERSITE=1 PYTHONPATH=src \
+  /home/deepcybo/miniconda3/bin/python scripts/wuji_w2_3_finalization.py
+```
+
+The complete audit, replay, penetration thresholds, oracle, exports, HTML,
+and integrity evidence is under
+`.local/experiments/wuji_hand2_continuous_v1/w2_3_finalization/`; see
+[`stages/W2_3_WUJI_SEQUENTIAL_FINALIZATION.md`](stages/W2_3_WUJI_SEQUENTIAL_FINALIZATION.md).
+The candidate remains offline-only with `RL_READY=NO`,
+`REALTIME_READY=NO`, `CROSS_SUBJECT_VALIDATED=NO`, and
+`AUTHOR_EXACT=UNRESOLVED`.

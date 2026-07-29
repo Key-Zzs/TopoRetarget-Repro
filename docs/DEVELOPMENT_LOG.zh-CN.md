@@ -635,3 +635,10 @@ audit HTML 及 first/middle/last PNG 已生成；G3 下游 C–E 和总 A–E �
 source/MANO/object/robot/profile hashes，支持 checkpoint resume、独立 formal
 surface 验证、reference export、metrics 和自包含 HTML；写入范围不包含
 `pene-loss` worktree 与历史 artifacts。
+
+## 2026-07-29 -- W2.3 sequential finalization
+
+新增 `wuji_continuous_sequential_v1`，关闭 production sequential path 的 window fallback，
+并保留独立 fixed-anchor 五帧 diagnostic shadow。bounded runner 只在 W2.3 output root 写入
+replay、penetration、oracle、export、HTML 和 integrity evidence；不替换正式 artifact，也不做
+Git mutation。

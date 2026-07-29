@@ -1046,3 +1046,25 @@ W2.2 有界 closeout 见
 个绝对 q-step 全部由 source/warm 驱动，correction-driven jump 为 0；但真实
 W3 window fallback 返回 SLSQP status 4 且 center continuity 失败，W3
 penetration rate 也发生退化。不会替换任何正式 artifact。
+
+### W2.3 Wuji sequential finalization
+
+W2.3 新增独立的 `wuji_continuous_sequential_v1`，仅用于
+`offline_reference_generation`。它相对 `wuji_continuous_full_state_v1` 的唯一
+solver 语义差异是关闭 production five-frame fallback；window 保留为不阻塞主线的
+experimental shadow。
+
+运行或 resume：
+
+```bash
+PYTHONNOUSERSITE=1 PYTHONPATH=src \
+  /home/deepcybo/miniconda3/bin/python scripts/wuji_w2_3_finalization.py
+```
+
+当前 sequential 状态为
+`WUJI_CONTINUOUS_SEQUENTIAL_PROFILE_RECOMMENDED_WITH_SECONDARY_PENETRATION_WARNING`；
+window 状态为 `WINDOW_FALLBACK_EXPERIMENTAL_UNRESOLVED_NONBLOCKING`。多阈值 penetration
+证据位于 `.local/experiments/wuji_hand2_continuous_v1/w2_3_finalization/penetration_audit/`，
+五个 HTML 页面位于同一 output root 的 `html/`。该 lane 尚未 RL-ready、realtime-ready、
+cross-subject validated，且 `author_exact` 仍为 unresolved。详见
+[`W2.3 双语阶段文档`](docs/stages/W2_3_WUJI_SEQUENTIAL_FINALIZATION.zh-CN.md)。

@@ -11,3 +11,13 @@ never expands beyond five frames.
 The first implementation uses the same Eq. (8) terms and the same correction
 temporal term; it does not add acceleration, jerk, contact, morphology, or
 post-filter losses.
+
+## W2.3 diagnostic repair boundary
+
+The W2.3 harness keeps the window experimental-only. It uses the W3 oracle
+global `[441,446)`, local `[34,39)`, a fixed left anchor at local 34, normalized
+coordinates, analytic block Jacobians, and a window-local `trust-constr`
+attempt after scaled SLSQP failure. The current shadow is deterministic but
+unresolved (`SLSQP` status 4; the fallback rejects non-finite callback state).
+No window result is written into a formal continuous artifact, and window
+failure does not block the sequential profile recommendation.

@@ -232,3 +232,18 @@ reference backend and reports GRAB semantic contacts as `DATASET_PROXY` only.
 The benchmark demonstrates within-subject multi-object behavior, not the
 paper's original hardware equivalence, cross-subject generalization, or
 real-time performance.
+
+## W2.3 sequential finalization assumptions
+
+`wuji_continuous_sequential_v1` is an engineering candidate derived from the
+full-state continuous profile. Its only solver-semantic difference is
+`window.fallback_enabled=false`; metadata and scope differences are explicit.
+The production path is audited separately from the diagnostic five-frame
+window, and all new artifacts are isolated under the W2.3 output root.
+
+`R_pen(0 mm)` is retained as a sensitive signed-distance diagnostic while
+`R_pen(2 mm)` is the paper hard threshold. A W3 0.90 to 0.95 zero-threshold
+change is therefore reported as a shallow numerical/mesh warning when the
+2 mm gate and maximum-depth bound pass. The window oracle uses local frame 34
+as a fixed anchor and treats future states as hints; unresolved window solver
+status cannot block the sequential recommendation.

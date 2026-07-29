@@ -44,7 +44,7 @@ from toporetarget.retarget.bones import (
 )
 from toporetarget.retarget.continuous import (
     BASE_CORRECTION_CONVENTION,
-    CONTINUOUS_PROFILE_ID,
+    CONTINUOUS_PROFILE_IDS,
     LAMBDA_CORR,
     S_POS_M,
     S_Q_RAD,
@@ -55,6 +55,7 @@ from toporetarget.retarget.continuous import (
     continuity_metrics,
     correction_temporal_energy,
     encode_base_correction,
+    is_continuous_profile,
     transport_previous_final_to_current_warm,
 )
 from toporetarget.retarget.frames import BoneDirectionFrameProfile
@@ -104,7 +105,7 @@ def regularization_profile_for_solver(
         return requested_profile
     if solver_profile_id == FAITHFUL_CONTACT_RICH_SOLVER_PROFILE_ID:
         return "faithful_regularization_fix_v1"
-    if solver_profile_id == CONTINUOUS_PROFILE_ID:
+    if solver_profile_id in CONTINUOUS_PROFILE_IDS:
         return "wuji_continuous_full_state_v1"
     return "faithful_current_baseline"
 
@@ -2610,6 +2611,7 @@ def _window_joint_objective(
     solver: RefinementSolverProfile,
     *,
     point_jacobian_backend: str,
+    left_anchor: tuple[np.ndarray, np.ndarray] | None = None,
 ) -> dict[str, Any]:
     """Solve a bounded five-frame correction window in one SLSQP problem.
 
@@ -2625,20 +2627,13 @@ def _window_joint_objective(
     if not entries or len(entries) > 4:
         raise ValueError("a five-frame window has one fixed left anchor and at most four variables")
 
-    def local_size(context: _FrameContext, query_set: CollisionQuerySet) -> int:
-        return context.variable_size_without_slack + query_set.count
-
     def scales(context: _FrameContext, query_set: CollisionQuerySet) -> np.ndarray:
         return np.concatenate(
             [
+                np.full(3, 0.010, dtype=np.float64),
                 np.full(3, 0.1, dtype=np.float64),
-                np.ones(3, dtype=np.float64),
-                np.maximum(
-                    np.asarray(context.robot_model.joint_upper)
-                    - np.asarray(context.robot_model.joint_lower),
-                    1e-6,
-                ),
-                np.full(query_set.count, context.paper.b - context.paper.tau),
+                np.full(context.robot_model.num_dofs, 0.050, dtype=np.float64),
+                np.full(query_set.count, 0.001, dtype=np.float64),
             ]
         )
 
@@ -2709,6 +2704,13 @@ def _window_joint_objective(
             total += float(context.objective(row, query_set.query_hash)[0])
             poses.append(pose_from_state(context, row))
             qposes.append(np.asarray(row[6 : 6 + context.robot_model.num_dofs]))
+        if left_anchor is not None:
+            total += correction_temporal_energy(
+                np.asarray(left_anchor[0], dtype=np.float64),
+                poses[0],
+                np.asarray(left_anchor[1], dtype=np.float64),
+                qposes[0],
+            )
         for previous, current in zip(range(len(entries) - 1), range(1, len(entries)), strict=True):
             total += correction_temporal_energy(
                 poses[previous], poses[current], qposes[previous], qposes[current]
@@ -2741,9 +2743,32 @@ def _window_joint_objective(
             poses.append(context.base_pose_torch(tensor))
 
         temporal_total = None
-        for previous, current in zip(range(len(rows) - 1), range(1, len(rows)), strict=True):
-            previous_pose = poses[previous]
-            current_pose = poses[current]
+        temporal_pairs: list[tuple[Any, Any, Any, Any]] = []
+        if left_anchor is not None:
+            anchor_pose = torch.as_tensor(
+                np.asarray(left_anchor[0], dtype=np.float64), dtype=torch.float64
+            )
+            anchor_q = torch.as_tensor(
+                np.asarray(left_anchor[1], dtype=np.float64), dtype=torch.float64
+            )
+            temporal_pairs.append(
+                (
+                    anchor_pose,
+                    anchor_q,
+                    poses[0],
+                    row_tensors[0][6 : 6 + entries[0][0].robot_model.num_dofs],
+                )
+            )
+        temporal_pairs.extend(
+            (
+                poses[previous],
+                row_tensors[previous][6 : 6 + entries[previous][0].robot_model.num_dofs],
+                poses[current],
+                row_tensors[current][6 : 6 + entries[current][0].robot_model.num_dofs],
+            )
+            for previous, current in zip(range(len(rows) - 1), range(1, len(rows)), strict=True)
+        )
+        for previous_pose, previous_q, current_pose, current_q_tensor in temporal_pairs:
             previous_rotation = previous_pose[:3, :3]
             current_rotation = current_pose[:3, :3]
             relative_rotation = previous_rotation.T @ current_rotation
@@ -2752,10 +2777,7 @@ def _window_joint_objective(
             )
             base_translation = relative_translation / S_POS_M
             base_rotation = _so3_log_torch(relative_rotation) / S_ROT_RAD
-            dof_count = entries[previous][0].robot_model.num_dofs
-            previous_q = row_tensors[previous][6 : 6 + dof_count]
-            current_q = row_tensors[current][6 : 6 + dof_count]
-            finger = (current_q - previous_q) / S_Q_RAD
+            finger = (current_q_tensor - previous_q) / S_Q_RAD
             pair = LAMBDA_CORR * (
                 base_translation.square().mean()
                 + base_rotation.square().mean()
@@ -2822,7 +2844,7 @@ def _window_joint_objective(
 
         constraints.append({"type": "ineq", "fun": constraint, "jac": constraint_jac})
 
-    result = minimize(
+    slsqp_result = minimize(
         objective,
         initial,
         method=solver.method,
@@ -2831,6 +2853,46 @@ def _window_joint_objective(
         constraints=constraints,
         options={"maxiter": solver.maxiter, "ftol": solver.ftol, "disp": solver.disp},
     )
+    result = slsqp_result
+    backend = "SLSQP"
+    trust_result: Any | None = None
+    trust_error: str | None = None
+    if not bool(slsqp_result.success):
+        # This fallback is strictly window-local.  It receives the same
+        # normalized objective, bounds, QuerySets, and constraint functions;
+        # it does not alter the formal single-frame mathematics.
+        from scipy.optimize import Bounds, NonlinearConstraint
+
+        lower = np.asarray([item[0] for item in bounds], dtype=np.float64)
+        upper = np.asarray([item[1] for item in bounds], dtype=np.float64)
+        nonlinear = [
+            NonlinearConstraint(
+                item["fun"],
+                0.0,
+                np.inf,
+                jac=item["jac"],
+            )
+            for item in constraints
+        ]
+        try:
+            trust_result = minimize(
+                objective,
+                np.asarray(slsqp_result.x, dtype=np.float64),
+                method="trust-constr",
+                jac=objective_jac,
+                bounds=Bounds(lower, upper),
+                constraints=nonlinear,
+                options={
+                    "maxiter": int(solver.maxiter),
+                    "gtol": 1.0e-8,
+                    "xtol": 1.0e-8,
+                    "verbose": 0,
+                },
+            )
+            result = trust_result
+            backend = "trust-constr"
+        except Exception as exc:  # pragma: no cover - SciPy backend dependent
+            trust_error = f"{type(exc).__name__}: {exc}"
     rows = split(np.asarray(result.x, dtype=np.float64))
     full_surface_audits: list[dict[str, Any]] = []
     for (context, _, _), row in zip(entries, rows, strict=True):
@@ -2857,6 +2919,23 @@ def _window_joint_objective(
         ),
         "status": int(getattr(result, "status", -1)),
         "message": str(result.message),
+        "backend": backend,
+        "scaled_coordinates": True,
+        "coordinate_scales": [scale.tolist() for scale in scale_rows],
+        "left_anchor_used": left_anchor is not None,
+        "slsqp": {
+            "success": bool(slsqp_result.success),
+            "status": int(getattr(slsqp_result, "status", -1)),
+            "message": str(slsqp_result.message),
+        },
+        "trust_constr": None
+        if trust_result is None
+        else {
+            "success": bool(trust_result.success),
+            "status": int(getattr(trust_result, "status", -1)),
+            "message": str(trust_result.message),
+        },
+        "trust_constr_error": trust_error,
         "iterations": int(getattr(result, "nit", 0)),
         "objective": float(objective(np.asarray(result.x, dtype=np.float64))),
         "states": [
@@ -3254,13 +3333,17 @@ def build_final_trajectory(
         raise ValueError(f"unsupported regularization profile: {regularization_profile}")
     temporal_scope = temporal_scope_by_profile[regularization_profile]
     continuous_profile = (
-        ContinuousRetargetProfile.load()
-        if solver_profile.profile_id == CONTINUOUS_PROFILE_ID
+        ContinuousRetargetProfile.load(profile_id=solver_profile.profile_id)
+        if is_continuous_profile(solver_profile.profile_id)
         else None
     )
     transport_enabled = continuous_profile is not None or bool(transport_previous_final)
     continuity_gate_enabled = transport_enabled
     continuity_recovery_enabled = bool(enable_continuity_recovery and transport_enabled)
+    window_fallback_enabled = bool(
+        continuous_profile is None
+        or continuous_profile.values.get("window", {}).get("fallback_enabled", True)
+    )
     point_jacobian_backend = str(
         getattr(execution_profile, "point_jacobian_backend", "reference_batched_torch_v1")
     )
@@ -3576,7 +3659,7 @@ def build_final_trajectory(
                             accepted_candidates,
                             key=lambda item: (item.final_objective, item.retry_attempt),
                         )
-                    else:
+                    elif window_fallback_enabled:
                         window = RecedingHorizonWindow.for_target(
                             local_index, warm.frame_count, window_size=5
                         )
@@ -3655,6 +3738,9 @@ def build_final_trajectory(
                                 window_entries,
                                 solver_profile,
                                 point_jacobian_backend=point_jacobian_backend,
+                                left_anchor=(previous_base, previous_qpos)
+                                if previous_base is not None and previous_qpos is not None
+                                else None,
                             )
                             for hint_local, hint_state in zip(
                                 window.variable_frames[1:], joint["states"][1:], strict=True
@@ -3679,8 +3765,16 @@ def build_final_trajectory(
                                 "success": bool(joint["success"]),
                                 "status": int(joint["status"]),
                                 "message": str(joint["message"]),
+                                "backend": joint.get("backend"),
+                                "scaled_coordinates": bool(joint.get("scaled_coordinates", False)),
+                                "coordinate_scales": joint.get("coordinate_scales"),
+                                "left_anchor_used": bool(joint.get("left_anchor_used", False)),
+                                "slsqp": joint.get("slsqp"),
+                                "trust_constr": joint.get("trust_constr"),
+                                "trust_constr_error": joint.get("trust_constr_error"),
                                 "iterations": int(joint["iterations"]),
                                 "objective": float(joint["objective"]),
+                                "full_surface_audits": joint.get("full_surface_audits", []),
                                 "variable_frames": list(window.variable_frames),
                                 "future_hint_frames": list(window.variable_frames[1:]),
                                 "per_frame_query_sets": [
@@ -3726,6 +3820,15 @@ def build_final_trajectory(
                         )
                         window_result.jacobian_diagnostics["window"] = window.as_dict()
                         frame_result = window_result
+                    else:
+                        # The sequential profile deliberately stops after the
+                        # formal propagated/trust/multi-start attempts.  In
+                        # particular, it must never silently enter the
+                        # experimental five-frame path.
+                        frame_result = min(
+                            attempt_candidates,
+                            key=lambda item: (not item.accepted, item.final_objective),
+                        )
             elif diagnostic_force_window:
                 window = RecedingHorizonWindow.for_target(
                     local_index, warm.frame_count, window_size=5
@@ -3795,6 +3898,9 @@ def build_final_trajectory(
                         forced_window_entries,
                         solver_profile,
                         point_jacobian_backend=point_jacobian_backend,
+                        left_anchor=(previous_base, previous_qpos)
+                        if previous_base is not None and previous_qpos is not None
+                        else None,
                     )
                     for hint_local, hint_state in zip(
                         window.variable_frames[1:], joint["states"][1:], strict=True
@@ -3817,8 +3923,16 @@ def build_final_trajectory(
                         "success": bool(joint["success"]),
                         "status": int(joint["status"]),
                         "message": str(joint["message"]),
+                        "backend": joint.get("backend"),
+                        "scaled_coordinates": bool(joint.get("scaled_coordinates", False)),
+                        "coordinate_scales": joint.get("coordinate_scales"),
+                        "left_anchor_used": bool(joint.get("left_anchor_used", False)),
+                        "slsqp": joint.get("slsqp"),
+                        "trust_constr": joint.get("trust_constr"),
+                        "trust_constr_error": joint.get("trust_constr_error"),
                         "iterations": int(joint["iterations"]),
                         "objective": float(joint["objective"]),
+                        "full_surface_audits": joint.get("full_surface_audits", []),
                         "variable_frames": list(window.variable_frames),
                         "future_hint_frames": list(window.variable_frames[1:]),
                         "per_frame_query_sets": [

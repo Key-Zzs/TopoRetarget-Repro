@@ -11,3 +11,21 @@
 ## W2.2 收口状态
 
 有界收口见 [`stages/W2_2_WUJI_CONTINUITY_CLOSEOUT.zh-CN.md`](stages/W2_2_WUJI_CONTINUITY_CLOSEOUT.zh-CN.md)，只写入 `.local/experiments/wuji_hand2_continuous_v1/closeout_v1/`。当前状态为 `WUJI_CONTINUOUS_PROFILE_NOT_RECOMMENDED_WINDOW_FALLBACK_FAILED`：正式 W1/W2/W3 trajectory 通过数值和 continuity gate，W2 的 13 个绝对 q-step 全部由 warm/source basin 驱动；但真实 W3 五帧 shadow 返回 SLSQP status 4，center continuity gate 失败，且 W3 penetration rate 从 0.90 退化到 0.95。因此在这些 gate 解决前，不推荐该 profile 用于离线 reference generation。
+
+## W2.3 sequential finalization
+
+W2.3 新增严格派生的 `wuji_continuous_sequential_v1` candidate。它相对于 full-state
+profile 唯一的 solver 语义变化，是关闭 production sequential path 上的五帧 fallback；
+window 仍是独立、nonblocking 的 diagnostic shadow，并使用固定左锚点和归一化坐标。
+有界 finalization 命令为：
+
+```bash
+PYTHONNOUSERSITE=1 PYTHONPATH=src \
+  /home/deepcybo/miniconda3/bin/python scripts/wuji_w2_3_finalization.py
+```
+
+完整 audit、replay、penetration thresholds、oracle、export、HTML 和 integrity evidence
+位于 `.local/experiments/wuji_hand2_continuous_v1/w2_3_finalization/`，详见
+[`stages/W2_3_WUJI_SEQUENTIAL_FINALIZATION.zh-CN.md`](stages/W2_3_WUJI_SEQUENTIAL_FINALIZATION.zh-CN.md)。
+该 candidate 仍只限 offline：`RL_READY=NO`、`REALTIME_READY=NO`、
+`CROSS_SUBJECT_VALIDATED=NO`、`AUTHOR_EXACT=UNRESOLVED`。

@@ -1,0 +1,75 @@
+profile_id: wuji_continuous_sequential_v1
+version: "1.0.0"
+display_name: Wuji Sequential Continuity Retargeting v1
+backend: scipy.optimize.minimize
+method: SLSQP
+dtype: float64
+maxiter: 100
+ftol: 1.0e-7
+constraint_tolerance: 1.0e-6
+finite_difference_epsilon: 1.0e-6
+disp: false
+strict_failure_policy: continue_on_failure
+termination_contract: strict_optimizer_converged_primal_full_audit_and_continuity_v1
+acceptance_policy_id: strict_optimizer_converged_audits_and_continuity_v1
+active_set_continuation_policy: result_x_query_id_slack_remap_v2
+maxiter_provenance:
+  source: scipy_slsqp_active_set_contact_rich_v3_fixed
+  selected_budget: 100
+  per_sequence_or_hand_budget: forbidden
+stationarity_policy: feasible_stationary_v1_deferred
+benchmark_grid: [30, 60, 100, 200, 400]
+sdf_backend: convex_hull_exact_solver_only
+sdf_probe_count: 32
+sdf_cross_validation_tolerance_m: 1.0e-8
+assumptions:
+  - A_REFINEMENT_SOLVER_001
+  - A_REFINEMENT_SOLVER_TOLERANCES_001
+  - A_REFINEMENT_SDF_BACKEND_001
+  - A_REFINEMENT_SOLVER_CONTINUATION_002
+  - A_WUJI_PREVIOUS_FINAL_TRANSPORT_001
+  - A_WUJI_CHART_CONSISTENT_TEMPORAL_001
+  - A_WUJI_CONTINUITY_ACCEPTANCE_001
+  - A_WUJI_FIVE_FRAME_WINDOW_001
+schema_version: toporetarget.wuji_continuous_profile.v1
+role: recommended_candidate
+status: candidate
+artifact_immutable: true
+trajectory_continuity_guarantee: true
+paper_core_frame_objective: unchanged
+paper_core_collision_constraints: unchanged
+previous_final_correction_transport: true
+base_correction_temporal: true
+finger_correction_temporal: true
+continuity_acceptance: true
+deterministic_retry: true
+receding_horizon_window: 5
+paper_method: false
+paper_consistent_temporal_intent: true
+author_exact: unresolved
+engineering_extension: true
+recommended_scope: offline_reference_generation
+window_fallback: disabled
+rl_ready: false
+realtime_ready: false
+cross_subject_validated: false
+temporal:
+  lambda_corr: 0.25
+  translation_scale_m: 0.010
+  rotation_scale_rad: 0.08726646259971647
+  finger_scale_rad: 0.050
+  aggregation: mean
+continuity:
+  base_translation_threshold_m: 0.010
+  base_rotation_threshold_deg: 5.0
+  finger_inf_threshold_rad: 0.050
+  excess_keypoint_threshold_m: 0.020
+retry:
+  attempts: [continuous_propagated, propagated_trust_region, deterministic_multi_start, five_frame_window]
+  max_multi_start_candidates: 4
+  random: false
+window:
+  size: 5
+  fallback_enabled: false
+  max_retries: 1
+  max_active_rounds: formal_query_profile

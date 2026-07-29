@@ -78,3 +78,12 @@ penetration-rate regression independently fails the quality gate. See
 `docs/stages/W2_2_WUJI_CONTINUITY_CLOSEOUT.md`. Further work must resolve
 these gates before the continuous profile is used for offline reference
 generation.
+
+## W2.3 Wuji sequential finalization
+
+W2.3 adds `wuji_continuous_sequential_v1` as a separately audited offline
+candidate. It disables production window fallback, isolates the five-frame
+repair/shadow, reruns the frozen W1/W2/W3 evidence with selected replay and
+multi-threshold collision gates, and exports only versioned artifacts under
+`.local/experiments/wuji_hand2_continuous_v1/w2_3_finalization/`. The result
+does not establish RL, real-time, cross-subject, or author-exact validity.

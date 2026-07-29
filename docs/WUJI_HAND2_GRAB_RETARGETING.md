@@ -29,3 +29,8 @@ The current run is an offline reference runtime, not a real-time controller.
 GRAB semantic-contact metrics are explicitly `DATASET_PROXY` and are not
 ContactPose ground truth. Banana/open mesh data, SDF penetration loss,
 morphology priors, and RL are outside this benchmark.
+
+The follow-up W2.3 sequential finalization is isolated from this baseline
+under `.local/experiments/wuji_hand2_continuous_v1/w2_3_finalization/` and is
+documented in [`stages/W2_3_WUJI_SEQUENTIAL_FINALIZATION.md`](stages/W2_3_WUJI_SEQUENTIAL_FINALIZATION.md).
+It never overwrites this baseline export.
