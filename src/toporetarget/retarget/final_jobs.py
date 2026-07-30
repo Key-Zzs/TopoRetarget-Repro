@@ -12,6 +12,7 @@ import json
 import os
 import tempfile
 import time
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -35,7 +36,7 @@ def runtime_root(root: Path | None = None) -> Path:
     return (root or repo_root()) / ".local" / "runtime" / "final_jobs"
 
 
-def _atomic_json(path: Path, value: dict[str, Any]) -> None:
+def _atomic_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
         mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
@@ -44,6 +45,50 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
         handle.write("\n")
         temporary = Path(handle.name)
     temporary.replace(path)
+
+
+@contextmanager
+def _active_jobs_lock(root: Path):
+    """Serialize bounded worker claims across independently launched processes."""
+
+    import fcntl
+
+    root.mkdir(parents=True, exist_ok=True)
+    with (root / "active_jobs.lock").open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _pid_is_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _read_live_active_jobs(root: Path) -> list[dict[str, Any]]:
+    """Return and persist only live workers, under the active-job lock."""
+
+    destination = control_root(root)
+    active_path = destination / "active_jobs.json"
+    with _active_jobs_lock(destination):
+        rows = json.loads(active_path.read_text()) if active_path.is_file() else []
+        live = [
+            dict(row)
+            for row in rows
+            if isinstance(row, dict)
+            and isinstance(row.get("pid"), int)
+            and _pid_is_alive(int(row["pid"]))
+        ]
+        if live != rows:
+            _atomic_json(active_path, live)
+        return live
 
 
 def pause_final_jobs(
@@ -80,6 +125,40 @@ def pause_final_jobs(
     return payload
 
 
+def resume_final_jobs(
+    root: Path | None = None,
+    *,
+    max_final_workers: int,
+    reason: str,
+) -> dict[str, Any]:
+    """Explicitly release a previously paused queue under a bounded profile.
+
+    Resumption is deliberately a separate, named operation: callers must have
+    already checked worker quiescence and checkpoint lineage.  This helper
+    never starts a worker itself.
+    """
+
+    if max_final_workers < 1:
+        raise ValueError("max_final_workers must be positive")
+    destination = control_root(root)
+    destination.mkdir(parents=True, exist_ok=True)
+    if _read_live_active_jobs(root or repo_root()):
+        raise FinalJobPaused("cannot resume while active final jobs are recorded")
+    (destination / "PAUSED").unlink(missing_ok=True)
+    payload = {
+        "schema_version": CONTROL_SCHEMA,
+        "state": "READY",
+        "reason": reason,
+        "timestamp_unix_s": time.time(),
+        "new_final_tasks_allowed": True,
+        "max_final_workers": int(max_final_workers),
+        "full_stage12_resumed": True,
+    }
+    _atomic_json(destination / "pause_manifest.json", payload)
+    _atomic_json(destination / "scheduler_state.json", payload)
+    return payload
+
+
 def paused(root: Path | None = None) -> bool:
     return (control_root(root) / "PAUSED").is_file()
 
@@ -87,6 +166,66 @@ def paused(root: Path | None = None) -> bool:
 def assert_final_jobs_allowed(root: Path | None = None) -> None:
     if paused(root):
         raise FinalJobPaused(PAUSE_STATE)
+
+
+def claim_final_job(
+    root: Path | None,
+    *,
+    job_id: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Atomically reserve one scheduler slot for the current process."""
+
+    resolved = root or repo_root()
+    destination = control_root(resolved)
+    active_path = destination / "active_jobs.json"
+    with _active_jobs_lock(destination):
+        if paused(resolved):
+            raise FinalJobPaused(PAUSE_STATE)
+        scheduler_path = destination / "scheduler_state.json"
+        scheduler = json.loads(scheduler_path.read_text()) if scheduler_path.is_file() else {}
+        if not bool(scheduler.get("new_final_tasks_allowed", False)):
+            raise FinalJobPaused("scheduler is not READY")
+        limit = int(scheduler.get("max_final_workers", 0))
+        if limit < 1:
+            raise FinalJobPaused("scheduler worker limit is zero")
+        rows = json.loads(active_path.read_text()) if active_path.is_file() else []
+        live = [
+            dict(row)
+            for row in rows
+            if isinstance(row, dict)
+            and isinstance(row.get("pid"), int)
+            and _pid_is_alive(int(row["pid"]))
+        ]
+        if any(str(row.get("job_id")) == job_id for row in live):
+            raise FinalJobPaused(f"final job already claimed: {job_id}")
+        if len(live) >= limit:
+            raise FinalJobPaused(f"scheduler worker cap reached: {limit}")
+        row = {
+            "job_id": job_id,
+            "pid": os.getpid(),
+            "claimed_timestamp_unix_s": time.time(),
+            **payload,
+        }
+        live.append(row)
+        _atomic_json(active_path, live)
+        return row
+
+
+def release_final_job(root: Path | None, *, job_id: str) -> None:
+    """Release only this process's reservation, leaving other workers intact."""
+
+    resolved = root or repo_root()
+    destination = control_root(resolved)
+    active_path = destination / "active_jobs.json"
+    with _active_jobs_lock(destination):
+        rows = json.loads(active_path.read_text()) if active_path.is_file() else []
+        retained = [
+            dict(row)
+            for row in rows
+            if not (str(row.get("job_id")) == job_id and int(row.get("pid", -1)) == os.getpid())
+        ]
+        _atomic_json(active_path, retained)
 
 
 class FinalJobPaused(RuntimeError):
@@ -209,10 +348,13 @@ __all__ = [
     "PAUSE_STATE",
     "append_heartbeat",
     "assert_final_jobs_allowed",
+    "claim_final_job",
     "configure_cpu_runtime",
     "control_root",
     "pause_final_jobs",
     "paused",
     "physical_cpu_cores",
+    "resume_final_jobs",
+    "release_final_job",
     "runtime_root",
 ]

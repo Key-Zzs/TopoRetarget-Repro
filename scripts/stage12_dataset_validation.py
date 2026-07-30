@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -20,12 +21,16 @@ from typing import Any
 # Set the final-job CPU budget before NumPy/SciPy/Torch are imported.  The
 # running legacy workers predate this guard; all newly launched jobs inherit it.
 from toporetarget.retarget.final_jobs import (
+    HEALTH_GATE_PAUSE_STATE,
+    PAUSE_STATE,
     FinalJobPaused,
     FinalRefinementCPUConfig,
     append_heartbeat,
     assert_final_jobs_allowed,
+    claim_final_job,
     configure_cpu_runtime,
     paused,
+    release_final_job,
 )
 
 FINAL_CPU_RUNTIME = configure_cpu_runtime(FinalRefinementCPUConfig.load())
@@ -35,7 +40,7 @@ import yaml
 
 from toporetarget.adapters.datasets import get_dataset_adapter_registry
 from toporetarget.cli.retarget import _run_checkpoint_refinement
-from toporetarget.contracts.canonical import CanonicalHOIv2, save_canonical_hoi
+from toporetarget.contracts.canonical import CanonicalHOIv2, load_canonical_hoi, save_canonical_hoi
 from toporetarget.data.adapters.base import FrameRange
 from toporetarget.geometry.object_geometry import sample_object_track
 from toporetarget.geometry.robot_surface import (
@@ -45,7 +50,7 @@ from toporetarget.geometry.robot_surface import (
 from toporetarget.geometry.surface_sampling import load_surface_profile
 from toporetarget.quality.html import render_clip_html, smoke_html
 from toporetarget.quality.schema import ClipSpec
-from toporetarget.retarget.artifacts import save_warm_start
+from toporetarget.retarget.artifacts import load_warm_start, save_warm_start
 from toporetarget.retarget.bones import load_bone_profile
 from toporetarget.retarget.final_refinement import (
     CollisionQueryProfile,
@@ -54,9 +59,15 @@ from toporetarget.retarget.final_refinement import (
     load_final_trajectory,
 )
 from toporetarget.retarget.frames import load_frame_profile
-from toporetarget.retarget.interaction_artifacts import save_interaction_graph
+from toporetarget.retarget.interaction_artifacts import (
+    load_interaction_evaluation,
+    load_interaction_graph,
+    save_interaction_evaluation,
+    save_interaction_graph,
+)
+from toporetarget.retarget.interaction_evaluation import evaluate_interaction_graph
 from toporetarget.retarget.interaction_graph import build_source_interaction_graph
-from toporetarget.retarget.pipeline import build_warm_start_trajectory
+from toporetarget.retarget.pipeline import build_warm_start_trajectory, source_cache_hash
 from toporetarget.retarget.refinement_performance import RefinementExecutionProfile
 from toporetarget.retarget.solver import load_solver_profile
 from toporetarget.robots.registry import get_robot_registry
@@ -227,6 +238,65 @@ def _report_path(output_root: Path, row: dict[str, Any]) -> Path:
     )
 
 
+def _resume_checkpoint(root: Path) -> Path:
+    """Prefer the latest resumable Stage-12 checkpoint without replacing it."""
+
+    checkpoints = root / "checkpoints"
+    candidates = (
+        [
+            path
+            for path in checkpoints.iterdir()
+            if path.is_dir() and (path / "manifest.json").is_file()
+        ]
+        if checkpoints.is_dir()
+        else []
+    )
+    if not candidates:
+        return checkpoints / "final_refinement_fast_exact_v2_r1"
+
+    def key(path: Path) -> tuple[int, float, str]:
+        progress = path / "progress.json"
+        next_frame = -1
+        if progress.is_file():
+            next_frame = int(json.loads(progress.read_text(encoding="utf-8")).get("next_frame", -1))
+        return (next_frame, path.stat().st_mtime_ns, path.name)
+
+    return max(candidates, key=key)
+
+
+def _final_output_path(root: Path, checkpoint: Path) -> Path:
+    """Reuse historical versioned final artifacts without creating a duplicate lineage."""
+
+    candidates = [
+        root / "final" / checkpoint.name / "final_retarget.zarr",
+        root / "final" / checkpoint.name.removeprefix("final_refinement_") / "final_retarget.zarr",
+        *sorted((root / "final").glob("*/final_retarget.zarr")),
+    ]
+    return next((path for path in candidates if path.is_dir()), candidates[0])
+
+
+def _health_gate(metadata: dict[str, Any], rows: list[dict[str, Any]]) -> str | None:
+    """Stage-12 stop conditions evaluated from immutable per-frame evidence."""
+
+    elapsed = float(metadata.get("solve_time_s", float("inf")))
+    if len(list((Path("/proc") / str(os.getpid()) / "task").iterdir())) > 3:
+        return "worker_thread_oversubscription"
+    if not np.isfinite(elapsed):
+        return "nonfinite_frame_runtime"
+    if elapsed > 90.0:
+        return f"single_frame_over_90s:{elapsed:.3f}"
+    if int(metadata.get("unqueried_soft_violation_count", 0)) != 0:
+        return "unqueried_violation"
+    if not bool(metadata.get("strict_accepted", False)):
+        return "strict_acceptance_failed"
+    times = np.asarray([float(item.get("solve_time_s", np.nan)) for item in rows], dtype=np.float64)
+    if len(times) >= 10 and float(np.percentile(times[-10:], 95)) > 30.0:
+        return "rolling_10_frame_p95_over_30s"
+    if len(times) >= 3 and bool(np.all(times[-3:] > 45.0)):
+        return "three_consecutive_frames_over_45s"
+    return None
+
+
 def _aggregate_existing_reports(output_root: Path, rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Build the final handoff summary from completed sequence reports only."""
 
@@ -276,6 +346,7 @@ def _aggregate_existing_reports(output_root: Path, rows: list[dict[str, Any]]) -
             item["status"] == "completed_with_solver_failures" for item in results
         ),
         "blocked_count": sum(item["status"] == "blocked" for item in results),
+        "paused_count": sum(str(item["status"]).startswith("PAUSED_") for item in results),
         "missing_report_count": sum(item["status"] == "missing_report" for item in results),
         "wuji_completion_rate": float(len(completed) / len(rows)) if rows else 0.0,
         "results": results,
@@ -290,6 +361,7 @@ def run_one(
     row: dict[str, Any],
     robot_name: str,
     profile_name: str,
+    execution_profile_name: str = "wuji_continuous_sequential_fast_exact_v2",
     mano_model_root: Path | None = None,
 ) -> dict[str, Any]:
     started = time.perf_counter()
@@ -299,14 +371,16 @@ def run_one(
     unit = _safe(sequence_id)
     job_id = f"stage12_{dataset}_{unit}"
     root = output_root / dataset / unit
+    checkpoint = _resume_checkpoint(root)
     paths = {
         "canonical": root / "canonical" / "canonical_hoi_v2.zarr",
         "warm": root / "warm" / "warm_start.zarr",
         "graph": root / "exports" / "interaction_graph.zarr",
+        "evaluation": root / "exports" / "interaction_evaluation.zarr",
         "object_samples": root / "exports" / "object_samples.npz",
         "collision_samples": root / "exports" / "wuji_collision_samples.npz",
-        "final": root / "final" / "final_retarget.zarr",
-        "checkpoint": root / "checkpoint" / "final_refinement",
+        "final": _final_output_path(root, checkpoint),
+        "checkpoint": checkpoint,
         "html": root / "html" / "source_warm_final_wuji.html",
         "progress": root / "metrics" / "final_progress.json",
         "report": root / "metrics" / "retarget_report",
@@ -345,24 +419,23 @@ def run_one(
             },
         )
 
+    claimed = False
     try:
-        # This is intentionally before loading data: a paused queue must not
-        # consume a new selection item or create a worker.
-        assert_final_jobs_allowed(repo)
-        append_heartbeat(
-            job_id, "job_started", {"dataset": dataset, "sequence": sequence_id}, root=repo
-        )
         if mano_model_root is not None:
             adapter.mano_model_root = mano_model_root
-        write_progress("load_sequence")
-        raw = adapter.load_sequence(
-            sequence_id,
-            frame_range=FrameRange(frame_start, frame_stop),
-            hand=str(row.get("hand", "right")),
-        )
-        write_progress("canonicalize")
-        canonical = adapter.convert_to_canonical(raw)
-        save_canonical_hoi(canonical, paths["canonical"])
+        if paths["canonical"].is_dir():
+            canonical = load_canonical_hoi(paths["canonical"])
+            write_progress("reuse_canonical", frame_count=canonical.num_frames)
+        else:
+            write_progress("load_sequence")
+            raw = adapter.load_sequence(
+                sequence_id,
+                frame_range=FrameRange(frame_start, frame_stop),
+                hand=str(row.get("hand", "right")),
+            )
+            write_progress("canonicalize")
+            canonical = adapter.convert_to_canonical(raw)
+            save_canonical_hoi(canonical, paths["canonical"])
         payload["input"].update(
             {
                 "source_sequence": canonical.metadata.provenance.source_sequence,
@@ -390,79 +463,152 @@ def run_one(
         warm_solver = load_solver_profile(
             "paper_repro_scipy_trf", config_root=repo / "configs" / "retarget" / "warm_start"
         )
-        warm, warm_diagnostics = build_warm_start_trajectory(
-            canonical,
-            "right_hand",
-            robot,
-            frame_profile,
-            bone_profile,
-            warm_solver,
-        )
-        warm.metadata.update(
-            {
-                "stage12_target_profile_id": profile_name,
-                "stage12_warm_solver_profile_id": warm_solver.profile_id,
-                "dataset_specific_solver": False,
+        expected_source_cache_hash = source_cache_hash(paths["canonical"])
+        warm_preexisting = paths["warm"].is_dir()
+        warm_is_compatible = False
+        if warm_preexisting:
+            warm = load_warm_start(paths["warm"])
+            warm_is_compatible = (
+                warm.metadata.get("source_cache_hash") == expected_source_cache_hash
+            )
+        if warm_is_compatible:
+            warm_diagnostics = {"status": "reused_existing_artifact"}
+        else:
+            final_lineage_exists = (
+                any(
+                    (root / "final" / candidate / "final_retarget.zarr" / "zarr.json").is_file()
+                    for candidate in (root / "final").iterdir()
+                    if candidate.is_dir()
+                )
+                if (root / "final").is_dir()
+                else False
+            )
+            checkpoint_lineage_exists = any(
+                path.is_file() for path in (root / "checkpoints").glob("*/manifest.json")
+            )
+            if warm_preexisting and (final_lineage_exists or checkpoint_lineage_exists):
+                raise ValueError(
+                    "existing warm-start source cache hash is incompatible with an established "
+                    "final/checkpoint lineage; preserve artifacts and create a versioned run root"
+                )
+            # A warm artifact without the canonical source hash cannot be paired
+            # with a graph or checkpoint safely.  This path is reached before
+            # final refinement; no accepted final/checkpoint lineage is replaced.
+            warm, warm_diagnostics = build_warm_start_trajectory(
+                canonical,
+                "right_hand",
+                robot,
+                frame_profile,
+                bone_profile,
+                warm_solver,
+                source_cache=paths["canonical"],
+            )
+            warm.metadata.update(
+                {
+                    "stage12_target_profile_id": profile_name,
+                    "stage12_warm_solver_profile_id": warm_solver.profile_id,
+                    "dataset_specific_solver": False,
+                }
+            )
+            save_warm_start(warm, paths["warm"], force=True)
+            warm_diagnostics = {
+                **warm_diagnostics,
+                "status": "regenerated_incompatible_source_cache"
+                if warm_preexisting
+                else "created",
             }
-        )
-        save_warm_start(warm, paths["warm"], force=True)
         payload["retarget"].update(
             {"q_dimension": robot.num_dofs, "warm_diagnostics": warm_diagnostics}
         )
 
         write_progress("interaction_artifacts", frame_count=canonical.num_frames)
         object_track = _primary_object(canonical)
-        object_profile = load_surface_profile("paper_strict_area_uniform", repo_root=repo)
-        object_samples = sample_object_track(object_track, object_profile)
-        object_samples.save(paths["object_samples"], overwrite=True)
-        graph = build_source_interaction_graph(
-            canonical,
-            "right_hand",
-            object_track.object_id,
-            object_samples,
-            source_cache=paths["canonical"],
-            object_sample_path=paths["object_samples"],
-            frame_indices=np.arange(canonical.num_frames, dtype=np.int64),
-        )
-        save_interaction_graph(graph, paths["graph"], force=True)
-        collision_profile = load_robot_surface_profile(
-            "engineering_collision_32_per_geometry", repo_root=repo
-        )
-        collision_samples = sample_robot_collision_surface(
-            robot, warm.arrays["qpos"][0], collision_profile
-        )
-        collision_samples.save(paths["collision_samples"], overwrite=True)
+        if paths["graph"].is_dir() and paths["collision_samples"].is_file():
+            graph = load_interaction_graph(paths["graph"])
+        else:
+            object_profile = load_surface_profile("paper_strict_area_uniform", repo_root=repo)
+            object_samples = sample_object_track(object_track, object_profile)
+            object_samples.save(paths["object_samples"], overwrite=True)
+            graph = build_source_interaction_graph(
+                canonical,
+                "right_hand",
+                object_track.object_id,
+                object_samples,
+                source_cache=paths["canonical"],
+                object_sample_path=paths["object_samples"],
+                frame_indices=np.arange(canonical.num_frames, dtype=np.int64),
+            )
+            save_interaction_graph(graph, paths["graph"], force=True)
+            collision_profile = load_robot_surface_profile(
+                "engineering_collision_32_per_geometry", repo_root=repo
+            )
+            collision_samples = sample_robot_collision_surface(
+                robot, warm.arrays["qpos"][0], collision_profile
+            )
+            collision_samples.save(paths["collision_samples"], overwrite=True)
+        if paths["evaluation"].is_dir():
+            load_interaction_evaluation(paths["evaluation"])
+        else:
+            evaluation = evaluate_interaction_graph(graph, warm, robot)
+            save_interaction_evaluation(evaluation, paths["evaluation"], force=True)
 
         write_progress("final_refinement", frame_count=canonical.num_frames)
-        assert_final_jobs_allowed(repo)
         solver = RefinementSolverProfile.load(profile_name, repo)
         coordinate = RefinementCoordinateProfile.load("local_seed_delta_v1", repo)
         query = CollisionQueryProfile.load("adaptive_active_set_v1", repo)
-        execution = RefinementExecutionProfile.load("cached_checkpoint_cpu_float64_v3", repo)
+        execution = RefinementExecutionProfile.load(execution_profile_name, repo)
 
-        checkpoint_status = _run_checkpoint_refinement(
-            canonical=paths["canonical"],
-            warm_start=paths["warm"],
-            graph_path=paths["graph"],
-            robot=robot_name,
-            collision_samples=paths["collision_samples"],
-            query_profile_id=query.profile_id,
-            coordinate_profile_id=coordinate.profile_id,
-            solver_profile_id=solver.profile_id,
-            execution_profile_id=execution.profile_id,
-            start_frame=0,
-            end_frame=canonical.num_frames,
-            checkpoint_root=paths["checkpoint"],
-            output=paths["final"],
-            asset_root=None,
-            resume=paths["checkpoint"].exists(),
-            max_wall_time=None,
-            stop_after_frame=None,
-            progress_json=paths["progress"],
-            progress_log=repo / ".local" / "runtime" / "final_jobs" / job_id / "heartbeat.jsonl",
-            force=False,
-            pause_check=lambda: paused(repo),
+        existing_progress = paths["checkpoint"] / "progress.json"
+        checkpoint_complete = (
+            existing_progress.is_file()
+            and json.loads(existing_progress.read_text(encoding="utf-8")).get("status")
+            == "complete"
         )
+        if checkpoint_complete and paths["final"].is_dir():
+            checkpoint_status = {"status": "complete", "reused_complete_checkpoint": True}
+        else:
+            # Upstream adapter/canonical/warm/graph work is intentionally
+            # permitted while the final queue is paused.  Claim a worker only
+            # at the point final refinement would actually begin.
+            assert_final_jobs_allowed(repo)
+            claim_final_job(
+                repo,
+                job_id=job_id,
+                payload={"dataset": dataset, "sequence": sequence_id},
+            )
+            claimed = True
+            append_heartbeat(
+                job_id, "job_started", {"dataset": dataset, "sequence": sequence_id}, root=repo
+            )
+            checkpoint_status = _run_checkpoint_refinement(
+                canonical=paths["canonical"],
+                warm_start=paths["warm"],
+                graph_path=paths["graph"],
+                robot=robot_name,
+                collision_samples=paths["collision_samples"],
+                query_profile_id=query.profile_id,
+                coordinate_profile_id=coordinate.profile_id,
+                solver_profile_id=solver.profile_id,
+                execution_profile_id=execution.profile_id,
+                start_frame=0,
+                end_frame=canonical.num_frames,
+                checkpoint_root=paths["checkpoint"],
+                output=paths["final"],
+                asset_root=None,
+                resume=paths["checkpoint"].exists(),
+                max_wall_time=None,
+                stop_after_frame=None,
+                progress_json=paths["progress"],
+                progress_log=repo
+                / ".local"
+                / "runtime"
+                / "final_jobs"
+                / job_id
+                / "heartbeat.jsonl",
+                force=False,
+                pause_check=lambda: paused(repo),
+                frame_health_gate=_health_gate,
+            )
         if checkpoint_status.get("status") != "complete":
             raise FinalJobPaused(str(checkpoint_status.get("pause_reason", "checkpoint paused")))
         final = load_final_trajectory(paths["final"])
@@ -500,6 +646,8 @@ def run_one(
             output=paths["html"],
             asset_root=None,
             recommended_profile=profile_name,
+            graph_path=paths["graph"],
+            evaluation_path=paths["evaluation"],
         )
         html_smoke = smoke_html(paths["html"], expected_frames=canonical.num_frames, profiles=2)
         if not html_smoke.get("pass"):
@@ -523,12 +671,15 @@ def run_one(
             }
         )
     except FinalJobPaused as exc:
-        append_heartbeat(job_id, "job_paused", {"reason": str(exc)}, root=repo)
+        reason = str(exc)
+        pause_state = PAUSE_STATE if reason == PAUSE_STATE else HEALTH_GATE_PAUSE_STATE
+        diagnosis = "operator_control" if pause_state == PAUSE_STATE else "health_gate"
+        append_heartbeat(job_id, "job_paused", {"reason": reason, "state": pause_state}, root=repo)
         payload.update(
             {
-                "status": "PAUSED_BY_OPERATOR_CONTROL",
-                "error": str(exc),
-                "failure_diagnosis": {"category": "operator_control", "detail": str(exc)},
+                "status": pause_state,
+                "error": reason,
+                "failure_diagnosis": {"category": diagnosis, "detail": reason},
             }
         )
     except Exception as exc:
@@ -552,7 +703,11 @@ def run_one(
                 else {"status": "not_available"},
             }
         )
-    _write_report(paths["report"], payload)
+    try:
+        _write_report(paths["report"], payload)
+    finally:
+        if claimed:
+            release_final_job(repo, job_id=job_id)
     return payload
 
 
@@ -565,6 +720,11 @@ def main() -> int:
     parser.add_argument("--dataset", action="append", default=[])
     parser.add_argument("--selection-index", type=int, default=None)
     parser.add_argument("--max-trajectories", type=int, default=None)
+    parser.add_argument(
+        "--execution-profile",
+        default="wuji_continuous_sequential_fast_exact_v2",
+        help="fixed Stage-12 execution profile; changing it creates a distinct checkpoint lineage",
+    )
     parser.add_argument(
         "--aggregate-only",
         action="store_true",
@@ -583,7 +743,13 @@ def main() -> int:
     if args.aggregate_only:
         summary = _aggregate_existing_reports(output_root, rows)
         _write_json(output_root / "stage12_summary.json", summary)
-        return 0 if summary["missing_report_count"] == 0 and summary["blocked_count"] == 0 else 1
+        return (
+            0
+            if summary["missing_report_count"] == 0
+            and summary["blocked_count"] == 0
+            and summary["paused_count"] == 0
+            else 1
+        )
     data_root = args.data_root or Path(
         yaml.safe_load(args.config.read_text(encoding="utf-8"))["data_root"]
     )
@@ -601,6 +767,7 @@ def main() -> int:
             row=row,
             robot_name="wuji_hand2_beta1_rh",
             profile_name="wuji_continuous_sequential_v1",
+            execution_profile_name=str(args.execution_profile),
         )
         results.append(result)
         print(

@@ -12,6 +12,7 @@ from toporetarget.retarget.final_jobs import (
     control_root,
     pause_final_jobs,
     paused,
+    resume_final_jobs,
     runtime_root,
 )
 
@@ -85,7 +86,17 @@ def drain_final_command(repo_root: Path | None = typer.Option(None, "--repo-root
 
 
 @app.command("resume-final")
-def resume_final_command() -> None:
-    """Deliberately refuses implicit resume; resumption needs explicit review authority."""
+def resume_final_command(
+    max_final_workers: int = typer.Option(1, "--max-final-workers", min=1),
+    reason: str = typer.Option(..., "--reason"),
+    repo_root: Path | None = typer.Option(None, "--repo-root"),
+) -> None:
+    """Explicitly release a quiescent queue; this never launches a worker."""
 
-    raise typer.Exit(code=2)
+    typer.echo(
+        json.dumps(
+            resume_final_jobs(_root(repo_root), max_final_workers=max_final_workers, reason=reason),
+            indent=2,
+            sort_keys=True,
+        )
+    )

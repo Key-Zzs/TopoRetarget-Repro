@@ -1223,7 +1223,9 @@ def _run_checkpoint_refinement(
     force: bool,
     quality_extension_path: Path | None = None,
     pause_check: Any | None = None,
+    allow_shadow_while_queue_paused: bool = False,
     frame_health_gate: Callable[[dict[str, Any], list[dict[str, Any]]], str | None] | None = None,
+    ready_callback: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     sequence, warm, graph, model, surface, selected_samples = _refinement_components(
         canonical, warm_start, graph_path, robot, collision_samples, asset_root
@@ -1327,10 +1329,13 @@ def _run_checkpoint_refinement(
             frame_rows.append(metadata)
     frame_profile = load_frame_profile("canonical_keypoint_wrist_v1")
     bone_profile = load_bone_profile("mediapipe21_full_finger_chain_v1")
+    if ready_callback is not None:
+        ready_callback()
 
     while next_frame < stop:
-        if (pause_check is not None and bool(pause_check())) or paused(
-            Path(__file__).resolve().parents[3]
+        queue_paused = paused(Path(__file__).resolve().parents[3])
+        if (pause_check is not None and bool(pause_check())) or (
+            queue_paused and not allow_shadow_while_queue_paused
         ):
             status = store.update_progress(
                 status=PAUSE_STATE, elapsed_s=time.perf_counter() - started
