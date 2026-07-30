@@ -258,9 +258,21 @@ only; the paper does not specify SciPy SLSQP, the 672-sample Wuji surface,
 active-set round scheduling, or thread policy. It remains non-default and
 `author_exact: unresolved` until explicit parity gates pass.
 
+## P4 compiled winding execution boundary
+
+The v4 compiled generalized-winding handle and certified FD-probe reuse are
+paper-unspecified engineering. They preserve float64, the generalized-winding
+definition, thresholds, collision samples, solver, and independent full audit.
+Near-threshold and uncertified probes retain exact reference fallback; v4 is
+not recommended or selected for Stage-12 absent qualification evidence.
+
 ## P2 analytic SDF execution boundary
 
 `wuji_continuous_sequential_fast_exact_v2` is engineering-only and non-default.
+
+`wuji_continuous_sequential_fast_exact_v3_compiled_cpu` is likewise an
+engineering-only experimental backend. It accelerates only ambiguous spatial
+FD closest-point probes; the paper does not prescribe a compiled backend.
 It preserves CPU float64, formal collision sample identity, solver budgets, and
 the final independent full-surface audit. The paper does not prescribe this BVH,
 spatial-gradient, or Lipschitz-cache implementation; `author_exact` remains unresolved.

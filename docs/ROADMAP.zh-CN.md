@@ -77,3 +77,11 @@ window fallback 被关闭，五帧 repair/shadow 与 sequential gate 隔离；�
 证据会做 selected replay、多阈值碰撞 gate，并只在
 `.local/experiments/wuji_hand2_continuous_v1/w2_3_finalization/` 下生成版本化 artifact。
 该结果不证明 RL、real-time、cross-subject 或 author-exact validity。
+# P3 compiled 歧义 spatial-FD
+
+portable compiled CPU probe kernel 仍为实验项：五帧整体收益未达到合并门槛。
+
+# P4 认证式 compiled exact sign
+
+P4 增加可选的 float64 compiled generalized winding 和认证式 FD-probe 符号复用。
+阈值附近仍回退到已验证 reference；在完成五帧和 60 帧验收前保持实验性、非默认，且不触及 Stage-12。

@@ -318,6 +318,11 @@ human acceptance and is the canonical faithful baseline. See
 
 ## Open-object signed-distance engineering boundary
 
+The optional `compiled_sdf_cpu_v1` backend is an engineering implementation
+detail, not an author-exact or paper-specified SDF method. It preserves the
+existing exact closest-point and generalized-winding sign semantics and only
+changes execution of ambiguous spatial-FD probes.
+
 The GRAB quality lane records `hybrid_original_distance_proxy_sign_v1` as
 paper-unspecified geometry engineering. The raw object mesh is unchanged; a
 derived watertight proxy supplies sign only, while the original mesh supplies
@@ -376,3 +381,11 @@ and real-frame strict-acceptance gates pass.
 The v2 BVH, spatial gradient, 3D fallback, and Lipschitz sign cache are
 paper-unspecified execution engineering. They preserve the paper-core objective,
 constraints, QuerySet semantics, float64 execution, and independent audit.
+
+## P4 compiled exact-sign boundary
+
+The compiled winding and certified FD-probe reuse path is paper-external
+execution engineering. It preserves the generalized-winding definition,
+float64 contract, solver and audit; uncertain classifications use the qualified
+reference fallback. It is experimental, not author-exact, and not a Stage-12
+default.

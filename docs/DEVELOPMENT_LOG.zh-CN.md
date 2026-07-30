@@ -669,3 +669,12 @@ BLAS/Torch thread；fast-exact execution profile 是非默认候选，仍需真�
 新增 v2 spatial-gradient chain rule、仅歧义点的 3D FD、认证 object-local sign cache 和
 exact object-local BVH instrumentation。固定五帧诊断与 Stage-12 严格隔离，结果位于
 `.local/experiments/final_refinement_perf_v2/`。
+# P3 compiled CPU 歧义 spatial-FD
+
+仅对歧义六 probe FD batch 增加 float64 C++17 精确 source-mesh BVH；保留 reference
+generalized-winding sign 与 v2 fallback。
+
+# P4 认证式 compiled exact sign
+
+新增可选的确定性 C++17 generalized-winding handle、严格的 near-threshold Python fallback，
+以及 1-Lipschitz FD-probe 符号复用认证。v4 profile 保持 float64 CPU、非默认。

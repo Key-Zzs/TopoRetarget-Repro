@@ -158,6 +158,8 @@ class RefinementExecutionProfile:
     source_path: Path | None = None
     signed_distance_gradient: str = "legacy_surface_normal_optimizer_fd_v1"
     sign_backend: str = "exact_winding_per_query_v1"
+    ambiguity_fd_backend: str = "fast_exact_v2_python"
+    exact_closest_point_backend: str = "exact_object_local_bvh_v1"
 
     @classmethod
     def load(
@@ -210,6 +212,10 @@ class RefinementExecutionProfile:
                 values.get("signed_distance_gradient", "legacy_surface_normal_optimizer_fd_v1")
             ),
             sign_backend=str(values.get("sign_backend", "exact_winding_per_query_v1")),
+            ambiguity_fd_backend=str(values.get("ambiguity_fd_backend", "fast_exact_v2_python")),
+            exact_closest_point_backend=str(
+                values.get("exact_closest_point_backend", "exact_object_local_bvh_v1")
+            ),
         )
         if result.device != "cpu" or result.dtype != "float64":
             raise ValueError("the validated Stage 9.2 execution profile must be CPU float64")
@@ -237,6 +243,17 @@ class RefinementExecutionProfile:
             "reference_batched_from_primary_result_v1",
         }:
             raise ValueError("unsupported refinement strict recovery policy")
+        if result.ambiguity_fd_backend not in {
+            "fast_exact_v2_python",
+            "compiled_spatial_central_fd_v1",
+            "compiled_spatial_central_fd_winding_v1",
+        }:
+            raise ValueError("unsupported ambiguity spatial-FD backend")
+        if result.exact_closest_point_backend not in {
+            "exact_object_local_bvh_v1",
+            "compiled_object_local_bvh_v1",
+        }:
+            raise ValueError("unsupported exact closest-point backend")
         if result.sdf_tree_leaf_size <= 0:
             raise ValueError("refinement SDF tree leaf size must be positive")
         if result.role == "performance_candidate" and (
@@ -274,6 +291,8 @@ class RefinementExecutionProfile:
             "author_exact": self.author_exact,
             "signed_distance_gradient": self.signed_distance_gradient,
             "sign_backend": self.sign_backend,
+            "ambiguity_fd_backend": self.ambiguity_fd_backend,
+            "exact_closest_point_backend": self.exact_closest_point_backend,
             "profile_hash": self.profile_hash,
             "source_path": None if self.source_path is None else str(self.source_path),
         }
