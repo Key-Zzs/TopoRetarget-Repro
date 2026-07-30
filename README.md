@@ -481,6 +481,10 @@ default and is not recommended until numerical-equivalence gates pass. See
 [final-job scheduler](docs/FINAL_JOB_SCHEDULER.md) and
 [performance repair](docs/FINAL_REFINEMENT_PERFORMANCE.md).
 
+P2 adds the non-default `wuji_continuous_sequential_fast_exact_v2` candidate:
+exact object-local BVH plus signed-distance spatial-gradient chain-rule
+Jacobians. Its five-frame diagnostic is separate from the paused queue.
+
 ## License
 
 Repository code and documentation are released under the GNU General Public License v3.0; see

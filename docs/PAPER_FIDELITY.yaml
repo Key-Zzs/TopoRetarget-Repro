@@ -1115,3 +1115,16 @@ wuji_continuous_sequential_fast_exact_v1:
   recommended: false
   stage12_default: false
   author_exact: unresolved
+wuji_continuous_sequential_fast_exact_v2:
+  paper_method: false
+  engineering_execution_profile: true
+  role: performance_candidate
+  signed_distance_gradient: spatial_gradient_chain_rule_v1
+  sign_backend: lipschitz_certified_cache_with_exact_fallback_v1
+  exact_object_local_bvh: true
+  paper_core_frame_objective: unchanged
+  paper_core_collision_constraints: unchanged
+  final_full_surface_audit: true
+  recommended: false
+  stage12_default: false
+  author_exact: unresolved

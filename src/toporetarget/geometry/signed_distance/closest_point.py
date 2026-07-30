@@ -8,6 +8,7 @@ returned point is a triangle distance rather than a nearest-vertex proxy.
 from __future__ import annotations
 
 import heapq
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -110,6 +111,7 @@ class TriangleAABBTree:
     """
 
     def __init__(self, triangles: np.ndarray, *, leaf_size: int = 32) -> None:
+        started = time.perf_counter()
         self.triangles = np.asarray(triangles, dtype=np.float64).reshape(-1, 3, 3)
         if len(self.triangles) == 0:
             raise ValueError("AABB tree requires at least one triangle")
@@ -122,6 +124,34 @@ class TriangleAABBTree:
         self._order = np.arange(len(self.triangles), dtype=np.int64)
         self._nodes: list[_AABBNode] = []
         self.root = self._build(0, len(self._order))
+        self.build_time_s = time.perf_counter() - started
+        self._stats = {
+            "query_count": 0,
+            "queried_point_count": 0,
+            "candidate_triangle_evaluations": 0,
+            "node_visits": 0,
+        }
+
+    @property
+    def node_count(self) -> int:
+        return len(self._nodes)
+
+    @property
+    def leaf_count(self) -> int:
+        return sum(node.is_leaf for node in self._nodes)
+
+    def stats(self) -> dict[str, float | int]:
+        points = int(self._stats["queried_point_count"])
+        candidates = int(self._stats["candidate_triangle_evaluations"])
+        return {
+            "triangle_count": int(len(self.triangles)),
+            "node_count": self.node_count,
+            "leaf_count": self.leaf_count,
+            "build_time_s": float(self.build_time_s),
+            **{key: int(value) for key, value in self._stats.items()},
+            "mean_candidates_per_query": float(candidates / points) if points else 0.0,
+            "max_candidates_per_query": int(self.leaf_size),
+        }
 
     def _build(self, start: int, stop: int) -> int:
         node_index = len(self._nodes)
@@ -149,6 +179,8 @@ class TriangleAABBTree:
 
     def query(self, points: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         values = np.asarray(points, dtype=np.float64).reshape(-1, 3)
+        self._stats["query_count"] += 1
+        self._stats["queried_point_count"] += len(values)
         closest = np.empty_like(values)
         faces = np.empty(len(values), dtype=np.int64)
         barycentric = np.empty((len(values), 3), dtype=np.float64)
@@ -164,8 +196,10 @@ class TriangleAABBTree:
                 if lower_bound2 > best_distance2:
                     break
                 node = self._nodes[node_index]
+                self._stats["node_visits"] += 1
                 if node.is_leaf:
                     leaf_indices = self._order[node.start : node.stop]
+                    self._stats["candidate_triangle_evaluations"] += len(leaf_indices)
                     leaf_points, leaf_bary, leaf_distance2 = _closest_point_pairs(
                         point[None, :], self.triangles[leaf_indices]
                     )
@@ -193,6 +227,12 @@ class TriangleAABBTree:
             barycentric[index] = best_bary
             distance2[index] = best_distance2
         return closest, faces, barycentric, np.sqrt(np.maximum(distance2, 0.0))
+
+
+class ObjectLocalBVH(TriangleAABBTree):
+    """Versioned exact object-local BVH used by persistent SDF backends."""
+
+    backend_id = "exact_object_local_bvh_v1"
 
 
 class TriangleCentroidBoundTree:
@@ -384,4 +424,9 @@ def closest_points_on_triangles(
     return result_points, result_faces, result_bary, np.sqrt(np.maximum(result_dist2, 0.0))
 
 
-__all__ = ["TriangleCentroidBoundTree", "TriangleAABBTree", "closest_points_on_triangles"]
+__all__ = [
+    "ObjectLocalBVH",
+    "TriangleCentroidBoundTree",
+    "TriangleAABBTree",
+    "closest_points_on_triangles",
+]

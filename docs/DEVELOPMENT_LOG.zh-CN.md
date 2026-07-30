@@ -663,3 +663,9 @@ Git mutation。
 已安装 fail-closed final-job control，只暂停经证据识别的 legacy Stage-12 process group。由于没有安全的
 per-frame checkpoint，这些 worker 保留为 `SIGSTOP`，queue 继续暂停。新的 CPU policy 为 1 worker / 1 条
 BLAS/Torch thread；fast-exact execution profile 是非默认候选，仍需真实帧 parity 与受控 scheduler 证据。
+
+## 2026-07-30 -- P2 analytic SDF 与 exact BVH qualification
+
+新增 v2 spatial-gradient chain rule、仅歧义点的 3D FD、认证 object-local sign cache 和
+exact object-local BVH instrumentation。固定五帧诊断与 Stage-12 严格隔离，结果位于
+`.local/experiments/final_refinement_perf_v2/`。

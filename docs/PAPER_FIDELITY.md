@@ -370,3 +370,9 @@ reuse, batched Jacobians, timers, and CPU thread limits are paper-unspecified en
 The fast-exact candidate preserves the current paper-core objective and constraints but is
 not paper-method, author-exact, recommended, or the Stage-12 default until numerical-equivalence
 and real-frame strict-acceptance gates pass.
+
+## P2 analytic SDF execution boundary
+
+The v2 BVH, spatial gradient, 3D fallback, and Lipschitz sign cache are
+paper-unspecified execution engineering. They preserve the paper-core objective,
+constraints, QuerySet semantics, float64 execution, and independent audit.

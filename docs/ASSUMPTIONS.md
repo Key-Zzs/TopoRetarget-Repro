@@ -257,3 +257,10 @@ full-surface audit unchanged. Cache/batch/affinity instrumentation is engineerin
 only; the paper does not specify SciPy SLSQP, the 672-sample Wuji surface,
 active-set round scheduling, or thread policy. It remains non-default and
 `author_exact: unresolved` until explicit parity gates pass.
+
+## P2 analytic SDF execution boundary
+
+`wuji_continuous_sequential_fast_exact_v2` is engineering-only and non-default.
+It preserves CPU float64, formal collision sample identity, solver budgets, and
+the final independent full-surface audit. The paper does not prescribe this BVH,
+spatial-gradient, or Lipschitz-cache implementation; `author_exact` remains unresolved.

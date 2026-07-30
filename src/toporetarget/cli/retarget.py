@@ -1682,7 +1682,7 @@ def profile_refinement_command(
                     "w", encoding="utf-8"
                 ) as handle:
                     stats = pstats.Stats(profile, stream=handle)
-                    stats.strip_dirs().sort_stats("cumtime").print_stats(40)
+                    stats.strip_dirs().sort_stats("cumtime").print_stats(50)
             elapsed = time.perf_counter() - started
             if torch_module is not None and torch_profiler_enabled:
                 trace_path = output_root / "torch_profiler" / f"frame_{local_frame:06d}.json"
@@ -1744,6 +1744,8 @@ def profile_refinement_command(
                             np.min(final_arrays["full_signed_distance"][0])
                         ),
                     },
+                    "sdf_backend": trajectory.metadata.get("sdf_backend", {}),
+                    "query_summaries": trajectory.metadata.get("query_summaries", []),
                 }
             )
             rows.append(frame_row)

@@ -19,3 +19,12 @@ claim or author-exact implementation. Its numerical-equivalence gate covers
 SDF/closest-point/normal values, collision points/Jacobians, objectives,
 constraints, active-set behavior, strict acceptance, and final independent
 audits before any future resume transition may be recommended.
+
+## P2 analytic-SDF qualification
+
+`wuji_continuous_sequential_fast_exact_v2` keeps the v1 mathematical contract
+but uses chain-rule spatial SDF gradients, certified Lipschitz sign reuse, and
+an exact object-local BVH. The fixed frames 0/12/29/45/59 completed with strict
+acceptance and a 9.129 s median (11.470 s p95); see the P2 report under
+`.local/reports/final_refinement_p2/reports/`. This is not a Stage-12 default
+or a resume action: explicit operator approval remains required.

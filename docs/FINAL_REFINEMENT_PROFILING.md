@@ -10,3 +10,8 @@ independent audit, and checkpoint commit. Dataset loading, canonical conversion,
 and HTML generation are reported separately as cold-start overhead. The Stage-12
 performance report must publish measured five-frame values only; missing or
 timed-out reference values are labeled `N/A`, never estimated.
+
+The P2 analytic-SDF profile additionally records analytic versus ambiguity-only
+spatial-FD rows, sign-cache provenance, exact-winding counts, BVH traversal
+statistics, and per-frame cProfile output. Its five-frame qualification keeps
+the legacy baseline immutable and writes all generated evidence to `.local/`.

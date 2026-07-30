@@ -787,3 +787,10 @@ Installed fail-closed final-job control, stopped only identified legacy Stage-12
 and retained them as `SIGSTOP` because no safe per-frame checkpoint was present. The queue remains
 paused. The new CPU policy is one worker / one BLAS/Torch thread; the fast-exact execution profile
 is a non-default candidate pending real-frame parity and controlled scheduler evidence.
+
+## 2026-07-30 -- P2 analytic SDF and exact BVH qualification
+
+Added the v2 spatial-gradient chain rule, ambiguity-only 3D FD, certified
+object-local sign cache, and exact object-local BVH instrumentation. The fixed
+five-frame diagnostic remains separate from Stage-12 and all frames are recorded
+under `.local/experiments/final_refinement_perf_v2/`.

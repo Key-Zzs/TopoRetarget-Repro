@@ -46,7 +46,7 @@ R0 is MJCF playback/PD, R1 is PPO tracking, and CP remains later.
 | Q5 | Arti-MANO surface contact proxies | Generic robot surface-region interface and deterministic Arti-MANO profile | Proxy is distinct from source ground truth and collision samples | complete (bounded, paper-external) |
 | Q6 | Contact-aware final extension | Fixed contact candidate grid, source/object-local targets, Huber/direction diagnostics | Separate method, tests, rejection lineage, and rollback evidence | complete (bounded; no accepted contact extension) |
 | Q7 | Cross-trajectory automatic profile selection | Frozen A–E 2×2 matrix, hard/regression/improvement/Pareto gates | Selection uses only predeclared cross-trajectory metrics | complete (bounded; baseline fallback retained) |
-| 12 | Dataset Adapter Expansion | OakInk, DexYCB and HO-Cap adapters plus paused final-job controls/performance repair | Adapter inputs exist; batch final remains paused pending checkpoint and exact-backend gates | in progress; final queue paused |
+| 12 | Dataset Adapter Expansion | OakInk, DexYCB and HO-Cap adapters plus paused final-job controls/performance repair | P2 v2 five-frame evidence is available; batch final remains paused pending user approval and long-clip qualification | in progress; final queue paused |
 | 13 | Complex HOI Expansion | ARCTIC, OakInk2 and TACO adapters | Articulated/complex HOI remains canonical and validated | not started |
 | 14 | Universal Robot Hand Plugin | Broader arbitrary-hand URDF/MJCF plugin validation | Plugins satisfy RobotHandPlugin v1 and reference export gates | not started |
 | 15 | Baseline Comparison | OmniRetarget, Mink, DexPilot, GeoRT | Frozen fair baseline runs and reports | not started |

@@ -156,6 +156,8 @@ class RefinementExecutionProfile:
     author_exact: str
     profile_hash: str
     source_path: Path | None = None
+    signed_distance_gradient: str = "legacy_surface_normal_optimizer_fd_v1"
+    sign_backend: str = "exact_winding_per_query_v1"
 
     @classmethod
     def load(
@@ -204,6 +206,10 @@ class RefinementExecutionProfile:
             author_exact=str(values.get("author_exact", "unresolved")),
             profile_hash=hashlib.sha256(raw).hexdigest(),
             source_path=path,
+            signed_distance_gradient=str(
+                values.get("signed_distance_gradient", "legacy_surface_normal_optimizer_fd_v1")
+            ),
+            sign_backend=str(values.get("sign_backend", "exact_winding_per_query_v1")),
         )
         if result.device != "cpu" or result.dtype != "float64":
             raise ValueError("the validated Stage 9.2 execution profile must be CPU float64")
@@ -216,6 +222,16 @@ class RefinementExecutionProfile:
             "analytic_urdf_spatial_v2",
         }:
             raise ValueError("unsupported refinement point Jacobian backend")
+        if result.signed_distance_gradient not in {
+            "legacy_surface_normal_optimizer_fd_v1",
+            "spatial_gradient_chain_rule_v1",
+        }:
+            raise ValueError("unsupported signed-distance gradient backend")
+        if result.sign_backend not in {
+            "exact_winding_per_query_v1",
+            "lipschitz_certified_cache_with_exact_fallback_v1",
+        }:
+            raise ValueError("unsupported signed-distance sign backend")
         if result.strict_recovery not in {
             "none",
             "reference_batched_from_primary_result_v1",
@@ -256,6 +272,8 @@ class RefinementExecutionProfile:
             "paper_constraints_unchanged": self.paper_constraints_unchanged,
             "continuity_contract_unchanged": self.continuity_contract_unchanged,
             "author_exact": self.author_exact,
+            "signed_distance_gradient": self.signed_distance_gradient,
+            "sign_backend": self.sign_backend,
             "profile_hash": self.profile_hash,
             "source_path": None if self.source_path is None else str(self.source_path),
         }

@@ -465,6 +465,9 @@ Stage-12 批量 final refinement 当前保持暂停。可用 `toporetarget jobs 
 操作命令是 `toporetarget jobs pause-final`。新 worker 默认使用 1 worker 与 1 条 BLAS/Torch thread。
 `toporetarget retarget profile-refinement` 只能写入新的诊断输出根。候选
 `wuji_continuous_sequential_fast_exact_v1` 尚不是默认 profile，也不能在数值等价 gate 通过前推荐。
+
+P2 新增非默认候选 `wuji_continuous_sequential_fast_exact_v2`：精确 object-local BVH 与
+signed-distance 空间梯度 chain-rule Jacobian。五帧诊断与已暂停的 Stage-12 队列严格隔离。
 详见 [final-job scheduler](docs/FINAL_JOB_SCHEDULER.md) 与
 [performance repair](docs/FINAL_REFINEMENT_PERFORMANCE.md)。
 
