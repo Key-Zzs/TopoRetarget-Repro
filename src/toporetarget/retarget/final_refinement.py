@@ -32,6 +32,10 @@ from toporetarget.geometry.signed_distance.base import (
     SignedDistanceBackend,
     SignedDistanceQueryResult,
 )
+from toporetarget.geometry.signed_distance.compiled_sdf_cpu import (
+    CompiledSDFUnavailable,
+    CompiledSpatialFDBackend,
+)
 from toporetarget.geometry.signed_distance.derived_proxy import (
     HybridSignedDistanceBackend,
     ObjectSDFGeometryPolicy,
@@ -1113,6 +1117,7 @@ class _FrameContext:
     active_query_call_count: int = 0
     spatial_gradient_backend: str = "legacy_surface_normal_optimizer_fd_v1"
     sign_cache: LipschitzSignCache | None = None
+    compiled_spatial_fd_backend: CompiledSpatialFDBackend | None = None
     gradient_policy: SignedDistanceGradientAmbiguityPolicy = field(
         default_factory=SignedDistanceGradientAmbiguityPolicy
     )
@@ -1703,29 +1708,39 @@ class _FrameContext:
             if self.spatial_gradient_backend == "spatial_gradient_chain_rule_v1":
                 probe_points = self.candidate_points(current, active_hash)[query_ids[invalid_rows]]
                 h = self.gradient_policy.spatial_fd_step_m
-                axes = np.eye(3, dtype=np.float64)
-                probes = np.concatenate(
-                    [probe_points + h * axis for axis in axes]
-                    + [probe_points - h * axis for axis in axes],
-                    axis=0,
-                )
                 with self.timers.measure("spatial_fd_fallback"):
-                    with self.timers.measure("solver_sdf"):
-                        if isinstance(self.sdf, HybridSignedDistanceBackend):
-                            probe_result = self.sdf.query_scene(
-                                probes,
+                    if self.compiled_spatial_fd_backend is not None:
+                        with self.timers.measure("compiled_kernel"):
+                            compiled = self.compiled_spatial_fd_backend.spatial_fd_gradient_scene(
+                                np.ascontiguousarray(probe_points, dtype=np.float64),
                                 self.object_pose_scene,
-                                cache_update=False,
-                                evaluation_lineage="spatial_fd_probe",
+                                h,
                             )
-                        else:
-                            probe_result = self.sdf.query_scene(probes, self.object_pose_scene)
+                        probe_result = compiled.probe_result
+                        spatial = compiled.gradient_scene
+                    else:
+                        axes = np.eye(3, dtype=np.float64)
+                        probes = np.concatenate(
+                            [probe_points + h * axis for axis in axes]
+                            + [probe_points - h * axis for axis in axes],
+                            axis=0,
+                        )
+                        with self.timers.measure("solver_sdf"):
+                            if isinstance(self.sdf, HybridSignedDistanceBackend):
+                                probe_result = self.sdf.query_scene(
+                                    probes,
+                                    self.object_pose_scene,
+                                    cache_update=False,
+                                    evaluation_lineage="spatial_fd_probe",
+                                )
+                            else:
+                                probe_result = self.sdf.query_scene(probes, self.object_pose_scene)
+                        probe_phi = np.asarray(
+                            probe_result.signed_distance, dtype=np.float64
+                        ).reshape(6, -1)
+                        spatial = ((probe_phi[:3] - probe_phi[3:]) / (2.0 * h)).T
                 if not np.all(probe_result.sign_valid) or not np.all(probe_result.valid):
                     raise ValueError("invalid signed-distance result entered spatial-FD solve")
-                probe_phi = np.asarray(probe_result.signed_distance, dtype=np.float64).reshape(
-                    6, -1
-                )
-                spatial = ((probe_phi[:3] - probe_phi[3:]) / (2.0 * h)).T
                 spatial_fd_probe_count = int(6 * len(invalid_rows))
                 norms = np.linalg.norm(spatial, axis=1)
                 bad = (~np.isfinite(spatial).all(axis=1)) | (norms < 0.1) | (norms > 10.0)
@@ -1777,6 +1792,11 @@ class _FrameContext:
             "spatial_fd_probe_count": spatial_fd_probe_count,
             "sdf_batches_for_jacobian": int(1 + (1 if spatial_fd_probe_count else 0)),
             "surface_normal_last_resort_count": last_resort_count,
+            "ambiguity_fd_backend": (
+                "compiled_spatial_central_fd_v1"
+                if self.compiled_spatial_fd_backend is not None
+                else "fast_exact_v2_python"
+            ),
             **gradient_diagnostics,
         }
         if self.sign_cache is not None:
@@ -2567,6 +2587,7 @@ def _make_context(
     continuous_prediction_qpos: np.ndarray | None = None,
     spatial_gradient_backend: str = "legacy_surface_normal_optimizer_fd_v1",
     sign_cache: LipschitzSignCache | None = None,
+    compiled_spatial_fd_backend: CompiledSpatialFDBackend | None = None,
 ) -> _FrameContext:
     frame = graph.frames[local_index]
     global_frame = int(graph.frame_indices[local_index])
@@ -2631,6 +2652,7 @@ def _make_context(
         cache=RefinementEvaluationCache(global_frame, context_hash),
         spatial_gradient_backend=spatial_gradient_backend,
         sign_cache=sign_cache,
+        compiled_spatial_fd_backend=compiled_spatial_fd_backend,
     )
 
 
@@ -3490,6 +3512,9 @@ def build_final_trajectory(
         )
     )
     sign_backend = str(getattr(execution_profile, "sign_backend", "exact_winding_per_query_v1"))
+    ambiguity_fd_backend = str(
+        getattr(execution_profile, "ambiguity_fd_backend", "fast_exact_v2_python")
+    )
     resources = resources or prepare_refinement_resources(
         sequence,
         graph,
@@ -3504,6 +3529,18 @@ def build_final_trajectory(
     reference_sdf = resources.reference_sdf
     sdf = resources.sdf
     sdf_report = resources.sdf_report
+    compiled_spatial_fd_backend: CompiledSpatialFDBackend | None = None
+    if ambiguity_fd_backend == "compiled_spatial_central_fd_v1":
+        if not isinstance(reference_sdf, HybridSignedDistanceBackend):
+            raise ValueError("compiled spatial-FD backend requires the hybrid reference SDF")
+        try:
+            compiled_spatial_fd_backend = CompiledSpatialFDBackend(
+                reference_sdf, leaf_size=sdf_tree_leaf_size
+            )
+        except (CompiledSDFUnavailable, ImportError, OSError) as exc:
+            # Import/build failure never changes the math or causes a crash:
+            # the v2 Python exact path remains the safe execution fallback.
+            sdf_report = {**sdf_report, "compiled_spatial_fd_fallback": str(exc)}
     sign_cache: LipschitzSignCache | None = None
     if sign_backend == "lipschitz_certified_cache_with_exact_fallback_v1":
         sign_profile_hash = _stable_hash(resources.geometry_policy)
@@ -3593,6 +3630,7 @@ def build_final_trajectory(
             ),
             spatial_gradient_backend=spatial_gradient_backend,
             sign_cache=sign_cache,
+            compiled_spatial_fd_backend=compiled_spatial_fd_backend,
         )
         # The selected solver backend preserves the original closest-point
         # magnitude and uses the audited sign policy. It is sufficient for

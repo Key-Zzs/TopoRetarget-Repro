@@ -794,3 +794,7 @@ Added the v2 spatial-gradient chain rule, ambiguity-only 3D FD, certified
 object-local sign cache, and exact object-local BVH instrumentation. The fixed
 five-frame diagnostic remains separate from Stage-12 and all frames are recorded
 under `.local/experiments/final_refinement_perf_v2/`.
+# P3 compiled CPU ambiguous spatial-FD
+
+Added a float64 C++17 exact source-mesh BVH only for ambiguous six-probe FD
+batches; reference generalized-winding signs and v2 fallback remain intact.

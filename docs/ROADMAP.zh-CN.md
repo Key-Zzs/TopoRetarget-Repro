@@ -77,3 +77,6 @@ window fallback 被关闭，五帧 repair/shadow 与 sequential gate 隔离；�
 证据会做 selected replay、多阈值碰撞 gate，并只在
 `.local/experiments/wuji_hand2_continuous_v1/w2_3_finalization/` 下生成版本化 artifact。
 该结果不证明 RL、real-time、cross-subject 或 author-exact validity。
+# P3 compiled 歧义 spatial-FD
+
+portable compiled CPU probe kernel 仍为实验项：五帧整体收益未达到合并门槛。

@@ -485,6 +485,10 @@ P2 adds the non-default `wuji_continuous_sequential_fast_exact_v2` candidate:
 exact object-local BVH plus signed-distance spatial-gradient chain-rule
 Jacobians. Its five-frame diagnostic is separate from the paused queue.
 
+P3 adds the experimental compiled ambiguous spatial-FD probe kernel; it leaves
+the mathematical contract and exact sign backend unchanged. See
+[compiled CPU SDF](docs/COMPILED_SDF_CPU_KERNEL.md).
+
 ## License
 
 Repository code and documentation are released under the GNU General Public License v3.0; see

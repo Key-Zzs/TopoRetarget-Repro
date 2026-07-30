@@ -88,3 +88,7 @@ repair/shadow, reruns the frozen W1/W2/W3 evidence with selected replay and
 multi-threshold collision gates, and exports only versioned artifacts under
 `.local/experiments/wuji_hand2_continuous_v1/w2_3_finalization/`. The result
 does not establish RL, real-time, cross-subject, or author-exact validity.
+# P3 compiled ambiguous spatial-FD
+
+The portable compiled CPU probe kernel remains experimental: its measured
+five-frame overall benefit is below the merge threshold.

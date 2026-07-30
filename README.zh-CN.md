@@ -468,6 +468,9 @@ Stage-12 批量 final refinement 当前保持暂停。可用 `toporetarget jobs 
 
 P2 新增非默认候选 `wuji_continuous_sequential_fast_exact_v2`：精确 object-local BVH 与
 signed-distance 空间梯度 chain-rule Jacobian。五帧诊断与已暂停的 Stage-12 队列严格隔离。
+
+P3 新增实验性的歧义空间 FD compiled CPU probe kernel；数学契约与精确符号后端不变。详见
+[compiled CPU SDF](docs/COMPILED_SDF_CPU_KERNEL.md)。
 详见 [final-job scheduler](docs/FINAL_JOB_SCHEDULER.md) 与
 [performance repair](docs/FINAL_REFINEMENT_PERFORMANCE.md)。
 

@@ -318,6 +318,11 @@ human acceptance and is the canonical faithful baseline. See
 
 ## Open-object signed-distance engineering boundary
 
+The optional `compiled_sdf_cpu_v1` backend is an engineering implementation
+detail, not an author-exact or paper-specified SDF method. It preserves the
+existing exact closest-point and generalized-winding sign semantics and only
+changes execution of ambiguous spatial-FD probes.
+
 The GRAB quality lane records `hybrid_original_distance_proxy_sign_v1` as
 paper-unspecified geometry engineering. The raw object mesh is unchanged; a
 derived watertight proxy supplies sign only, while the original mesh supplies

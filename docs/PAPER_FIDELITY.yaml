@@ -1128,3 +1128,17 @@ wuji_continuous_sequential_fast_exact_v2:
   recommended: false
   stage12_default: false
   author_exact: unresolved
+wuji_continuous_sequential_fast_exact_v3_compiled_cpu:
+  paper_method: false
+  engineering_execution_profile: true
+  role: experimental_performance_candidate
+  signed_distance_gradient: spatial_gradient_chain_rule_v1
+  ambiguity_fd_backend: compiled_spatial_central_fd_v1
+  exact_closest_point_backend: compiled_object_local_bvh_v1
+  exact_sign_backend: reference_generalized_winding_v2
+  paper_core_frame_objective: unchanged
+  paper_core_collision_constraints: unchanged
+  final_full_surface_audit: true
+  recommended: false
+  stage12_default: false
+  author_exact: unresolved
