@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import re
 import time
 from pathlib import Path
@@ -279,7 +278,19 @@ def _health_gate(metadata: dict[str, Any], rows: list[dict[str, Any]]) -> str | 
     """Stage-12 stop conditions evaluated from immutable per-frame evidence."""
 
     elapsed = float(metadata.get("solve_time_s", float("inf")))
-    if len(list((Path("/proc") / str(os.getpid()) / "task").iterdir())) > 3:
+    # Torch creates an idle interop pool at import time even after both public
+    # limits are set to one.  Raw /proc task count would reject that harmless
+    # pool, so check the configured BLAS environment and Torch's effective
+    # execution limits instead.  A non-unit limit is a real fail-closed gate.
+    numeric_env = FINAL_CPU_RUNTIME["blas_environment"]
+    torch_runtime = FINAL_CPU_RUNTIME.get("torch", {})
+    if any(value != "1" for value in numeric_env.values()) or (
+        torch_runtime.get("available", False)
+        and (
+            int(torch_runtime.get("threads", 0)) != 1
+            or int(torch_runtime.get("interop_threads", 0)) != 1
+        )
+    ):
         return "worker_thread_oversubscription"
     if not np.isfinite(elapsed):
         return "nonfinite_frame_runtime"
@@ -295,6 +306,143 @@ def _health_gate(metadata: dict[str, Any], rows: list[dict[str, Any]]) -> str | 
     if len(times) >= 3 and bool(np.all(times[-3:] > 45.0)):
         return "three_consecutive_frames_over_45s"
     return None
+
+
+def _formal_v4_health_gate(
+    metadata: dict[str, Any],
+    rows: list[dict[str, Any]],
+    *,
+    first_ten_report: Path | None,
+) -> str | None:
+    """Apply the v4 formal evidence gates without restarting a qualified job."""
+
+    failure = _health_gate(metadata, rows)
+    if failure is not None:
+        return failure
+    diagnostics = dict(metadata.get("diagnostics", {}))
+    sign_cache = dict(diagnostics.get("sign_cache", {}))
+    if int(diagnostics.get("sign_mismatch_count", 0)) != 0:
+        return "sign_mismatch"
+    if int(sign_cache.get("false_certified_reuse_count", 0)) != 0:
+        return "false_certified_sign_reuse"
+    if int(diagnostics.get("full_audit_call_count", 0)) != 1:
+        return "full_audit_count_not_exactly_one"
+    if len(rows) != 10 or first_ten_report is None:
+        return None
+    times = np.asarray([float(item["solve_time_s"]) for item in rows], dtype=np.float64)
+    passed = bool(
+        np.all(np.isfinite(times))
+        and float(np.median(times)) <= 15.0
+        and float(np.percentile(times, 95)) <= 25.0
+        and float(np.max(times)) <= 45.0
+    )
+    evidence = {
+        "schema_version": "toporetarget.stage12.v4.oakink_first_ten.v1",
+        "status": "pass" if passed else "fail",
+        "accepted_count": int(sum(bool(item.get("strict_accepted", False)) for item in rows)),
+        "strict_accepted_count": int(
+            sum(bool(item.get("strict_accepted", False)) for item in rows)
+        ),
+        "full_audit_count_exactly_one": bool(
+            all(
+                int(dict(item.get("diagnostics", {})).get("full_audit_call_count", 0)) == 1
+                for item in rows
+            )
+        ),
+        "sign_mismatch_count": int(
+            sum(
+                int(dict(item.get("diagnostics", {})).get("sign_mismatch_count", 0))
+                for item in rows
+            )
+        ),
+        "false_certified_reuse_count": int(
+            sum(
+                int(
+                    dict(dict(item.get("diagnostics", {})).get("sign_cache", {})).get(
+                        "false_certified_reuse_count", 0
+                    )
+                )
+                for item in rows
+            )
+        ),
+        "runtime_s": {
+            "median": float(np.median(times)),
+            "p95": float(np.percentile(times, 95)),
+            "max": float(np.max(times)),
+        },
+        "continuity_pass": bool(
+            all(not item.get("continuity_failure_reasons", []) for item in rows)
+        ),
+        "checkpoint_prefix": [int(item["local_frame_index"]) for item in rows],
+        "continued_in_same_process_after_pass": passed,
+    }
+    _write_json(first_ten_report, evidence)
+    return None if passed else "oakink_first_ten_runtime_gate_failed"
+
+
+def _link_upstream_artifacts(
+    *,
+    root: Path,
+    paths: dict[str, Path],
+    upstream_root: Path | None,
+    dataset: str,
+    unit: str,
+    formal_v4: bool,
+) -> None:
+    """Reuse immutable upstream artifacts by symlink, never by copying or mutation."""
+
+    if upstream_root is None:
+        return
+    source_root = upstream_root / dataset / unit
+    if not source_root.is_dir():
+        raise ValueError(f"upstream Stage-12 selection root is missing: {source_root}")
+    relative = {
+        "canonical": Path("canonical/canonical_hoi_v2.zarr"),
+        "warm": Path("warm/warm_start.zarr"),
+        "graph": Path("exports/interaction_graph.zarr"),
+        "evaluation": Path("exports/interaction_evaluation.zarr"),
+        "object_samples": Path("exports/object_samples.npz"),
+        "collision_samples": Path("exports/wuji_collision_samples.npz"),
+    }
+    compatibility = "reused"
+    source_warm = source_root / relative["warm"]
+    source_graph = source_root / relative["graph"]
+    if formal_v4 and source_warm.is_dir() and source_graph.is_dir():
+        upstream_warm = load_warm_start(source_warm)
+        upstream_graph = load_interaction_graph(source_graph)
+        if upstream_warm.metadata.get("source_cache_hash") != upstream_graph.metadata.get(
+            "source_cache_hash"
+        ):
+            # Legacy v2 artifacts with incompatible source identities are
+            # immutable audit inputs, not legal formal-v4 inputs.  Keep the
+            # canonical/object sampling payload read-only and rebuild only the
+            # incompatible warm/graph/evaluation closure in this new lineage.
+            for key in ("warm", "graph", "evaluation"):
+                relative.pop(key)
+            compatibility = "rebuild_warm_graph_due_to_legacy_source_cache_hash_mismatch"
+    reused: dict[str, str] = {}
+    for key, suffix in relative.items():
+        source = source_root / suffix
+        destination = paths[key]
+        if not source.exists():
+            continue
+        if destination.exists() or destination.is_symlink():
+            if destination.resolve() != source.resolve():
+                raise ValueError(f"formal lineage refuses to replace existing {key}: {destination}")
+        else:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.symlink_to(source)
+        reused[key] = str(source)
+    _write_json(
+        root / "manifests" / "upstream_reuse.json",
+        {
+            "schema_version": "toporetarget.stage12.v4.upstream_reuse.v1",
+            "mode": "read_only_symlink",
+            "source_root": str(source_root),
+            "warm_graph_compatibility": compatibility,
+            "reused": reused,
+        },
+    )
 
 
 def _aggregate_existing_reports(output_root: Path, rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -363,6 +511,8 @@ def run_one(
     profile_name: str,
     execution_profile_name: str = "wuji_continuous_sequential_fast_exact_v2",
     mano_model_root: Path | None = None,
+    upstream_root: Path | None = None,
+    formal_v4: bool = False,
 ) -> dict[str, Any]:
     started = time.perf_counter()
     dataset = str(row["dataset"])
@@ -387,6 +537,14 @@ def run_one(
     }
     for path in paths.values():
         path.parent.mkdir(parents=True, exist_ok=True)
+    _link_upstream_artifacts(
+        root=root,
+        paths=paths,
+        upstream_root=upstream_root,
+        dataset=dataset,
+        unit=unit,
+        formal_v4=formal_v4,
+    )
     payload: dict[str, Any] = {
         "schema_version": "toporetarget.stage12.retarget_report.v1",
         "status": "running",
@@ -471,6 +629,20 @@ def run_one(
             warm_is_compatible = (
                 warm.metadata.get("source_cache_hash") == expected_source_cache_hash
             )
+            # The frozen v2 inputs predate source-cache hashes for some valid
+            # selections.  A formal v4 lineage may reuse only those immutable
+            # upstream warm artifacts after checking their sequence identity
+            # and frame cardinality; it must never regenerate through the
+            # read-only symlink.
+            if (
+                formal_v4
+                and upstream_root is not None
+                and warm.metadata.get("source_cache_hash") is None
+            ):
+                warm_is_compatible = bool(
+                    warm.frame_count == canonical.num_frames
+                    and warm.metadata.get("source_sequence_id") == canonical.metadata.sequence_id
+                )
         if warm_is_compatible:
             warm_diagnostics = {"status": "reused_existing_artifact"}
         else:
@@ -607,7 +779,21 @@ def run_one(
                 / "heartbeat.jsonl",
                 force=False,
                 pause_check=lambda: paused(repo),
-                frame_health_gate=_health_gate,
+                frame_health_gate=(
+                    lambda metadata, rows: (
+                        _formal_v4_health_gate(
+                            metadata,
+                            rows,
+                            first_ten_report=(
+                                root / "manifests" / "oakink_first_ten_qualification.json"
+                            )
+                            if formal_v4 and dataset == "oakink"
+                            else None,
+                        )
+                        if formal_v4
+                        else _health_gate(metadata, rows)
+                    )
+                ),
             )
         if checkpoint_status.get("status") != "complete":
             raise FinalJobPaused(str(checkpoint_status.get("pause_reason", "checkpoint paused")))
@@ -650,7 +836,7 @@ def run_one(
             evaluation_path=paths["evaluation"],
         )
         html_smoke = smoke_html(paths["html"], expected_frames=canonical.num_frames, profiles=2)
-        if not html_smoke.get("pass"):
+        if html_smoke.get("status") != "pass":
             raise ValueError(f"Stage 12 HTML smoke failed: {html_smoke}")
         payload.update(
             {
@@ -726,6 +912,17 @@ def main() -> int:
         help="fixed Stage-12 execution profile; changing it creates a distinct checkpoint lineage",
     )
     parser.add_argument(
+        "--upstream-root",
+        type=Path,
+        default=None,
+        help="read-only existing Stage-12 root whose canonical/warm/graph artifacts are symlinked",
+    )
+    parser.add_argument(
+        "--formal-v4",
+        action="store_true",
+        help="enforce the v4 formal per-frame and OakInk first-ten gates in one solver process",
+    )
+    parser.add_argument(
         "--aggregate-only",
         action="store_true",
         help="write the all-selection handoff summary from existing reports without rerunning",
@@ -733,6 +930,13 @@ def main() -> int:
     args = parser.parse_args()
     repo = args.repo_root.expanduser().resolve()
     output_root = args.output_root.expanduser().resolve()
+    if (
+        args.formal_v4
+        and args.execution_profile != "wuji_continuous_sequential_fast_exact_v4_compiled_sign"
+    ):
+        raise ValueError(
+            "--formal-v4 requires wuji_continuous_sequential_fast_exact_v4_compiled_sign"
+        )
     rows = _selection_rows(args.config.expanduser().resolve())
     if args.dataset:
         rows = [row for row in rows if row["dataset"] in set(args.dataset)]
@@ -768,6 +972,10 @@ def main() -> int:
             robot_name="wuji_hand2_beta1_rh",
             profile_name="wuji_continuous_sequential_v1",
             execution_profile_name=str(args.execution_profile),
+            upstream_root=None
+            if args.upstream_root is None
+            else args.upstream_root.expanduser().resolve(),
+            formal_v4=bool(args.formal_v4),
         )
         results.append(result)
         print(

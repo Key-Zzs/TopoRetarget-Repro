@@ -14,6 +14,7 @@ from toporetarget.geometry.signed_distance.compiled_sdf_cpu import (
     compiled_exact_query,
 )
 from toporetarget.geometry.signed_distance.derived_proxy import build_hybrid_signed_distance_backend
+from toporetarget.geometry.signed_distance.sign_cache import LipschitzSignCache
 from toporetarget.geometry.signed_distance.validation import make_synthetic_mesh
 from toporetarget.geometry.signed_distance.winding import generalized_winding_number
 
@@ -77,6 +78,45 @@ def test_compiled_spatial_fd_matches_reference_hybrid_without_cache_pollution() 
     np.testing.assert_allclose(actual.gradient_scene, expected, atol=1e-8, rtol=0.0)
     assert actual.probe_count == 6 * len(points)
     assert np.all(actual.probe_result.sign_source == "EXACT_GENERALIZED_WINDING")
+
+
+def test_compiled_solver_query_matches_hybrid_and_preserves_certified_cache_contract() -> None:
+    vertices, faces = _mesh()
+    reference, _geometry = build_hybrid_signed_distance_backend(vertices, faces)
+    compiled = CompiledSpatialFDBackend(reference, compiled_winding=True)
+    points = np.ascontiguousarray(
+        [[1.0, 0.2, 0.1], [0.2, 0.3, 1.0], [1.1, -0.2, 0.4]], dtype=np.float64
+    )
+    ids = np.asarray([3, 7, 11], dtype=np.int64)
+    reference_cache = LipschitzSignCache(reference.mesh_hash, "test-policy")
+    compiled_cache = LipschitzSignCache(reference.mesh_hash, "test-policy")
+    for pass_index in range(2):
+        expected = reference.query_local(
+            points,
+            sample_ids=ids,
+            sign_cache=reference_cache,
+            evaluation_lineage="compiled-solver-test",
+        )
+        actual = compiled.query_local(
+            points,
+            sample_ids=ids,
+            sign_cache=compiled_cache,
+            evaluation_lineage="compiled-solver-test",
+        )
+        np.testing.assert_allclose(actual.signed_distance, expected.signed_distance, atol=1e-10)
+        np.testing.assert_allclose(actual.unsigned_distance, expected.unsigned_distance, atol=1e-10)
+        np.testing.assert_allclose(actual.closest_points, expected.closest_points, atol=1e-10)
+        np.testing.assert_array_equal(actual.inside, expected.inside)
+        np.testing.assert_array_equal(actual.sign_valid, expected.sign_valid)
+        if pass_index:
+            # Both implementations must reuse the same cache certificate on
+            # the repeated query; exact calls retain their backend identity.
+            np.testing.assert_array_equal(
+                actual.sign_source == "LIPSCHITZ_CERTIFIED_REUSE",
+                expected.sign_source == "LIPSCHITZ_CERTIFIED_REUSE",
+            )
+        else:
+            assert np.all(actual.sign_source == "COMPILED_GENERALIZED_WINDING")
 
 
 def test_compiled_generalized_winding_matches_reference_and_is_deterministic() -> None:

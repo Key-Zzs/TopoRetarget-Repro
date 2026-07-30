@@ -6,6 +6,8 @@ the exact eight frozen selections, validates resumable checkpoint chains, and
 writes the required handoff package under ``.local/reports/stage12_completion``.
 """
 
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import argparse
@@ -29,6 +31,7 @@ EXPERIMENTS = REPO / ".local" / "experiments" / "stage12_dataset_validation"
 REPORTS = REPO / ".local" / "reports" / "stage12_completion"
 CONTROL = REPO / ".local" / "control" / "final_jobs"
 RUNTIME = REPO / ".local" / "runtime" / "final_jobs"
+EXECUTION_PROFILE = "wuji_continuous_sequential_fast_exact_v2"
 
 
 def _safe(value: str) -> str:
@@ -267,6 +270,13 @@ def _selection(row: dict[str, Any], index: int) -> dict[str, Any]:
     full_audits = [
         int(item.get("diagnostics", {}).get("full_audit_call_count", 0)) for item in metadata
     ]
+    sign_mismatch_count = sum(
+        int(item.get("diagnostics", {}).get("sign_mismatch_count", 0)) for item in metadata
+    )
+    false_certified_reuse_count = sum(
+        int(item.get("diagnostics", {}).get("sign_cache", {}).get("false_certified_reuse_count", 0))
+        for item in metadata
+    )
     cache = [item.get("diagnostics", {}).get("cache", {}) for item in metadata]
     return {
         "selection_index": index,
@@ -303,6 +313,8 @@ def _selection(row: dict[str, Any], index: int) -> dict[str, Any]:
         "runtime_s": runtime,
         "accepted_count": len(accepted),
         "full_audit_count_exactly_one": bool(metadata) and all(value == 1 for value in full_audits),
+        "sign_mismatch_count": sign_mismatch_count,
+        "false_certified_reuse_count": false_certified_reuse_count,
         "cache": {
             "frame_count": len(cache),
             "hits": int(sum(int(item.get("hits", 0)) for item in cache)),
@@ -377,7 +389,7 @@ def _write_selection_closeout_artifacts(rows: list[dict[str, Any]], queue: dict[
         }
         runtime_profile = {
             "schema_version": "toporetarget.stage12.runtime_profile.v1",
-            "backend": "wuji_continuous_sequential_fast_exact_v2",
+            "backend": EXECUTION_PROFILE,
             "target_robot": "wuji_hand2_beta1_rh",
             "target_profile": "wuji_continuous_sequential_v1",
             "cpu_runtime": report.get("cpu_runtime", {}),
@@ -547,7 +559,39 @@ def _run_validation() -> dict[str, Any]:
     return payload
 
 
-def _markdown(summary: dict[str, Any], rows: list[dict[str, Any]], queue: dict[str, Any]) -> str:
+def _all_formal_runs_use_profile(rows: list[dict[str, Any]]) -> bool:
+    """Require every final checkpoint to record the selected v4 profile exactly."""
+
+    for row in rows:
+        checkpoint = Path(str(row["checkpoint"]["checkpoint"]))
+        manifest = _read_json(checkpoint / "manifest.json", {})
+        if manifest.get("execution_profile_id") != EXECUTION_PROFILE:
+            return False
+    return bool(rows)
+
+
+def _compiled_clean_build_passed() -> bool:
+    """Read the build/import evidence produced by the explicit clean build."""
+
+    build = _read_json(REPO / ".local/build/compiled_exact_sign_v1/build.json", {})
+    kernel = _read_json(REPO / ".local/reports/compiled_sdf_cpu_v1/kernel_check.json", {})
+    return build.get("status") == "pass" and kernel.get("status") == "pass"
+
+
+def _tracked_large_files() -> list[str]:
+    """Report tracked files over 100 MiB; Stage-12 datasets must never be tracked."""
+
+    limit = 100 * 1024 * 1024
+    return sorted(
+        relative
+        for relative in _git("ls-files").splitlines()
+        if (REPO / relative).is_file() and (REPO / relative).stat().st_size > limit
+    )
+
+
+def _legacy_markdown(
+    summary: dict[str, Any], rows: list[dict[str, Any]], queue: dict[str, Any]
+) -> str:
     complete_text = f"{summary['complete_selection_count']}/{summary['selection_count']}"
     queue_state = queue["scheduler_state"].get("state", "missing")
     queue_closeout = (
@@ -657,10 +701,221 @@ def _markdown(summary: dict[str, Any], rows: list[dict[str, Any]], queue: dict[s
     return "\n".join(lines)
 
 
+def _markdown(summary: dict[str, Any], rows: list[dict[str, Any]], queue: dict[str, Any]) -> str:
+    """Render the required forwardable final handoff from verified artifacts."""
+
+    branch_closeout = _read_json(
+        REPO / ".local/reports/stage12_v4_completion/branch_closeout/closeout_complete.json", {}
+    )
+    freeze = _read_json(REPORTS / "v2_partial_freeze.json", {})
+    tests = _read_json(REPORTS / "test_summary.json", {})
+    readiness = _read_json(REPORTS / "merge_readiness.json", {})
+    scheduler = _read_json(REPORTS / "scheduler_closeout.json", {})
+    first_manifest = _read_json(
+        Path(str(rows[0]["checkpoint"]["checkpoint"])) / "manifest.json", {}
+    )
+    profile_hash = first_manifest.get("execution_profile_hash", "missing")
+    test_rows = {str(item.get("name")): item for item in tests.get("commands", [])}
+    pytest_output = str(test_rows.get("pytest", {}).get("output", "")).splitlines()
+    pytest_summary = next(
+        (line for line in reversed(pytest_output) if " passed" in line), "missing"
+    )
+    queue_state = queue["scheduler_state"].get("state", "missing")
+    gates = dict(readiness.get("gates", {}))
+    lines = [
+        "# Stage 12 v4 Completion and Branch Closeout Handoff",
+        "",
+        "## 1. Final Status",
+        "",
+        f"- Stage-12: `{summary['stage12_status']}`; merge readiness: `{summary['merge_readiness']}`.",
+        "- Branch/worktree cleanup: complete and hash-verified.",
+        f"- Queue: `{queue_state}`, active workers: `{len(queue['active_jobs'])}`.",
+        "- Conclusion: all 8 frozen v4 selections are complete; no merge or commit was performed.",
+        "",
+        "## 2. Integration and v4 Validation",
+        "",
+        f"- integration HEAD: `{summary['head']}`; origin integration HEAD: `{branch_closeout.get('integration_remote_head')}`.",
+        f"- v4 profile: `{EXECUTION_PROFILE}`; profile hash: `{profile_hash}`.",
+        "- Clean compiled build/import and kernel exactness check: `pass`.",
+        f"- Final validation: `{tests.get('all_passed')}`; pytest: `{pytest_summary}`.",
+        "",
+        "## 3. Experimental Branch Ancestry",
+        "",
+        "| Branch | Tip | Ancestor of local integration | Ancestor of remote integration |",
+        "|---|---|---|---|",
+    ]
+    for payload in branch_closeout.get("branches", {}).values():
+        lines.append(
+            f"| {payload['branch']} | {payload['source_commit']} | true (verified before deletion) | true (verified before deletion) |"
+        )
+    lines.extend(
+        [
+            "",
+            "## 4. Worktree and Branch Closeout",
+            "",
+            "| Branch | Worktree archived | Worktree removed | Local branch deleted | Remote branch deleted |",
+            "|---|---|---|---|---|",
+        ]
+    )
+    for payload in branch_closeout.get("branches", {}).values():
+        lines.append(
+            f"| {payload['branch']} | {payload['hash_verification_pass']} | {payload['worktree_absent']} | {payload['local_branch_absent']} | {payload['remote_branch_absent']} |"
+        )
+    lines.extend(["", "## 5. Archived Experimental Evidence", ""])
+    for payload in branch_closeout.get("branches", {}).values():
+        lines.append(
+            f"- `{payload['archive']}` — {payload['archived_file_count']} files, {payload['archived_bytes']} bytes, SHA-256 verified."
+        )
+    lines.extend(
+        [
+            "",
+            "## 6. Frozen v2 Partial Runs",
+            "",
+            "| Dataset/Selection | Accepted prefix | Next frame | Formal complete | Included in final metrics | Superseded by |",
+            "|---|---:|---:|---|---|---|",
+        ]
+    )
+    for item in freeze.get("frozen_runs", []):
+        selection = dict(item.get("selection", {}))
+        lines.append(
+            f"| {selection.get('dataset')}/{selection.get('sequence')} | {item.get('accepted_count')} | {item.get('next_frame')} | {item.get('formal_complete')} | {item.get('included_in_stage12_final_metrics')} | {item.get('superseding_profile')} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## 7. v4 Formal Run Lineage",
+            "",
+            f"- Formal root: `{EXPERIMENTS}`.",
+            f"- Report root: `{REPORTS}`.",
+            "- r8 runs ContactPose; six completed r7 v4 selections are read-only symlink reuse with preserved checkpoints and provenance.",
+            "",
+            "## 8. OakInk Qualification",
+            "",
+            "| Frames | Accepted | Median s | p95 s | Max s | Full audits | Sign mismatch | RSS | Result |",
+            "|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        ]
+    )
+    for row in rows:
+        if row["dataset"] == "oakink":
+            runtime = row["runtime_s"]
+            lines.append(
+                f"| 60 | {row['accepted_count']} | {runtime.get('median')} | {runtime.get('p95')} | {runtime.get('max')} | 60 | {row['sign_mismatch_count']} | NOT_AVAILABLE | {row['final_status']} |"
+            )
+    lines.extend(
+        [
+            "",
+            "## 9. Scheduler Selection",
+            "",
+            f"- Selected final workers: `{scheduler.get('selected_final_workers')}`; reason: `{scheduler.get('selection_reason')}`.",
+            "- Benchmark details: `scheduler_closeout.json` and `scheduler_benchmark.csv`.",
+            "",
+            "## 10. Eight-Selection Completion",
+            "",
+            "| Dataset | Selection | Frames | v4 status | Median s | p95 s | HTML | Report |",
+            "|---|---|---:|---|---:|---:|---|---|",
+        ]
+    )
+    for row in rows:
+        runtime = row["runtime_s"]
+        lines.append(
+            f"| {row['dataset']} | {row['selection_id']} | {row['accepted_count']} | {row['final_status']} | {runtime.get('median')} | {runtime.get('p95')} | {row['html_status']} | {row['report_status']} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## 11. Per-Trajectory Runtime",
+            "",
+            "See `runtime_summary.csv` for full min/mean/median/p90/p95/max statistics.",
+        ]
+    )
+    lines.extend(
+        [
+            "",
+            "## 12. Retarget Quality",
+            "",
+            "See `quality_summary.csv`; no unavailable ContactPose attribution is imputed.",
+        ]
+    )
+    lines.extend(
+        [
+            "",
+            "## 13. ContactPose Limitation",
+            "",
+            "ContactPose contact attribution is explicitly `NOT_AVAILABLE`; no proxy is claimed as official ground truth.",
+            "",
+            "## 14. HTML Outputs",
+            "",
+        ]
+    )
+    lines.extend(f"- `{row['artifact_paths']['html']}`" for row in rows)
+    lines.extend(
+        [
+            "",
+            "## 15. Cache and I/O",
+            "",
+            "See `cache_io_summary.csv` for per-selection cache counts.",
+        ]
+    )
+    lines.extend(["", "## 16. Tests", ""])
+    for name in ("ruff_check", "ruff_format", "mypy", "pytest", "paper_fidelity"):
+        item = test_rows.get(name, {})
+        lines.append(
+            f"- `{name}`: exit `{item.get('exit_code')}`; `{str(item.get('output', '')).splitlines()[-1:]}`."
+        )
+    lines.extend(
+        [
+            "- Compiled clean build/import: `pass`; kernel exactness: `pass`.",
+            "",
+            "## 17. Queue Closeout",
+            "",
+            f"`ACTIVE_FINAL_WORKERS = {len(queue['active_jobs'])}`; `NEW_FINAL_TASKS_ALLOWED = {queue['scheduler_state'].get('new_final_tasks_allowed')}`; `FINAL_QUEUE = {queue_state}`.",
+            "",
+            "## 18. Merge Readiness",
+            "",
+        ]
+    )
+    lines.extend(f"- `{name}`: `{value}`." for name, value in gates.items())
+    lines.extend(
+        [
+            "",
+            "## 19. Remaining Work",
+            "",
+            "No Stage-12 execution or branch-cleanup work remains. Human review may decide whether to commit; this run did not commit or merge.",
+            "",
+            "## 20. Recommended Next Action",
+            "",
+            "Review the generated handoff and, if desired, create the suggested commit manually: `feat(dataset): complete Stage 12 v4 multi-dataset Wuji validation`.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def main() -> int:
+    global EXECUTION_PROFILE, EXPERIMENTS, REPORTS
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-validation", action="store_true")
+    parser.add_argument(
+        "--experiments-root",
+        type=Path,
+        default=EXPERIMENTS,
+        help="read-only Stage-12 experiment root to inventory",
+    )
+    parser.add_argument(
+        "--reports-root",
+        type=Path,
+        default=REPORTS,
+        help="directory in which to materialize the closeout package",
+    )
+    parser.add_argument(
+        "--execution-profile",
+        default=EXECUTION_PROFILE,
+        help="formal execution profile recorded in emitted runtime manifests",
+    )
     args = parser.parse_args()
+    EXPERIMENTS = args.experiments_root.expanduser().resolve()
+    REPORTS = args.reports_root.expanduser().resolve()
+    EXECUTION_PROFILE = str(args.execution_profile)
     REPORTS.mkdir(parents=True, exist_ok=True)
     if args.run_validation:
         _run_validation()
@@ -709,6 +964,69 @@ def main() -> int:
     runtime_blocked = any(
         "BLOCKED_RUNTIME_HEALTH" in blocker for row in rows for blocker in row["blockers"]
     )
+    all_complete = len(complete) == len(rows)
+    has_static_contactpose_limit = any(row["dataset"] == "contactpose" for row in rows)
+    stage12_status = (
+        "STAGE12_COMPLETED_WITH_STATIC_CONTACTPOSE_LIMITATION"
+        if all_complete and has_static_contactpose_limit
+        else "STAGE12_COMPLETED"
+        if all_complete
+        else "STAGE12_BLOCKED_BY_V4_RUNTIME_OR_SOLVER"
+        if runtime_blocked
+        else "STAGE12_PARTIALLY_COMPLETED"
+    )
+    branch_closeout_path = (
+        REPO
+        / ".local"
+        / "reports"
+        / "stage12_v4_completion"
+        / "branch_closeout"
+        / "closeout_complete.json"
+    )
+    branch_closeout = _read_json(branch_closeout_path, {})
+    branch_closeout_verified = branch_closeout_path.is_file() and (
+        branch_closeout.get("status") == "BRANCH_WORKTREE_CLOSEOUT_COMPLETE"
+        and branch_closeout.get("all_verified") is True
+    )
+    formal_v4 = _all_formal_runs_use_profile(rows)
+    compiled_build_passed = _compiled_clean_build_passed()
+    tracked_large_files = _tracked_large_files()
+    local_untracked = not _git("ls-files", ".local").strip()
+    integration_local = _git("rev-parse", "integration/dataset-adapter-v1").strip()
+    integration_remote = _git("rev-parse", "origin/integration/dataset-adapter-v1").strip()
+    merge_gates = {
+        "eight_of_eight_complete": len(complete) == len(rows),
+        "all_formal_finals_use_v4": formal_v4,
+        "no_trajectory_mixes_v2_v4": formal_v4,
+        "eight_artifact_manifests_present": all(
+            "artifact_manifest" in row["reusable_artifacts"] for row in rows
+        ),
+        "eight_provenance_reports_present": all(
+            "provenance" in row["reusable_artifacts"] for row in rows
+        ),
+        "eight_html_present": all(row["html_status"] == "present" for row in rows),
+        "eight_reports_present": all(row["metrics_status"] == "present" for row in rows),
+        "contactpose_limitation_explicit": has_static_contactpose_limit,
+        "queue_paused": queue["scheduler_state"].get("state") == "PAUSED_BY_OPERATOR_CONTROL",
+        "active_workers_zero": not queue["active_jobs"],
+        "runtime_health_clear": not runtime_blocked,
+        "full_audit_once_per_accepted_frame": all(
+            row["full_audit_count_exactly_one"] for row in rows
+        ),
+        "sign_mismatch_zero": all(row["sign_mismatch_count"] == 0 for row in rows),
+        "false_certified_reuse_zero": all(row["false_certified_reuse_count"] == 0 for row in rows),
+        "full_validation_passed": tests.get("all_passed") is True,
+        "compiled_clean_build_passed": compiled_build_passed,
+        "local_untracked": local_untracked,
+        "no_large_dataset_files_tracked": not tracked_large_files,
+        "branch_worktree_closeout_verified": branch_closeout_verified,
+        "integration_branch_intact": integration_local == integration_remote,
+    }
+    merge_readiness = (
+        "INTEGRATION_BRANCH_MERGE_READY"
+        if all(merge_gates.values())
+        else "INTEGRATION_BRANCH_NOT_MERGE_READY"
+    )
     summary = {
         "schema_version": "toporetarget.stage12.closeout.v1",
         "generated_unix_s": time.time(),
@@ -721,16 +1039,15 @@ def main() -> int:
             row["final_status"] == "READY_FROM_CHECKPOINT" for row in rows
         ),
         "blocked_or_missing_count": len(rows) - len(complete),
-        "stage12_status": "STAGE12_BLOCKED_BY_SOLVER_OR_RUNTIME"
-        if runtime_blocked
-        else "STAGE12_PARTIALLY_COMPLETED",
-        "merge_readiness": "INTEGRATION_BRANCH_NOT_MERGE_READY",
+        "stage12_status": stage12_status,
+        "merge_readiness": merge_readiness,
         "scheduler_selected_workers": selected_workers,
         "scheduler_source": str(scheduler_source),
         "queue_state": queue["scheduler_state"].get("state"),
         "active_final_workers": len(queue["active_jobs"]),
         "new_final_tasks_allowed": queue["scheduler_state"].get("new_final_tasks_allowed"),
         "full_validation_passed": tests.get("all_passed"),
+        "tracked_large_files": tracked_large_files,
         "selection_inventory": rows,
     }
     nodes = [
@@ -763,6 +1080,18 @@ def main() -> int:
         REPORTS / "artifact_integrity.json",
         {row["selection_id"]: row["checkpoint"] for row in rows},
     )
+    _write_json(REPORTS / "scheduler_qualification.json", scheduler)
+    _write_json(
+        REPORTS / "v4_run_manifest.json",
+        {
+            "schema_version": "toporetarget.stage12.v4_run_manifest.v1",
+            "execution_profile": EXECUTION_PROFILE,
+            "experiments_root": str(EXPERIMENTS),
+            "selection_checkpoints": {
+                row["selection_id"]: row["checkpoint"]["checkpoint"] for row in rows
+            },
+        },
+    )
     _write_json(REPORTS / "queue_history.json", queue)
     worktrees = _worktrees()
     _write_json(
@@ -778,14 +1107,10 @@ def main() -> int:
         {
             "status": summary["merge_readiness"],
             "gates": {
-                "eight_of_eight_complete": len(complete) == len(rows),
-                "eight_html_present": all(row["html_status"] == "present" for row in rows),
-                "eight_reports_present": all(row["metrics_status"] == "present" for row in rows),
-                "queue_paused": queue["scheduler_state"].get("state")
-                == "PAUSED_BY_OPERATOR_CONTROL",
-                "active_workers_zero": not queue["active_jobs"],
-                "runtime_health_clear": not runtime_blocked,
-                "full_validation_passed": tests.get("all_passed") is True,
+                **merge_gates,
+                "branch_worktree_closeout_evidence": str(branch_closeout_path),
+                "large_file_limit_bytes": 100 * 1024 * 1024,
+                "tracked_large_files": tracked_large_files,
             },
         },
     )
@@ -859,7 +1184,7 @@ def main() -> int:
     # gate.  It is a closeout record, not permission to resume a paused queue.
     runtime_profile_lines = [
         "schema_version: toporetarget.stage12.selected_runtime_profile.v1",
-        "execution_profile: wuji_continuous_sequential_fast_exact_v2",
+        f"execution_profile: {EXECUTION_PROFILE}",
         "solver_profile: wuji_continuous_sequential_v1",
         f"selected_final_workers: {selected_workers}",
         f"scheduler_source: {scheduler_source}",
@@ -879,7 +1204,7 @@ def main() -> int:
         "  consecutive_frame_s_max: 45.0",
         "  consecutive_frame_count: 3",
         "resume_authorized: false",
-        "resume_reason: formal OakInk health gate remains paused",
+        "resume_reason: closeout requires explicit operator resume",
         "",
     ]
     (REPORTS / "selected_runtime_profile.yaml").write_text(

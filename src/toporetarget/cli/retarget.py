@@ -48,6 +48,7 @@ from toporetarget.retarget.final_refinement import (
     load_final_trajectory,
     load_robot_surface_samples,
     prepare_refinement_resources,
+    prepare_refinement_runtime_backends,
     save_final_trajectory,
 )
 from toporetarget.retarget.final_visualization import (
@@ -1249,6 +1250,7 @@ def _run_checkpoint_refinement(
         sdf_tree_leaf_size=execution.sdf_tree_leaf_size,
         geometry_artifact_root=checkpoint_root.parents[3] / "geometry",
     )
+    runtime_backends = prepare_refinement_runtime_backends(resources, execution)
     source_frame_offset = _source_frame_offset(canonical)
     signature = _refinement_input_signature(
         canonical,
@@ -1400,6 +1402,7 @@ def _run_checkpoint_refinement(
             warm_artifact_hash=artifact_hash(warm_start),
             graph_artifact_hash=interaction_artifact_hash(graph_path),
             resources=resources,
+            runtime_backends=runtime_backends,
             frame_callback=on_frame,
             source_frame_offset=source_frame_offset,
             execution_profile=execution,

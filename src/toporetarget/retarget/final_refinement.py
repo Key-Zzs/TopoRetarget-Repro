@@ -1502,7 +1502,9 @@ class _FrameContext:
         self.cache.put("candidate_points", np.asarray(points, dtype=np.float64).copy())
         return np.asarray(points, dtype=np.float64).copy()
 
-    def collision_points_jacobian_numpy(self, value: np.ndarray) -> np.ndarray:
+    def collision_points_jacobian_numpy(
+        self, value: np.ndarray, *, point_ids: np.ndarray | None = None
+    ) -> np.ndarray:
         """Return the exact batched point Jacobian without per-point autograd.
 
         The URDF chain gives each collision point's qpos derivative directly
@@ -1516,15 +1518,31 @@ class _FrameContext:
         import torch
 
         current = np.asarray(value, dtype=np.float64).reshape(-1)
+        if point_ids is None:
+            selected = np.arange(self.surface.count, dtype=np.int64)
+        else:
+            selected = np.asarray(point_ids, dtype=np.int64).reshape(-1)
+            if (
+                np.any(selected < 0)
+                or np.any(selected >= self.surface.count)
+                or len(np.unique(selected)) != len(selected)
+            ):
+                raise ValueError("collision Jacobian point IDs must be unique surface indices")
         _, _, qpos, _ = self.unpack(current)
         qpos = np.asarray(qpos, dtype=np.float64)
         fk = self.robot_model.forward_kinematics_reference(qpos)
-        points_base = np.empty((self.surface.count, 3), dtype=np.float64)
+        points_base = np.empty((len(selected), 3), dtype=np.float64)
         qpos_jacobian_base = np.zeros(
-            (self.surface.count, 3, self.robot_model.num_dofs), dtype=np.float64
+            (len(selected), 3, self.robot_model.num_dofs), dtype=np.float64
         )
         for geometry_index, start, stop in self.geometry_slices:
-            local = np.asarray(self.surface_points_local[start:stop], dtype=np.float64)
+            selected_rows = np.flatnonzero((selected >= start) & (selected < stop))
+            if not len(selected_rows):
+                continue
+            local_indices = selected[selected_rows] - start
+            local = np.asarray(self.surface_points_local[start:stop], dtype=np.float64)[
+                local_indices
+            ]
             local_transform = np.asarray(
                 self.surface_local_transforms[geometry_index], dtype=np.float64
             )
@@ -1532,7 +1550,7 @@ class _FrameContext:
             link_name = self.surface_link_names[geometry_index]
             link = np.asarray(fk[link_name], dtype=np.float64)
             points = local_points @ link[:3, :3].T + link[:3, 3]
-            points_base[start:stop] = points
+            points_base[selected_rows] = points
             for joint in self._surface_joint_paths[geometry_index]:
                 parent = np.asarray(fk[joint.parent], dtype=np.float64)
                 origin = parent @ np.asarray(joint.origin, dtype=np.float64)
@@ -1548,7 +1566,7 @@ class _FrameContext:
                 else:  # pragma: no cover - fixed joints are excluded above
                     continue
                 q_index = int(self.robot_model._dof_index[joint.name])
-                qpos_jacobian_base[start:stop, :, q_index] += derivative
+                qpos_jacobian_base[selected_rows, :, q_index] += derivative
 
         base_delta = torch.as_tensor(current[:6], dtype=torch.float64)
         seed_rotation = torch.as_tensor(self.seed_base[:3, :3], dtype=torch.float64)
@@ -1574,9 +1592,7 @@ class _FrameContext:
         qpos_jacobian_scene = np.einsum(
             "ab,mbd->mad", rotation_np, qpos_jacobian_base, optimize=True
         )
-        result = np.zeros(
-            (self.surface.count, 3, self.variable_size_without_slack), dtype=np.float64
-        )
+        result = np.zeros((len(selected), 3, self.variable_size_without_slack), dtype=np.float64)
         result[:, :, :6] = base_jacobian_np
         result[:, :, 6:] = qpos_jacobian_scene
         return result
@@ -1610,7 +1626,9 @@ class _FrameContext:
             return cached
         points = self.candidate_points(current)[query_ids]
         with self.timers.measure("solver_sdf"):
-            if isinstance(self.sdf, HybridSignedDistanceBackend) and self.sign_cache is not None:
+            if self.sign_cache is not None and isinstance(
+                self.sdf, (HybridSignedDistanceBackend, CompiledSpatialFDBackend)
+            ):
                 result = self.sdf.query_scene(
                     points,
                     self.object_pose_scene,
@@ -1664,7 +1682,7 @@ class _FrameContext:
         if backend == "analytic_urdf_spatial_v2":
             # Use the URDF spatial Jacobian for qpos and a fixed six-coordinate
             # autograd derivative for the base Exp-map.
-            jac_np = self.collision_points_jacobian_numpy(current)[query_ids]
+            jac_np = self.collision_points_jacobian_numpy(current, point_ids=query_ids)
         elif backend == "reference_batched_torch_v1":
             jac_np = self.collision_points_jacobian_reference_numpy(current)[query_ids]
         else:
@@ -2306,11 +2324,20 @@ def refine_frame(
         solver_attempt_trace.append(attempt)
         diagnostics.update(solve_diag)
         independent = _independent_constraints(context, result.x, query_set)
-        # Active-set discovery is distinct from final acceptance. It may scan
-        # the formal surface after each round, but it is never counted as the
-        # one independent final audit persisted for an accepted frame.
+        # Active-set discovery is distinct from final acceptance.  For the
+        # compiled exact spatial backend, it may use the solver's exact
+        # closest-point/winding query to discover candidates; final acceptance
+        # below still performs exactly one independent reference-SDF audit.
+        # This avoids paying the expensive reference full-surface scan twice
+        # per frame without weakening the fail-closed acceptance gate.
+        discovery_sdf = (
+            context.sdf
+            if isinstance(context.sdf, CompiledSpatialFDBackend)
+            else context.reference_sdf
+        )
+        discovery_backend_id = str(discovery_sdf.backend_id)
         with context.timers.measure("active_set_discovery"):
-            full = context.reference_sdf.query_scene(
+            full = discovery_sdf.query_scene(
                 context.candidate_points(result.x, query_set.query_hash),
                 context.object_pose_scene,
             )
@@ -2449,6 +2476,7 @@ def refine_frame(
     diagnostics["full_audit_call_count"] = final_full_audit_count
     diagnostics["full_audit_call_reasons"] = ["frame_final_independent_acceptance"]
     diagnostics["active_set_discovery_audit_count"] = discovery_audit_count
+    diagnostics["active_set_discovery_backend_id"] = discovery_backend_id
     diagnostics["active_query_call_count"] = int(context.active_query_call_count)
     diagnostics["active_set_continuation"] = continuation_trace
     diagnostics["solver_attempt_trace"] = solver_attempt_trace
@@ -3287,6 +3315,17 @@ class RefinementResources:
     build_counts: dict[str, int]
 
 
+@dataclass
+class RefinementRuntimeBackends:
+    """Persistent exact-sign helpers shared by every frame of one job."""
+
+    solver_sdf: Any
+    compiled_spatial_fd_backend: CompiledSpatialFDBackend | None
+    sign_cache: LipschitzSignCache | None
+    sdf_report: dict[str, Any]
+    build_counts: dict[str, int]
+
+
 def prepare_refinement_resources(
     sequence: Any,
     graph: InteractionGraphTrajectory,
@@ -3359,6 +3398,67 @@ def prepare_refinement_resources(
             ),
             "derived_proxy_build_count": 1,
             "bvh_build_count": 1,
+        },
+    )
+
+
+def prepare_refinement_runtime_backends(
+    resources: RefinementResources, execution_profile: Any | None
+) -> RefinementRuntimeBackends:
+    """Create immutable compiled handles and certified cache once per job."""
+
+    ambiguity_fd_backend = str(
+        getattr(execution_profile, "ambiguity_fd_backend", "fast_exact_v2_python")
+    )
+    sign_backend = str(getattr(execution_profile, "sign_backend", "exact_winding_per_query_v1"))
+    leaf_size = int(getattr(execution_profile, "sdf_tree_leaf_size", 32))
+    report = dict(resources.sdf_report)
+    compiled: CompiledSpatialFDBackend | None = None
+    if ambiguity_fd_backend in {
+        "compiled_spatial_central_fd_v1",
+        "compiled_spatial_central_fd_winding_v1",
+    }:
+        if not isinstance(resources.reference_sdf, HybridSignedDistanceBackend):
+            raise ValueError("compiled spatial-FD backend requires the hybrid reference SDF")
+        try:
+            compiled = CompiledSpatialFDBackend(
+                resources.reference_sdf,
+                leaf_size=leaf_size,
+                compiled_winding=(ambiguity_fd_backend == "compiled_spatial_central_fd_winding_v1"),
+            )
+        except (CompiledSDFUnavailable, ImportError, OSError) as exc:
+            report["compiled_spatial_fd_fallback"] = str(exc)
+    sign_cache = (
+        LipschitzSignCache(resources.mesh_hash, _stable_hash(resources.geometry_policy))
+        if sign_backend == "lipschitz_certified_cache_with_exact_fallback_v1"
+        else None
+    )
+    solver_sdf: Any = resources.sdf
+    if (
+        getattr(execution_profile, "exact_closest_point_backend", "")
+        == "compiled_object_local_bvh_v1"
+    ):
+        if compiled is None:
+            report["compiled_solver_sdf_fallback"] = "compiled backend unavailable"
+        else:
+            # Values remain exact hybrid SDF values; this only moves the
+            # object-local closest-point and generalized-winding evaluation to
+            # the persistent compiled handles.  Full-surface audits continue
+            # to use resources.reference_sdf independently.
+            solver_sdf = compiled
+            report["selected"] = "compiled_hybrid_exact_solver_only_v1"
+            report["compiled_solver_sdf"] = compiled.describe()
+    return RefinementRuntimeBackends(
+        solver_sdf=solver_sdf,
+        compiled_spatial_fd_backend=compiled,
+        sign_cache=sign_cache,
+        sdf_report=report,
+        build_counts={
+            "compiled_bvh_build_count": int(compiled is not None),
+            "compiled_winding_handle_build_count": int(
+                compiled is not None and compiled.winding_handle is not None
+            ),
+            "sign_cache_build_count": int(sign_cache is not None),
         },
     )
 
@@ -3464,6 +3564,7 @@ def build_final_trajectory(
     graph_artifact_hash: str | None = None,
     continue_on_failure: bool = False,
     resources: RefinementResources | None = None,
+    runtime_backends: RefinementRuntimeBackends | None = None,
     frame_callback: Callable[[int, FinalFrameResult, _FrameContext], None] | None = None,
     pause_check: Callable[[int], bool] | None = None,
     source_frame_offset: int = 0,
@@ -3521,10 +3622,6 @@ def build_final_trajectory(
             execution_profile, "signed_distance_gradient", "legacy_surface_normal_optimizer_fd_v1"
         )
     )
-    sign_backend = str(getattr(execution_profile, "sign_backend", "exact_winding_per_query_v1"))
-    ambiguity_fd_backend = str(
-        getattr(execution_profile, "ambiguity_fd_backend", "fast_exact_v2_python")
-    )
     resources = resources or prepare_refinement_resources(
         sequence,
         graph,
@@ -3537,29 +3634,13 @@ def build_final_trajectory(
     object_vertices = resources.object_vertices
     object_faces = resources.object_faces
     reference_sdf = resources.reference_sdf
-    sdf = resources.sdf
-    sdf_report = resources.sdf_report
-    compiled_spatial_fd_backend: CompiledSpatialFDBackend | None = None
-    if ambiguity_fd_backend in {
-        "compiled_spatial_central_fd_v1",
-        "compiled_spatial_central_fd_winding_v1",
-    }:
-        if not isinstance(reference_sdf, HybridSignedDistanceBackend):
-            raise ValueError("compiled spatial-FD backend requires the hybrid reference SDF")
-        try:
-            compiled_spatial_fd_backend = CompiledSpatialFDBackend(
-                reference_sdf,
-                leaf_size=sdf_tree_leaf_size,
-                compiled_winding=(ambiguity_fd_backend == "compiled_spatial_central_fd_winding_v1"),
-            )
-        except (CompiledSDFUnavailable, ImportError, OSError) as exc:
-            # Import/build failure never changes the math or causes a crash:
-            # the v2 Python exact path remains the safe execution fallback.
-            sdf_report = {**sdf_report, "compiled_spatial_fd_fallback": str(exc)}
-    sign_cache: LipschitzSignCache | None = None
-    if sign_backend == "lipschitz_certified_cache_with_exact_fallback_v1":
-        sign_profile_hash = _stable_hash(resources.geometry_policy)
-        sign_cache = LipschitzSignCache(resources.mesh_hash, sign_profile_hash)
+    runtime_backends = runtime_backends or prepare_refinement_runtime_backends(
+        resources, execution_profile
+    )
+    sdf = runtime_backends.solver_sdf
+    sdf_report = runtime_backends.sdf_report
+    compiled_spatial_fd_backend = runtime_backends.compiled_spatial_fd_backend
+    sign_cache = runtime_backends.sign_cache
     stop = warm.frame_count if end_frame is None else int(end_frame)
     if start_frame < 0 or stop <= start_frame or stop > warm.frame_count:
         raise ValueError(f"invalid frame range [{start_frame},{stop})")
@@ -4650,6 +4731,7 @@ def build_final_trajectory(
                 "graph_load_count": 1,
                 "source_feature_build_count": len(frames),
                 **resources.build_counts,
+                **runtime_backends.build_counts,
             },
             "full_audit_in_inner_callbacks": False,
             "point_jacobian_backend": point_jacobian_backend,
@@ -4701,6 +4783,7 @@ __all__ = [
     "PaperRefinementWeights",
     "RefinementCoordinateProfile",
     "RefinementResources",
+    "RefinementRuntimeBackends",
     "RefinementSolverProfile",
     "regularization_profile_for_solver",
     "SOLVER_PROFILE_ID",
@@ -4718,6 +4801,7 @@ __all__ = [
     "map_previous_state_to_seed",
     "_apply_continuity_gate",
     "prepare_refinement_resources",
+    "prepare_refinement_runtime_backends",
     "save_final_trajectory",
     "so3_exp",
     "so3_log",

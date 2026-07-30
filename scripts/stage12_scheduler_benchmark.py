@@ -22,7 +22,7 @@ from typing import Any
 
 REPO = Path(__file__).resolve().parents[1]
 ENV_PYTHON = Path("/home/deepcybo/miniconda3/envs/topo-retarget/bin/python")
-PROFILE = "wuji_continuous_sequential_fast_exact_v2"
+PROFILE = "wuji_continuous_sequential_fast_exact_v4_compiled_sign"
 
 
 def _write(path: Path, payload: Any) -> None:
@@ -274,22 +274,11 @@ def parent(args: argparse.Namespace) -> int:
         / "stage12_scheduler_closeout"
         / time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     )
-    dex = (
-        REPO
-        / ".local"
-        / "experiments"
-        / "stage12_dataset_validation"
-        / "dexycb"
-        / "dexycb_20200813-subject-02_20200813_154234"
-    )
-    oak = (
-        REPO
-        / ".local"
-        / "experiments"
-        / "stage12_dataset_validation"
-        / "oakink"
-        / "image_sequence_A01001_0001_0002_2021-09-26-20-01-50_view0"
-    )
+    dex = Path(args.source_a).resolve()
+    oak = Path(args.source_b).resolve()
+    for label, source in (("source_a", dex), ("source_b", oak)):
+        if not (source / "checkpoints").is_dir():
+            raise ValueError(f"{label} is not a Stage-12 formal selection root: {source}")
     resume_final_jobs(
         REPO, max_final_workers=2, reason="Stage-12 isolated scheduler A/B/C measurement"
     )
@@ -362,6 +351,12 @@ def main() -> int:
     )
     parent_parser.add_argument("--start-frame", type=int, default=5)
     parent_parser.add_argument("--stop-after-frame", type=int, default=14)
+    parent_parser.add_argument(
+        "--source-a", type=Path, required=True, help="first completed v4 formal selection root"
+    )
+    parent_parser.add_argument(
+        "--source-b", type=Path, required=True, help="second completed v4 formal selection root"
+    )
     args = parser.parse_args()
     return worker(args) if args.command == "worker" else parent(args)
 
