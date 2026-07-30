@@ -150,7 +150,7 @@ class HOCapAdapterV1(Stage12AdapterBase):
             raise Stage12AdapterError(f"HOCap sequence has no right hand: {row['sequence']}")
         hand_index = 0 if sides[0] == "right" else 1
         pose_values = np.asarray(poses_m[hand_index, start:stop], dtype=np.float64)
-        valid = np.isfinite(pose_values).all(axis=1)
+        valid = np.asarray(np.isfinite(pose_values).all(axis=1), dtype=bool)
         if not valid.all():
             raise Stage12AdapterError(
                 "HOCap selected clip contains invalid right MANO frames: "
@@ -187,7 +187,9 @@ class HOCapAdapterV1(Stage12AdapterBase):
             poses = np.stack(
                 [pose_hocap_qxyzw(value) for value in object_pose_values[:, object_index]], axis=0
             )
-            object_valid = np.isfinite(object_pose_values[:, object_index]).all(axis=1)
+            object_valid = np.asarray(
+                np.isfinite(object_pose_values[:, object_index]).all(axis=1), dtype=bool
+            )
             objects.append(
                 make_object(
                     object_id=object_id,
