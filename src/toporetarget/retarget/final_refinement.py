@@ -1718,6 +1718,16 @@ class _FrameContext:
                             )
                         probe_result = compiled.probe_result
                         spatial = compiled.gradient_scene
+                        if self.compiled_spatial_fd_backend.compiled_winding:
+                            stats: dict[str, Any] = dict(
+                                self.compiled_spatial_fd_backend.probe_sign_stats
+                            )
+                            stats["reuse_rate"] = (
+                                float(stats["certified_probe_reuse"] / stats["total_fd_probes"])
+                                if stats["total_fd_probes"]
+                                else 0.0
+                            )
+                            gradient_diagnostics["compiled_exact_sign"] = stats
                     else:
                         axes = np.eye(3, dtype=np.float64)
                         probes = np.concatenate(
@@ -3530,12 +3540,17 @@ def build_final_trajectory(
     sdf = resources.sdf
     sdf_report = resources.sdf_report
     compiled_spatial_fd_backend: CompiledSpatialFDBackend | None = None
-    if ambiguity_fd_backend == "compiled_spatial_central_fd_v1":
+    if ambiguity_fd_backend in {
+        "compiled_spatial_central_fd_v1",
+        "compiled_spatial_central_fd_winding_v1",
+    }:
         if not isinstance(reference_sdf, HybridSignedDistanceBackend):
             raise ValueError("compiled spatial-FD backend requires the hybrid reference SDF")
         try:
             compiled_spatial_fd_backend = CompiledSpatialFDBackend(
-                reference_sdf, leaf_size=sdf_tree_leaf_size
+                reference_sdf,
+                leaf_size=sdf_tree_leaf_size,
+                compiled_winding=(ambiguity_fd_backend == "compiled_spatial_central_fd_winding_v1"),
             )
         except (CompiledSDFUnavailable, ImportError, OSError) as exc:
             # Import/build failure never changes the math or causes a crash:
@@ -4188,8 +4203,30 @@ def build_final_trajectory(
                         "sdf_batches_for_jacobian",
                         "surface_normal_last_resort_count",
                         "ambiguity_reason_counts",
+                        "compiled_exact_sign",
                     )
                 },
+                "compiled_exact_sign": (
+                    {}
+                    if context.compiled_spatial_fd_backend is None
+                    else {
+                        **context.compiled_spatial_fd_backend.probe_sign_stats,
+                        "reuse_rate": (
+                            float(
+                                context.compiled_spatial_fd_backend.probe_sign_stats[
+                                    "certified_probe_reuse"
+                                ]
+                                / context.compiled_spatial_fd_backend.probe_sign_stats[
+                                    "total_fd_probes"
+                                ]
+                            )
+                            if context.compiled_spatial_fd_backend.probe_sign_stats[
+                                "total_fd_probes"
+                            ]
+                            else 0.0
+                        ),
+                    }
+                ),
                 "sign_cache": frame_result.jacobian_diagnostics.get("sign_cache", {}),
                 "timers": frame_result.jacobian_diagnostics.get("timers", {}),
                 "window_joint": frame_result.jacobian_diagnostics.get("window_joint"),
@@ -4225,6 +4262,7 @@ def build_final_trajectory(
                         "sdf_batches_for_jacobian",
                         "surface_normal_last_resort_count",
                         "ambiguity_reason_counts",
+                        "compiled_exact_sign",
                     )
                 },
                 "sign_cache": frame_result.jacobian_diagnostics.get("sign_cache", {}),

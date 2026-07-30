@@ -381,3 +381,11 @@ and real-frame strict-acceptance gates pass.
 The v2 BVH, spatial gradient, 3D fallback, and Lipschitz sign cache are
 paper-unspecified execution engineering. They preserve the paper-core objective,
 constraints, QuerySet semantics, float64 execution, and independent audit.
+
+## P4 compiled exact-sign boundary
+
+The compiled winding and certified FD-probe reuse path is paper-external
+execution engineering. It preserves the generalized-winding definition,
+float64 contract, solver and audit; uncertain classifications use the qualified
+reference fallback. It is experimental, not author-exact, and not a Stage-12
+default.

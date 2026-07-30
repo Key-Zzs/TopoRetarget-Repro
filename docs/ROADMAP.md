@@ -92,3 +92,10 @@ does not establish RL, real-time, cross-subject, or author-exact validity.
 
 The portable compiled CPU probe kernel remains experimental: its measured
 five-frame overall benefit is below the merge threshold.
+
+# P4 certified compiled exact sign
+
+P4 adds optional exact float64 compiled generalized winding and certified
+FD-probe sign reuse. Near-threshold winding retains the qualified reference
+fallback. It is experimental and non-default pending fixed-frame and 60-frame
+qualification; Stage-12 remains untouched.

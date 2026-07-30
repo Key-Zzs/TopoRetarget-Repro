@@ -80,3 +80,8 @@ window fallback 被关闭，五帧 repair/shadow 与 sequential gate 隔离；�
 # P3 compiled 歧义 spatial-FD
 
 portable compiled CPU probe kernel 仍为实验项：五帧整体收益未达到合并门槛。
+
+# P4 认证式 compiled exact sign
+
+P4 增加可选的 float64 compiled generalized winding 和认证式 FD-probe 符号复用。
+阈值附近仍回退到已验证 reference；在完成五帧和 60 帧验收前保持实验性、非默认，且不触及 Stage-12。
