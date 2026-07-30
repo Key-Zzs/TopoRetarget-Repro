@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import resource
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -140,6 +141,8 @@ def frame_checkpoint_payload(
             frame.warm_breakdown.e_im,
             frame.warm_breakdown.e_bone,
             frame.warm_breakdown.total,
+            frame.breakdown.e_sdf,
+            frame.breakdown.weighted_e_sdf,
         ],
         dtype=np.float64,
     )
@@ -228,7 +231,13 @@ def frame_checkpoint_payload(
         "previous_checkpoint_hash": previous_checkpoint_hash,
         "cache": frame.jacobian_diagnostics.get("cache", {}),
         "timers": frame.jacobian_diagnostics.get("timers", {}),
+        "process_max_rss_kib": int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss),
         "diagnostics": frame.jacobian_diagnostics,
+        "penetration_loss": {
+            "e_sdf": float(frame.breakdown.e_sdf),
+            "weighted_e_sdf": float(frame.breakdown.weighted_e_sdf),
+            **dict(frame.jacobian_diagnostics.get("penetration_loss", {})),
+        },
     }
     metadata["per_frame_checkpoint_hash"] = _checkpoint_hash(metadata, arrays)
     return metadata, arrays
@@ -738,6 +747,8 @@ def _assemble_arrays(
         "warm_e_im": components[:, 15],
         "warm_e_bone": components[:, 16],
         "warm_total_objective": components[:, 17],
+        "e_sdf": components[:, 18] if components.shape[1] >= 20 else np.zeros(len(rows)),
+        "weighted_e_sdf": components[:, 19] if components.shape[1] >= 20 else np.zeros(len(rows)),
         "query_ids_concat": query_ids,
         "query_offsets": query_offsets,
         "query_active_round_concat": query_round,

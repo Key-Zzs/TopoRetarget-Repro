@@ -1,0 +1,33 @@
+profile_id: scipy_slsqp_active_set_contact_rich_v3_original_mesh_grid_256
+version: "3.0.0"
+backend: scipy.optimize.minimize
+method: SLSQP
+dtype: float64
+maxiter: 100
+ftol: 1.0e-7
+constraint_tolerance: 1.0e-6
+finite_difference_epsilon: 1.0e-6
+disp: false
+strict_failure_policy: fail_fast
+termination_contract: strict_optimizer_converged_and_primal_full_audit_v1
+acceptance_policy_id: strict_optimizer_converged_and_audits_v1
+active_set_continuation_policy: result_x_query_id_slack_remap_v2
+maxiter_provenance:
+  source: stage9_1_fixed_benchmark_grid
+  grid: [30, 60, 100, 200, 400]
+  selection_rule: fixed_from_contact_rich_v3; backend_only_substitution
+  selected_budget: 100
+  evidence_report: .local/reports/stage9_1/maxiter_benchmark.json
+  fixed_frame_count: 7
+  per_sequence_or_hand_budget: forbidden
+stationarity_policy: feasible_stationary_v1_deferred
+benchmark_grid: [30, 60, 100, 200, 400]
+sdf_backend: original_mesh_signed_grid_256_v1
+sdf_probe_count: 32
+sdf_cross_validation_tolerance_m: 1.0e-8
+assumptions:
+  - A_REFINEMENT_SOLVER_001
+  - A_REFINEMENT_SOLVER_TOLERANCES_001
+  - A_REFINEMENT_SDF_BACKEND_001
+  - A_REFINEMENT_SOLVER_CONTINUATION_002
+  - A_STAGE9_4_FAITHFUL_TEMPORAL_Q_FIX_001

@@ -1,0 +1,39 @@
+experiment_id: s1_2a_e0_penetration_stress_grid_v1
+stage: S1.2A-T3
+description: Frozen temporal-sync Stress1/Stress2 replay using the selected original-mesh grid backend.
+output_root: .local/experiments/pene_loss_temporal_sync_and_stress_v2/t3_backend
+grab_root: /mnt/nas/storage/Ref2Dex_storage/GRAB/data/GRAB
+mano_root: /mnt/nas/storage/Ref2Dex_storage/shared_assets/body_models/mano
+robot_id: artimano_rh
+robot_asset_root: third_party/robot_hands/artimano
+hand: right
+native_fps: 120.0
+frame_length: 60
+frozen_profiles:
+  frame: canonical_keypoint_wrist_v1
+  bone: mediapipe21_full_finger_chain_v1
+  warm_solver: paper_repro_scipy_trf
+  graph: strict_scipy_qhull_v1
+  collision_surface: engineering_collision_32_per_geometry
+  query: adaptive_active_set_v1
+  solver: scipy_slsqp_active_set_contact_rich_v3_original_mesh_grid_192
+  execution: cached_checkpoint_cpu_float64_v3
+  penetration_loss: dense_squared_hinge_deadzone1mm_v2
+full_audit:
+  required_sample_count: 512
+  signed_distance_backend: reference_winding_v1
+  solver_backend: original_mesh_signed_grid_192_v1
+resource_limits:
+  worker_count: 1
+  max_wall_time_per_clip: 1800
+  max_resume_sessions: 64
+  omp_threads: 1
+  mkl_threads: 1
+  openblas_threads: 1
+  numexpr_threads: 1
+constraints:
+  same_inner_backend_for_e0_and_s1: true
+  no_per_clip_tuning: true
+  no_mesh_repair: true
+  no_s1_result_backend_selection: true
+  preserve_t2_legacy_artifacts: true

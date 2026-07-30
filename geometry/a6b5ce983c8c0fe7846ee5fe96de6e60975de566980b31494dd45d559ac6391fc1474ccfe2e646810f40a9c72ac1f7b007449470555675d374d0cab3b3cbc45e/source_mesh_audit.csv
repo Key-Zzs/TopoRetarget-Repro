@@ -1,0 +1,36 @@
+field,value
+vertex_count,20002
+face_count,40000
+vertex_dtype,"""float64"""
+face_dtype,"""int64"""
+units,"""m"""
+finite_vertices,true
+valid_face_indices,true
+triangular_faces,true
+zero_area_faces,0
+near_zero_area_faces,0
+degenerate_area_threshold,1e-12
+duplicate_vertices,0
+duplicate_faces,0
+unreferenced_vertices,0
+boundary_edge_count,0
+non_manifold_edge_count,0
+connected_component_count,1
+watertight,true
+winding_consistent,true
+orientable,true
+signed_volume,0.00039956076837216876
+euler_number,2
+bounding_box_min,"[-0.04000000283122063, -0.03999999910593033, -0.04000000283122063]"
+bounding_box_max,"[0.04000000283122063, 0.03999999910593033, 0.04000000283122063]"
+bounding_box_diagonal,0.13856407011155156
+surface_area,0.030063325561950797
+center_of_mass,"[-6.727199801155247e-10, 6.483198936327148e-10, -2.1970447297062778e-11]"
+mesh_hash,"""a6b5ce983c8c0fe7846ee5fe96de6e60975de566980b31494dd45d559ac6391fc1474ccfe2e646810f40a9c72ac1f7b007449470555675d374d0cab3b3cbc45e"""
+topology_hash,"""567e6fc66ec4e4d4d1ae036a7f770d1c81cd5d0b074791c712fe4582b93efdc2"""
+source_path,"""/mnt/nas/storage/Ref2Dex_storage/GRAB/data/GRAB/tools/object_meshes/contact_meshes/cylindermedium.ply"""
+source_provenance,{}
+derived_valid_face_count,40000
+derived_invalid_face_count,0
+sign_reliability,"""reliable_watertight"""
+notes,[]

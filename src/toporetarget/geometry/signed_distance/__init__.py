@@ -15,9 +15,16 @@ from .reference import (
     SignedDistanceError,
     build_signed_distance_backend,
 )
+from .signed_grid import (
+    GRID_SCHEMA_VERSION,
+    OriginalMeshSignedGridSDFBackend,
+    grid_resolution_from_profile,
+)
 
 __all__ = [
     "ReferenceSignedDistanceBackend",
+    "OriginalMeshSignedGridSDFBackend",
+    "GRID_SCHEMA_VERSION",
     "DERIVED_SDF_PROXY_SCHEMA_VERSION",
     "HYBRID_SIGNED_DISTANCE_PROFILE_ID",
     "DerivedWatertightSignProxy",
@@ -30,4 +37,5 @@ __all__ = [
     "build_derived_sign_proxy",
     "build_hybrid_signed_distance_backend",
     "local_linearization",
+    "grid_resolution_from_profile",
 ]

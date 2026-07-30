@@ -40,6 +40,13 @@ The paper uses ContactPose (25 of 28 grasps), Ho-cap (32 clips), and a self-coll
 Pen-Spin set (32 clips, average 12.4 s). These are external and are never copied into this
 repository. Stage 0 only discovers registered dataset paths under the configured storage root.
 
+The S1.1 signal-rich GRAB lane is explicitly paper-external diagnostic
+infrastructure. It uses source-only stratification, preserves E0 as the global
+default, and does not convert source contact labels into paper ground truth.
+Its fixed profile, backend split, and fail-closed routing are documented in
+`docs/S1_1_SIGNAL_RICH_GRAB_EVALUATION.md` and
+`docs/FAST_REFERENCE_SDF_CONSISTENCY.md`.
+
 ## 7. Baseline dependencies
 
 OmniRetarget, Mink, DexPilot, and GeoRT are recorded in `configs/paper/baselines.yaml`. The

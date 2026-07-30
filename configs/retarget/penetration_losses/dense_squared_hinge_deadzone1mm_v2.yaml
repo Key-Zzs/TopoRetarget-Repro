@@ -1,0 +1,16 @@
+profile_id: dense_squared_hinge_deadzone1mm_v2
+version: 2.0.0
+loss_type: squared_hinge
+signed_distance_convention: positive_outside
+d_ref_m: 0.001
+penetration_tolerance_m: 0.001
+normalization_depth_m: 0.001
+reduction: mean_per_geometry_then_mean
+query_surface: full_robot_collision_surface
+clearance_m: 0.0
+gradient_backend: signed_distance_normal_times_point_jacobian
+inner_sdf_backend: solver_fast_backend
+validation_sdf_backend: reference_winding_v1
+paper_method: false
+paper_external_extension: true
+deprecated_for_zero_tolerance_comparison: false

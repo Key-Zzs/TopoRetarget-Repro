@@ -1,0 +1,57 @@
+experiment_id: s1_2a_e0_penetration_stress_v2
+stage: S1.2A-T4
+description: Full-funnel source-only E0 penetration discovery with a frozen Top-3 E0/S1 comparison.
+output_root: .local/experiments/pene_loss_temporal_sync_and_stress_v2/t4_discovery
+grab_root: /mnt/nas/storage/Ref2Dex_storage/GRAB/data/GRAB
+mano_root: /mnt/nas/storage/Ref2Dex_storage/shared_assets/body_models/mano
+robot_id: artimano_rh
+robot_asset_root: third_party/robot_hands/artimano
+hand: right
+native_fps: 120.0
+frame_length: 60
+frozen_profiles:
+  frame: canonical_keypoint_wrist_v1
+  bone: mediapipe21_full_finger_chain_v1
+  warm_solver: paper_repro_scipy_trf
+  graph: strict_scipy_qhull_v1
+  collision_surface: engineering_collision_32_per_geometry
+  query: adaptive_active_set_v1
+  solver: scipy_slsqp_active_set_contact_rich_v3_original_mesh_grid_192
+  execution: cached_checkpoint_cpu_float64_v3
+  penetration_loss: dense_squared_hinge_deadzone1mm_v2
+full_audit:
+  required_sample_count: 512
+  signed_distance_backend: reference_winding_v1
+  solver_backend: original_mesh_signed_grid_192_v1
+discovery:
+  d1_probe_frame_policy: source_semantic_contact_richness_then_earliest
+  d1_successful_probe_minimum: 500
+  d1_successful_coverage_minimum: 0.70
+  d2_success_target: 40
+  d2_window_length: 5
+  d3_success_target: 10
+  d3_frame_length: 60
+  final_top_count: 3
+resource_limits:
+  worker_count: 1
+  max_wall_time_per_probe: 1800
+  max_wall_time_per_clip: 1800
+  max_resume_sessions: 64
+  omp_threads: 1
+  mkl_threads: 1
+  openblas_threads: 1
+  numexpr_threads: 1
+constraints:
+  source_only_filtering: true
+  no_source_penetration_ranking: true
+  no_s1_leakage: true
+  no_result_based_reselection: true
+  no_mesh_repair: true
+  no_raw_data_modification: true
+  preserve_old_s1_artifacts: true
+  preserve_g3_g4_pause: true
+  preserve_s1_formulation: true
+  no_wuji: true
+  no_proxy: true
+  same_inner_backend_for_e0_and_s1: true
+  reference_audit_required_for_all_e0_ranking: true

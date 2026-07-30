@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,19 @@ from toporetarget.workflows.gate import build_runtime_acceptance, evaluate_gate
 from toporetarget.workflows.grab_suite import SuiteRunError, run_suite
 from toporetarget.workflows.mesh_visualization import render_mesh_html
 from toporetarget.workflows.planning import build_plan, write_plan
+from toporetarget.workflows.s1_2a_stress import DEFAULT_CONFIG as S1_2A_DEFAULT_CONFIG
+from toporetarget.workflows.s1_2a_stress import run_s1_2a
+from toporetarget.workflows.s1_2a_stress import status as s1_2a_status
+from toporetarget.workflows.s1_penetration import run_s1, s1_status
+from toporetarget.workflows.s1_signal_rich import (
+    DEFAULT_CONFIG as S1_SIGNAL_RICH_DEFAULT_CONFIG,
+    audit_backends as audit_signal_rich_backends,
+    diagnose_g1 as diagnose_signal_rich_g1,
+    freeze_stress_set as freeze_signal_rich_stress_set,
+    run_signal_rich,
+    scan_source_candidates as scan_signal_rich_candidates,
+    status as signal_rich_status,
+)
 from toporetarget.workflows.schema import WorkflowRequest, read_json, write_json
 from toporetarget.workflows.shadow_equivalence import (
     PROFILES as SHADOW_EQUIVALENCE_PROFILES,
@@ -79,6 +93,261 @@ app = typer.Typer(help="Stage 10 bounded, resumable GRAB-to-Arti-MANO workflows.
 
 def _parse_frames(value: str) -> tuple[int, ...]:
     return tuple(int(item.strip()) for item in value.split(",") if item.strip())
+
+
+@app.command("run-s1-2a-stress-discovery")
+def run_s1_2a_stress_discovery_command(
+    config: Path = typer.Option(S1_2A_DEFAULT_CONFIG, "--config"),
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/s1_2a_e0_penetration_stress_v1"), "--experiment-root"
+    ),
+    resume: bool = typer.Option(True, "--resume/--no-resume"),
+    generate_html: bool = typer.Option(True, "--generate-html/--no-generate-html"),
+) -> None:
+    """Run the complete S1.2A E0 stress discovery and E0/S1 comparison."""
+    try:
+        value = run_s1_2a(
+            Path.cwd(),
+            config_path=config,
+            experiment_root=experiment_root,
+            resume=resume,
+            generate=generate_html,
+        )
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+        typer.echo(f"S1.2A stress discovery failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("s1-2a-stress-status")
+def s1_2a_stress_status_command(
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/s1_2a_e0_penetration_stress_v1"), "--experiment-root"
+    ),
+) -> None:
+    """Show S1.2A source, warm, E0 probe, backend, and final state."""
+    try:
+        typer.echo(json.dumps(s1_2a_status(experiment_root), indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        typer.echo(f"S1.2A stress status failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("run-s1-penetration-loss")
+def run_s1_penetration_loss_command(
+    run_root: Path = typer.Option(
+        Path(".local/experiments/s1_sdf_penetration_loss_v1"), "--run-root", "--experiment-root"
+    ),
+    config: Path = typer.Option(
+        Path("configs/experiments/s1_sdf_penetration_loss_v1.yaml"), "--config"
+    ),
+    max_wall_time: float = typer.Option(1800.0, "--max-wall-time", min=1.0),
+    resume: bool = typer.Option(True, "--resume/--no-resume"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    generate_html: bool = typer.Option(True, "--generate-html/--no-generate-html"),
+) -> None:
+    """Run the frozen two-clip G1/G2 S1 comparison without manual acceptance."""
+    try:
+        value = run_s1(
+            Path.cwd(),
+            config_path=config,
+            run_root=run_root,
+            max_wall_time=max_wall_time,
+            resume=resume,
+            dry_run=dry_run,
+        )
+        value["generate_html"] = generate_html
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+        typer.echo(f"S1 penetration-loss workflow failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("run-sdf-loss-comparison")
+def run_sdf_loss_comparison_command(
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/s1_sdf_penetration_loss_v1"), "--experiment-root"
+    ),
+    config: Path = typer.Option(
+        Path("configs/experiments/s1_sdf_penetration_loss_v1.yaml"), "--config"
+    ),
+    max_wall_time: float = typer.Option(1800.0, "--max-wall-time", min=1.0),
+    resume: bool = typer.Option(True, "--resume/--no-resume"),
+) -> None:
+    """Compatibility alias for the bounded S1 comparison entry point."""
+    value = run_s1(
+        Path.cwd(),
+        config_path=config,
+        run_root=experiment_root,
+        max_wall_time=max_wall_time,
+        resume=resume,
+    )
+    typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+
+
+@app.command("visualize-sdf-loss-comparison")
+def visualize_sdf_loss_comparison_command(
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/s1_sdf_penetration_loss_v1"), "--experiment-root"
+    ),
+) -> None:
+    """Report the self-contained S1 mesh-comparison HTML entry points."""
+    html_root = experiment_root / "html"
+    paths = sorted(str(path) for path in html_root.glob("*.html"))
+    if not paths:
+        typer.echo("S1 HTML is not available; complete run-s1-penetration-loss first.", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(json.dumps({"status": "pass", "html": paths}, indent=2))
+
+
+@app.command("s1-penetration-loss-status")
+def s1_penetration_loss_status_command(
+    run_root: Path = typer.Option(
+        Path(".local/experiments/s1_sdf_penetration_loss_v1"), "--run-root"
+    ),
+) -> None:
+    """Show S1 selection, decision, and checkpoint progress."""
+    try:
+        typer.echo(json.dumps(s1_status(run_root), indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        typer.echo(f"S1 penetration-loss status failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("diagnose-source-penetration")
+def diagnose_source_penetration_command(
+    config: Path = typer.Option(S1_SIGNAL_RICH_DEFAULT_CONFIG, "--config"),
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/s1_1_signal_rich_grab_v1"), "--experiment-root"
+    ),
+) -> None:
+    """Run the independent G1 source-MANO and collision-coverage diagnosis."""
+    try:
+        typer.echo(
+            json.dumps(
+                diagnose_signal_rich_g1(Path.cwd(), config, experiment_root),
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"source penetration diagnosis failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("scan-penetration-signal")
+def scan_penetration_signal_command(
+    config: Path = typer.Option(S1_SIGNAL_RICH_DEFAULT_CONFIG, "--config"),
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/s1_1_signal_rich_grab_v1"), "--experiment-root"
+    ),
+) -> None:
+    """Enumerate and audit the source-only GRAB candidate pool."""
+    try:
+        typer.echo(
+            json.dumps(
+                scan_signal_rich_candidates(Path.cwd(), config, experiment_root),
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"penetration signal scan failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("freeze-penetration-stress-set")
+def freeze_penetration_stress_set_command(
+    config: Path = typer.Option(S1_SIGNAL_RICH_DEFAULT_CONFIG, "--config"),
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/s1_1_signal_rich_grab_v1"), "--experiment-root"
+    ),
+) -> None:
+    """Freeze exactly three source/E0-selected stress clips when the gate permits."""
+    try:
+        typer.echo(
+            json.dumps(
+                freeze_signal_rich_stress_set(Path.cwd(), config, experiment_root),
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"stress-set freeze failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("audit-sdf-backends")
+def audit_sdf_backends_command(
+    config: Path = typer.Option(S1_SIGNAL_RICH_DEFAULT_CONFIG, "--config"),
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/s1_1_signal_rich_grab_v1"), "--experiment-root"
+    ),
+) -> None:
+    """Audit solver-fast versus reference triangle-winding SDFs on frozen clips."""
+    try:
+        typer.echo(
+            json.dumps(
+                audit_signal_rich_backends(Path.cwd(), config, experiment_root),
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"SDF backend audit failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("run-s1-signal-rich-evaluation")
+def run_s1_signal_rich_evaluation_command(
+    config: Path = typer.Option(S1_SIGNAL_RICH_DEFAULT_CONFIG, "--config"),
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/s1_1_signal_rich_grab_v1"), "--experiment-root"
+    ),
+    resume: bool = typer.Option(True, "--resume/--no-resume"),
+    max_wall_time: float = typer.Option(1800.0, "--max-wall-time", min=1.0),
+    generate_html: bool = typer.Option(True, "--generate-html/--no-generate-html"),
+) -> None:
+    """Run the complete resumable S1.1 dependency chain without manual choice."""
+    del max_wall_time  # Per-probe/per-clip limits are immutable config values.
+    try:
+        value = run_signal_rich(
+            Path.cwd(),
+            config_path=config,
+            experiment_root=experiment_root,
+            resume=resume,
+            generate=generate_html,
+        )
+        typer.echo(json.dumps(value, indent=2, sort_keys=True, default=str))
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+        typer.echo(f"S1.1 signal-rich workflow failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("s1-signal-rich-status")
+def s1_signal_rich_status_command(
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/s1_1_signal_rich_grab_v1"), "--experiment-root"
+    ),
+) -> None:
+    """Show S1.1 scan, probe, freeze, backend, and full-run state."""
+    try:
+        typer.echo(
+            json.dumps(signal_rich_status(experiment_root), indent=2, sort_keys=True, default=str)
+        )
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        typer.echo(f"S1.1 signal-rich status failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("sdf-loss-status")
+def sdf_loss_status_command(
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/s1_sdf_penetration_loss_v1"), "--experiment-root"
+    ),
+) -> None:
+    """Compatibility alias for S1 checkpoint/report status."""
+    typer.echo(json.dumps(s1_status(experiment_root), indent=2, sort_keys=True, default=str))
 
 
 @app.command("audit-solver-lineage")

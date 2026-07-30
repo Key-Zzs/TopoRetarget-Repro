@@ -17,7 +17,7 @@ import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import yaml
@@ -35,6 +35,11 @@ from toporetarget.geometry.signed_distance.base import (
 from toporetarget.geometry.signed_distance.derived_proxy import (
     ObjectSDFGeometryPolicy,
     build_hybrid_signed_distance_backend,
+)
+from toporetarget.geometry.signed_distance.reference import build_signed_distance_backend
+from toporetarget.geometry.signed_distance.signed_grid import (
+    OriginalMeshSignedGridSDFBackend,
+    grid_resolution_from_profile,
 )
 from toporetarget.retarget.artifacts import WarmStartTrajectory
 from toporetarget.retarget.bones import (
@@ -67,6 +72,12 @@ from toporetarget.retarget.interaction_graph import (
     InteractionGraphTrajectory,
 )
 from toporetarget.retarget.interaction_objective import InteractionMeshResidual
+from toporetarget.retarget.penetration_loss import (
+    DenseSDFPenetrationLoss,
+    PenetrationLossEvaluation,
+    PenetrationLossProfile,
+    build_objective_term,
+)
 from toporetarget.retarget.refinement_performance import (
     RefinementEvaluationCache,
     TimerBook,
@@ -83,6 +94,10 @@ ACTIVE_QUERY_PROFILE_ID = "adaptive_active_set_v1"
 SOLVER_PROFILE_ID = "scipy_slsqp_active_set_v1"
 CONTACT_RICH_SOLVER_PROFILE_ID = "scipy_slsqp_active_set_contact_rich_v2"
 FAITHFUL_CONTACT_RICH_SOLVER_PROFILE_ID = "scipy_slsqp_active_set_contact_rich_v3_fixed"
+ORIGINAL_MESH_GRID_CONTACT_RICH_SOLVER_PROFILE_IDS = {
+    "scipy_slsqp_active_set_contact_rich_v3_original_mesh_grid_192",
+    "scipy_slsqp_active_set_contact_rich_v3_original_mesh_grid_256",
+}
 FULL_SOLVER_PROFILE_ID = "scipy_slsqp_full_surface_reference_v1"
 STRICT_ACCEPTANCE_POLICY_ID = "strict_optimizer_converged_and_audits_v1"
 DEFERRED_STATIONARITY_POLICY_ID = "feasible_stationary_v1_deferred"
@@ -103,7 +118,10 @@ def regularization_profile_for_solver(
 
     if requested_profile != "auto":
         return requested_profile
-    if solver_profile_id == FAITHFUL_CONTACT_RICH_SOLVER_PROFILE_ID:
+    if solver_profile_id in {
+        FAITHFUL_CONTACT_RICH_SOLVER_PROFILE_ID,
+        *ORIGINAL_MESH_GRID_CONTACT_RICH_SOLVER_PROFILE_IDS,
+    }:
         return "faithful_regularization_fix_v1"
     if solver_profile_id in CONTINUOUS_PROFILE_IDS:
         return "wuji_continuous_full_state_v1"
@@ -1002,6 +1020,7 @@ def choose_solver_sdf_backend(
     *,
     object_pose_scene: np.ndarray,
     tree_leaf_size: int = 32,
+    grid_cache_root: str | Path | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     report: dict[str, Any] = {
         "reference": reference.describe(),
@@ -1009,6 +1028,30 @@ def choose_solver_sdf_backend(
         "selected": "reference",
         "cross_validation": None,
     }
+    grid_resolution = grid_resolution_from_profile(profile.sdf_backend)
+    if grid_resolution is not None:
+        try:
+            candidate = OriginalMeshSignedGridSDFBackend.build(
+                vertices,
+                faces,
+                resolution=grid_resolution,
+                profile_id=profile.sdf_backend,
+                cache_root=grid_cache_root,
+            )
+            report["selected"] = candidate.profile_id
+            report["cross_validation"] = {
+                "status": "deferred_to_original_mesh_grid_acceptance",
+                "resolution": grid_resolution,
+                "cache_key": candidate.metadata["cache_key"],
+                "source_geometry": "original_strict_watertight_mesh",
+            }
+            return candidate, report
+        except Exception as exc:
+            report["cross_validation"] = {
+                "status": "grid_build_failed",
+                "error": str(exc),
+            }
+            return reference, report
     if profile.sdf_backend != "convex_hull_exact_solver_only":
         return reference, report
     try:
@@ -1053,6 +1096,8 @@ class FinalObjectiveBreakdown:
     weighted_e_im: float
     weighted_e_bone: float
     total: float
+    e_sdf: float = 0.0
+    weighted_e_sdf: float = 0.0
     # Optional paper-external quality terms.  They default to zero so legacy
     # paper-core artifacts retain the exact public breakdown contract.
     e_morph: float = 0.0
@@ -1092,6 +1137,7 @@ class _FrameContext:
     fixed_base_to_seed: bool = False
     fixed_qpos_to_seed: bool = False
     quality_extension: dict[str, Any] | None = None
+    penetration_loss: DenseSDFPenetrationLoss | None = None
     continuous_prediction_base: np.ndarray | None = None
     continuous_prediction_qpos: np.ndarray | None = None
     trust_region_reference: np.ndarray | None = None
@@ -1460,14 +1506,79 @@ class _FrameContext:
                 variable = torch.as_tensor(current, dtype=torch.float64).requires_grad_(True)
             total, breakdown = self.breakdown_tensor(variable)
             gradient = torch.autograd.grad(total, variable, create_graph=False)[0]
+        sdf_evaluation = self._penetration_evaluation(current)
+        term = self.penetration_loss
+        if sdf_evaluation is not None and term is not None:
+            weighted = term.lambda_sdf * sdf_evaluation.value
+            sdf_gradient = np.zeros_like(current, dtype=np.float64)
+            sdf_gradient[: len(sdf_evaluation.gradient)] = sdf_evaluation.gradient
+            gradient = _as_np(gradient).astype(np.float64, copy=True)
+            gradient += term.lambda_sdf * sdf_gradient
+            breakdown.e_sdf = float(sdf_evaluation.value)
+            breakdown.weighted_e_sdf = float(weighted)
+            breakdown.total = float(breakdown.total + weighted)
+            self.cache.put("sdf_evaluation", sdf_evaluation)
         if self.cache.get("candidate_points") is None:
             with self.timers.measure("collision_point_transform"):
                 points = _as_np(self.collision_points_torch(variable))
             self.cache.put("candidate_points", np.asarray(points, dtype=np.float64).copy())
         with self.timers.measure("torch_to_numpy"):
-            stored = (float(total.detach().cpu()), _as_np(gradient).copy(), breakdown)
+            # ``breakdown.total`` includes paper-core terms plus any enabled
+            # paper-external extension. Persist that value so the optimizer
+            # and checkpoint diagnostics see the differentiated objective.
+            stored = (float(breakdown.total), _as_np(gradient).copy(), breakdown)
         self.cache.put("objective", stored)
         return float(stored[0]), np.asarray(stored[1]).copy(), stored[2]
+
+    def _penetration_scalar(self, value: np.ndarray) -> float:
+        """Evaluate only the paper-external term at a finite-difference state."""
+
+        import torch
+
+        term = self.penetration_loss
+        if term is None:  # pragma: no cover - guarded by the caller
+            raise RuntimeError("penetration loss term is not configured")
+        variable = torch.as_tensor(np.asarray(value, dtype=np.float64), dtype=torch.float64)
+        points = _as_np(self.collision_points_torch(variable))
+        result = self.sdf.query_scene(points, self.object_pose_scene)
+        return term.value_only(result.signed_distance, self.surface_geometry_indices)
+
+    def _penetration_evaluation(self, value: np.ndarray) -> PenetrationLossEvaluation | None:
+        term = self.penetration_loss
+        if term is None or term.lambda_sdf == 0.0:
+            return None
+        cached = self.cache.get("sdf_evaluation")
+        if cached is not None:
+            return cached
+        current = np.asarray(value, dtype=np.float64).reshape(-1)
+        points = self.candidate_points(current)
+        with self.timers.measure("sdf_loss_query"):
+            query = self.sdf.query_scene(points, self.object_pose_scene)
+        with self.timers.measure("sdf_loss_point_jacobian"):
+            jacobian = self.collision_points_jacobian_numpy(current)
+
+        def fallback() -> np.ndarray:
+            epsilon = 1.0e-7
+            result = np.zeros(self.variable_size_without_slack, dtype=np.float64)
+            for column in range(self.variable_size_without_slack):
+                plus = current.copy()
+                minus = current.copy()
+                plus[column] += epsilon
+                minus[column] -= epsilon
+                result[column] = (
+                    self._penetration_scalar(plus) - self._penetration_scalar(minus)
+                ) / (2.0 * epsilon)
+            return result
+
+        evaluation = term.evaluate_query(
+            query,
+            self.surface_geometry_indices,
+            point_jacobian=jacobian,
+            fallback_gradient=fallback,
+        )
+        if len(evaluation.gradient) != self.variable_size_without_slack:
+            raise ValueError("penetration gradient has an invalid state dimension")
+        return evaluation
 
     def candidate_points(self, value: np.ndarray, query_hash: str | None = None) -> np.ndarray:
         import torch
@@ -2252,6 +2363,22 @@ def refine_frame(
         raise ValueError("final independent full-surface audit received invalid signed distance")
     _, _, qpos, slack = context.unpack(value)
     _, _, breakdown = context.objective(value, query_set.query_hash)
+    # Persist the independent full-surface SDF energy for every profile,
+    # including lambda_sdf=0. Lambda zero contributes nothing to the optimizer
+    # objective or gradient but still gives E0 a real penetration baseline.
+    audit_penetration = None
+    if context.penetration_loss is not None:
+        audit_penetration = context.penetration_loss.evaluate(
+            full.signed_distance,
+            context.surface_geometry_indices,
+            sdf_backend_id=full.backend_id,
+        )
+        previous_weighted = float(breakdown.weighted_e_sdf)
+        breakdown.e_sdf = float(audit_penetration.value)
+        breakdown.weighted_e_sdf = float(
+            context.penetration_loss.lambda_sdf * audit_penetration.value
+        )
+        breakdown.total = float(breakdown.total + breakdown.weighted_e_sdf - previous_weighted)
     final_warm_slack = np.clip(
         np.maximum(-context.paper.tau - query_set.initial_signed_distance, 0.0),
         0.0,
@@ -2292,6 +2419,21 @@ def refine_frame(
     diagnostics["active_set_continuation"] = continuation_trace
     diagnostics["solver_attempt_trace"] = solver_attempt_trace
     diagnostics["full_surface_backend_id"] = full.backend_id
+    sdf_evaluation = context.cache.get("sdf_evaluation")
+    if audit_penetration is not None:
+        diagnostics["penetration_loss"] = audit_penetration.as_dict()
+        diagnostics["penetration_loss"]["audit_backend_id"] = full.backend_id
+        if sdf_evaluation is not None:
+            diagnostics["penetration_loss"]["optimization_query"] = sdf_evaluation.as_dict()
+    elif sdf_evaluation is not None:
+        diagnostics["penetration_loss"] = sdf_evaluation.as_dict()
+    if context.penetration_loss is not None:
+        diagnostics["sdf_loss_backend_split"] = {
+            "optimization_backend": getattr(context.sdf, "backend_id", "unknown"),
+            "validation_backend": full.backend_id,
+            "declared_inner_backend": context.penetration_loss.profile.inner_sdf_backend,
+            "declared_validation_backend": context.penetration_loss.profile.validation_sdf_backend,
+        }
     diagnostics["evaluation_cache"] = context.cache.as_dict()
     diagnostics["timers"] = context.timers.as_dict()
     optimizer_status_code = int(getattr(result, "status", -1))
@@ -2432,6 +2574,7 @@ def _make_context(
     fixed_base_to_seed: bool = False,
     fixed_qpos_to_seed: bool = False,
     quality_extension: dict[str, Any] | None = None,
+    penetration_loss: DenseSDFPenetrationLoss | None = None,
     continuous_prediction_base: np.ndarray | None = None,
     continuous_prediction_qpos: np.ndarray | None = None,
 ) -> _FrameContext:
@@ -2466,6 +2609,12 @@ def _make_context(
                 "lambda_contact_pos": quality_extension.get("lambda_contact_pos", 0.0),
                 "lambda_contact_dir": quality_extension.get("lambda_contact_dir", 0.0),
             },
+            "penetration_loss": None
+            if penetration_loss is None
+            else {
+                "profile_hash": penetration_loss.profile_hash,
+                "lambda_sdf": penetration_loss.lambda_sdf,
+            },
         }
     )
     return _FrameContext(
@@ -2483,7 +2632,7 @@ def _make_context(
         object_pose_scene=object_pose,
         surface=surface,
         surface_points_local=np.asarray(surface.points_local, dtype=np.float64),
-        surface_geometry_indices=geometry_indices,
+        surface_geometry_indices=np.asarray(surface.geometry_ids).astype(str),
         surface_local_transforms=transforms,
         surface_link_names=links,
         geometry_slices=slices,
@@ -2493,6 +2642,7 @@ def _make_context(
         fixed_base_to_seed=fixed_base_to_seed,
         fixed_qpos_to_seed=fixed_qpos_to_seed,
         quality_extension=quality_extension,
+        penetration_loss=penetration_loss,
         continuous_prediction_base=continuous_prediction_base,
         continuous_prediction_qpos=continuous_prediction_qpos,
         cache=RefinementEvaluationCache(global_frame, context_hash),
@@ -3129,6 +3279,7 @@ def prepare_refinement_resources(
     object_faces: np.ndarray | None = None,
     sdf_tree_leaf_size: int = 32,
     geometry_artifact_root: str | Path | None = None,
+    validation_sdf_backend: str = "configured",
 ) -> RefinementResources:
     """Build mesh/SDF resources once for a refinement run."""
 
@@ -3154,13 +3305,28 @@ def prepare_refinement_resources(
     geometry_output = None
     if geometry_artifact_root is not None:
         geometry_output = Path(geometry_artifact_root).expanduser() / mesh_audit.mesh_hash
-    reference_sdf, geometry = build_hybrid_signed_distance_backend(
+    reference_sdf_value, geometry = build_hybrid_signed_distance_backend(
         vertices,
         faces,
         policy=geometry_policy,
         source_path=source_path,
         artifact_root=geometry_output,
     )
+    reference_sdf: Any = cast(Any, reference_sdf_value)
+    if validation_sdf_backend == "reference_winding_v1":
+        reference_sdf = build_signed_distance_backend(
+            vertices,
+            faces,
+            sign_mode="strict",
+            query_chunk_size=256,
+            face_chunk_size=4096,
+            closest_acceleration="tree",
+            winding_device="cpu",
+            closest_device=None,
+            source_path=source_path,
+        )
+    elif validation_sdf_backend not in {"configured", "reference_full_surface"}:
+        raise ValueError(f"unknown refinement validation SDF backend: {validation_sdf_backend}")
     obj = sequence.rigid_object(str(graph.metadata["object_id"]))
     sdf, sdf_report = choose_solver_sdf_backend(
         vertices,
@@ -3169,6 +3335,7 @@ def prepare_refinement_resources(
         solver_profile,
         object_pose_scene=np.asarray(obj.pose_scene.pose_scene[0]),
         tree_leaf_size=sdf_tree_leaf_size,
+        grid_cache_root=None if geometry_output is None else geometry_output / "signed_grids",
     )
     return RefinementResources(
         paper=paper,
@@ -3190,6 +3357,9 @@ def prepare_refinement_resources(
             "convex_hull_build_count": int(
                 getattr(sdf, "backend_id", "") == "convex_hull_exact_solver_only"
             ),
+            "original_mesh_signed_grid_build_count": int(
+                isinstance(sdf, OriginalMeshSignedGridSDFBackend)
+            ),
             "derived_proxy_build_count": 1,
             "bvh_build_count": 1,
         },
@@ -3201,6 +3371,9 @@ def final_artifact_hash(trajectory: FinalRetargetTrajectory) -> str:
 
     metadata = dict(trajectory.metadata)
     metadata["artifact_hash"] = None
+    # ``array_manifest`` is a deterministic serialization index rather than
+    # trajectory content and is added after the content hash is computed.
+    metadata.pop("array_manifest", None)
     arrays = {
         name: {
             "dtype": str(np.asarray(value).dtype),
@@ -3308,6 +3481,9 @@ def build_final_trajectory(
     fixed_base_to_seed: bool = False,
     fixed_qpos_to_seed: bool = False,
     quality_extension: dict[str, Any] | None = None,
+    penetration_loss_profile: PenetrationLossProfile | str | Path | None = None,
+    lambda_sdf: float = 0.0,
+    validation_sdf_backend: str = "configured",
 ) -> tuple[FinalRetargetTrajectory, dict[str, Any]]:
     warm.validate()
     graph.validate()
@@ -3356,6 +3532,7 @@ def build_final_trajectory(
         object_vertices=object_vertices,
         object_faces=object_faces,
         sdf_tree_leaf_size=sdf_tree_leaf_size,
+        validation_sdf_backend=validation_sdf_backend,
     )
     paper = resources.paper
     object_vertices = resources.object_vertices
@@ -3363,6 +3540,45 @@ def build_final_trajectory(
     reference_sdf = resources.reference_sdf
     sdf = resources.sdf
     sdf_report = resources.sdf_report
+    selected_penetration_profile: PenetrationLossProfile | None
+    if isinstance(penetration_loss_profile, PenetrationLossProfile):
+        selected_penetration_profile = penetration_loss_profile
+    elif penetration_loss_profile is None:
+        selected_penetration_profile = PenetrationLossProfile.load()
+    else:
+        selected_penetration_profile = PenetrationLossProfile.load(
+            Path(penetration_loss_profile).stem
+        )
+    if selected_penetration_profile is not None and lambda_sdf != 0.0:
+        expected_inner_backend = selected_penetration_profile.inner_sdf_backend
+        actual_inner_backend = str(getattr(sdf, "backend_id", ""))
+        if expected_inner_backend == "convex_hull_exact_solver_only":
+            backend_matches = actual_inner_backend == "convex_hull_exact_solver_only"
+        elif expected_inner_backend == "solver_fast_backend":
+            backend_matches = actual_inner_backend in {
+                "convex_hull_exact_solver_only",
+                "original_mesh_signed_grid",
+            }
+        else:  # Defensive: profile validation owns the public allowed set.
+            backend_matches = False
+        if not backend_matches:
+            raise ValueError(
+                "S1 penetration inner loop must use the cross-validated solver-fast SDF "
+                f"backend; expected {expected_inner_backend}, got {actual_inner_backend}"
+            )
+        if sdf is reference_sdf:
+            raise ValueError(
+                "S1 penetration inner and independent validation SDF backends must differ"
+            )
+    penetration_loss = (
+        None
+        if selected_penetration_profile is None
+        else build_objective_term(
+            "dense_sdf_penetration",
+            profile=selected_penetration_profile,
+            lambda_sdf=float(lambda_sdf),
+        )
+    )
     stop = warm.frame_count if end_frame is None else int(end_frame)
     if start_frame < 0 or stop <= start_frame or stop > warm.frame_count:
         raise ValueError(f"invalid frame range [{start_frame},{stop})")
@@ -3436,6 +3652,7 @@ def build_final_trajectory(
             fixed_base_to_seed=fixed_base_to_seed,
             fixed_qpos_to_seed=fixed_qpos_to_seed,
             quality_extension=_quality_extension_for_frame(quality_extension, local_index),
+            penetration_loss=penetration_loss,
             continuous_prediction_base=(
                 None
                 if propagated is None or propagated.previous_frame is None
@@ -3715,6 +3932,7 @@ def build_final_trajectory(
                                     future_local,
                                     None,
                                     temporal_scope=temporal_scope,
+                                    penetration_loss=penetration_loss,
                                     quality_extension=_quality_extension_for_frame(
                                         quality_extension, future_local
                                     ),
@@ -3879,6 +4097,7 @@ def build_final_trajectory(
                             future_local,
                             None,
                             temporal_scope=temporal_scope,
+                            penetration_loss=penetration_loss,
                             quality_extension=_quality_extension_for_frame(
                                 quality_extension, future_local
                             ),
@@ -4134,6 +4353,8 @@ def build_final_trajectory(
         "e_slack": series("e_slack"),
         "weighted_e_im": series("weighted_e_im"),
         "weighted_e_bone": series("weighted_e_bone"),
+        "e_sdf": series("e_sdf"),
+        "weighted_e_sdf": series("weighted_e_sdf"),
         "e_morph": series("e_morph"),
         "weighted_e_morph": series("weighted_e_morph"),
         "e_contact_pos": series("e_contact_pos"),
@@ -4300,6 +4521,18 @@ def build_final_trajectory(
         "collision_surface_sample_count": surface.count,
         "sdf_backend": sdf.describe(),
         "sdf_reference_backend": reference_sdf.describe(),
+        "sdf_backend_split": {
+            "optimization_backend": sdf.describe().get("backend_id"),
+            "validation_backend": reference_sdf.describe().get("backend_id"),
+            "declared_inner_backend": (
+                None if penetration_loss is None else penetration_loss.profile.inner_sdf_backend
+            ),
+            "declared_validation_backend": (
+                None
+                if penetration_loss is None
+                else penetration_loss.profile.validation_sdf_backend
+            ),
+        },
         "query_profile": query_profile.as_dict(),
         "coordinate_profile": coordinate_profile.as_dict(),
         "solver_profile": solver_profile.as_dict(),
@@ -4354,6 +4587,31 @@ def build_final_trajectory(
                 "contact_regions",
             }
         },
+        "penetration_loss": None
+        if penetration_loss is None
+        else {
+            "term_id": penetration_loss.term_id,
+            "profile": penetration_loss.profile.as_dict(),
+            "lambda_sdf": penetration_loss.lambda_sdf,
+            "profile_hash": penetration_loss.profile_hash,
+            "query_surface": {
+                "sample_count": surface.count,
+                "collision_surface_profile_hash": surface.profile.profile_hash,
+                "geometry_id_hash": _stable_hash(surface.geometry_ids.astype(str).tolist()),
+            },
+            "paper_method": float(penetration_loss.lambda_sdf) == 0.0,
+            "paper_external_extension": float(penetration_loss.lambda_sdf) != 0.0,
+            "extension_type": "dense_sdf_penetration_loss",
+            "paper_constraints_preserved": True,
+            "diagnostic_evaluation": "independent_full_surface_v1",
+            "optimization_sdf_backend": sdf.describe().get("backend_id"),
+            "validation_sdf_backend": reference_sdf.describe().get("backend_id"),
+            "declared_inner_sdf_backend": penetration_loss.profile.inner_sdf_backend,
+            "declared_validation_sdf_backend": penetration_loss.profile.validation_sdf_backend,
+        },
+        "penetration_loss_diagnostic_version": (
+            "independent_full_surface_v1" if penetration_loss is not None else None
+        ),
         "sdf_selection_report": sdf_report,
         "frame_range": [
             int(graph.frame_indices[processed_frame_indices[0]]),

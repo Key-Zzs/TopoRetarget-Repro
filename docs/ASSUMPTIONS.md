@@ -221,6 +221,17 @@ the fixed original-boundary exclusion zone. This is a formal fail-closed result,
 not evidence that the open mesh can be silently accepted and not an A–E
 completion claim.
 
+## S1.1 signal-rich evaluation assumptions
+
+S1.1 records source-contact labels as `DATASET_PROXY` and never treats them as
+paper-level contact ground truth. Its source-only 60-frame score is a
+selection/stratification device, not an evaluation metric. E0 is selected and
+audited before S1, but no E0 or S1 result may alter the source shortlist. The
+optimizer-fast and reference SDF roles remain separate, and a failed backend
+consistency gate routes to a backend study rather than silently accepting the
+fast result. See `docs/PENETRATION_SIGNAL_STRATIFICATION.md` and
+`docs/FAST_REFERENCE_SDF_CONSISTENCY.md`.
+
 ## Wuji Hand2 three-clip boundary
 
 The W1/W2/W3 suite is fixed to subject `s1` and native 60-frame windows. It

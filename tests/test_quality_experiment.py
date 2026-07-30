@@ -5,7 +5,7 @@ import json
 import numpy as np
 
 from toporetarget.quality.contact import CONTACT_GRID, _huber
-from toporetarget.quality.html import _clustered_mesh_preview
+from toporetarget.quality.html import _HTML_TEMPLATE, _clustered_mesh_preview
 from toporetarget.quality.orchestrator import _classify_baseline_failure
 from toporetarget.quality.schema import CLIPS, QUALITY_SCHEMA_VERSION, profile_label
 
@@ -81,3 +81,11 @@ def test_clustered_mesh_preview_is_bounded_and_non_degenerate() -> None:
         & (preview_faces[:, 1] != preview_faces[:, 2])
         & (preview_faces[:, 0] != preview_faces[:, 2])
     )
+
+
+def test_object_surface_is_drawn_after_hand_mesh_layers() -> None:
+    hand_draw = "if(meshLayers.final.checked&&profile.robot_mesh?.parts?.length)drawRobot"
+    object_draw = "if(document.getElementById('objectSurface').checked)drawObjectSurface"
+    assert _HTML_TEMPLATE.index(object_draw) > _HTML_TEMPLATE.index(hand_draw)
+    assert "transformPoint(pose,p)" in _HTML_TEMPLATE
+    assert "transformPoint(p,pose)" not in _HTML_TEMPLATE
