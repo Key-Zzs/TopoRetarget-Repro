@@ -41,7 +41,7 @@ def test_canonical_v1_migration_preserves_values_and_old_cache(tmp_path) -> None
 
 def test_dataset_registry_exposes_required_grab_surface() -> None:
     registry = get_dataset_adapter_registry()
-    assert registry.names() == ("grab",)
+    assert registry.names() == ("contactpose", "dexycb", "grab", "hocap", "oakink")
     adapter = registry.create("grab")
     assert isinstance(adapter, GrabDatasetAdapterV1)
     assert adapter.descriptor.capabilities.canonical_hoi

@@ -145,6 +145,15 @@ class RefinementExecutionProfile:
     point_jacobian_backend: str
     strict_recovery: str
     sdf_tree_leaf_size: int
+    role: str
+    math_equivalent: bool
+    final_full_surface_audit: bool
+    recommended: bool
+    stage12_default: bool
+    paper_objective_unchanged: bool
+    paper_constraints_unchanged: bool
+    continuity_contract_unchanged: bool
+    author_exact: str
     profile_hash: str
     source_path: Path | None = None
 
@@ -184,6 +193,15 @@ class RefinementExecutionProfile:
             ),
             strict_recovery=str(values.get("strict_recovery", "none")),
             sdf_tree_leaf_size=int(values.get("sdf_tree_leaf_size", 32)),
+            role=str(values.get("role", "engineering_execution")),
+            math_equivalent=bool(values.get("math_equivalent", False)),
+            final_full_surface_audit=bool(values.get("final_full_surface_audit", True)),
+            recommended=bool(values.get("recommended", False)),
+            stage12_default=bool(values.get("stage12_default", False)),
+            paper_objective_unchanged=bool(values.get("paper_objective_unchanged", True)),
+            paper_constraints_unchanged=bool(values.get("paper_constraints_unchanged", True)),
+            continuity_contract_unchanged=bool(values.get("continuity_contract_unchanged", True)),
+            author_exact=str(values.get("author_exact", "unresolved")),
             profile_hash=hashlib.sha256(raw).hexdigest(),
             source_path=path,
         )
@@ -205,6 +223,12 @@ class RefinementExecutionProfile:
             raise ValueError("unsupported refinement strict recovery policy")
         if result.sdf_tree_leaf_size <= 0:
             raise ValueError("refinement SDF tree leaf size must be positive")
+        if result.role == "performance_candidate" and (
+            result.recommended or result.stage12_default
+        ):
+            raise ValueError("an unvalidated performance candidate cannot be a Stage 12 default")
+        if not result.final_full_surface_audit:
+            raise ValueError("all final-refinement execution profiles require a full final audit")
         return result
 
     def as_dict(self) -> dict[str, Any]:
@@ -223,6 +247,15 @@ class RefinementExecutionProfile:
             "point_jacobian_backend": self.point_jacobian_backend,
             "strict_recovery": self.strict_recovery,
             "sdf_tree_leaf_size": self.sdf_tree_leaf_size,
+            "role": self.role,
+            "math_equivalent": self.math_equivalent,
+            "final_full_surface_audit": self.final_full_surface_audit,
+            "recommended": self.recommended,
+            "stage12_default": self.stage12_default,
+            "paper_objective_unchanged": self.paper_objective_unchanged,
+            "paper_constraints_unchanged": self.paper_constraints_unchanged,
+            "continuity_contract_unchanged": self.continuity_contract_unchanged,
+            "author_exact": self.author_exact,
             "profile_hash": self.profile_hash,
             "source_path": None if self.source_path is None else str(self.source_path),
         }

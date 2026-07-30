@@ -1652,20 +1652,45 @@ class _FrameContext:
         ).reshape(-1)
         values = np.zeros((len(query_ids), len(current)), dtype=np.float64)
         fallback_count = 0
+        invalid_rows = np.flatnonzero(~valid)
         for row, sample_valid in enumerate(valid):
             if sample_valid:
                 values[row, :n] = normals[row] @ jac_np[row, :, :n]
             else:
                 fallback_count += 1
-                for col in range(n):
-                    plus = current.copy()
-                    minus = current.copy()
-                    plus[col] += eps
-                    minus[col] -= eps
-                    values[row, col] = (
-                        self.constraint_query(plus, query_ids).signed_distance[row]
-                        - self.constraint_query(minus, query_ids).signed_distance[row]
-                    ) / (2.0 * eps)
+        if len(invalid_rows):
+            invalid_query_ids = np.asarray(query_ids[invalid_rows], dtype=np.int64)
+
+            def fd_residual_batch(probes: np.ndarray) -> np.ndarray:
+                # Do not send finite-difference probes through EvaluationCache:
+                # each probe has a distinct exact x and must preserve the
+                # requested-row identity.  Their SDF work is independent, so
+                # concatenate the points into one exact backend query.
+                point_blocks: list[np.ndarray] = []
+                for probe in np.asarray(probes, dtype=np.float64):
+                    point_blocks.append(
+                        self.candidate_points(probe, "__fd_probe__")[invalid_query_ids]
+                    )
+                points = np.concatenate(point_blocks, axis=0)
+                with self.timers.measure("solver_sdf"):
+                    result = self.sdf.query_scene(points, self.object_pose_scene)
+                if not np.all(result.sign_valid) or not np.all(result.valid):
+                    raise ValueError(
+                        "invalid signed-distance result entered finite-difference solve"
+                    )
+                return np.asarray(result.signed_distance, dtype=np.float64).reshape(
+                    len(point_blocks), len(invalid_query_ids)
+                )
+
+            values[invalid_rows, :n], _ = _vectorized_constraint_finite_difference(
+                fd_residual_batch,
+                current,
+                variable_count=n,
+                row_ids=np.arange(len(invalid_rows), dtype=np.int64),
+                epsilon=eps,
+            )
+            # Restore the active cache identity before storing this Jacobian.
+            self.cache.prepare(current, active_hash)
         values_soft = values.copy()
         values_soft[:, n:] = 0.0
         for row in range(len(query_ids)):
@@ -2068,8 +2093,8 @@ def refine_frame(
     continuation_trace: list[dict[str, Any]] = []
     solver_attempt_trace: list[dict[str, Any]] = []
     active_set_converged = False
-    full_audit_call_count = int(context.full_audit_call_count)
-    full_audit_call_reasons = list(context.full_audit_call_reasons)
+    discovery_audit_count = 0
+    final_full_audit_count = 0
     while True:
         query_rounds += 1
         outer_round_started = time.perf_counter()
@@ -2145,16 +2170,15 @@ def refine_frame(
         solver_attempt_trace.append(attempt)
         diagnostics.update(solve_diag)
         independent = _independent_constraints(context, result.x, query_set)
-        # Use the Stage 6 reference backend once per frame for both active-set
-        # expansion and the persisted independent full-surface audit. The
-        # solver-only backend remains reserved for inner constraint calls.
-        with context.timers.measure("full_512_audit"):
+        # Active-set discovery is distinct from final acceptance. It may scan
+        # the formal surface after each round, but it is never counted as the
+        # one independent final audit persisted for an accepted frame.
+        with context.timers.measure("active_set_discovery"):
             full = context.reference_sdf.query_scene(
                 context.candidate_points(result.x, query_set.query_hash),
                 context.object_pose_scene,
             )
-        full_audit_call_count += 1
-        full_audit_call_reasons.append("active_set_round_end")
+        discovery_audit_count += 1
         full_phi = np.asarray(full.signed_distance, dtype=np.float64)
         if not np.all(full.sign_valid):
             raise ValueError("full-surface audit received invalid signed distance")
@@ -2241,13 +2265,13 @@ def refine_frame(
     if full is None:
         raise RuntimeError("Stage 9 full-surface audit did not run")
     value = np.asarray(result.x, dtype=np.float64)
-    with context.timers.measure("full_512_audit"):
-        full = context.reference_sdf.query_scene(
-            context.candidate_points(value, query_set.query_hash),
-            context.object_pose_scene,
-        )
-    full_audit_call_count += 1
-    full_audit_call_reasons.append("frame_final_independent_acceptance")
+    with context.timers.measure("final_full_audit"):
+        with context.timers.measure("full_512_audit"):
+            full = context.reference_sdf.query_scene(
+                context.candidate_points(value, query_set.query_hash),
+                context.object_pose_scene,
+            )
+    final_full_audit_count += 1
     if not np.all(full.sign_valid):
         raise ValueError("final independent full-surface audit received invalid signed distance")
     _, _, qpos, slack = context.unpack(value)
@@ -2286,8 +2310,9 @@ def refine_frame(
     independent = _independent_constraints(context, value, query_set, distance_result=selected_full)
     diagnostics["outer_converged"] = bool(active_set_converged and result.success)
     diagnostics["active_set_converged"] = active_set_converged
-    diagnostics["full_audit_call_count"] = full_audit_call_count
-    diagnostics["full_audit_call_reasons"] = full_audit_call_reasons
+    diagnostics["full_audit_call_count"] = final_full_audit_count
+    diagnostics["full_audit_call_reasons"] = ["frame_final_independent_acceptance"]
+    diagnostics["active_set_discovery_audit_count"] = discovery_audit_count
     diagnostics["active_query_call_count"] = int(context.active_query_call_count)
     diagnostics["active_set_continuation"] = continuation_trace
     diagnostics["solver_attempt_trace"] = solver_attempt_trace
@@ -3447,19 +3472,11 @@ def build_final_trajectory(
                 else propagated.predicted_qpos
             ),
         )
-        initial_points = context.candidate_points(np.concatenate([np.zeros(6), context.seed_qpos]))
-        with context.timers.measure("full_512_audit"):
-            initial_full = context.reference_sdf.query_scene(
-                initial_points, context.object_pose_scene
-            )
-        if not np.all(initial_full.sign_valid):
-            raise ValueError("initial full-surface audit received invalid signed distance")
-        context.full_audit_call_count = 1
-        context.full_audit_call_reasons = ["frame_query_set_initialization"]
         # The selected solver backend preserves the original closest-point
         # magnitude and uses the audited sign policy. It is sufficient for
         # initial QuerySet selection; reference_sdf remains the independent
         # persisted audit.
+        initial_points = context.candidate_points(np.concatenate([np.zeros(6), context.seed_qpos]))
         initial_query = sdf.query_scene(initial_points, context.object_pose_scene)
         if getattr(initial_query, "near_original_boundary", None) is not None:
             boundary_mask = np.asarray(initial_query.near_original_boundary, dtype=bool)

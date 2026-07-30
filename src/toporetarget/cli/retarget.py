@@ -29,6 +29,7 @@ from toporetarget.retarget.artifacts import (
 from toporetarget.retarget.bones import extract_bone_features, load_bone_profile
 from toporetarget.retarget.continuous import is_continuous_profile
 from toporetarget.retarget.delaunay import load_delaunay_profile
+from toporetarget.retarget.final_jobs import PAUSE_STATE, paused
 from toporetarget.retarget.final_refinement import (
     ACTIVE_QUERY_PROFILE_ID,
     FINAL_REFINEMENT_SCHEMA_VERSION_V3,
@@ -1220,6 +1221,7 @@ def _run_checkpoint_refinement(
     progress_log: Path | None,
     force: bool,
     quality_extension_path: Path | None = None,
+    pause_check: Any | None = None,
 ) -> dict[str, Any]:
     sequence, warm, graph, model, surface, selected_samples = _refinement_components(
         canonical, warm_start, graph_path, robot, collision_samples, asset_root
@@ -1318,6 +1320,20 @@ def _run_checkpoint_refinement(
     bone_profile = load_bone_profile("mediapipe21_full_finger_chain_v1")
 
     while next_frame < stop:
+        if (pause_check is not None and bool(pause_check())) or paused(
+            Path(__file__).resolve().parents[3]
+        ):
+            status = store.update_progress(
+                status=PAUSE_STATE, elapsed_s=time.perf_counter() - started
+            )
+            status.update(_checkpoint_status_payload(store))
+            status["pause_reason"] = PAUSE_STATE
+            if progress_json is not None:
+                _json_write(status, progress_json)
+            if progress_log is not None:
+                progress_log.parent.mkdir(parents=True, exist_ok=True)
+                progress_log.open("a", encoding="utf-8").write(json.dumps(status) + "\n")
+            return status
         if max_wall_time is not None and time.perf_counter() - started >= max_wall_time:
             status = store.update_progress(status="paused", elapsed_s=time.perf_counter() - started)
             status.update(_checkpoint_status_payload(store))
@@ -1704,6 +1720,7 @@ def profile_refinement_command(
                     "format": "key_averages_json",
                 }
             frame_row = dict(diagnostics["performance"][0])
+            final_arrays = trajectory.arrays
             frame_row.update(
                 {
                     "classification": classification,
@@ -1716,6 +1733,17 @@ def profile_refinement_command(
                     "profile_hash": solver.profile_hash,
                     "execution_profile": execution.as_dict(),
                     "cprofile": str(cprofile_path),
+                    "result_fingerprint": {
+                        "final_artifact_hash": final_artifact_hash(trajectory),
+                        "qpos": np.asarray(final_arrays["qpos"][0], dtype=np.float64).tolist(),
+                        "base_pose_scene": np.asarray(
+                            final_arrays["base_pose_scene"][0], dtype=np.float64
+                        ).tolist(),
+                        "final_objective": float(final_arrays["final_objective"][0]),
+                        "min_signed_distance": float(
+                            np.min(final_arrays["full_signed_distance"][0])
+                        ),
+                    },
                 }
             )
             rows.append(frame_row)

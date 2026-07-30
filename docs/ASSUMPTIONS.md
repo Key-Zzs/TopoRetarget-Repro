@@ -247,3 +247,13 @@ change is therefore reported as a shallow numerical/mesh warning when the
 2 mm gate and maximum-depth bound pass. The window oracle uses local frame 34
 as a fixed anchor and treats future states as hints; unresolved window solver
 status cannot block the sequential recommendation.
+
+## Final-refinement performance boundary
+
+`wuji_continuous_sequential_fast_exact_v1` is a performance-candidate execution
+profile. It keeps CPU float64, objective/constraint definitions, collision samples,
+strict active-set semantics, recovery, determinism, and the independent final
+full-surface audit unchanged. Cache/batch/affinity instrumentation is engineering
+only; the paper does not specify SciPy SLSQP, the 672-sample Wuji surface,
+active-set round scheduling, or thread policy. It remains non-default and
+`author_exact: unresolved` until explicit parity gates pass.

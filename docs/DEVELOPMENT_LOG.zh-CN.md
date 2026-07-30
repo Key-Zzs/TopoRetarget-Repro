@@ -657,3 +657,9 @@ surface 验证、reference export、metrics 和自包含 HTML；写入范围不�
 并保留独立 fixed-anchor 五帧 diagnostic shadow。bounded runner 只在 W2.3 output root 写入
 replay、penetration、oracle、export、HTML 和 integrity evidence；不替换正式 artifact，也不做
 Git mutation。
+
+## 2026-07-30 -- Stage-12 final-job 安全暂停与性能修复
+
+已安装 fail-closed final-job control，只暂停经证据识别的 legacy Stage-12 process group。由于没有安全的
+per-frame checkpoint，这些 worker 保留为 `SIGSTOP`，queue 继续暂停。新的 CPU policy 为 1 worker / 1 条
+BLAS/Torch thread；fast-exact execution profile 是非默认候选，仍需真实帧 parity 与受控 scheduler 证据。

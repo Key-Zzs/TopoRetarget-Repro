@@ -471,6 +471,16 @@ Licensed-data tests are opt-in and require the configured local GRAB/MANO resour
 Detailed numbered-stage reports remain under [`docs/stages/`](docs/stages/) and are intentionally
 not duplicated in the main README.
 
+## Stage-12 final jobs
+
+Stage-12 batch final refinement is paused. Inspect it with `toporetarget jobs status-final`;
+only `toporetarget jobs pause-final` is an enabled operational action. New workers default to
+one worker and one BLAS/Torch thread. Use `toporetarget retarget profile-refinement` only with a
+new diagnostic output root. The candidate `wuji_continuous_sequential_fast_exact_v1` is not the
+default and is not recommended until numerical-equivalence gates pass. See
+[final-job scheduler](docs/FINAL_JOB_SCHEDULER.md) and
+[performance repair](docs/FINAL_REFINEMENT_PERFORMANCE.md).
+
 ## License
 
 Repository code and documentation are released under the GNU General Public License v3.0; see

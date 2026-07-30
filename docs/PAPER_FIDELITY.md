@@ -362,3 +362,11 @@ collision profile, or any persisted formal trajectory. The real W3 shadow
 currently fails with SLSQP status 4 and a continuity-gate failure, while W3
 penetration rate regresses; the closeout therefore records
 `WUJI_CONTINUOUS_PROFILE_NOT_RECOMMENDED_WINDOW_FALLBACK_FAILED`.
+
+## Final-refinement performance boundary
+
+Final-job pausing, checkpoint handling, object-local exact-query caching, collision-sample
+reuse, batched Jacobians, timers, and CPU thread limits are paper-unspecified engineering.
+The fast-exact candidate preserves the current paper-core objective and constraints but is
+not paper-method, author-exact, recommended, or the Stage-12 default until numerical-equivalence
+and real-frame strict-acceptance gates pass.

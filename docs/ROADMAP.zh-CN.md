@@ -55,6 +55,9 @@ warm-start、Q5 Arti-MANO surface contact proxy、Q6 contact-preserving diagnost
 
 阶段 9 的详细边界见 `stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md`。
 
+Stage 12 的 adapter 输入已经存在，但 batch final queue 处于暂停状态；checkpoint 与 exact-backend
+gate 完成前不能把该阶段描述为完成或恢复批量运行。
+
 每阶段的 objective、major deliverables、definition of done 和 status 以英文路线图为准。
 
 Wuji 三轨迹实现现已由通用 `workflow run-grab-suite` 提供；是否完成只由实验

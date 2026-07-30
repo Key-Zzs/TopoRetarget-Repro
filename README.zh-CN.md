@@ -459,6 +459,15 @@ Licensed-data test 是 opt-in，要求已配置本地 GRAB/MANO 资源。
 
 详细 numbered-stage report 保留在 [`docs/stages/`](docs/stages/)，不再复制到主 README。
 
+## Stage-12 final jobs
+
+Stage-12 批量 final refinement 当前保持暂停。可用 `toporetarget jobs status-final` 查看；唯一启用的
+操作命令是 `toporetarget jobs pause-final`。新 worker 默认使用 1 worker 与 1 条 BLAS/Torch thread。
+`toporetarget retarget profile-refinement` 只能写入新的诊断输出根。候选
+`wuji_continuous_sequential_fast_exact_v1` 尚不是默认 profile，也不能在数值等价 gate 通过前推荐。
+详见 [final-job scheduler](docs/FINAL_JOB_SCHEDULER.md) 与
+[performance repair](docs/FINAL_REFINEMENT_PERFORMANCE.md)。
+
 ## License
 
 仓库代码与文档采用 GNU General Public License v3.0，见 [LICENSE](LICENSE)。Tracked

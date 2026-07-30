@@ -780,3 +780,10 @@ production sequential path and a separate fixed-anchor five-frame diagnostic
 shadow. The bounded runner writes replay, penetration, oracle, export, HTML,
 and integrity evidence only to the W2.3 output root; no formal artifact is
 replaced and no Git mutation is performed.
+
+## 2026-07-30 -- Stage-12 final-job quiescence and performance repair
+
+Installed fail-closed final-job control, stopped only identified legacy Stage-12 process groups,
+and retained them as `SIGSTOP` because no safe per-frame checkpoint was present. The queue remains
+paused. The new CPU policy is one worker / one BLAS/Torch thread; the fast-exact execution profile
+is a non-default candidate pending real-frame parity and controlled scheduler evidence.

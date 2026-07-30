@@ -1104,3 +1104,14 @@ wuji_continuous_sequential_v1:
   realtime_ready: false
   cross_subject_validated: false
   author_exact: unresolved
+wuji_continuous_sequential_fast_exact_v1:
+  paper_method: false
+  engineering_execution_profile: true
+  role: performance_candidate
+  math_equivalent_claim: pending_validation
+  paper_core_frame_objective: unchanged
+  paper_core_collision_constraints: unchanged
+  final_full_surface_audit: true
+  recommended: false
+  stage12_default: false
+  author_exact: unresolved
