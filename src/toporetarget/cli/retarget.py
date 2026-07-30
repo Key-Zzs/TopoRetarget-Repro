@@ -10,6 +10,7 @@ import pstats
 import re
 import shutil
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -1222,6 +1223,7 @@ def _run_checkpoint_refinement(
     force: bool,
     quality_extension_path: Path | None = None,
     pause_check: Any | None = None,
+    frame_health_gate: Callable[[dict[str, Any], list[dict[str, Any]]], str | None] | None = None,
 ) -> dict[str, Any]:
     sequence, warm, graph, model, surface, selected_samples = _refinement_components(
         canonical, warm_start, graph_path, robot, collision_samples, asset_root
@@ -1316,6 +1318,13 @@ def _run_checkpoint_refinement(
         )
     started = time.perf_counter()
     frame_rows: list[dict[str, Any]] = []
+    if next_frame > start_frame:
+        # A recovered health gate must include already committed frames; this
+        # preserves the original five-frame window instead of silently moving
+        # it forward after an interruption.
+        for index in range(start_frame, next_frame):
+            metadata, _ = store.load_frame(index)
+            frame_rows.append(metadata)
     frame_profile = load_frame_profile("canonical_keypoint_wrist_v1")
     bone_profile = load_bone_profile("mediapipe21_full_finger_chain_v1")
 
@@ -1345,13 +1354,14 @@ def _run_checkpoint_refinement(
             return status
         current_frame = next_frame
         callback_hash = previous_hash
+        latest_metadata: dict[str, Any] | None = None
 
         def on_frame(
             local_index: int,
             frame_result: Any,
             context: Any,
         ) -> None:
-            nonlocal callback_hash
+            nonlocal callback_hash, latest_metadata
             metadata, arrays = frame_checkpoint_payload(
                 local_index,
                 frame_result,
@@ -1366,6 +1376,7 @@ def _run_checkpoint_refinement(
             )
             callback_hash = store.save_frame(metadata, arrays)
             frame_rows.append(metadata)
+            latest_metadata = metadata
 
         trajectory, _ = build_final_trajectory(
             sequence,
@@ -1396,6 +1407,23 @@ def _run_checkpoint_refinement(
         previous_hash = callback_hash
         next_frame += 1
         store.update_progress(status="paused", elapsed_s=time.perf_counter() - started)
+        if frame_health_gate is not None:
+            if latest_metadata is None:
+                raise RuntimeError("final refinement emitted no checkpoint metadata")
+            failure_reason = frame_health_gate(latest_metadata, frame_rows)
+            if failure_reason is not None:
+                status = store.update_progress(
+                    status="PAUSED_BY_STAGE12_HEALTH_GATE",
+                    elapsed_s=time.perf_counter() - started,
+                )
+                status.update(_checkpoint_status_payload(store))
+                status["pause_reason"] = failure_reason
+                if progress_json is not None:
+                    _json_write(status, progress_json)
+                if progress_log is not None:
+                    progress_log.parent.mkdir(parents=True, exist_ok=True)
+                    progress_log.open("a", encoding="utf-8").write(json.dumps(status) + "\n")
+                return status
         if stop_after_frame is not None and current_frame >= stop_after_frame:
             status = store.update_progress(status="paused", elapsed_s=time.perf_counter() - started)
             status.update(_checkpoint_status_payload(store))

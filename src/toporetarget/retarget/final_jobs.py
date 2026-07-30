@@ -19,6 +19,7 @@ from typing import Any
 import yaml
 
 PAUSE_STATE = "PAUSED_BY_OPERATOR_CONTROL"
+HEALTH_GATE_PAUSE_STATE = "PAUSED_BY_STAGE12_HEALTH_GATE"
 CONTROL_SCHEMA = "toporetarget.final_jobs.control.v1"
 
 
@@ -45,15 +46,22 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
-def pause_final_jobs(root: Path | None = None, *, reason: str) -> dict[str, Any]:
+def pause_final_jobs(
+    root: Path | None = None,
+    *,
+    reason: str,
+    state: str = PAUSE_STATE,
+) -> dict[str, Any]:
     """Install the persistent fail-closed pause sentinel atomically."""
 
+    if state not in {PAUSE_STATE, HEALTH_GATE_PAUSE_STATE}:
+        raise ValueError(f"unsupported final-job pause state: {state}")
     destination = control_root(root)
     destination.mkdir(parents=True, exist_ok=True)
-    (destination / "PAUSED").write_text(f"{PAUSE_STATE}\n", encoding="utf-8")
+    (destination / "PAUSED").write_text(f"{state}\n", encoding="utf-8")
     payload = {
         "schema_version": CONTROL_SCHEMA,
-        "state": PAUSE_STATE,
+        "state": state,
         "reason": reason,
         "timestamp_unix_s": time.time(),
         "new_final_tasks_allowed": False,
@@ -64,7 +72,7 @@ def pause_final_jobs(root: Path | None = None, *, reason: str) -> dict[str, Any]
         destination / "scheduler_state.json",
         {
             "schema_version": CONTROL_SCHEMA,
-            "state": PAUSE_STATE,
+            "state": state,
             "new_final_tasks_allowed": False,
             "max_final_workers": 0,
         },
@@ -196,6 +204,7 @@ def append_heartbeat(
 
 __all__ = [
     "FinalJobPaused",
+    "HEALTH_GATE_PAUSE_STATE",
     "FinalRefinementCPUConfig",
     "PAUSE_STATE",
     "append_heartbeat",

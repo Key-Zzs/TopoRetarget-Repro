@@ -22,6 +22,13 @@ def _root(repo_root: Path | None) -> Path:
     return (repo_root or Path(__file__).resolve().parents[3]).resolve()
 
 
+def _state(root: Path) -> str:
+    manifest = control_root(root) / "pause_manifest.json"
+    if manifest.is_file():
+        return str(json.loads(manifest.read_text()).get("state", PAUSE_STATE))
+    return PAUSE_STATE if paused(root) else "READY"
+
+
 @app.command("pause-final")
 def pause_final_command(
     reason: str = typer.Option("operator requested final-job quiescence", "--reason"),
@@ -42,12 +49,17 @@ def status_final_command(repo_root: Path | None = typer.Option(None, "--repo-roo
     control = control_root(root)
     scheduler = control / "scheduler_state.json"
     active = control / "active_jobs.json"
+    scheduler_state = json.loads(scheduler.read_text()) if scheduler.exists() else None
     payload = {
-        "state": PAUSE_STATE if paused(root) else "READY",
-        "new_final_tasks_allowed": not paused(root),
+        "state": _state(root),
+        "new_final_tasks_allowed": bool(
+            scheduler_state.get("new_final_tasks_allowed", not paused(root))
+            if scheduler_state is not None
+            else not paused(root)
+        ),
         "control_root": str(control),
         "runtime_root": str(runtime_root(root)),
-        "scheduler_state": json.loads(scheduler.read_text()) if scheduler.exists() else None,
+        "scheduler_state": scheduler_state,
         "active_jobs": json.loads(active.read_text()) if active.exists() else [],
     }
     typer.echo(json.dumps(payload, indent=2, sort_keys=True))
@@ -61,7 +73,7 @@ def drain_final_command(repo_root: Path | None = typer.Option(None, "--repo-root
     typer.echo(
         json.dumps(
             {
-                "state": PAUSE_STATE if paused(root) else "READY",
+                "state": _state(root),
                 "action": "report_only",
                 "legacy_workers_terminated": False,
                 "message": "Use a validated checkpoint/graceful-stop path for a running worker.",

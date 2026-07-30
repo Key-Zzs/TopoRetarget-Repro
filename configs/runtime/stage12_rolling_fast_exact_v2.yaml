@@ -1,0 +1,33 @@
+# Explicit operator-approved Stage 12 rolling policy.  This file selects the
+# execution layer only; the frozen continuous solver mathematics remains the
+# `wuji_continuous_sequential_v1` solver profile.
+schema_version: toporetarget.stage12.rolling_fast_exact.v1
+execution_profile: wuji_continuous_sequential_fast_exact_v2
+solver_profile: wuji_continuous_sequential_v1
+coordinate_profile: local_seed_delta_v1
+query_profile: adaptive_active_set_v1
+dtype: float64
+device: cpu
+initial_max_final_workers: 1
+rolling_max_final_workers: 2
+blas_threads: 1
+openmp_threads: 1
+torch_threads: 1
+torch_interop_threads: 1
+heartbeat_interval_frames: 1
+checkpoint_interval_frames: 1
+final_full_audit_per_accepted_frame: 1
+graceful_stop_after_frame: true
+fail_closed: true
+batch0_health_frames: 5
+batch0_median_s_per_frame_max: 15.0
+batch0_p95_s_per_frame_max: 25.0
+batch1_median_s_per_frame_max: 18.0
+batch1_p95_s_per_frame_max: 30.0
+batch1_latency_degradation_max: 0.25
+auto_pause:
+  consecutive_frames_over_s: 30.0
+  consecutive_frame_count: 3
+  recent_window_frames: 10
+  recent_p95_s_per_frame_max: 25.0
+  single_frame_s_max: 90.0
