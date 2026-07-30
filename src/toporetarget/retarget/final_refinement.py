@@ -1031,21 +1031,21 @@ def choose_solver_sdf_backend(
     grid_resolution = grid_resolution_from_profile(profile.sdf_backend)
     if grid_resolution is not None:
         try:
-            candidate = OriginalMeshSignedGridSDFBackend.build(
+            grid_candidate = OriginalMeshSignedGridSDFBackend.build(
                 vertices,
                 faces,
                 resolution=grid_resolution,
                 profile_id=profile.sdf_backend,
                 cache_root=grid_cache_root,
             )
-            report["selected"] = candidate.profile_id
+            report["selected"] = grid_candidate.profile_id
             report["cross_validation"] = {
                 "status": "deferred_to_original_mesh_grid_acceptance",
                 "resolution": grid_resolution,
-                "cache_key": candidate.metadata["cache_key"],
+                "cache_key": grid_candidate.metadata["cache_key"],
                 "source_geometry": "original_strict_watertight_mesh",
             }
-            return candidate, report
+            return grid_candidate, report
         except Exception as exc:
             report["cross_validation"] = {
                 "status": "grid_build_failed",
@@ -1058,7 +1058,7 @@ def choose_solver_sdf_backend(
         reference_mesh_hash = reference.describe().get("mesh_hash")
         if not isinstance(reference_mesh_hash, str):
             reference_mesh_hash = audit_mesh(vertices, faces).mesh_hash
-        candidate = ConvexHullSignedDistanceBackend(
+        convex_candidate = ConvexHullSignedDistanceBackend(
             vertices,
             faces,
             reference_mesh_hash,
@@ -1069,7 +1069,7 @@ def choose_solver_sdf_backend(
         local *= max(float(np.linalg.norm(np.ptp(vertices, axis=0))), 1.0)
         local += np.mean(vertices, axis=0)
         ref = reference.query_local(local)
-        fast = candidate.query_local(local)
+        fast = convex_candidate.query_local(local)
         error = float(np.max(np.abs(ref.signed_distance - fast.signed_distance)))
         report["cross_validation"] = {
             "probe_count": len(local),
@@ -1078,8 +1078,8 @@ def choose_solver_sdf_backend(
             "passed": error <= profile.sdf_cross_validation_tolerance_m,
         }
         if error <= profile.sdf_cross_validation_tolerance_m:
-            report["selected"] = candidate.backend_id
-            return candidate, report
+            report["selected"] = convex_candidate.backend_id
+            return convex_candidate, report
     except Exception as exc:  # pragma: no cover - diagnostic fallback
         report["cross_validation"] = {"passed": False, "error": str(exc)}
     return reference, report

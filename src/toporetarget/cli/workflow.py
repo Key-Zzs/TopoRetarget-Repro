@@ -40,11 +40,23 @@ from toporetarget.workflows.s1_2a_stress import status as s1_2a_status
 from toporetarget.workflows.s1_penetration import run_s1, s1_status
 from toporetarget.workflows.s1_signal_rich import (
     DEFAULT_CONFIG as S1_SIGNAL_RICH_DEFAULT_CONFIG,
+)
+from toporetarget.workflows.s1_signal_rich import (
     audit_backends as audit_signal_rich_backends,
+)
+from toporetarget.workflows.s1_signal_rich import (
     diagnose_g1 as diagnose_signal_rich_g1,
+)
+from toporetarget.workflows.s1_signal_rich import (
     freeze_stress_set as freeze_signal_rich_stress_set,
+)
+from toporetarget.workflows.s1_signal_rich import (
     run_signal_rich,
+)
+from toporetarget.workflows.s1_signal_rich import (
     scan_source_candidates as scan_signal_rich_candidates,
+)
+from toporetarget.workflows.s1_signal_rich import (
     status as signal_rich_status,
 )
 from toporetarget.workflows.schema import WorkflowRequest, read_json, write_json

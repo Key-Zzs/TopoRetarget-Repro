@@ -295,12 +295,15 @@ class OriginalMeshSignedGridSDFBackend(SignedDistanceBackend):
             points[:, 2] = z_value
             values: list[np.ndarray] = []
             for start in range(0, len(points), query_batch_size):
-                result = reference.query_local(points[start : start + query_batch_size])
-                if not np.all(result.sign_valid) or not np.all(result.valid):
+                query_result = reference.query_local(points[start : start + query_batch_size])
+                if not np.all(query_result.sign_valid) or not np.all(query_result.valid):
                     raise ValueError("strict reference winding produced an invalid grid sample")
-                values.append(np.asarray(result.signed_distance, dtype=np.float64).reshape(-1))
+                values.append(
+                    np.asarray(query_result.signed_distance, dtype=np.float64).reshape(-1)
+                )
             grid[:, :, z_index] = np.concatenate(values).reshape(grid.shape[:2])
             if partial_path is not None:
+                assert isinstance(grid, np.memmap)
                 grid.flush()
                 write_progress(z_index + 1)
         gradients = np.stack(np.gradient(grid, *voxel_size, edge_order=2), axis=-1)
@@ -316,7 +319,7 @@ class OriginalMeshSignedGridSDFBackend(SignedDistanceBackend):
             "grid_node_count": int(grid.size),
             "cache_path": None if cache_path is None else str(cache_path),
         }
-        result = cls(
+        backend = cls(
             signed_distance_grid=grid,
             gradient_grid=gradients,
             origin=origin,
@@ -355,7 +358,7 @@ class OriginalMeshSignedGridSDFBackend(SignedDistanceBackend):
                 partial_path.unlink()
             if progress_path is not None and progress_path.exists():
                 progress_path.unlink()
-        return result
+        return backend
 
     def audit(self) -> dict[str, Any]:
         return {
