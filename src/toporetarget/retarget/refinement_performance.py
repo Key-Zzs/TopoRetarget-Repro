@@ -246,6 +246,7 @@ class RefinementExecutionProfile:
         if result.ambiguity_fd_backend not in {
             "fast_exact_v2_python",
             "compiled_spatial_central_fd_v1",
+            "compiled_spatial_central_fd_winding_v1",
         }:
             raise ValueError("unsupported ambiguity spatial-FD backend")
         if result.exact_closest_point_backend not in {

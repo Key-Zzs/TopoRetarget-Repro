@@ -23,7 +23,7 @@ def main() -> int:
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     source = root / "src/toporetarget/geometry/signed_distance/_compiled_sdf_cpu.cpp"
-    output_dir = root / ".local/build/compiled_sdf_cpu_v1"
+    output_dir = root / ".local/build/compiled_exact_sign_v1"
     output_dir.mkdir(parents=True, exist_ok=True)
     suffix = sysconfig.get_config_var("EXT_SUFFIX")
     if not suffix:

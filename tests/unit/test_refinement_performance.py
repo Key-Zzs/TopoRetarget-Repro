@@ -45,6 +45,10 @@ def test_timer_book_and_execution_profile() -> None:
     assert profile.device == "cpu"
     assert profile.dtype == "float64"
     assert profile.as_dict()["profile_id"] == "cached_checkpoint_cpu_float64_v1"
+    v4 = RefinementExecutionProfile.load("wuji_continuous_sequential_fast_exact_v4_compiled_sign")
+    assert v4.ambiguity_fd_backend == "compiled_spatial_central_fd_winding_v1"
+    assert not v4.recommended
+    assert not v4.stage12_default
 
 
 def test_checkpoint_store_atomic_chain_and_orphan_detection(tmp_path) -> None:

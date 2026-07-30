@@ -489,6 +489,10 @@ P3 adds the experimental compiled ambiguous spatial-FD probe kernel; it leaves
 the mathematical contract and exact sign backend unchanged. See
 [compiled CPU SDF](docs/COMPILED_SDF_CPU_KERNEL.md).
 
+P4 adds an experimental exact compiled generalized-winding path with certified
+FD-probe reuse and strict reference fallback; it is still non-default and does
+not alter Stage-12 artifacts.  See [fast exact v4](docs/FAST_EXACT_V4_COMPILED_SIGN.md).
+
 ## License
 
 Repository code and documentation are released under the GNU General Public License v3.0; see

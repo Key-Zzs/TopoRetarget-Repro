@@ -798,3 +798,9 @@ under `.local/experiments/final_refinement_perf_v2/`.
 
 Added a float64 C++17 exact source-mesh BVH only for ambiguous six-probe FD
 batches; reference generalized-winding signs and v2 fallback remain intact.
+
+# P4 certified compiled exact sign
+
+Added the optional deterministic C++17 generalized-winding handle, a strict
+near-threshold Python fallback, and the 1-Lipschitz FD-probe reuse certificate.
+The v4 profile is non-default and uses only float64 CPU execution.

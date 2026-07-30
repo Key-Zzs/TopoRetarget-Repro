@@ -185,6 +185,13 @@ struct Mesh {
 typedef struct { PyObject_HEAD Mesh* mesh; } HandleObject;
 static PyTypeObject HandleType = {PyVarObject_HEAD_INIT(nullptr, 0)};
 
+// The winding handle deliberately keeps triangles in input order.  That is the
+// same deterministic reduction order used by the Python reference, without
+// allocating an N-by-triangle temporary for a batch of query points.
+struct WindingMesh { std::vector<Triangle> triangles; std::atomic<uint64_t> query_count{0}; std::atomic<uint64_t> point_count{0}; };
+typedef struct { PyObject_HEAD WindingMesh* mesh; } WindingHandleObject;
+static PyTypeObject WindingHandleType = {PyVarObject_HEAD_INIT(nullptr, 0)};
+
 bool require_array(PyObject* value, int type, int dimensions, const char* name, PyArrayObject** output) {
     if (!PyArray_Check(value)) { PyErr_Format(PyExc_TypeError, "%s must be a NumPy array", name); return false; }
     auto* array = reinterpret_cast<PyArrayObject*>(value);
@@ -284,6 +291,75 @@ PyObject* handle_stats(HandleObject* self, PyObject*) {
 }
 
 PyMethodDef handle_methods[] = {{"query", reinterpret_cast<PyCFunction>(handle_query), METH_VARARGS, "Exact batch closest-triangle query."}, {"stats", reinterpret_cast<PyCFunction>(handle_stats), METH_NOARGS, "Return monotonic query statistics."}, {nullptr, nullptr, 0, nullptr}};
+PyObject* winding_handle_new(PyTypeObject* type, PyObject*, PyObject*) {
+    auto* self = reinterpret_cast<WindingHandleObject*>(type->tp_alloc(type, 0));
+    if (self != nullptr) self->mesh = nullptr;
+    return reinterpret_cast<PyObject*>(self);
+}
+
+int winding_handle_init(WindingHandleObject* self, PyObject* args, PyObject* kwargs) {
+    PyObject *vertices_obj = nullptr, *faces_obj = nullptr;
+    static const char* names[] = {"vertices", "faces", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OO", const_cast<char**>(names), &vertices_obj, &faces_obj)) return -1;
+    PyArrayObject *vertices = nullptr, *faces = nullptr;
+    if (!require_array(vertices_obj, NPY_DOUBLE, 2, "vertices", &vertices)) return -1;
+    if (!require_array(faces_obj, NPY_INT64, 2, "faces", &faces)) return -1;
+    if (!require_finite(static_cast<const double*>(PyArray_DATA(vertices)), PyArray_SIZE(vertices), "vertices")) return -1;
+    const npy_intp vertex_count = PyArray_DIMS(vertices)[0], face_count = PyArray_DIMS(faces)[0];
+    if (vertex_count == 0 || face_count == 0) { PyErr_SetString(PyExc_ValueError, "compiled winding requires non-empty vertices and faces"); return -1; }
+    const auto* face_data = static_cast<const int64_t*>(PyArray_DATA(faces));
+    for (npy_intp index = 0; index < face_count * 3; ++index) if (face_data[index] < 0 || face_data[index] >= vertex_count) { PyErr_SetString(PyExc_ValueError, "faces contain an invalid vertex index"); return -1; }
+    const auto* vertex_data = static_cast<const double*>(PyArray_DATA(vertices));
+    try {
+        auto mesh = std::make_unique<WindingMesh>(); mesh->triangles.reserve(static_cast<size_t>(face_count));
+        for (npy_intp face = 0; face < face_count; ++face) {
+            const auto load = [&](int64_t id) { return Vec3{vertex_data[id * 3], vertex_data[id * 3 + 1], vertex_data[id * 3 + 2]}; };
+            mesh->triangles.push_back(Triangle{load(face_data[face * 3]), load(face_data[face * 3 + 1]), load(face_data[face * 3 + 2]), {}, {}, {}, static_cast<int64_t>(face)});
+        }
+        delete self->mesh; self->mesh = mesh.release();
+    } catch (const std::exception& error) { PyErr_SetString(PyExc_RuntimeError, error.what()); return -1; }
+    return 0;
+}
+
+void winding_handle_dealloc(WindingHandleObject* self) { delete self->mesh; Py_TYPE(self)->tp_free(reinterpret_cast<PyObject*>(self)); }
+
+PyObject* winding_handle_query(WindingHandleObject* self, PyObject* args) {
+    PyObject* points_obj = nullptr;
+    if (!PyArg_ParseTuple(args, "O", &points_obj)) return nullptr;
+    if (self->mesh == nullptr) { PyErr_SetString(PyExc_RuntimeError, "compiled winding handle is destroyed or uninitialized"); return nullptr; }
+    PyArrayObject* points = nullptr;
+    if (!require_array(points_obj, NPY_DOUBLE, 2, "points_object_float64", &points)) return nullptr;
+    if (!require_finite(static_cast<const double*>(PyArray_DATA(points)), PyArray_SIZE(points), "points_object_float64")) return nullptr;
+    const npy_intp count = PyArray_DIMS(points)[0];
+    PyArrayObject* output = reinterpret_cast<PyArrayObject*>(PyArray_SimpleNew(1, &count, NPY_DOUBLE));
+    if (output == nullptr) return nullptr;
+    const auto* input = static_cast<const double*>(PyArray_DATA(points)); auto* values = static_cast<double*>(PyArray_DATA(output));
+    self->mesh->query_count.fetch_add(1, std::memory_order_relaxed); self->mesh->point_count.fetch_add(static_cast<uint64_t>(count), std::memory_order_relaxed);
+    constexpr double four_pi = 12.566370614359172953850573533118;
+    Py_BEGIN_ALLOW_THREADS
+    for (npy_intp index = 0; index < count; ++index) {
+        const Vec3 p{input[index * 3], input[index * 3 + 1], input[index * 3 + 2]}; double total = 0.0;
+        for (const Triangle& triangle : self->mesh->triangles) {
+            const Vec3 a = triangle.a - p, b = triangle.b - p, c = triangle.c - p;
+            const double la = std::sqrt(dot(a, a)), lb = std::sqrt(dot(b, b)), lc = std::sqrt(dot(c, c));
+            const double numerator = dot(a, cross(b, c));
+            const double denominator = la * lb * lc + dot(a, b) * lc + dot(b, c) * la + dot(c, a) * lb;
+            total += 2.0 * std::atan2(numerator, denominator);
+        }
+        values[index] = total / four_pi;
+    }
+    Py_END_ALLOW_THREADS
+    return reinterpret_cast<PyObject*>(output);
+}
+
+PyObject* winding_handle_stats(WindingHandleObject* self, PyObject*) {
+    if (self->mesh == nullptr) { PyErr_SetString(PyExc_RuntimeError, "compiled winding handle is destroyed or uninitialized"); return nullptr; }
+    PyObject* result = PyDict_New(); if (result == nullptr) return nullptr;
+    const auto put = [&](const char* key, uint64_t value) { PyObject* item = PyLong_FromUnsignedLongLong(value); PyDict_SetItemString(result, key, item); Py_DECREF(item); };
+    put("triangle_count", self->mesh->triangles.size()); put("query_count", self->mesh->query_count.load()); put("queried_point_count", self->mesh->point_count.load()); return result;
+}
+
+PyMethodDef winding_handle_methods[] = {{"query", reinterpret_cast<PyCFunction>(winding_handle_query), METH_VARARGS, "Exact batched generalized-winding query."}, {"stats", reinterpret_cast<PyCFunction>(winding_handle_stats), METH_NOARGS, "Return monotonic query statistics."}, {nullptr, nullptr, 0, nullptr}};
 PyModuleDef module = {PyModuleDef_HEAD_INIT, "_compiled_sdf_cpu", "Portable exact CPU BVH kernel.", -1, nullptr, nullptr, nullptr, nullptr, nullptr};
 
 }  // namespace
@@ -295,9 +371,16 @@ PyMODINIT_FUNC PyInit__compiled_sdf_cpu(void) {
     HandleType.tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE;
     HandleType.tp_new = handle_new; HandleType.tp_init = reinterpret_cast<initproc>(handle_init); HandleType.tp_dealloc = reinterpret_cast<destructor>(handle_dealloc); HandleType.tp_methods = handle_methods;
     if (PyType_Ready(&HandleType) < 0) return nullptr;
+    WindingHandleType.tp_name = "_compiled_sdf_cpu.CompiledGeneralizedWindingHandle";
+    WindingHandleType.tp_basicsize = sizeof(WindingHandleObject);
+    WindingHandleType.tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE;
+    WindingHandleType.tp_new = winding_handle_new; WindingHandleType.tp_init = reinterpret_cast<initproc>(winding_handle_init); WindingHandleType.tp_dealloc = reinterpret_cast<destructor>(winding_handle_dealloc); WindingHandleType.tp_methods = winding_handle_methods;
+    if (PyType_Ready(&WindingHandleType) < 0) return nullptr;
     PyObject* result = PyModule_Create(&module);
     if (result == nullptr) return nullptr;
     Py_INCREF(&HandleType);
     if (PyModule_AddObject(result, "CompiledBVHHandle", reinterpret_cast<PyObject*>(&HandleType)) < 0) { Py_DECREF(&HandleType); Py_DECREF(result); return nullptr; }
+    Py_INCREF(&WindingHandleType);
+    if (PyModule_AddObject(result, "CompiledGeneralizedWindingHandle", reinterpret_cast<PyObject*>(&WindingHandleType)) < 0) { Py_DECREF(&WindingHandleType); Py_DECREF(result); return nullptr; }
     return result;
 }

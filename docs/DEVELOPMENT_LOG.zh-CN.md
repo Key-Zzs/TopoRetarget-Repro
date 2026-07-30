@@ -673,3 +673,8 @@ exact object-local BVH instrumentation。固定五帧诊断与 Stage-12 严格�
 
 仅对歧义六 probe FD batch 增加 float64 C++17 精确 source-mesh BVH；保留 reference
 generalized-winding sign 与 v2 fallback。
+
+# P4 认证式 compiled exact sign
+
+新增可选的确定性 C++17 generalized-winding handle、严格的 near-threshold Python fallback，
+以及 1-Lipschitz FD-probe 符号复用认证。v4 profile 保持 float64 CPU、非默认。
