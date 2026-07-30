@@ -1,0 +1,35 @@
+experiment_id: s1_3_reference_faithful_sdf_v1
+stage: S1.3
+output_root: .local/experiments/s1_3_reference_faithful_sdf_v1
+source_artifact_root: .local/experiments/s1_2b_temporal_sync_replay_v1/transport_previous_final_v2
+runtime_profile: s1_3_sdf_backend_cpu_v1
+selected_solver_profile: scipy_slsqp_active_set_contact_rich_v3_original_mesh_batched_exact_bvh
+reference_backend: reference_winding_v1
+candidates:
+  - original_mesh_batched_exact_bvh_v1
+accuracy_gate:
+  sign_agreement: 0.99
+  reference_gt_1mm_recall: 0.95
+  penetration_depth_pearson: 0.95
+  penetration_depth_spearman: 0.95
+  gradient_cosine: 0.90
+  p95_absolute_distance_error_m: 0.00025
+  active_region_max_absolute_error_m: 0.00075
+  closest_point_p95_error_m: 0.00025
+performance_gate:
+  batch_sdf_speedup: 3.0
+  callback_speedup: 2.0
+stress:
+  - id: Stress1
+    sequence: s1/cylindermedium_inspect_1
+    frame_range: [785, 845]
+  - id: Stress2
+    sequence: s1/cup_lift
+    frame_range: [2642, 2702]
+constraints:
+  no_new_stress_discovery: true
+  no_sdf_math_change: true
+  no_lambda_study: true
+  no_proxy_or_grid_candidate: true
+  same_backend_for_e0_and_s1: true
+  final_reference_audit_independent: true

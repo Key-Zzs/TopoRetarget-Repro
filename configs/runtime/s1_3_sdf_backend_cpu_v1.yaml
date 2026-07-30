@@ -1,0 +1,12 @@
+profile_id: s1_3_sdf_backend_cpu_v1
+max_workers: 1
+blas_threads: 1
+torch_threads: 1
+torch_interop_threads: 1
+heartbeat_interval_s: 15
+pause_control_path: .local/control/s1_3_jobs
+stop_after_frame: true
+frame_soft_wall_time_s: 1800
+assumptions:
+  - A_S1_3_SINGLE_WORKER_SINGLE_THREAD_001
+  - A_S1_3_ATOMIC_FRAME_CHECKPOINT_001

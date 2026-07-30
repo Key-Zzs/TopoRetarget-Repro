@@ -32,6 +32,9 @@ from toporetarget.geometry.signed_distance.base import (
     SignedDistanceBackend,
     SignedDistanceQueryResult,
 )
+from toporetarget.geometry.signed_distance.batched_exact import (
+    BatchedOriginalMeshProximityBackend,
+)
 from toporetarget.geometry.signed_distance.derived_proxy import (
     ObjectSDFGeometryPolicy,
     build_hybrid_signed_distance_backend,
@@ -1028,6 +1031,23 @@ def choose_solver_sdf_backend(
         "selected": "reference",
         "cross_validation": None,
     }
+    if profile.sdf_backend == "original_mesh_batched_exact_bvh_v1":
+        candidate = BatchedOriginalMeshProximityBackend.build(
+            vertices,
+            faces,
+            query_chunk_size=1024,
+            face_chunk_size=4096,
+            winding_device="cpu",
+        )
+        report["selected"] = candidate.backend_id
+        report["cross_validation"] = {
+            "status": "reference_faithful_by_construction",
+            "distance": "exact_original_triangle_closest_point",
+            "sign": "strict_reference_generalized_winding",
+            "object_local": True,
+            "persistent_bvh": True,
+        }
+        return candidate, report
     grid_resolution = grid_resolution_from_profile(profile.sdf_backend)
     if grid_resolution is not None:
         try:

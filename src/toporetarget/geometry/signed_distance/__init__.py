@@ -1,6 +1,11 @@
 """Signed-distance backends with the repository's positive-outside convention."""
 
 from .base import SignedDistanceBackend, SignedDistanceQueryResult, local_linearization
+from .batched_exact import (
+    BatchedOriginalMeshProximityBackend,
+    ObjectLocalProximityContext,
+    ReferenceFaithfulSignedDistanceBackend,
+)
 from .derived_proxy import (
     DERIVED_SDF_PROXY_SCHEMA_VERSION,
     HYBRID_SIGNED_DISTANCE_PROFILE_ID,
@@ -23,6 +28,9 @@ from .signed_grid import (
 
 __all__ = [
     "ReferenceSignedDistanceBackend",
+    "BatchedOriginalMeshProximityBackend",
+    "ObjectLocalProximityContext",
+    "ReferenceFaithfulSignedDistanceBackend",
     "OriginalMeshSignedGridSDFBackend",
     "GRID_SCHEMA_VERSION",
     "DERIVED_SDF_PROXY_SCHEMA_VERSION",

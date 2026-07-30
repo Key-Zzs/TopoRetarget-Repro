@@ -37,6 +37,7 @@ from toporetarget.workflows.planning import build_plan, write_plan
 from toporetarget.workflows.s1_2a_stress import DEFAULT_CONFIG as S1_2A_DEFAULT_CONFIG
 from toporetarget.workflows.s1_2a_stress import run_s1_2a
 from toporetarget.workflows.s1_2a_stress import status as s1_2a_status
+from toporetarget.workflows.s1_3_backend import run_s1_3
 from toporetarget.workflows.s1_penetration import run_s1, s1_status
 from toporetarget.workflows.s1_signal_rich import (
     DEFAULT_CONFIG as S1_SIGNAL_RICH_DEFAULT_CONFIG,
@@ -101,6 +102,44 @@ from toporetarget.workflows.visualization import run_visualization, write_visual
 from toporetarget.workflows.warm_start_audit import run_warm_start_audit
 
 app = typer.Typer(help="Stage 10 bounded, resumable GRAB-to-Arti-MANO workflows.")
+
+
+@app.command("run-s1-3-backend")
+def run_s1_3_backend_command(
+    config: Path = typer.Option(
+        Path("configs/experiments/s1_3_reference_faithful_sdf_v1.yaml"), "--config"
+    ),
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/s1_3_reference_faithful_sdf_v1"), "--experiment-root"
+    ),
+    resume: bool = typer.Option(True, "--resume/--no-resume"),
+    max_wall_time: float = typer.Option(1800.0, "--max-wall-time", min=1.0),
+    generate_html: bool = typer.Option(True, "--generate-html/--no-generate-html"),
+) -> None:
+    """Run the bounded S1.3 exact-backend validation without stress discovery."""
+
+    del resume, max_wall_time, generate_html
+    try:
+        value = run_s1_3(Path.cwd(), config_path=config, experiment_root=experiment_root)
+        typer.echo(json.dumps(value, indent=2, sort_keys=True))
+    except (OSError, ValueError, RuntimeError) as exc:
+        typer.echo(f"S1.3 backend workflow failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+
+@app.command("s1-3-status")
+def s1_3_status_command(
+    experiment_root: Path = typer.Option(
+        Path(".local/experiments/s1_3_reference_faithful_sdf_v1"), "--experiment-root"
+    ),
+) -> None:
+    """Show the fail-closed S1.3 backend acceptance state."""
+
+    path = experiment_root / "reports" / "final_status.json"
+    if not path.is_file():
+        typer.echo("S1.3 backend status is unavailable; run run-s1-3-backend first.", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(path.read_text(encoding="utf-8"))
 
 
 def _parse_frames(value: str) -> tuple[int, ...]:

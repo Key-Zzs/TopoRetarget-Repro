@@ -9,6 +9,7 @@ from toporetarget.cli.benchmark import app as benchmark_app
 from toporetarget.cli.data import app as data_app
 from toporetarget.cli.doctor import app as doctor_app
 from toporetarget.cli.geometry import app as geometry_app
+from toporetarget.cli.jobs import app as jobs_app
 from toporetarget.cli.keypoints import app as keypoints_app
 from toporetarget.cli.quality import app as quality_app
 from toporetarget.cli.retarget import app as retarget_app
@@ -27,6 +28,7 @@ app.add_typer(data_app, name="data")
 app.add_typer(keypoints_app, name="keypoints")
 app.add_typer(robots_app, name="robots")
 app.add_typer(geometry_app, name="geometry")
+app.add_typer(jobs_app, name="jobs")
 app.add_typer(retarget_app, name="retarget")
 app.add_typer(workflow_app, name="workflow")
 app.add_typer(benchmark_app, name="benchmark")
