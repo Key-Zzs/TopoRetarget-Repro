@@ -4351,7 +4351,11 @@ def build_final_trajectory(
                 "timers": frame_result.jacobian_diagnostics.get("timers", {}),
             }
         )
-        if frame_callback is not None and frame_result.accepted:
+        # The callback is also the only transport for a rejected frame's
+        # audit evidence.  Checkpoint callers keep rejected frames out of
+        # their resumable accepted-chain, but need this callback to report
+        # the true strict-acceptance cause.
+        if frame_callback is not None:
             frame_callback(local_index, frame_result, context)
         if (
             not frame_result.solver_success

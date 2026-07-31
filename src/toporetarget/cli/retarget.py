@@ -1360,13 +1360,14 @@ def _run_checkpoint_refinement(
         current_frame = next_frame
         callback_hash = previous_hash
         latest_metadata: dict[str, Any] | None = None
+        rejected_metadata: dict[str, Any] | None = None
 
         def on_frame(
             local_index: int,
             frame_result: Any,
             context: Any,
         ) -> None:
-            nonlocal callback_hash, latest_metadata
+            nonlocal callback_hash, latest_metadata, rejected_metadata
             metadata, arrays = frame_checkpoint_payload(
                 local_index,
                 frame_result,
@@ -1379,9 +1380,17 @@ def _run_checkpoint_refinement(
                 execution_profile=execution.as_dict(),
                 previous_checkpoint_hash=callback_hash,
             )
+            latest_metadata = metadata
+            # A checkpoint chain only accepts strict frames.  Retain a
+            # rejected frame as diagnostics, rather than trying to put it in
+            # the resumable chain, so the health gate can report the actual
+            # strict-acceptance cause instead of a spurious missing-metadata
+            # geometry error.
+            if not bool(frame_result.accepted):
+                rejected_metadata = metadata
+                return
             callback_hash = store.save_frame(metadata, arrays)
             frame_rows.append(metadata)
-            latest_metadata = metadata
 
         trajectory, _ = build_final_trajectory(
             sequence,
@@ -1416,7 +1425,10 @@ def _run_checkpoint_refinement(
         if frame_health_gate is not None:
             if latest_metadata is None:
                 raise RuntimeError("final refinement emitted no checkpoint metadata")
-            failure_reason = frame_health_gate(latest_metadata, frame_rows)
+            health_rows = frame_rows
+            if rejected_metadata is not None:
+                health_rows = [*frame_rows, rejected_metadata]
+            failure_reason = frame_health_gate(latest_metadata, health_rows)
             if failure_reason is not None:
                 status = store.update_progress(
                     status="PAUSED_BY_STAGE12_HEALTH_GATE",
@@ -1424,6 +1436,10 @@ def _run_checkpoint_refinement(
                 )
                 status.update(_checkpoint_status_payload(store))
                 status["pause_reason"] = failure_reason
+                if rejected_metadata is not None:
+                    rejected_path = checkpoint_root / f"rejected_frame_{current_frame:06d}.json"
+                    _json_write(rejected_metadata, rejected_path)
+                    status["rejected_frame_metadata"] = str(rejected_path)
                 if progress_json is not None:
                     _json_write(status, progress_json)
                 if progress_log is not None:
