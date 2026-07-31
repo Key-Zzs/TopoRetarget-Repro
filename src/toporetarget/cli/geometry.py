@@ -50,11 +50,7 @@ def _print(payload: Any) -> None:
 def _canonical_object(canonical: Path, object_id: str) -> Any:
     sequence = load_hoi_sequence(canonical)
     if object_id in {"primary", "object"}:
-        for item in sequence.rigid_objects:
-            if item.metadata.get("role") == "primary_manipulation_object":
-                return item
-        if sequence.rigid_objects:
-            return sequence.rigid_objects[0]
+        return sequence.primary_rigid_object()
     return sequence.rigid_object(object_id)
 
 

@@ -1,0 +1,9 @@
+# CPU-only final refinement is intentionally single-worker/single-thread by default.
+max_workers: 1
+blas_threads: 1
+torch_threads: 1
+torch_interop_threads: 1
+cpu_affinity: none
+heartbeat_interval: 30.0
+stop_after_frame: true
+pause_control_path: .local/control/final_jobs

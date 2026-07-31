@@ -1,5 +1,24 @@
 # Development log
 
+## 2026-07-29 -- Stage 11 contract freeze
+
+Frozen the extension interfaces without adding a dataset or running a new
+retargeting job. `toporetarget.contracts` now exposes Canonical HOI v2 with a
+lossless v1 facade/migration, DatasetAdapter v1, RobotHandPlugin v1,
+RobotReference v2, and MetricRegistry v1. GRAB is registered through the new
+dataset facade; Arti-MANO and Wuji Hand2 Beta1 are exposed through the generic
+robot plugin registry. Existing `data.*`, `robots.*`, and metric APIs remain
+available.
+
+RobotReference v2 supports NPZ/Zarr and validates qpos, base/object/link
+coordinates, timestamps/FPS, joint order, robot hash, and dataset provenance.
+Metric declarations distinguish `PAPER_EXACT`, `DATASET_PROXY`,
+`GENERIC_GEOMETRIC`, and `ENGINEERING_DIAGNOSTIC`; proxy labels cannot claim
+ground truth. A migration report is generated from an existing Stage 10
+canonical cache/reference and writes only isolated `.local/reports/stage11_*`
+outputs. Historical Stage 5–10 artifacts and retargeting numerics remain
+unchanged. Stage 12–19 are now the forward roadmap.
+
 ## 2026-07-29 -- W2.2 Wuji continuity closeout
 
 Completed the bounded W2.2 diagnostic closeout on `main`. Added explicit W2
@@ -761,3 +780,37 @@ production sequential path and a separate fixed-anchor five-frame diagnostic
 shadow. The bounded runner writes replay, penetration, oracle, export, HTML,
 and integrity evidence only to the W2.3 output root; no formal artifact is
 replaced and no Git mutation is performed.
+
+## 2026-07-30 -- Stage-12 final-job quiescence and performance repair
+
+Installed fail-closed final-job control, stopped only identified legacy Stage-12 process groups,
+and retained them as `SIGSTOP` because no safe per-frame checkpoint was present. The queue remains
+paused. The new CPU policy is one worker / one BLAS/Torch thread; the fast-exact execution profile
+is a non-default candidate pending real-frame parity and controlled scheduler evidence.
+
+## 2026-07-30 -- P2 analytic SDF and exact BVH qualification
+
+Added the v2 spatial-gradient chain rule, ambiguity-only 3D FD, certified
+object-local sign cache, and exact object-local BVH instrumentation. The fixed
+five-frame diagnostic remains separate from Stage-12 and all frames are recorded
+under `.local/experiments/final_refinement_perf_v2/`.
+# P3 compiled CPU ambiguous spatial-FD
+
+Added a float64 C++17 exact source-mesh BVH only for ambiguous six-probe FD
+batches; reference generalized-winding signs and v2 fallback remain intact.
+
+# P4 certified compiled exact sign
+
+Added the optional deterministic C++17 generalized-winding handle, a strict
+near-threshold Python fallback, and the 1-Lipschitz FD-probe reuse certificate.
+The v4 profile is non-default and uses only float64 CPU execution.
+
+## 2026-07-31 -- ContactPose mug status-8 feasibility repair
+
+Recorded a frozen rejected baseline, then reproduced the status-8 active-soft
+boundary failure under CPU float64.  The generic bounded recovery recomputes
+only the existing active-query slack at fixed base/q before a reference-Jacobian
+retry; it does not accept status 8 or relax any final gate.  Two independent
+strict mug replays and a bitwise-identical ContactPose banana shadow replay
+passed while the final queue remained paused.  ContactPose Eq. 10/Eq. 11 contact
+benchmark evaluation remains not reproduced.

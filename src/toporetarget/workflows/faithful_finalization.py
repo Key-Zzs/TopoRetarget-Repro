@@ -191,7 +191,7 @@ def _semantic_contact_surface_audit(
     states: dict[str, tuple[np.ndarray, np.ndarray]],
 ) -> dict[str, Any]:
     contact = sequence.contacts[0]
-    object_track = sequence.rigid_objects[0]
+    object_track = sequence.primary_rigid_object()
     object_vertices = np.asarray(object_track.mesh.vertices_local, dtype=np.float64)
     object_poses = np.asarray(object_track.pose_scene.pose_scene, dtype=np.float64)
     labels = np.asarray(contact.labels, dtype=np.int64)

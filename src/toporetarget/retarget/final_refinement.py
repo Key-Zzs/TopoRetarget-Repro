@@ -32,10 +32,21 @@ from toporetarget.geometry.signed_distance.base import (
     SignedDistanceBackend,
     SignedDistanceQueryResult,
 )
+from toporetarget.geometry.signed_distance.compiled_sdf_cpu import (
+    CompiledSDFUnavailable,
+    CompiledSpatialFDBackend,
+)
 from toporetarget.geometry.signed_distance.derived_proxy import (
+    HybridSignedDistanceBackend,
     ObjectSDFGeometryPolicy,
     build_hybrid_signed_distance_backend,
 )
+from toporetarget.geometry.signed_distance.gradient import (
+    SignedDistanceGradientAmbiguityPolicy,
+    ambiguity_reason_counts,
+    analytic_spatial_gradient,
+)
+from toporetarget.geometry.signed_distance.sign_cache import LipschitzSignCache
 from toporetarget.retarget.artifacts import WarmStartTrajectory
 from toporetarget.retarget.bones import (
     BoneDirectionProfile,
@@ -1104,6 +1115,12 @@ class _FrameContext:
     full_audit_call_count: int = 0
     full_audit_call_reasons: list[str] = field(default_factory=list)
     active_query_call_count: int = 0
+    spatial_gradient_backend: str = "legacy_surface_normal_optimizer_fd_v1"
+    sign_cache: LipschitzSignCache | None = None
+    compiled_spatial_fd_backend: CompiledSpatialFDBackend | None = None
+    gradient_policy: SignedDistanceGradientAmbiguityPolicy = field(
+        default_factory=SignedDistanceGradientAmbiguityPolicy
+    )
     _residual_model: Any = field(default=None, init=False, repr=False)
     _surface_joint_paths: tuple[tuple[Any, ...], ...] = field(
         default_factory=tuple, init=False, repr=False
@@ -1485,7 +1502,9 @@ class _FrameContext:
         self.cache.put("candidate_points", np.asarray(points, dtype=np.float64).copy())
         return np.asarray(points, dtype=np.float64).copy()
 
-    def collision_points_jacobian_numpy(self, value: np.ndarray) -> np.ndarray:
+    def collision_points_jacobian_numpy(
+        self, value: np.ndarray, *, point_ids: np.ndarray | None = None
+    ) -> np.ndarray:
         """Return the exact batched point Jacobian without per-point autograd.
 
         The URDF chain gives each collision point's qpos derivative directly
@@ -1499,15 +1518,31 @@ class _FrameContext:
         import torch
 
         current = np.asarray(value, dtype=np.float64).reshape(-1)
+        if point_ids is None:
+            selected = np.arange(self.surface.count, dtype=np.int64)
+        else:
+            selected = np.asarray(point_ids, dtype=np.int64).reshape(-1)
+            if (
+                np.any(selected < 0)
+                or np.any(selected >= self.surface.count)
+                or len(np.unique(selected)) != len(selected)
+            ):
+                raise ValueError("collision Jacobian point IDs must be unique surface indices")
         _, _, qpos, _ = self.unpack(current)
         qpos = np.asarray(qpos, dtype=np.float64)
         fk = self.robot_model.forward_kinematics_reference(qpos)
-        points_base = np.empty((self.surface.count, 3), dtype=np.float64)
+        points_base = np.empty((len(selected), 3), dtype=np.float64)
         qpos_jacobian_base = np.zeros(
-            (self.surface.count, 3, self.robot_model.num_dofs), dtype=np.float64
+            (len(selected), 3, self.robot_model.num_dofs), dtype=np.float64
         )
         for geometry_index, start, stop in self.geometry_slices:
-            local = np.asarray(self.surface_points_local[start:stop], dtype=np.float64)
+            selected_rows = np.flatnonzero((selected >= start) & (selected < stop))
+            if not len(selected_rows):
+                continue
+            local_indices = selected[selected_rows] - start
+            local = np.asarray(self.surface_points_local[start:stop], dtype=np.float64)[
+                local_indices
+            ]
             local_transform = np.asarray(
                 self.surface_local_transforms[geometry_index], dtype=np.float64
             )
@@ -1515,7 +1550,7 @@ class _FrameContext:
             link_name = self.surface_link_names[geometry_index]
             link = np.asarray(fk[link_name], dtype=np.float64)
             points = local_points @ link[:3, :3].T + link[:3, 3]
-            points_base[start:stop] = points
+            points_base[selected_rows] = points
             for joint in self._surface_joint_paths[geometry_index]:
                 parent = np.asarray(fk[joint.parent], dtype=np.float64)
                 origin = parent @ np.asarray(joint.origin, dtype=np.float64)
@@ -1531,7 +1566,7 @@ class _FrameContext:
                 else:  # pragma: no cover - fixed joints are excluded above
                     continue
                 q_index = int(self.robot_model._dof_index[joint.name])
-                qpos_jacobian_base[start:stop, :, q_index] += derivative
+                qpos_jacobian_base[selected_rows, :, q_index] += derivative
 
         base_delta = torch.as_tensor(current[:6], dtype=torch.float64)
         seed_rotation = torch.as_tensor(self.seed_base[:3, :3], dtype=torch.float64)
@@ -1557,9 +1592,7 @@ class _FrameContext:
         qpos_jacobian_scene = np.einsum(
             "ab,mbd->mad", rotation_np, qpos_jacobian_base, optimize=True
         )
-        result = np.zeros(
-            (self.surface.count, 3, self.variable_size_without_slack), dtype=np.float64
-        )
+        result = np.zeros((len(selected), 3, self.variable_size_without_slack), dtype=np.float64)
         result[:, :, :6] = base_jacobian_np
         result[:, :, 6:] = qpos_jacobian_scene
         return result
@@ -1591,10 +1624,20 @@ class _FrameContext:
         cached = self.cache.get("constraint_query")
         if cached is not None:
             return cached
+        points = self.candidate_points(current)[query_ids]
         with self.timers.measure("solver_sdf"):
-            result = self.sdf.query_scene(
-                self.candidate_points(current)[query_ids], self.object_pose_scene
-            )
+            if self.sign_cache is not None and isinstance(
+                self.sdf, (HybridSignedDistanceBackend, CompiledSpatialFDBackend)
+            ):
+                result = self.sdf.query_scene(
+                    points,
+                    self.object_pose_scene,
+                    sample_ids=query_ids,
+                    sign_cache=self.sign_cache,
+                    evaluation_lineage=f"frame={self.frame_id};query={active_hash}",
+                )
+            else:
+                result = self.sdf.query_scene(points, self.object_pose_scene)
         self.active_query_call_count += 1
         if not np.all(result.sign_valid) or not np.all(result.valid):
             raise ValueError("invalid signed-distance result entered constrained solve")
@@ -1639,7 +1682,7 @@ class _FrameContext:
         if backend == "analytic_urdf_spatial_v2":
             # Use the URDF spatial Jacobian for qpos and a fixed six-coordinate
             # autograd derivative for the base Exp-map.
-            jac_np = self.collision_points_jacobian_numpy(current)[query_ids]
+            jac_np = self.collision_points_jacobian_numpy(current, point_ids=query_ids)
         elif backend == "reference_batched_torch_v1":
             jac_np = self.collision_points_jacobian_reference_numpy(current)[query_ids]
         else:
@@ -1652,20 +1695,118 @@ class _FrameContext:
         ).reshape(-1)
         values = np.zeros((len(query_ids), len(current)), dtype=np.float64)
         fallback_count = 0
-        for row, sample_valid in enumerate(valid):
-            if sample_valid:
-                values[row, :n] = normals[row] @ jac_np[row, :, :n]
+        spatial_fd_probe_count = 0
+        last_resort_count = 0
+        gradient_diagnostics: dict[str, Any] = {}
+        if self.spatial_gradient_backend == "spatial_gradient_chain_rule_v1":
+            points = self.candidate_points(current, active_hash)[query_ids]
+            gradient = analytic_spatial_gradient(points, result, policy=self.gradient_policy)
+            valid = gradient.analytic_mask
+            values[valid, :n] = np.einsum(
+                "ri,rij->rj", gradient.spatial_gradient_scene[valid], jac_np[valid, :, :n]
+            )
+            invalid_rows = np.flatnonzero(gradient.spatial_fd_mask)
+            fallback_count = int(len(invalid_rows))
+            gradient_diagnostics = {
+                "signed_distance_gradient": "spatial_gradient_chain_rule_v1",
+                "analytic_point_count": int(np.count_nonzero(gradient.analytic_mask)),
+                "ambiguous_point_count": fallback_count,
+                "fallback_point_count": fallback_count,
+                "fallback_ratio": float(fallback_count / len(query_ids)) if len(query_ids) else 0.0,
+                "ambiguity_reason_counts": ambiguity_reason_counts(gradient),
+            }
+        else:
+            invalid_rows = np.flatnonzero(~valid)
+            for row, sample_valid in enumerate(valid):
+                if sample_valid:
+                    values[row, :n] = normals[row] @ jac_np[row, :, :n]
+                else:
+                    fallback_count += 1
+        if len(invalid_rows):
+            if self.spatial_gradient_backend == "spatial_gradient_chain_rule_v1":
+                probe_points = self.candidate_points(current, active_hash)[query_ids[invalid_rows]]
+                h = self.gradient_policy.spatial_fd_step_m
+                with self.timers.measure("spatial_fd_fallback"):
+                    if self.compiled_spatial_fd_backend is not None:
+                        with self.timers.measure("compiled_kernel"):
+                            compiled = self.compiled_spatial_fd_backend.spatial_fd_gradient_scene(
+                                np.ascontiguousarray(probe_points, dtype=np.float64),
+                                self.object_pose_scene,
+                                h,
+                            )
+                        probe_result = compiled.probe_result
+                        spatial = compiled.gradient_scene
+                        if self.compiled_spatial_fd_backend.compiled_winding:
+                            stats: dict[str, Any] = dict(
+                                self.compiled_spatial_fd_backend.probe_sign_stats
+                            )
+                            stats["reuse_rate"] = (
+                                float(stats["certified_probe_reuse"] / stats["total_fd_probes"])
+                                if stats["total_fd_probes"]
+                                else 0.0
+                            )
+                            gradient_diagnostics["compiled_exact_sign"] = stats
+                    else:
+                        axes = np.eye(3, dtype=np.float64)
+                        probes = np.concatenate(
+                            [probe_points + h * axis for axis in axes]
+                            + [probe_points - h * axis for axis in axes],
+                            axis=0,
+                        )
+                        with self.timers.measure("solver_sdf"):
+                            if isinstance(self.sdf, HybridSignedDistanceBackend):
+                                probe_result = self.sdf.query_scene(
+                                    probes,
+                                    self.object_pose_scene,
+                                    cache_update=False,
+                                    evaluation_lineage="spatial_fd_probe",
+                                )
+                            else:
+                                probe_result = self.sdf.query_scene(probes, self.object_pose_scene)
+                        probe_phi = np.asarray(
+                            probe_result.signed_distance, dtype=np.float64
+                        ).reshape(6, -1)
+                        spatial = ((probe_phi[:3] - probe_phi[3:]) / (2.0 * h)).T
+                if not np.all(probe_result.sign_valid) or not np.all(probe_result.valid):
+                    raise ValueError("invalid signed-distance result entered spatial-FD solve")
+                spatial_fd_probe_count = int(6 * len(invalid_rows))
+                norms = np.linalg.norm(spatial, axis=1)
+                bad = (~np.isfinite(spatial).all(axis=1)) | (norms < 0.1) | (norms > 10.0)
+                if np.any(bad):
+                    # This result remains explicitly fail-closed in the P2
+                    # qualification report; never silently use a normal.
+                    spatial[bad] = normals[invalid_rows[bad]]
+                    last_resort_count = int(np.count_nonzero(bad))
+                values[invalid_rows, :n] = np.einsum(
+                    "ri,rij->rj", spatial, jac_np[invalid_rows, :, :n]
+                )
             else:
-                fallback_count += 1
-                for col in range(n):
-                    plus = current.copy()
-                    minus = current.copy()
-                    plus[col] += eps
-                    minus[col] -= eps
-                    values[row, col] = (
-                        self.constraint_query(plus, query_ids).signed_distance[row]
-                        - self.constraint_query(minus, query_ids).signed_distance[row]
-                    ) / (2.0 * eps)
+                invalid_query_ids = np.asarray(query_ids[invalid_rows], dtype=np.int64)
+
+                def fd_residual_batch(probes: np.ndarray) -> np.ndarray:
+                    point_blocks = [
+                        self.candidate_points(probe, "__fd_probe__")[invalid_query_ids]
+                        for probe in np.asarray(probes, dtype=np.float64)
+                    ]
+                    points = np.concatenate(point_blocks, axis=0)
+                    with self.timers.measure("solver_sdf"):
+                        fd_result = self.sdf.query_scene(points, self.object_pose_scene)
+                    if not np.all(fd_result.sign_valid) or not np.all(fd_result.valid):
+                        raise ValueError(
+                            "invalid signed-distance result entered finite-difference solve"
+                        )
+                    return np.asarray(fd_result.signed_distance, dtype=np.float64).reshape(
+                        len(point_blocks), len(invalid_query_ids)
+                    )
+
+                values[invalid_rows, :n], _ = _vectorized_constraint_finite_difference(
+                    fd_residual_batch,
+                    current,
+                    variable_count=n,
+                    row_ids=np.arange(len(invalid_rows), dtype=np.int64),
+                    epsilon=eps,
+                )
+                self.cache.prepare(current, active_hash)
         values_soft = values.copy()
         values_soft[:, n:] = 0.0
         for row in range(len(query_ids)):
@@ -1676,7 +1817,18 @@ class _FrameContext:
             "finite_difference_fallback_count": fallback_count,
             "normal_frame": "scene",
             "point_jacobian_backend": backend,
+            "spatial_fd_probe_count": spatial_fd_probe_count,
+            "sdf_batches_for_jacobian": int(1 + (1 if spatial_fd_probe_count else 0)),
+            "surface_normal_last_resort_count": last_resort_count,
+            "ambiguity_fd_backend": (
+                "compiled_spatial_central_fd_v1"
+                if self.compiled_spatial_fd_backend is not None
+                else "fast_exact_v2_python"
+            ),
+            **gradient_diagnostics,
         }
+        if self.sign_cache is not None:
+            diagnostics["sign_cache"] = self.sign_cache.as_dict()
         self.cache.put("constraint_jacobian", (output.copy(), dict(diagnostics)))
         return output, diagnostics
 
@@ -1832,6 +1984,13 @@ def _solver_call(
     constraint_calls = 0
     jacobian_calls = 0
     fallback_total = 0
+    analytic_total = 0
+    ambiguous_total = 0
+    spatial_fd_probes_total = 0
+    spatial_sdf_batches_total = 0
+    surface_normal_last_resort_total = 0
+    ambiguity_totals: dict[str, int] = {}
+    sign_cache_stats: dict[str, Any] = {}
     callback_iterates: list[np.ndarray] = []
     context._active_query_hash = query_set.query_hash
 
@@ -1855,7 +2014,10 @@ def _solver_call(
             return normalized_gradient(context.objective(physical(value), query_set.query_hash)[1])
 
     def constraint_jac(value: np.ndarray) -> np.ndarray:
-        nonlocal jacobian_calls, fallback_total
+        nonlocal jacobian_calls, fallback_total, analytic_total, ambiguous_total
+        nonlocal spatial_fd_probes_total, spatial_sdf_batches_total
+        nonlocal surface_normal_last_resort_total
+        nonlocal sign_cache_stats
         jacobian_calls += 1
         with context.timers.measure("constraint_jacobian_callback"):
             jac, diagnostics = context.constraint_jacobian(
@@ -1866,6 +2028,16 @@ def _solver_call(
                 backend=point_jacobian_backend,
             )
         fallback_total += int(diagnostics["finite_difference_fallback_count"])
+        analytic_total += int(diagnostics.get("analytic_point_count", 0))
+        ambiguous_total += int(diagnostics.get("ambiguous_point_count", 0))
+        spatial_fd_probes_total += int(diagnostics.get("spatial_fd_probe_count", 0))
+        spatial_sdf_batches_total += int(diagnostics.get("sdf_batches_for_jacobian", 0))
+        surface_normal_last_resort_total += int(
+            diagnostics.get("surface_normal_last_resort_count", 0)
+        )
+        for key, count in diagnostics.get("ambiguity_reason_counts", {}).items():
+            ambiguity_totals[str(key)] = ambiguity_totals.get(str(key), 0) + int(count)
+        sign_cache_stats = dict(diagnostics.get("sign_cache", sign_cache_stats))
         return np.asarray(jac, dtype=np.float64) * variable_scales[None, :]
 
     def callback(value: np.ndarray) -> None:
@@ -1946,6 +2118,13 @@ def _solver_call(
         "constraint_jacobian_evaluations": jacobian_calls,
         "point_jacobian_backend": point_jacobian_backend,
         "finite_difference_fallback_count": fallback_total,
+        "analytic_point_count": analytic_total,
+        "ambiguous_point_count": ambiguous_total,
+        "spatial_fd_probe_count": spatial_fd_probes_total,
+        "sdf_batches_for_jacobian": spatial_sdf_batches_total,
+        "surface_normal_last_resort_count": surface_normal_last_resort_total,
+        "ambiguity_reason_counts": dict(sorted(ambiguity_totals.items())),
+        "sign_cache": sign_cache_stats,
         "optimizer_function_evaluations": int(getattr(result, "nfev", objective_calls)),
         "optimizer_jacobian_evaluations": int(getattr(result, "njev", jacobian_calls)),
         "initial_objective": initial_objective,
@@ -1983,6 +2162,87 @@ def _independent_constraints(
         else 0.0,
         "violating_sample_ids": query_set.sample_ids[(hard < -1e-6) | (soft < -1e-6)].tolist(),
         "slack_required": np.maximum(-context.paper.tau - result.signed_distance, 0.0),
+    }
+
+
+def strict_recovery_trigger(
+    *,
+    status_code: int,
+    recovery_policy: str,
+    value: np.ndarray,
+    context: _FrameContext,
+) -> tuple[bool, dict[str, Any]]:
+    """Return whether a failed SLSQP point may seed a clean generic restart.
+
+    Status 8 (line-search directional derivative) and status 9 (iteration
+    limit) are solver-engineering failures, not acceptance states.  A retry is
+    allowed only from a finite point that remains within the original physical
+    q/slack bounds.  It never changes the objective, constraints, tolerances,
+    or strict final acceptance; it only discards stale SLSQP line-search state
+    and rebuilds the same problem with the reference point Jacobian backend.
+    """
+
+    current = np.asarray(value, dtype=np.float64).reshape(-1)
+    _, _, qpos, slack = context.unpack(current)
+    q_lower = np.asarray(context.robot_model.joint_lower, dtype=np.float64)
+    q_upper = np.asarray(context.robot_model.joint_upper, dtype=np.float64)
+    slack_upper = float(context.paper.b - context.paper.tau)
+    finite = bool(np.all(np.isfinite(current)))
+    q_bounds = bool(np.all(qpos >= q_lower - 1e-10) and np.all(qpos <= q_upper + 1e-10))
+    slack_bounds = bool(np.all(slack >= -1e-10) and np.all(slack <= slack_upper + 1e-10))
+    eligible_status = int(status_code) in {8, 9}
+    enabled = recovery_policy == "reference_batched_from_primary_result_v1"
+    eligible = bool(enabled and eligible_status and finite and q_bounds and slack_bounds)
+    return eligible, {
+        "recovery_policy_enabled": enabled,
+        "recoverable_status": eligible_status,
+        "candidate_all_finite": finite,
+        "candidate_q_bounds_pass": q_bounds,
+        "candidate_slack_bounds_pass": slack_bounds,
+        "status_code": int(status_code),
+        "triggered": eligible,
+    }
+
+
+def restore_slack_feasibility(
+    context: _FrameContext, value: np.ndarray, query_set: CollisionQuerySet
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Produce a bounded Phase-II seed with exactly re-evaluated slack.
+
+    This is a deterministic feasibility restoration at fixed base/qpos, never
+    a final result.  It is available only when the original hard constraints
+    are feasible and every required soft slack fits the original bound.
+    """
+
+    candidate = np.asarray(value, dtype=np.float64).copy()
+    independent = _independent_constraints(context, candidate, query_set)
+    _, _, _, slack = context.unpack(candidate)
+    slack_before = np.asarray(slack, dtype=np.float64).copy()
+    required = np.asarray(independent["slack_required"], dtype=np.float64)
+    upper = float(context.paper.b - context.paper.tau)
+    hard_feasible = bool(independent["min_hard_residual"] >= 0.0)
+    representable = bool(np.all(required <= upper))
+    restored = slack_before
+    if hard_feasible and representable:
+        restored = np.maximum(slack_before, required)
+        # Use the exact active-query required slack and move only to the next
+        # representable float.  This changes neither a physical bound nor a
+        # constraint tolerance, and is not a fixed interior padding.
+        needs_restoration = required > slack_before
+        required_interior = np.minimum(np.nextafter(required, np.inf), upper)
+        restored = np.where(needs_restoration, required_interior, slack_before)
+        if len(restored):
+            candidate[-len(restored) :] = restored
+    return candidate, {
+        "hard_feasible": hard_feasible,
+        "soft_slack_representable": representable,
+        "min_hard_residual_before": float(independent["min_hard_residual"]),
+        "min_soft_residual_before": float(independent["min_soft_residual"]),
+        "slack_adjusted_count": int(
+            np.count_nonzero(np.asarray(restored) != slack_before)
+            if hard_feasible and representable
+            else 0
+        ),
     }
 
 
@@ -2068,8 +2328,8 @@ def refine_frame(
     continuation_trace: list[dict[str, Any]] = []
     solver_attempt_trace: list[dict[str, Any]] = []
     active_set_converged = False
-    full_audit_call_count = int(context.full_audit_call_count)
-    full_audit_call_reasons = list(context.full_audit_call_reasons)
+    discovery_audit_count = 0
+    final_full_audit_count = 0
     while True:
         query_rounds += 1
         outer_round_started = time.perf_counter()
@@ -2094,13 +2354,21 @@ def refine_frame(
             "primary_backend": point_jacobian_backend,
             "recovery_used": False,
         }
-        if (
-            int(getattr(primary_result, "status", -1)) == 9
-            and strict_recovery == "reference_batched_from_primary_result_v1"
-        ):
+        recovery_allowed, recovery_trigger = strict_recovery_trigger(
+            status_code=int(getattr(primary_result, "status", -1)),
+            recovery_policy=strict_recovery,
+            value=np.asarray(primary_result.x, dtype=np.float64),
+            context=context,
+        )
+        attempt["recovery_trigger"] = recovery_trigger
+        if recovery_allowed:
+            recovery_seed, restoration = restore_slack_feasibility(
+                context, np.asarray(primary_result.x, dtype=np.float64), query_set
+            )
+            attempt["feasibility_restoration"] = restoration
             result, recovery_diag = _solver_call(
                 context,
-                np.asarray(primary_result.x, dtype=np.float64),
+                recovery_seed,
                 query_set,
                 solver,
                 point_jacobian_backend="reference_batched_torch_v1",
@@ -2145,16 +2413,24 @@ def refine_frame(
         solver_attempt_trace.append(attempt)
         diagnostics.update(solve_diag)
         independent = _independent_constraints(context, result.x, query_set)
-        # Use the Stage 6 reference backend once per frame for both active-set
-        # expansion and the persisted independent full-surface audit. The
-        # solver-only backend remains reserved for inner constraint calls.
-        with context.timers.measure("full_512_audit"):
-            full = context.reference_sdf.query_scene(
+        # Active-set discovery is distinct from final acceptance.  For the
+        # compiled exact spatial backend, it may use the solver's exact
+        # closest-point/winding query to discover candidates; final acceptance
+        # below still performs exactly one independent reference-SDF audit.
+        # This avoids paying the expensive reference full-surface scan twice
+        # per frame without weakening the fail-closed acceptance gate.
+        discovery_sdf = (
+            context.sdf
+            if isinstance(context.sdf, CompiledSpatialFDBackend)
+            else context.reference_sdf
+        )
+        discovery_backend_id = str(discovery_sdf.backend_id)
+        with context.timers.measure("active_set_discovery"):
+            full = discovery_sdf.query_scene(
                 context.candidate_points(result.x, query_set.query_hash),
                 context.object_pose_scene,
             )
-        full_audit_call_count += 1
-        full_audit_call_reasons.append("active_set_round_end")
+        discovery_audit_count += 1
         full_phi = np.asarray(full.signed_distance, dtype=np.float64)
         if not np.all(full.sign_valid):
             raise ValueError("full-surface audit received invalid signed distance")
@@ -2241,13 +2517,13 @@ def refine_frame(
     if full is None:
         raise RuntimeError("Stage 9 full-surface audit did not run")
     value = np.asarray(result.x, dtype=np.float64)
-    with context.timers.measure("full_512_audit"):
-        full = context.reference_sdf.query_scene(
-            context.candidate_points(value, query_set.query_hash),
-            context.object_pose_scene,
-        )
-    full_audit_call_count += 1
-    full_audit_call_reasons.append("frame_final_independent_acceptance")
+    with context.timers.measure("final_full_audit"):
+        with context.timers.measure("full_512_audit"):
+            full = context.reference_sdf.query_scene(
+                context.candidate_points(value, query_set.query_hash),
+                context.object_pose_scene,
+            )
+    final_full_audit_count += 1
     if not np.all(full.sign_valid):
         raise ValueError("final independent full-surface audit received invalid signed distance")
     _, _, qpos, slack = context.unpack(value)
@@ -2286,8 +2562,10 @@ def refine_frame(
     independent = _independent_constraints(context, value, query_set, distance_result=selected_full)
     diagnostics["outer_converged"] = bool(active_set_converged and result.success)
     diagnostics["active_set_converged"] = active_set_converged
-    diagnostics["full_audit_call_count"] = full_audit_call_count
-    diagnostics["full_audit_call_reasons"] = full_audit_call_reasons
+    diagnostics["full_audit_call_count"] = final_full_audit_count
+    diagnostics["full_audit_call_reasons"] = ["frame_final_independent_acceptance"]
+    diagnostics["active_set_discovery_audit_count"] = discovery_audit_count
+    diagnostics["active_set_discovery_backend_id"] = discovery_backend_id
     diagnostics["active_query_call_count"] = int(context.active_query_call_count)
     diagnostics["active_set_continuation"] = continuation_trace
     diagnostics["solver_attempt_trace"] = solver_attempt_trace
@@ -2434,6 +2712,9 @@ def _make_context(
     quality_extension: dict[str, Any] | None = None,
     continuous_prediction_base: np.ndarray | None = None,
     continuous_prediction_qpos: np.ndarray | None = None,
+    spatial_gradient_backend: str = "legacy_surface_normal_optimizer_fd_v1",
+    sign_cache: LipschitzSignCache | None = None,
+    compiled_spatial_fd_backend: CompiledSpatialFDBackend | None = None,
 ) -> _FrameContext:
     frame = graph.frames[local_index]
     global_frame = int(graph.frame_indices[local_index])
@@ -2496,6 +2777,9 @@ def _make_context(
         continuous_prediction_base=continuous_prediction_base,
         continuous_prediction_qpos=continuous_prediction_qpos,
         cache=RefinementEvaluationCache(global_frame, context_hash),
+        spatial_gradient_backend=spatial_gradient_backend,
+        sign_cache=sign_cache,
+        compiled_spatial_fd_backend=compiled_spatial_fd_backend,
     )
 
 
@@ -3120,6 +3404,17 @@ class RefinementResources:
     build_counts: dict[str, int]
 
 
+@dataclass
+class RefinementRuntimeBackends:
+    """Persistent exact-sign helpers shared by every frame of one job."""
+
+    solver_sdf: Any
+    compiled_spatial_fd_backend: CompiledSpatialFDBackend | None
+    sign_cache: LipschitzSignCache | None
+    sdf_report: dict[str, Any]
+    build_counts: dict[str, int]
+
+
 def prepare_refinement_resources(
     sequence: Any,
     graph: InteractionGraphTrajectory,
@@ -3192,6 +3487,67 @@ def prepare_refinement_resources(
             ),
             "derived_proxy_build_count": 1,
             "bvh_build_count": 1,
+        },
+    )
+
+
+def prepare_refinement_runtime_backends(
+    resources: RefinementResources, execution_profile: Any | None
+) -> RefinementRuntimeBackends:
+    """Create immutable compiled handles and certified cache once per job."""
+
+    ambiguity_fd_backend = str(
+        getattr(execution_profile, "ambiguity_fd_backend", "fast_exact_v2_python")
+    )
+    sign_backend = str(getattr(execution_profile, "sign_backend", "exact_winding_per_query_v1"))
+    leaf_size = int(getattr(execution_profile, "sdf_tree_leaf_size", 32))
+    report = dict(resources.sdf_report)
+    compiled: CompiledSpatialFDBackend | None = None
+    if ambiguity_fd_backend in {
+        "compiled_spatial_central_fd_v1",
+        "compiled_spatial_central_fd_winding_v1",
+    }:
+        if not isinstance(resources.reference_sdf, HybridSignedDistanceBackend):
+            raise ValueError("compiled spatial-FD backend requires the hybrid reference SDF")
+        try:
+            compiled = CompiledSpatialFDBackend(
+                resources.reference_sdf,
+                leaf_size=leaf_size,
+                compiled_winding=(ambiguity_fd_backend == "compiled_spatial_central_fd_winding_v1"),
+            )
+        except (CompiledSDFUnavailable, ImportError, OSError) as exc:
+            report["compiled_spatial_fd_fallback"] = str(exc)
+    sign_cache = (
+        LipschitzSignCache(resources.mesh_hash, _stable_hash(resources.geometry_policy))
+        if sign_backend == "lipschitz_certified_cache_with_exact_fallback_v1"
+        else None
+    )
+    solver_sdf: Any = resources.sdf
+    if (
+        getattr(execution_profile, "exact_closest_point_backend", "")
+        == "compiled_object_local_bvh_v1"
+    ):
+        if compiled is None:
+            report["compiled_solver_sdf_fallback"] = "compiled backend unavailable"
+        else:
+            # Values remain exact hybrid SDF values; this only moves the
+            # object-local closest-point and generalized-winding evaluation to
+            # the persistent compiled handles.  Full-surface audits continue
+            # to use resources.reference_sdf independently.
+            solver_sdf = compiled
+            report["selected"] = "compiled_hybrid_exact_solver_only_v1"
+            report["compiled_solver_sdf"] = compiled.describe()
+    return RefinementRuntimeBackends(
+        solver_sdf=solver_sdf,
+        compiled_spatial_fd_backend=compiled,
+        sign_cache=sign_cache,
+        sdf_report=report,
+        build_counts={
+            "compiled_bvh_build_count": int(compiled is not None),
+            "compiled_winding_handle_build_count": int(
+                compiled is not None and compiled.winding_handle is not None
+            ),
+            "sign_cache_build_count": int(sign_cache is not None),
         },
     )
 
@@ -3297,6 +3653,7 @@ def build_final_trajectory(
     graph_artifact_hash: str | None = None,
     continue_on_failure: bool = False,
     resources: RefinementResources | None = None,
+    runtime_backends: RefinementRuntimeBackends | None = None,
     frame_callback: Callable[[int, FinalFrameResult, _FrameContext], None] | None = None,
     pause_check: Callable[[int], bool] | None = None,
     source_frame_offset: int = 0,
@@ -3349,6 +3706,11 @@ def build_final_trajectory(
     )
     strict_recovery = str(getattr(execution_profile, "strict_recovery", "none"))
     sdf_tree_leaf_size = int(getattr(execution_profile, "sdf_tree_leaf_size", 32))
+    spatial_gradient_backend = str(
+        getattr(
+            execution_profile, "signed_distance_gradient", "legacy_surface_normal_optimizer_fd_v1"
+        )
+    )
     resources = resources or prepare_refinement_resources(
         sequence,
         graph,
@@ -3361,8 +3723,13 @@ def build_final_trajectory(
     object_vertices = resources.object_vertices
     object_faces = resources.object_faces
     reference_sdf = resources.reference_sdf
-    sdf = resources.sdf
-    sdf_report = resources.sdf_report
+    runtime_backends = runtime_backends or prepare_refinement_runtime_backends(
+        resources, execution_profile
+    )
+    sdf = runtime_backends.solver_sdf
+    sdf_report = runtime_backends.sdf_report
+    compiled_spatial_fd_backend = runtime_backends.compiled_spatial_fd_backend
+    sign_cache = runtime_backends.sign_cache
     stop = warm.frame_count if end_frame is None else int(end_frame)
     if start_frame < 0 or stop <= start_frame or stop > warm.frame_count:
         raise ValueError(f"invalid frame range [{start_frame},{stop})")
@@ -3446,20 +3813,15 @@ def build_final_trajectory(
                 if propagated is None or propagated.previous_frame is None
                 else propagated.predicted_qpos
             ),
+            spatial_gradient_backend=spatial_gradient_backend,
+            sign_cache=sign_cache,
+            compiled_spatial_fd_backend=compiled_spatial_fd_backend,
         )
-        initial_points = context.candidate_points(np.concatenate([np.zeros(6), context.seed_qpos]))
-        with context.timers.measure("full_512_audit"):
-            initial_full = context.reference_sdf.query_scene(
-                initial_points, context.object_pose_scene
-            )
-        if not np.all(initial_full.sign_valid):
-            raise ValueError("initial full-surface audit received invalid signed distance")
-        context.full_audit_call_count = 1
-        context.full_audit_call_reasons = ["frame_query_set_initialization"]
         # The selected solver backend preserves the original closest-point
         # magnitude and uses the audited sign policy. It is sufficient for
         # initial QuerySet selection; reference_sdf remains the independent
         # persisted audit.
+        initial_points = context.candidate_points(np.concatenate([np.zeros(6), context.seed_qpos]))
         initial_query = sdf.query_scene(initial_points, context.object_pose_scene)
         if getattr(initial_query, "near_original_boundary", None) is not None:
             boundary_mask = np.asarray(initial_query.near_original_boundary, dtype=bool)
@@ -4002,6 +4364,40 @@ def build_final_trajectory(
                     "full_audit_call_count", 0
                 ),
                 "cache": frame_result.jacobian_diagnostics.get("cache", {}),
+                "gradient": {
+                    key: frame_result.jacobian_diagnostics.get(key)
+                    for key in (
+                        "analytic_point_count",
+                        "ambiguous_point_count",
+                        "spatial_fd_probe_count",
+                        "sdf_batches_for_jacobian",
+                        "surface_normal_last_resort_count",
+                        "ambiguity_reason_counts",
+                        "compiled_exact_sign",
+                    )
+                },
+                "compiled_exact_sign": (
+                    {}
+                    if context.compiled_spatial_fd_backend is None
+                    else {
+                        **context.compiled_spatial_fd_backend.probe_sign_stats,
+                        "reuse_rate": (
+                            float(
+                                context.compiled_spatial_fd_backend.probe_sign_stats[
+                                    "certified_probe_reuse"
+                                ]
+                                / context.compiled_spatial_fd_backend.probe_sign_stats[
+                                    "total_fd_probes"
+                                ]
+                            )
+                            if context.compiled_spatial_fd_backend.probe_sign_stats[
+                                "total_fd_probes"
+                            ]
+                            else 0.0
+                        ),
+                    }
+                ),
+                "sign_cache": frame_result.jacobian_diagnostics.get("sign_cache", {}),
                 "timers": frame_result.jacobian_diagnostics.get("timers", {}),
                 "window_joint": frame_result.jacobian_diagnostics.get("window_joint"),
                 "window": frame_result.jacobian_diagnostics.get("window"),
@@ -4027,11 +4423,28 @@ def build_final_trajectory(
                 "constraint_jacobian_calls": int(
                     frame_result.jacobian_diagnostics.get("constraint_jacobian_evaluations", 0)
                 ),
+                "gradient": {
+                    key: frame_result.jacobian_diagnostics.get(key)
+                    for key in (
+                        "analytic_point_count",
+                        "ambiguous_point_count",
+                        "spatial_fd_probe_count",
+                        "sdf_batches_for_jacobian",
+                        "surface_normal_last_resort_count",
+                        "ambiguity_reason_counts",
+                        "compiled_exact_sign",
+                    )
+                },
+                "sign_cache": frame_result.jacobian_diagnostics.get("sign_cache", {}),
                 "cache": frame_result.jacobian_diagnostics.get("cache", {}),
                 "timers": frame_result.jacobian_diagnostics.get("timers", {}),
             }
         )
-        if frame_callback is not None and frame_result.accepted:
+        # The callback is also the only transport for a rejected frame's
+        # audit evidence.  Checkpoint callers keep rejected frames out of
+        # their resumable accepted-chain, but need this callback to report
+        # the true strict-acceptance cause.
+        if frame_callback is not None:
             frame_callback(local_index, frame_result, context)
         if (
             not frame_result.solver_success
@@ -4411,6 +4824,7 @@ def build_final_trajectory(
                 "graph_load_count": 1,
                 "source_feature_build_count": len(frames),
                 **resources.build_counts,
+                **runtime_backends.build_counts,
             },
             "full_audit_in_inner_callbacks": False,
             "point_jacobian_backend": point_jacobian_backend,
@@ -4462,6 +4876,7 @@ __all__ = [
     "PaperRefinementWeights",
     "RefinementCoordinateProfile",
     "RefinementResources",
+    "RefinementRuntimeBackends",
     "RefinementSolverProfile",
     "regularization_profile_for_solver",
     "SOLVER_PROFILE_ID",
@@ -4479,6 +4894,7 @@ __all__ = [
     "map_previous_state_to_seed",
     "_apply_continuity_gate",
     "prepare_refinement_resources",
+    "prepare_refinement_runtime_backends",
     "save_final_trajectory",
     "so3_exp",
     "so3_log",

@@ -1,0 +1,28 @@
+schema_version: toporetarget.hoi.v2
+status: frozen
+storage_compatibility:
+  read_legacy: toporetarget.hoi.v1
+  migration: lossless_wrapper
+objects:
+  rigid:
+    required:
+      - object_id
+      - mesh
+      - pose_scene
+  articulated:
+    optional_fields:
+      - root_pose
+      - links
+      - joint_states
+      - link_meshes
+      - link_poses
+required_rigid_hoi:
+  - hand.side
+  - hand.mano_parameters
+  - hand.keypoint_tracks.mediapipe21
+  - object.mesh
+  - object.pose_scene
+  - timestamps
+  - fps
+  - contacts
+  - provenance

@@ -901,14 +901,69 @@ class HybridSignedDistanceBackend(SignedDistanceBackend):
             "policy_hash": self.policy.policy_hash,
             "cache_signature": self.geometry.cache_signature,
             "boundary_exclusion_radius_m": self.boundary_exclusion_radius_m,
+            "object_local_bvh": {
+                "source": self.original.describe().get("object_local_bvh"),
+                "sign_proxy": self.proxy.describe().get("object_local_bvh"),
+            },
         }
 
-    def query_local(self, points_local: np.ndarray) -> SignedDistanceQueryResult:
+    def query_local(
+        self,
+        points_local: np.ndarray,
+        *,
+        sample_ids: np.ndarray | None = None,
+        sign_cache: Any | None = None,
+        cache_update: bool = True,
+        evaluation_lineage: str = "direct",
+    ) -> SignedDistanceQueryResult:
+        """Query original exact distance and proxy exact sign.
+
+        A supplied cache may only reuse an already-certified sign.  Closest
+        points and unsigned distances are always recomputed by the exact
+        object-local tree.  FD probes call with ``cache_update=False`` and no
+        sample IDs, so they cannot affect formal QuerySet cache lineage.
+        """
+
         points = np.asarray(points_local, dtype=np.float64)
         original = self.original.query_local(points)
-        proxy = self.proxy.query_local(points)
-        assert proxy.inside is not None
-        signed = np.where(proxy.inside, -original.unsigned_distance, original.unsigned_distance)
+        flat_points = points.reshape(-1, 3)
+        shape = points.shape[:-1]
+        cached_sign = np.zeros(len(flat_points), dtype=np.int8)
+        cached_mask = np.zeros(len(flat_points), dtype=bool)
+        if sign_cache is not None and sample_ids is not None:
+            cached_sign, cached_mask = sign_cache.lookup(
+                flat_points, np.asarray(sample_ids, dtype=np.int64), lineage=evaluation_lineage
+            )
+        proxy_inside = np.zeros(len(flat_points), dtype=bool)
+        proxy_confidence = np.zeros(len(flat_points), dtype=np.float64)
+        proxy_winding = np.full(len(flat_points), np.nan, dtype=np.float64)
+        proxy_faces = np.full(len(flat_points), -1, dtype=np.int64)
+        proxy_valid = np.zeros(len(flat_points), dtype=bool)
+        if np.any(cached_mask):
+            proxy_inside[cached_mask] = cached_sign[cached_mask] < 0
+            proxy_confidence[cached_mask] = 1.0
+            proxy_valid[cached_mask] = True
+        exact_mask = ~cached_mask
+        if np.any(exact_mask):
+            proxy = self.proxy.query_local(flat_points[exact_mask])
+            assert proxy.inside is not None
+            proxy_inside[exact_mask] = np.asarray(proxy.inside, dtype=bool).reshape(-1)
+            proxy_confidence[exact_mask] = np.asarray(
+                proxy.sign_confidence, dtype=np.float64
+            ).reshape(-1)
+            proxy_valid[exact_mask] = np.asarray(proxy.sign_valid, dtype=bool).reshape(-1)
+            if proxy.winding_value is not None:
+                proxy_winding[exact_mask] = np.asarray(
+                    proxy.winding_value, dtype=np.float64
+                ).reshape(-1)
+            proxy_faces[exact_mask] = np.asarray(
+                proxy.closest_face_indices, dtype=np.int64
+            ).reshape(-1)
+            if sign_cache is not None:
+                sign_cache.note_exact_winding(int(np.count_nonzero(exact_mask)))
+        unsigned = np.asarray(original.unsigned_distance, dtype=np.float64).reshape(-1)
+        signed_flat = np.where(proxy_inside, -unsigned, unsigned)
+        signed = signed_flat.reshape(shape)
         closest_face_indices = self.geometry.source_distance_face_ids[
             np.asarray(original.closest_face_indices, dtype=np.int64)
         ]
@@ -916,36 +971,35 @@ class HybridSignedDistanceBackend(SignedDistanceBackend):
             original.closest_points.reshape(-1, 3), self.original_boundary_segments
         ).reshape(original.unsigned_distance.shape)
         near_boundary = boundary_distance <= self.boundary_exclusion_radius_m
-        proxy_faces = np.asarray(proxy.closest_face_indices, dtype=np.int64)
         synthetic = np.isin(
             proxy_faces,
             np.asarray(sorted(self.synthetic_face_set), dtype=np.int64),
-        )
-        valid = np.asarray(proxy.sign_valid, dtype=bool) & np.isfinite(signed)
+        ).reshape(shape)
+        valid = proxy_valid.reshape(shape) & np.isfinite(signed)
         non_smooth = (
             np.zeros_like(valid, dtype=bool)
             if original.non_smooth is None
             else np.asarray(original.non_smooth, dtype=bool)
         )
-        return SignedDistanceQueryResult(
+        result = SignedDistanceQueryResult(
             signed_distance=signed,
             unsigned_distance=original.unsigned_distance,
             closest_points=original.closest_points,
             closest_face_indices=closest_face_indices,
             closest_barycentric=original.closest_barycentric,
             surface_normals=original.surface_normals,
-            inside=proxy.inside,
+            inside=proxy_inside.reshape(shape),
             on_surface=original.on_surface,
             valid=valid,
             sign_valid=valid,
-            sign_confidence=proxy.sign_confidence,
-            sign_method="hybrid_original_distance_proxy_sign",
+            sign_confidence=proxy_confidence.reshape(shape),
+            sign_method="hybrid_original_distance_proxy_sign_with_certified_reuse",
             backend_id=self.backend_id,
             mesh_hash=self.mesh_hash,
-            winding_value=proxy.winding_value,
+            winding_value=proxy_winding.reshape(shape),
             non_smooth=non_smooth,
             gradient_valid=valid & ~non_smooth,
-            proxy_closest_face_indices=proxy_faces,
+            proxy_closest_face_indices=proxy_faces.reshape(shape),
             proxy_closest_is_synthetic_patch=synthetic,
             original_boundary_distance=boundary_distance,
             near_original_boundary=near_boundary,
@@ -956,13 +1010,43 @@ class HybridSignedDistanceBackend(SignedDistanceBackend):
                 "proxy_used_for_sign_only": True,
                 "boundary_exclusion_radius_m": self.boundary_exclusion_radius_m,
             },
+            sign=np.where(signed_flat >= 0.0, 1, -1).astype(np.int8).reshape(shape),
+            sign_source=np.where(
+                cached_mask, "LIPSCHITZ_CERTIFIED_REUSE", "EXACT_GENERALIZED_WINDING"
+            )
+            .astype(str)
+            .reshape(shape),
+            sign_reliable=valid.copy(),
         )
+        if sign_cache is not None and cache_update and np.any(exact_mask):
+            ids = None if sample_ids is None else np.asarray(sample_ids, dtype=np.int64).reshape(-1)
+            sign_cache.record_exact(
+                flat_points[exact_mask],
+                None if ids is None else ids[exact_mask],
+                signed_flat[exact_mask],
+                proxy_valid[exact_mask],
+                lineage=evaluation_lineage,
+            )
+        return result
 
     def query_scene(
-        self, points_scene: np.ndarray, object_pose_scene: np.ndarray
+        self,
+        points_scene: np.ndarray,
+        object_pose_scene: np.ndarray,
+        *,
+        sample_ids: np.ndarray | None = None,
+        sign_cache: Any | None = None,
+        cache_update: bool = True,
+        evaluation_lineage: str = "direct",
     ) -> SignedDistanceQueryResult:
         local = transform_points(invert_transform(object_pose_scene), np.asarray(points_scene))
-        result = self.query_local(local)
+        result = self.query_local(
+            local,
+            sample_ids=sample_ids,
+            sign_cache=sign_cache,
+            cache_update=cache_update,
+            evaluation_lineage=evaluation_lineage,
+        )
         result.closest_points = transform_points(object_pose_scene, result.closest_points)
         result.surface_normals = transform_vectors(object_pose_scene, result.surface_normals)
         result.surface_normals /= np.maximum(

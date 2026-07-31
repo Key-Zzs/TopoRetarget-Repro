@@ -40,19 +40,20 @@ R0 is MJCF playback/PD, R1 is PPO tracking, and CP remains later.
 | 8 | Shared interaction graph and Laplacian coordinates | Eq. 3-7 implementation, source-only artifacts, RH/LH reports and views | Graph/loss tests, source integrity, identity/Jacobian checks, and bounded 60-frame acceptance pass; Eq. 8-9 remains out of scope | complete (bounded, with explicit assumptions) |
 | 9 | Constrained final optimization with slack variables | Eq. 8-9 implementation, QuerySets/slack, RH/LH bounded artifacts, independent audit | Constraint, determinism, source-integrity, and bounded 60-frame acceptance pass; assumptions remain explicit | complete (bounded, with explicit assumptions) |
 | 10 | GRAB → Arti-MANO end-to-end retargeting | Resumable bounded DAG, contact-window selector, provenance, review, reference export | Implementation and focused tests pass; accepted bounded contact-rich reference-runtime run with human acceptance | implemented; bounded reference-runtime accepted; preferred performance, production, and real-time scopes open |
+| 11 | Core Contract Freeze | Canonical HOI v2, DatasetAdapter v1, RobotHandPlugin v1, RobotReference v2, MetricRegistry v1, v1→v2 migration | Contracts, registries, compatibility tests, bilingual docs, and immutable Stage 10 migration report pass | complete |
 | Q1–Q3 | Multi-dataset interaction benchmark and unified automatic evaluation | Frozen selection, Eq. 10-12 registry, GRAB proxies, automatic gates, baseline execution, aggregation, reports, dashboard | Selection is frozen before runs; applicable profiles execute or preserve failures; reports and integrity checks are generated | implemented, bounded; current local ContactPose gate blocks before freeze |
 | Q4 | Morphology-aware warm-start | Morphology gap analysis and separately versioned seed/prior candidates | Four-clip evidence without changing paper-core Eq. (1)–(9) | complete (bounded, diagnostic extension) |
 | Q5 | Arti-MANO surface contact proxies | Generic robot surface-region interface and deterministic Arti-MANO profile | Proxy is distinct from source ground truth and collision samples | complete (bounded, paper-external) |
 | Q6 | Contact-aware final extension | Fixed contact candidate grid, source/object-local targets, Huber/direction diagnostics | Separate method, tests, rejection lineage, and rollback evidence | complete (bounded; no accepted contact extension) |
 | Q7 | Cross-trajectory automatic profile selection | Frozen A–E 2×2 matrix, hard/regression/improvement/Pareto gates | Selection uses only predeclared cross-trajectory metrics | complete (bounded; baseline fallback retained) |
-| 12 | OakInk, DexYCB and HO-Cap adapters | Dataset adapters | Adapters validated | not started |
-| 13 | ARCTIC, OakInk2 and TACO extensions | Dataset adapters | Adapters validated | not started |
-| 14 | Arbitrary dexterous-hand plugin interface | URDF/MJCF interface | Plugin contract tested | not started |
-| 15 | Baselines and ablations | OmniRetarget, Mink, DexPilot, GeoRT | Fair baseline runs | not started |
-| 16 | Reference-tracking PPO | RL controller | Training/eval pipeline | not started |
-| 17 | Paper experiment reproduction | Tables/Figures | Result report | not started |
-| 18 | Performance optimization and v1.0 release | Packaging and benchmarks | Release criteria pass | not started |
-| 19 | Non-paper extensions | MANO cleanup, SPIDER, other extensions | Separately labeled extensions | not started |
+| 12 | Dataset Adapter Expansion | OakInk, DexYCB and HO-Cap adapters plus paused final-job controls/performance repair | P2 v2 five-frame evidence is available; batch final remains paused pending user approval and long-clip qualification | in progress; final queue paused |
+| 13 | Complex HOI Expansion | ARCTIC, OakInk2 and TACO adapters | Articulated/complex HOI remains canonical and validated | not started |
+| 14 | Universal Robot Hand Plugin | Broader arbitrary-hand URDF/MJCF plugin validation | Plugins satisfy RobotHandPlugin v1 and reference export gates | not started |
+| 15 | Baseline Comparison | OmniRetarget, Mink, DexPilot, GeoRT | Frozen fair baseline runs and reports | not started |
+| 16 | Reference Tracking PPO | RL controller | RobotReference v2 tracking training/evaluation | not started |
+| 17 | Paper Experiment Reproduction | Tables/Figures | Full result report with provenance | not started |
+| 18 | Performance Optimization | Packaging and benchmarks | Release criteria pass | not started |
+| 19 | Non-paper Extensions | MANO cleanup, SPIDER, other extensions | Separately labeled extensions | not started |
 
 The Wuji three-clip implementation is available through the generic
 `workflow run-grab-suite` command; its completion status is determined only by
@@ -87,3 +88,21 @@ repair/shadow, reruns the frozen W1/W2/W3 evidence with selected replay and
 multi-threshold collision gates, and exports only versioned artifacts under
 `.local/experiments/wuji_hand2_continuous_v1/w2_3_finalization/`. The result
 does not establish RL, real-time, cross-subject, or author-exact validity.
+# P3 compiled ambiguous spatial-FD
+
+The portable compiled CPU probe kernel remains experimental: its measured
+five-frame overall benefit is below the merge threshold.
+
+# P4 certified compiled exact sign
+
+P4 adds optional exact float64 compiled generalized winding and certified
+FD-probe sign reuse. Near-threshold winding retains the qualified reference
+fallback. It is experimental and non-default pending fixed-frame and 60-frame
+qualification; Stage-12 remains untouched.
+
+# Stage-12 ContactPose mug solver closeout
+
+The recoverable status-8/9 path reconstructs representable active-set slack at
+fixed q/base and reruns the unchanged strict solver/audit. This generic solver
+engineering is not a paper-method extension and does not establish the
+ContactPose Eq.10/Eq.11 benchmark.

@@ -183,9 +183,9 @@ def audit_source_contact_boundary(
         raise RuntimeError(f"proxy manifest missing: {artifact_root}")
     sequence = load_hoi_sequence(canonical_path)
     try:
-        object_track = sequence.rigid_object("primary")
+        object_track = sequence.primary_rigid_object()
     except (KeyError, ValueError):
-        object_track = sequence.rigid_objects[0]
+        raise RuntimeError("canonical sequence has no explicit primary object") from None
     backend, geometry = build_hybrid_signed_distance_backend(
         object_track.mesh.vertices_local,
         object_track.mesh.faces,

@@ -32,6 +32,13 @@ class SignedDistanceQueryResult:
     original_boundary_distance: np.ndarray | None = None
     near_original_boundary: np.ndarray | None = None
     geometry_metadata: dict[str, Any] | None = None
+    # P2 provenance is optional so historical result artifacts and public
+    # callers keep their existing contract.  New backends fill these fields
+    # per point whenever a sign is classified or reused.
+    sign: np.ndarray | None = None
+    sign_source: np.ndarray | None = None
+    sign_reliable: np.ndarray | None = None
+    ambiguity_flags: np.ndarray | None = None
 
     def as_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -68,6 +75,14 @@ class SignedDistanceQueryResult:
             result["near_original_boundary"] = self.near_original_boundary.tolist()
         if self.geometry_metadata is not None:
             result["geometry_metadata"] = self.geometry_metadata
+        if self.sign is not None:
+            result["sign"] = self.sign.tolist()
+        if self.sign_source is not None:
+            result["sign_source"] = self.sign_source.tolist()
+        if self.sign_reliable is not None:
+            result["sign_reliable"] = self.sign_reliable.tolist()
+        if self.ambiguity_flags is not None:
+            result["ambiguity_flags"] = self.ambiguity_flags.tolist()
         return result
 
 

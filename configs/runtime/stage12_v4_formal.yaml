@@ -1,0 +1,29 @@
+# Isolated Stage-12 formal execution policy.  This file never changes the
+# repository-wide default execution profile; it is consumed only by the v4
+# formal lineage rooted under .local/experiments/stage12_dataset_validation_v4.
+schema_version: toporetarget.stage12.v4_formal.v1
+execution_profile: wuji_continuous_sequential_fast_exact_v4_compiled_sign
+solver_profile: wuji_continuous_sequential_v1
+coordinate_profile: local_seed_delta_v1
+query_profile: adaptive_active_set_v1
+dtype: float64
+device: cpu
+max_final_workers: 1
+blas_threads: 1
+openmp_threads: 1
+torch_threads: 1
+torch_interop_threads: 1
+compiled_internal_threads: 1
+checkpoint_every_frame: true
+heartbeat_every_frame: true
+final_full_audit_per_accepted_frame: 1
+fail_closed: true
+oakink_first_ten:
+  frame_count: 10
+  median_s_per_frame_max: 15.0
+  p95_s_per_frame_max: 25.0
+  max_s_per_frame_max: 45.0
+full_trajectory:
+  median_s_per_frame_max: 15.0
+  p95_s_per_frame_max: 25.0
+  max_s_per_frame_max: 60.0

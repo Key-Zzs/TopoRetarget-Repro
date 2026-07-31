@@ -309,6 +309,7 @@ class GrabDatasetAdapter(HOIDatasetAdapter):
         self,
         record: GrabSequenceRecord,
         root: Path,
+        source_path: Path,
         side: str,
         options: GrabLoadOptions,
     ) -> tuple[HandTrack, dict[str, Any]]:
@@ -334,12 +335,26 @@ class GrabDatasetAdapter(HOIDatasetAdapter):
                 except (GrabAdapterError, ManoBackendError, ImportError) as exc:
                     raise GrabAdapterError(str(exc)) from exc
             try:
-                render = backend.render(
-                    params=item.params,
-                    v_template=vtemp,
-                    side=side,
-                    frame_count=record.num_frames,
-                )
+                from toporetarget.data.mano_backends.smplx_backend import SmplxManoBackend
+
+                if isinstance(backend, SmplxManoBackend):
+                    render = backend.render_axis_angle(
+                        params=item.params,
+                        v_template=vtemp,
+                        side=side,
+                        frame_count=record.num_frames,
+                        flat_hand_mean=True,
+                        dataset_name="grab",
+                        source_annotation_path=source_path,
+                        source_annotation_hash=sha256_file(source_path),
+                    )
+                else:
+                    render = backend.render(
+                        params=item.params,
+                        v_template=vtemp,
+                        side=side,
+                        frame_count=record.num_frames,
+                    )
             except (ManoBackendError, ValueError, KeyError) as exc:
                 raise GrabAdapterError(str(exc)) from exc
         _validate_render(render, record.num_frames)
@@ -424,7 +439,7 @@ class GrabDatasetAdapter(HOIDatasetAdapter):
         rendered: list[HandTrack] = []
         hand_meta: dict[str, Any] = {}
         for side in sides:
-            hand, metadata = self._render_hand(record, root, side, selected)
+            hand, metadata = self._render_hand(record, root, path, side, selected)
             rendered.append(hand)
             hand_meta[side] = metadata
         object_mesh_path = resolve_grab_resource(root, record.object.mesh_relative, "object mesh")

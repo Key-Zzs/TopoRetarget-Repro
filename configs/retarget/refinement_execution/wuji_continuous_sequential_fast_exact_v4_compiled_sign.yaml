@@ -1,0 +1,29 @@
+# Experimental v4: exact compiled generalized winding plus a certified
+# 1-Lipschitz FD-probe sign reuse rule.  Near-threshold signs always return to
+# the qualified Python generalized-winding reference.
+profile_id: wuji_continuous_sequential_fast_exact_v4_compiled_sign
+version: "4.0.0"
+device: cpu
+dtype: float64
+cache_mode: exact_x_common_forward
+checkpoint_schema: toporetarget.final_retarget_checkpoint.v1
+initialization_profile: stage7_seed_v1
+full_audit_mode: outer_round_and_final
+variable_scaling: seed_delta_normalized_v1
+point_jacobian_backend: analytic_urdf_spatial_v2
+signed_distance_gradient: spatial_gradient_chain_rule_v1
+sign_backend: lipschitz_certified_cache_with_exact_fallback_v1
+ambiguity_fd_backend: compiled_spatial_central_fd_winding_v1
+exact_closest_point_backend: compiled_object_local_bvh_v1
+strict_recovery: reference_batched_from_primary_result_v1
+sdf_tree_leaf_size: 512
+role: performance_candidate
+math_equivalent: true
+experimental: true
+recommended: false
+stage12_default: false
+final_full_surface_audit: true
+paper_objective_unchanged: true
+paper_constraints_unchanged: true
+continuity_contract_unchanged: true
+author_exact: unresolved

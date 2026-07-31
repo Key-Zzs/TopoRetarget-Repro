@@ -12,6 +12,7 @@ from toporetarget.geometry.se3 import invert_transform, transform_points, transf
 
 from .base import SignedDistanceBackend, SignedDistanceQueryResult
 from .closest_point import (
+    ObjectLocalBVH,
     TriangleAABBTree,
     TriangleCentroidBoundTree,
     closest_points_on_triangles,
@@ -121,7 +122,7 @@ class ReferenceSignedDistanceBackend(SignedDistanceBackend):
         # reference implementation.
         self._closest_tree: TriangleAABBTree | TriangleCentroidBoundTree | None
         if closest_acceleration == "tree":
-            self._closest_tree = TriangleAABBTree(self._triangles)
+            self._closest_tree = ObjectLocalBVH(self._triangles)
         elif closest_acceleration == "centroid_bound":
             self._closest_tree = TriangleCentroidBoundTree(self._triangles)
         else:
@@ -161,6 +162,11 @@ class ReferenceSignedDistanceBackend(SignedDistanceBackend):
             "face_chunk_size": self.face_chunk_size,
             "acceleration": {"rtree": False, "pyembree": False, "reference_fallback": True},
             "triangle_aabb": True,
+            "object_local_bvh": (
+                self._closest_tree.stats()
+                if isinstance(self._closest_tree, TriangleAABBTree)
+                else None
+            ),
             "closest_acceleration": self.closest_acceleration,
             "winding_device": self.winding_device or "cpu_numpy",
             "closest_device": self.closest_device or "cpu_numpy",

@@ -1089,6 +1089,18 @@ wuji_continuous_full_state_v1:
   paper_core_frame_objective: unchanged
   paper_core_collision_constraints: unchanged
   author_exact: unresolved
+generic_status8_slack_restoration:
+  paper_method: false
+  engineering_solver_recovery: true
+  triggers: [SLSQP_status_8, SLSQP_status_9]
+  primary_variables_fixed_during_restoration: true
+  original_objective_unchanged: true
+  original_constraints_unchanged: true
+  bounds_tolerances_penalties_unchanged: true
+  query_set_semantics_unchanged: true
+  independent_full_audit_required: true
+  dataset_object_sample_conditionals: forbidden
+  author_exact: unresolved
 wuji_continuous_sequential_v1:
   paper_method: false
   engineering_extension: true
@@ -1103,4 +1115,58 @@ wuji_continuous_sequential_v1:
   rl_ready: false
   realtime_ready: false
   cross_subject_validated: false
+  author_exact: unresolved
+wuji_continuous_sequential_fast_exact_v1:
+  paper_method: false
+  engineering_execution_profile: true
+  role: performance_candidate
+  math_equivalent_claim: pending_validation
+  paper_core_frame_objective: unchanged
+  paper_core_collision_constraints: unchanged
+  final_full_surface_audit: true
+  recommended: false
+  stage12_default: false
+  author_exact: unresolved
+wuji_continuous_sequential_fast_exact_v2:
+  paper_method: false
+  engineering_execution_profile: true
+  role: performance_candidate
+  signed_distance_gradient: spatial_gradient_chain_rule_v1
+  sign_backend: lipschitz_certified_cache_with_exact_fallback_v1
+  exact_object_local_bvh: true
+  paper_core_frame_objective: unchanged
+  paper_core_collision_constraints: unchanged
+  final_full_surface_audit: true
+  recommended: false
+  stage12_default: false
+  author_exact: unresolved
+wuji_continuous_sequential_fast_exact_v3_compiled_cpu:
+  paper_method: false
+  engineering_execution_profile: true
+  role: experimental_performance_candidate
+  signed_distance_gradient: spatial_gradient_chain_rule_v1
+  ambiguity_fd_backend: compiled_spatial_central_fd_v1
+  exact_closest_point_backend: compiled_object_local_bvh_v1
+  exact_sign_backend: reference_generalized_winding_v2
+  paper_core_frame_objective: unchanged
+  paper_core_collision_constraints: unchanged
+  final_full_surface_audit: true
+  recommended: false
+  stage12_default: false
+  author_exact: unresolved
+wuji_continuous_sequential_fast_exact_v4_compiled_sign:
+  paper_method: false
+  engineering_execution_profile: true
+  role: experimental_performance_candidate
+  signed_distance_gradient: spatial_gradient_chain_rule_v1
+  ambiguity_fd_backend: compiled_spatial_central_fd_winding_v1
+  exact_closest_point_backend: compiled_object_local_bvh_v1
+  exact_sign_backend: compiled_batched_generalized_winding_v1
+  certified_fd_probe_reuse: true
+  near_threshold_reference_fallback: true
+  paper_core_frame_objective: unchanged
+  paper_core_collision_constraints: unchanged
+  final_full_surface_audit: true
+  recommended: false
+  stage12_default: false
   author_exact: unresolved

@@ -1,0 +1,20 @@
+contract_version: toporetarget.robot_hand_plugin.v1
+required_profiles:
+  - asset
+  - kinematics
+  - semantic_anchors
+  - surface_profile
+  - collision_profile
+  - simulation_profile
+  - reference_export_profile
+capability_fields:
+  - kinematics_ready
+  - retarget_ready
+  - collision_ready
+  - simulation_ready
+  - rl_ready
+registered_instances:
+  - artimano_lh
+  - artimano_rh
+  - wuji_hand2_beta1_lh
+  - wuji_hand2_beta1_rh

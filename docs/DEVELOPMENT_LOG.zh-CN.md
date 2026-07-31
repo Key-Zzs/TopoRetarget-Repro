@@ -1,5 +1,20 @@
 # 开发日志
 
+## 2026-07-29 —— Stage 11 contract freeze
+
+在不增加数据集、也不运行新的重定向的前提下冻结扩展接口。
+`toporetarget.contracts` 现在提供 Canonical HOI v2（含无损 v1 facade/migration）、
+DatasetAdapter v1、RobotHandPlugin v1、RobotReference v2 和 MetricRegistry v1。
+GRAB 通过新的 dataset facade 注册；Arti-MANO 与 Wuji Hand2 Beta1 通过通用 robot plugin
+registry 暴露。已有 `data.*`、`robots.*` 和 metric API 保持可用。
+
+RobotReference v2 支持 NPZ/Zarr，并验证 qpos、base/object/link 坐标、timestamps/FPS、joint
+order、robot hash 与 dataset provenance。metric 明确区分 `PAPER_EXACT`、`DATASET_PROXY`、
+`GENERIC_GEOMETRIC` 和 `ENGINEERING_DIAGNOSTIC`，proxy 不能声明 ground truth。migration
+report 从已有 Stage 10 canonical cache/reference 生成，只写入隔离的
+`.local/reports/stage11_*`；Stage 5–10 历史 artifact 与重定向数值保持不变。Stage 12–19
+现在作为后续路线。
+
 ## 2026-07-29 —— W2.2 Wuji 连续性收口
 
 在 `main` 完成有界 W2.2 诊断收口。新增 W2 q-step 分解/归因、固定 B0/B1/B2 isolated 与 operational window、deterministic synthetic routing、真实 W3 五帧 shadow、静态 HTML review、截图、performance/failure report 以及 source/formal artifact integrity 检查。`.local/experiments/wuji_hand2_continuous_v1/closeout_v1/` 中包含预期的 210 个 ablation row 和 42 个 solver checkpoint；正式 baseline、continuous、export、source、MANO、历史 Stage-10 artifact 均未变化，sibling `pene-loss` worktree 也未变化。
@@ -642,3 +657,31 @@ surface 验证、reference export、metrics 和自包含 HTML；写入范围不�
 并保留独立 fixed-anchor 五帧 diagnostic shadow。bounded runner 只在 W2.3 output root 写入
 replay、penetration、oracle、export、HTML 和 integrity evidence；不替换正式 artifact，也不做
 Git mutation。
+
+## 2026-07-30 -- Stage-12 final-job 安全暂停与性能修复
+
+已安装 fail-closed final-job control，只暂停经证据识别的 legacy Stage-12 process group。由于没有安全的
+per-frame checkpoint，这些 worker 保留为 `SIGSTOP`，queue 继续暂停。新的 CPU policy 为 1 worker / 1 条
+BLAS/Torch thread；fast-exact execution profile 是非默认候选，仍需真实帧 parity 与受控 scheduler 证据。
+
+## 2026-07-30 -- P2 analytic SDF 与 exact BVH qualification
+
+新增 v2 spatial-gradient chain rule、仅歧义点的 3D FD、认证 object-local sign cache 和
+exact object-local BVH instrumentation。固定五帧诊断与 Stage-12 严格隔离，结果位于
+`.local/experiments/final_refinement_perf_v2/`。
+# P3 compiled CPU 歧义 spatial-FD
+
+仅对歧义六 probe FD batch 增加 float64 C++17 精确 source-mesh BVH；保留 reference
+generalized-winding sign 与 v2 fallback。
+
+# P4 认证式 compiled exact sign
+
+新增可选的确定性 C++17 generalized-winding handle、严格的 near-threshold Python fallback，
+以及 1-Lipschitz FD-probe 符号复用认证。v4 profile 保持 float64 CPU、非默认。
+
+## 2026-07-31 -- ContactPose mug status-8 可行性修复
+
+先冻结 rejected baseline，再以 CPU float64 重现 active-soft 边界上的 status-8。通用有界恢复仅在
+固定 base/q 下重算现有 active-query slack，并以 reference-Jacobian retry；不接受 status 8，也不放宽
+任一最终 gate。两个独立 mug 严格重放及一个逐字节一致的 ContactPose banana shadow replay 均通过，
+final queue 始终保持暂停。ContactPose Eq. 10/Eq. 11 contact benchmark 仍未复现。

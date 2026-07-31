@@ -31,7 +31,7 @@ HOI 数据接口）、阶段 2B 的有界真实 GRAB 检查、阶段 3 的有界
 适配，以及阶段 5 的有界 GRAB dataset adapter（fresh semantic closeout 已通过）。阶段 6 已完成有界
 geometry foundation（保留显式假设）；阶段 7 已完成有界相对骨方向 warm-start（保留显式假设）；
 阶段 8 已完成有界 source-only 交互图和 Laplacian loss，阶段 9 已完成有界 Eq. (8)-(9)
-final refinement（均保留显式假设）；阶段 10 的 bounded reference-runtime milestone 已接受，preferred 性能、production 和 real-time 范围仍开放；阶段 11–19 尚未开始，不能把规划内容描述为已实现算法。
+final refinement（均保留显式假设）；阶段 10 的 bounded reference-runtime milestone 已接受，preferred 性能、production 和 real-time 范围仍开放；阶段 11 Core Contract Freeze 已完成，阶段 12–19 仍为 TODO，不能把后续规划描述为已实现算法。
 
 新的 Q1–Q7 路线边界为：
 
@@ -50,13 +50,14 @@ warm-start、Q5 Arti-MANO surface contact proxy、Q6 contact-preserving diagnost
 
 0. 仓库创建与架构搭建；1. 论文忠实度审计；2. canonical HOI schema 与坐标约定；3. MANO
    到 MediaPipe 风格 21 点（有界完成，保留显式假设）；4. 通用 URDF/FK 与 Arti-MANO 目标手适配器（完成，保留显式假设）；5. GRAB 适配器（有界完成，保留显式假设）；6. 物体表面采样、碰撞
-   几何与 SDF（有界完成，保留显式假设）；7. 相对骨方向初始化；8. 共享交互图与 Laplacian 坐标（有界完成，保留显式假设）；9. 带 slack 的受限
-   优化；10. GRAB→Arti-MANO 端到端重定向；11. 指标与 ContactPose；12. OakInk、DexYCB、
-   HO-Cap；13. ARCTIC、OakInk2、TACO；14. 任意灵巧手 URDF/MJCF 插件；15. baseline 与消融；
-   16. reference-tracking PPO；17. 论文实验；18. 性能优化与 v1.0；19. MANO 清理、SPIDER
-   等非论文扩展。
+   几何与 SDF（有界完成，保留显式假设）；7. 相对骨方向初始化；8. 共享交互图与 Laplacian 坐标（有界完成，保留显式假设）；9. 带 slack 的受限优化；10. GRAB→Arti-MANO
+   端到端重定向；11. Core Contract Freeze（Canonical HOI v2、DatasetAdapter v1、RobotHandPlugin v1、RobotReference v2、MetricRegistry v1，已完成）；12. Dataset Adapter Expansion（TODO）；13. Complex HOI Expansion（TODO）；14. Universal Robot Hand Plugin（TODO）；15. Baseline Comparison（TODO）；16. Reference Tracking PPO（TODO）；17. Paper Experiment Reproduction（TODO）；18. Performance Optimization（TODO）；19. Non-paper Extensions（TODO）。
 
 阶段 9 的详细边界见 `stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md`。
+
+Stage 12 的 adapter 输入已经存在，但 batch final queue 处于暂停状态；P2 v2 五帧证据完成后仍需
+用户批准和长 clip qualification，checkpoint 与 exact-backend
+gate 完成前不能把该阶段描述为完成或恢复批量运行。
 
 每阶段的 objective、major deliverables、definition of done 和 status 以英文路线图为准。
 
@@ -76,3 +77,11 @@ window fallback 被关闭，五帧 repair/shadow 与 sequential gate 隔离；�
 证据会做 selected replay、多阈值碰撞 gate，并只在
 `.local/experiments/wuji_hand2_continuous_v1/w2_3_finalization/` 下生成版本化 artifact。
 该结果不证明 RL、real-time、cross-subject 或 author-exact validity。
+# P3 compiled 歧义 spatial-FD
+
+portable compiled CPU probe kernel 仍为实验项：五帧整体收益未达到合并门槛。
+
+# P4 认证式 compiled exact sign
+
+P4 增加可选的 float64 compiled generalized winding 和认证式 FD-probe 符号复用。
+阈值附近仍回退到已验证 reference；在完成五帧和 60 帧验收前保持实验性、非默认，且不触及 Stage-12。

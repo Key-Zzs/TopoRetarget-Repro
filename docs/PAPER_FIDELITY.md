@@ -318,6 +318,11 @@ human acceptance and is the canonical faithful baseline. See
 
 ## Open-object signed-distance engineering boundary
 
+The optional `compiled_sdf_cpu_v1` backend is an engineering implementation
+detail, not an author-exact or paper-specified SDF method. It preserves the
+existing exact closest-point and generalized-winding sign semantics and only
+changes execution of ambiguous spatial-FD probes.
+
 The GRAB quality lane records `hybrid_original_distance_proxy_sign_v1` as
 paper-unspecified geometry engineering. The raw object mesh is unchanged; a
 derived watertight proxy supplies sign only, while the original mesh supplies
@@ -362,3 +367,25 @@ collision profile, or any persisted formal trajectory. The real W3 shadow
 currently fails with SLSQP status 4 and a continuity-gate failure, while W3
 penetration rate regresses; the closeout therefore records
 `WUJI_CONTINUOUS_PROFILE_NOT_RECOMMENDED_WINDOW_FALLBACK_FAILED`.
+
+## Final-refinement performance boundary
+
+Final-job pausing, checkpoint handling, object-local exact-query caching, collision-sample
+reuse, batched Jacobians, timers, and CPU thread limits are paper-unspecified engineering.
+The fast-exact candidate preserves the current paper-core objective and constraints but is
+not paper-method, author-exact, recommended, or the Stage-12 default until numerical-equivalence
+and real-frame strict-acceptance gates pass.
+
+## P2 analytic SDF execution boundary
+
+The v2 BVH, spatial gradient, 3D fallback, and Lipschitz sign cache are
+paper-unspecified execution engineering. They preserve the paper-core objective,
+constraints, QuerySet semantics, float64 execution, and independent audit.
+
+## P4 compiled exact-sign boundary
+
+The compiled winding and certified FD-probe reuse path is paper-external
+execution engineering. It preserves the generalized-winding definition,
+float64 contract, solver and audit; uncertain classifications use the qualified
+reference fallback. It is experimental, not author-exact, and not a Stage-12
+default.

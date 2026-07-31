@@ -36,38 +36,77 @@ author-exact、全数据集、实时、真实硬件控制、physics 或 RL 复�
 [坐标约定](docs/COORDINATE_CONVENTIONS.md)和
 [机器人手目标契约](docs/ROBOT_HAND_TARGET_CONTRACT.md)。
 
+## 当前状态
+
+阶段 0–10 已在各自文档化的有界范围内完成。阶段 11 已完成：Canonical HOI、DatasetAdapter、
+RobotHandPlugin、RobotReference 与 MetricRegistry 契约已冻结并通过测试。Dataset Adapter v1
+在 DexYCB、OakInk、HO-Cap 与 ContactPose 的全部 8/8 个冻结选择上通过 source qualification
+与 strict final qualification。ContactPose 使用原生静态单帧样本和官方标注 joints；fitted MANO
+仅用于可视化。mug 与 banana 已通过 strict final，但官方 ContactPose contact benchmark 尚未复现。
+
+Arti-MANO 与 Wuji Hand2 Beta1 是已验证目标手。通用 URDF/MJCF 运动学导入已建立，但 semantic
+anchor、contact surface、collision profile 与 simulation metadata 仍可能需要经过验证的 plugin
+manifest。当前推荐的离线 reference 后端是
+`wuji_continuous_sequential_fast_exact_v4_compiled_sign`：analytic signed-distance Jacobian、
+exact object-local BVH、认证式 sign reuse、compiled deterministic generalized winding、strict
+full-surface audit 与 CPU float64。它是工程后端，不声称是作者指定的后端，也不代表实时生产能力。
+
+当前边界：完整 ContactPose 论文 benchmark 为 **NOT_REPRODUCED**；reference-tracking PPO、完整
+论文 tables/figures/seeds 以及 ARCTIC/OakInk2/TACO 仍为 TODO；不声称实时重定向或跨 subject/全
+数据集生产验证。final queue 仍为 operator control 暂停状态，无 active worker，也不允许新 final task。
+
 ## TODO 与完整路线图
 
-下表的“已实现”仅表示仓库中有界且有文档约束的 contract，不代表论文结果已完整复现。
-阶段开发历史和测量结果存放在后文索引的文档中，不放在主 README。
+路线图描述的是有界仓库能力，不代表完整论文结果复现。详细阶段历史和实现记录维护在
+[docs/DEVELOPMENT_LOG.zh-CN.md](docs/DEVELOPMENT_LOG.zh-CN.md)、[docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md)
+和 [docs/stages/](docs/stages/) 中。
 
-| 阶段 | 范围 | 状态 / 剩余工作 |
-| ---: | --- | --- |
-| 0 | 仓库架构、CLI、路径策略 | 已实现 |
-| 1 | 论文忠实度、公式、图表与假设 | 已实现；作者未披露部分继续显式标为 unresolved |
-| 2 | Canonical HOI schema、坐标与有界 GRAB 检查 | 已实现，有界 |
-| 3 | MANO→MediaPipe-style-21 source 转换 | 已实现，有界，保留显式语义假设 |
-| 4 / F0 | 通用 target-hand interface 与 tracked Arti-MANO 资产 | 已实现 |
-| 5 | Native-time GRAB adapter 与 semantic contacts | 已实现，有界 |
-| 6 | Object geometry、确定性 sample、SDF、机器人 collision surface | 已实现，有界 |
-| 7 | Relative-bone-direction warm start | 已实现，有界 |
-| 8 | Source interaction graph 与 Laplacian interaction loss | 已实现，有界 |
-| 9 | 带 slack 的受限 final refinement、checkpoint 和独立 collision audit | 已实现，有界 |
-| 10 | 可恢复 GRAB→目标手 workflow、review、provenance 与 export | 已实现，用于有界离线 reference generation |
-| Q1–Q3 | 冻结的多数据集 benchmark 与统一自动评价 | 已实现，有界；外部数据 eligibility gate 可 fail closed |
-| Q4–Q7 | Morphology/contact 诊断扩展与冻结 profile 选择 | 已实现，有界，属于 paper-external |
-| W0–W3 | 通用 Wuji 集成、固定多 clip 重定向、连续性与 export | 已实现，有界，仅离线 |
-| 12 | OakInk、DexYCB、HO-Cap adapter | TODO |
-| 13 | ARCTIC、OakInk2、TACO adapter | TODO |
-| 14 | 更广泛的任意机器人手 URDF/MJCF plugin 验证 | TODO |
-| 15 | 公平的 OmniRetarget、Mink、DexPilot、GeoRT baseline/ablation | TODO |
-| 16 | Reference-tracking PPO | TODO |
-| 17 | 完整论文 table、figure、dataset 与 seed 复现 | TODO |
-| 18 | 性能优化、打包与 v1.0 标准 | TODO |
-| 19 | 与论文方法清晰隔离的非论文扩展 | TODO |
+| 阶段 | 能力 | 状态 | 完成定义 / 后续工作 |
+|---:|---|---|---|
+| 0 | 仓库架构与路径策略 | 完成 | CLI、配置、资产发现、导入和验证基础能力可用。 |
+| 1 | 论文忠实度审计 | 完成 | 公式、表格、假设和 provenance 跟踪可用。 |
+| 2 | Canonical HOI schema 与坐标 | 完成，有界 | canonical rigid-HOI schema 与迁移已验证；复杂 articulated/bimanual 扩展留给阶段 13。 |
+| 3 | source hand / MANO 到 21-keypoint 契约 | 完成，有界 | PCA15/PCA45/axis-angle 路由与 dataset-native source contract 已明确验证。 |
+| 4 | 机器人手运动学与 plugin 基础 | 完成，有界 | 通用 URDF/MJCF 加载及已验证 Arti-MANO/Wuji plugin 可用；任意机器人手仍需 semantic manifest。 |
+| 5 | GRAB adapter | 完成，有界 | lazy conversion、provenance、source/contact 可视化与验证可用。 |
+| 6 | 物体采样、碰撞几何与 SDF | 完成，有界 | 确定性采样、精确距离查询与独立审计可用。 |
+| 7 | 相对骨方向 warm start | 完成 | Eq.1–2 初始化与时间处理已实现。 |
+| 8 | interaction graph 与 Laplacian 坐标 | 完成 | Eq.3–7 interaction graph 与验证已实现。 |
+| 9 | 受限 final refinement | 完成，有界 | Eq.8–9 refinement、slack、active set、strict audit 与确定性恢复已实现。 |
+| 10 | GRAB 端到端重定向 | 完成，有界 | GRAB→Arti-MANO/Wuji reference generation 可用。 |
+| 11 | 核心契约冻结 | 完成 | CanonicalHOI、DatasetAdapter、RobotHandPlugin、RobotReference 与 MetricRegistry 契约已冻结。 |
+| 12 | Dataset Adapter v1 | 完成 | DexYCB、OakInk、HO-Cap、ContactPose adapter 在 8/8 个冻结选择上通过 strict final。 |
+| 13 | 复杂 HOI adapter | TODO | 加入 ARCTIC、OakInk2、TACO；扩展 articulated-object、bimanual 与 SMPL-X hand extraction contract。 |
+| 14 | 通用机器人手 plugin 验证 | TODO / 基础部分完成 | 验证更多机器人拓扑与完整 URDF/MJCF plugin 能力矩阵。 |
+| 15 | baseline 与消融 | TODO | 加入公平的 OmniRetarget、Mink、DexPilot、GeoRT 及相关 baseline 对比。 |
+| 16 | reference-tracking PPO | TODO | 加入 simulation playback、reference export validation、PPO training 与 evaluation。 |
+| 17 | 论文实验复现 | TODO | 复现论文 tables、figures、seeds、ContactPose benchmark 与正式报告。 |
+| 18 | 性能与 v1.0 发布 | TODO | 建立 production benchmark、打包、CI 矩阵与发布标准。 |
+| 19 | 非论文扩展 | TODO | 将 MANO cleanup、SPIDER integration、penetration objective 等扩展明确隔离。 |
 
-可维护的 deliverable 级路线图见 [docs/ROADMAP.md](docs/ROADMAP.md)，中文版本见
-[docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md)。
+可选研究扩展——morphology-aware warm start、robot-surface contact proxy、contact-aware final
+objective、cross-trajectory profile selection——不阻塞阶段 13。
+
+## 数据集支持
+
+| 数据集 | Adapter | Source qualification | Strict final qualification | 说明 |
+|---|---|---:|---:|---|
+| GRAB | 完成 | 已验证 | 已验证 | 初始动态 reference dataset |
+| DexYCB | 完成 | 2/2 | 2/2 | 原生 PCA45 与 subject-shape 路由 |
+| OakInk | 完成 | 2/2 | 2/2 | 原生 hand vertices/joints 与 object transform |
+| HO-Cap | 完成 | 2/2 | 2/2 | PCA45、subject shape 与 qxyzw object pose |
+| ContactPose | 完成 | 2/2 静态 | 2/2 strict | 静态单帧、官方 joints；论文 contact benchmark 尚未复现 |
+| ARCTIC | TODO | — | — | 阶段 13 |
+| OakInk2 | TODO | — | — | 阶段 13 |
+| TACO | TODO | — | — | 阶段 13 |
+
+## 机器人手支持
+
+| 目标手 | 运动学 | 重定向 | 碰撞 | 仿真/RL |
+|---|---|---|---|---|
+| Arti-MANO | 已验证 | 已验证 | 已验证 | 未通过 RL qualification |
+| Wuji Hand2 Beta1 | 已验证 | 已验证 | 已验证 | 仅离线 reference generation |
+| 通用 URDF/MJCF | 导入基础 | 需要 manifest | 需要 profile | 不自动保证 |
 
 ## 环境配置
 
@@ -445,7 +484,12 @@ Licensed-data test 是 opt-in，要求已配置本地 GRAB/MANO 资源。
   [贡献指南](CONTRIBUTING.md)、
   [第三方声明](THIRD_PARTY_NOTICES.md)
 
-详细 numbered-stage report 保留在 [`docs/stages/`](docs/stages/)，不再复制到主 README。
+详细阶段历史和实现记录维护在：
+
+- [docs/DEVELOPMENT_LOG.zh-CN.md](docs/DEVELOPMENT_LOG.zh-CN.md)
+- [docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md)
+- [docs/stages/](docs/stages/)
+- [solver-feasibility 说明](docs/SOLVER_FEASIBILITY_RESTORATION.md)
 
 ## License
 

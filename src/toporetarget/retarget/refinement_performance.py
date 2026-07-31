@@ -145,8 +145,21 @@ class RefinementExecutionProfile:
     point_jacobian_backend: str
     strict_recovery: str
     sdf_tree_leaf_size: int
+    role: str
+    math_equivalent: bool
+    final_full_surface_audit: bool
+    recommended: bool
+    stage12_default: bool
+    paper_objective_unchanged: bool
+    paper_constraints_unchanged: bool
+    continuity_contract_unchanged: bool
+    author_exact: str
     profile_hash: str
     source_path: Path | None = None
+    signed_distance_gradient: str = "legacy_surface_normal_optimizer_fd_v1"
+    sign_backend: str = "exact_winding_per_query_v1"
+    ambiguity_fd_backend: str = "fast_exact_v2_python"
+    exact_closest_point_backend: str = "exact_object_local_bvh_v1"
 
     @classmethod
     def load(
@@ -184,8 +197,25 @@ class RefinementExecutionProfile:
             ),
             strict_recovery=str(values.get("strict_recovery", "none")),
             sdf_tree_leaf_size=int(values.get("sdf_tree_leaf_size", 32)),
+            role=str(values.get("role", "engineering_execution")),
+            math_equivalent=bool(values.get("math_equivalent", False)),
+            final_full_surface_audit=bool(values.get("final_full_surface_audit", True)),
+            recommended=bool(values.get("recommended", False)),
+            stage12_default=bool(values.get("stage12_default", False)),
+            paper_objective_unchanged=bool(values.get("paper_objective_unchanged", True)),
+            paper_constraints_unchanged=bool(values.get("paper_constraints_unchanged", True)),
+            continuity_contract_unchanged=bool(values.get("continuity_contract_unchanged", True)),
+            author_exact=str(values.get("author_exact", "unresolved")),
             profile_hash=hashlib.sha256(raw).hexdigest(),
             source_path=path,
+            signed_distance_gradient=str(
+                values.get("signed_distance_gradient", "legacy_surface_normal_optimizer_fd_v1")
+            ),
+            sign_backend=str(values.get("sign_backend", "exact_winding_per_query_v1")),
+            ambiguity_fd_backend=str(values.get("ambiguity_fd_backend", "fast_exact_v2_python")),
+            exact_closest_point_backend=str(
+                values.get("exact_closest_point_backend", "exact_object_local_bvh_v1")
+            ),
         )
         if result.device != "cpu" or result.dtype != "float64":
             raise ValueError("the validated Stage 9.2 execution profile must be CPU float64")
@@ -198,13 +228,40 @@ class RefinementExecutionProfile:
             "analytic_urdf_spatial_v2",
         }:
             raise ValueError("unsupported refinement point Jacobian backend")
+        if result.signed_distance_gradient not in {
+            "legacy_surface_normal_optimizer_fd_v1",
+            "spatial_gradient_chain_rule_v1",
+        }:
+            raise ValueError("unsupported signed-distance gradient backend")
+        if result.sign_backend not in {
+            "exact_winding_per_query_v1",
+            "lipschitz_certified_cache_with_exact_fallback_v1",
+        }:
+            raise ValueError("unsupported signed-distance sign backend")
         if result.strict_recovery not in {
             "none",
             "reference_batched_from_primary_result_v1",
         }:
             raise ValueError("unsupported refinement strict recovery policy")
+        if result.ambiguity_fd_backend not in {
+            "fast_exact_v2_python",
+            "compiled_spatial_central_fd_v1",
+            "compiled_spatial_central_fd_winding_v1",
+        }:
+            raise ValueError("unsupported ambiguity spatial-FD backend")
+        if result.exact_closest_point_backend not in {
+            "exact_object_local_bvh_v1",
+            "compiled_object_local_bvh_v1",
+        }:
+            raise ValueError("unsupported exact closest-point backend")
         if result.sdf_tree_leaf_size <= 0:
             raise ValueError("refinement SDF tree leaf size must be positive")
+        if result.role == "performance_candidate" and (
+            result.recommended or result.stage12_default
+        ):
+            raise ValueError("an unvalidated performance candidate cannot be a Stage 12 default")
+        if not result.final_full_surface_audit:
+            raise ValueError("all final-refinement execution profiles require a full final audit")
         return result
 
     def as_dict(self) -> dict[str, Any]:
@@ -223,6 +280,19 @@ class RefinementExecutionProfile:
             "point_jacobian_backend": self.point_jacobian_backend,
             "strict_recovery": self.strict_recovery,
             "sdf_tree_leaf_size": self.sdf_tree_leaf_size,
+            "role": self.role,
+            "math_equivalent": self.math_equivalent,
+            "final_full_surface_audit": self.final_full_surface_audit,
+            "recommended": self.recommended,
+            "stage12_default": self.stage12_default,
+            "paper_objective_unchanged": self.paper_objective_unchanged,
+            "paper_constraints_unchanged": self.paper_constraints_unchanged,
+            "continuity_contract_unchanged": self.continuity_contract_unchanged,
+            "author_exact": self.author_exact,
+            "signed_distance_gradient": self.signed_distance_gradient,
+            "sign_backend": self.sign_backend,
+            "ambiguity_fd_backend": self.ambiguity_fd_backend,
+            "exact_closest_point_backend": self.exact_closest_point_backend,
             "profile_hash": self.profile_hash,
             "source_path": None if self.source_path is None else str(self.source_path),
         }

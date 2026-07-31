@@ -109,7 +109,7 @@ def render_geometry_audit_html(
         tree=source_tree,
         query_chunk_size=256,
     )[3]
-    object_track = load_hoi_sequence(canonical_path).rigid_objects[0]
+    object_track = load_hoi_sequence(canonical_path).primary_rigid_object()
     poses = np.asarray(object_track.pose_scene.pose_scene, dtype=np.float64)
     keypoints_local, active_contact_points = _contact_context(
         canonical_path, source_path, clip, poses

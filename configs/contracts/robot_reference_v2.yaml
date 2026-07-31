@@ -1,0 +1,15 @@
+schema_version: toporetarget.robot_reference.v2
+formats:
+  - npz
+  - zarr
+required_arrays:
+  - qpos_reference
+  - base_pose
+  - object_pose_base
+  - tracked_link_positions
+  - timestamps
+required_metadata:
+  - fps
+  - joint_order
+  - robot_hash
+  - dataset_provenance

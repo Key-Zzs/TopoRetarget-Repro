@@ -206,7 +206,7 @@ def _source_geometry_sanity(
         ),
     )
     hand_track = sequence.hands[0]
-    object_track = sequence.rigid_objects[0]
+    object_track = sequence.primary_rigid_object()
     contact_ids = {
         int(label_id)
         for label_id, definition in mapping.labels.items()

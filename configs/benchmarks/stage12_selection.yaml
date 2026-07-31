@@ -1,0 +1,69 @@
+schema_version: toporetarget.stage12.selection.v1
+stage: 12
+data_root: /mnt/nas/storage/Ref2Dex_storage
+target:
+  robot: wuji_hand2_beta1_rh
+  profile: wuji_continuous_sequential_v1
+  side: right
+  dataset_specific_weights: forbidden
+  dataset_specific_solver: forbidden
+  dataset_specific_temporal: forbidden
+selections:
+  - dataset: dexycb
+    sequence: dexycb:20200709-subject-01/20200709_150144
+    hand: right
+    frame_range: [1, 61]
+    object: 019_pitcher_base
+    reason: representative right-hand pitcher trajectory with 60 contiguous valid annotation frames; retained as the known long-tail geometry sample for review
+  - dataset: dexycb
+    sequence: dexycb:20200813-subject-02/20200813_154234
+    hand: right
+    frame_range: [1, 61]
+    object: 035_power_drill
+    reason: representative right-hand power-drill trajectory with 60 contiguous valid annotation frames and a different subject/object family
+  - dataset: oakink
+    sequence: image_sequence:A01001_0003_0001/2021-09-26-20-01-24:view0
+    hand: right
+    frame_range: [0, 60]
+    object: A01001
+    reason: 60 contiguous frames from a complete OakInk-Image annotation sequence with hand_v and object transform payload
+  - dataset: oakink
+    sequence: image_sequence:A01001_0001_0002/2021-09-26-20-01-50:view0
+    hand: right
+    frame_range: [0, 60]
+    object: A01001
+    reason: 60 contiguous frames from a second complete A01001 interaction sequence; selected after the C03001 source mesh failed the frozen SDF boundary-topology precondition
+  - dataset: hocap
+    sequence: hocap:subject_1/20231025_170105
+    hand: right
+    frame_range: [0, 60]
+    object: [G10_1, G10_2, G10_3, G10_4]
+    primary_object: G10_2
+    reason: first 60 contiguous frames; G10_2 is the frozen source-contact part and other G10 parts are context geometry
+  - dataset: hocap
+    sequence: hocap:subject_1/20231025_170650
+    hand: right
+    frame_range: [0, 60]
+    object: [G04_1, G04_2, G04_3, G04_4]
+    primary_object: G04_2
+    reason: first 60 contiguous frames; G04_2 is the frozen source-contact part and other G04 parts are context geometry
+  - dataset: contactpose
+    sequence: contactpose:full1_use/mug
+    hand: right
+    frame_range: [0, 1]
+    object: mug
+    sample_type: static_contact_evaluation_only
+    articulated_frame_count: 1
+    temporal_metrics_applicable: false
+    rigid_observation_sequence_available: false
+    reason: one static right-hand ContactPose mug articulation; RGB-D observations do not create a temporal MANO trajectory
+  - dataset: contactpose
+    sequence: contactpose:full31_use/banana
+    hand: right
+    frame_range: [0, 1]
+    object: banana
+    sample_type: static_contact_evaluation_only
+    articulated_frame_count: 1
+    temporal_metrics_applicable: false
+    rigid_observation_sequence_available: true
+    reason: one static right-hand ContactPose banana articulation; hTo supplies only optional rigid-observation evidence

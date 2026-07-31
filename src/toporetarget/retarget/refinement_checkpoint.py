@@ -209,6 +209,10 @@ def frame_checkpoint_payload(
         "active_constraints_feasible": bool(frame.active_constraints_feasible),
         "full_surface_hard_audit_pass": bool(frame.full_surface_hard_audit_pass),
         "full_surface_soft_audit_pass": bool(frame.full_surface_soft_audit_pass),
+        "full_soft_violation_count": int(np.count_nonzero(full_phi < -paper.tau - 1e-6)),
+        "unqueried_soft_violation_count": int(
+            np.count_nonzero(full_phi[unqueried] < -paper.tau - 1e-6)
+        ),
         "active_set_converged": bool(frame.active_set_converged),
         "all_values_finite": bool(frame.all_values_finite),
         "acceptance_policy_id": frame.acceptance_policy_id,

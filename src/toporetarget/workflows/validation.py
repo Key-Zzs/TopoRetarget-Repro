@@ -269,17 +269,7 @@ def cross_stage_identity_report(
     canonical_object_mesh_hash = str(
         source_provenance.conversion_options.get("object_mesh_hash", "")
     )
-    primary_object = next(
-        (
-            item
-            for item in sequence.rigid_objects
-            if item.metadata.get("role") == "primary_manipulation_object"
-        ),
-        next(
-            (item for item in sequence.rigid_objects if item.object_id != "table"),
-            sequence.rigid_objects[0],
-        ),
-    )
+    primary_object = sequence.primary_rigid_object()
     canonical_hand = sequence.hands[0]
     canonical_timestamps = np.asarray(sequence.metadata.timestamps, dtype=np.float64)
     warm_timestamps = np.asarray(warm.arrays["timestamps"], dtype=np.float64)

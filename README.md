@@ -38,39 +38,81 @@ The central contracts are [HOI data](docs/HOI_DATA_INTERFACE.md),
 [coordinate conventions](docs/COORDINATE_CONVENTIONS.md), and the
 [robot-hand target contract](docs/ROBOT_HAND_TARGET_CONTRACT.md).
 
-## TODO and complete roadmap
+## Current Status
 
-“Implemented” below means the bounded, documented repository contract, not complete paper-result
-reproduction. Detailed stage history and measured outcomes live in the documents indexed later,
-not in this README.
+Stage 0–10 are complete within their documented bounded scopes. Stage 11 is complete: the
+Canonical HOI, DatasetAdapter, RobotHandPlugin, RobotReference, and MetricRegistry contracts are
+frozen and tested. Dataset Adapter v1 has passed source and strict-final qualification on all
+8/8 frozen selections across DexYCB, OakInk, HO-Cap, and ContactPose. ContactPose uses native
+static one-frame samples and official annotated joints; fitted MANO is visual only. Mug and banana
+strict final qualification passed, but the official ContactPose contact benchmark was not reproduced.
 
-| Stage | Scope | Status / remaining work |
-| ---: | --- | --- |
-| 0 | Repository architecture, CLI, path policy | Implemented |
-| 1 | Paper fidelity, equations, figures/tables, assumptions | Implemented; author-undisclosed details remain explicitly unresolved |
-| 2 | Canonical HOI schema, coordinates, bounded GRAB inspection | Implemented, bounded |
-| 3 | MANO to MediaPipe-style-21 source conversion | Implemented, bounded, with explicit semantic assumptions |
-| 4 / F0 | Generic target-hand interface and tracked Arti-MANO assets | Implemented |
-| 5 | Native-time GRAB dataset adapter and semantic contacts | Implemented, bounded |
-| 6 | Object geometry, deterministic samples, SDF, robot collision surfaces | Implemented, bounded |
-| 7 | Relative-bone-direction warm start | Implemented, bounded |
-| 8 | Source interaction graph and Laplacian interaction loss | Implemented, bounded |
-| 9 | Constrained final refinement, slack, checkpoints, independent collision audit | Implemented, bounded |
-| 10 | Resumable GRAB to target-hand workflow, review, provenance, export | Implemented for bounded offline reference generation |
-| Q1–Q3 | Frozen multi-dataset benchmark and unified automatic evaluation | Implemented, bounded; external-data eligibility gates may fail closed |
-| Q4–Q7 | Morphology/contact diagnostic extensions and frozen profile selection | Implemented, bounded, paper-external |
-| W0–W3 | Generic Wuji integration, fixed multi-clip retargeting, continuity and export | Implemented, bounded, offline-only |
-| 12 | OakInk, DexYCB, and HO-Cap adapters | TODO |
-| 13 | ARCTIC, OakInk2, and TACO adapters | TODO |
-| 14 | Broader arbitrary-hand URDF/MJCF plugin validation | TODO |
-| 15 | Fair OmniRetarget, Mink, DexPilot, and GeoRT baselines/ablations | TODO |
-| 16 | Reference-tracking PPO | TODO |
-| 17 | Full paper tables, figures, datasets, and seed reproduction | TODO |
-| 18 | Performance optimization, packaging, and v1.0 criteria | TODO |
-| 19 | Clearly separated non-paper extensions | TODO |
+Arti-MANO and Wuji Hand2 Beta1 are validated target hands. Generic URDF/MJCF kinematic import is
+available, while semantic anchors, contact surfaces, collision profiles, and simulation metadata
+may still require a validated plugin manifest. The recommended offline reference backend is
+`wuji_continuous_sequential_fast_exact_v4_compiled_sign`: analytic signed-distance Jacobians,
+exact object-local BVH, certified sign reuse, compiled deterministic generalized winding, strict
+full-surface audit, and CPU float64. It is an engineering backend, not the authors' specified
+backend and not a real-time production claim.
 
-The maintained deliverable-level roadmap is [docs/ROADMAP.md](docs/ROADMAP.md), with a Chinese
-counterpart at [docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md).
+Current boundaries: full ContactPose paper benchmark is **NOT_REPRODUCED**; reference-tracking PPO,
+complete paper tables/figures/seeds, and ARCTIC/OakInk2/TACO remain TODO; real-time retargeting and
+cross-subject/full-dataset production validation are not claimed. The final queue remains paused
+by operator control with no active workers and no new final tasks allowed.
+
+## TODO and Full Roadmap
+
+The roadmap describes bounded repository capabilities, not complete paper-result reproduction.
+Detailed stage history and implementation notes are maintained in
+[docs/DEVELOPMENT_LOG.md](docs/DEVELOPMENT_LOG.md), [docs/ROADMAP.md](docs/ROADMAP.md), and
+[docs/stages/](docs/stages/).
+
+| Stage | Capability | Status | Completion definition / next work |
+|---:|---|---|---|
+| 0 | Repository architecture and path policy | Complete | CLI, configuration, asset discovery, import and validation foundations are available. |
+| 1 | Paper-fidelity audit | Complete | Formula, table, assumption and provenance tracking are available. |
+| 2 | Canonical HOI schema and coordinates | Complete, bounded | Canonical rigid-HOI schema and migrations are validated; complex articulated/bimanual extensions remain Stage 13. |
+| 3 | Source hand / MANO to 21-keypoint contract | Complete, bounded | Explicit PCA15/PCA45/axis-angle routing and dataset-native source contracts are validated. |
+| 4 | Robot-hand kinematic/plugin foundation | Complete, bounded | Generic URDF/MJCF loading and validated Arti-MANO/Wuji plugins are available; arbitrary hands still need semantic manifests. |
+| 5 | GRAB adapter | Complete, bounded | Lazy conversion, provenance, source/contact visualization and validation are available. |
+| 6 | Object sampling, collision geometry and SDF | Complete, bounded | Deterministic sampling, exact distance queries and independent audits are available. |
+| 7 | Relative bone-direction warm start | Complete | Eq.1–2 initialization and temporal handling are implemented. |
+| 8 | Interaction graph and Laplacian coordinates | Complete | Eq.3–7 interaction graph and validation are implemented. |
+| 9 | Constrained final refinement | Complete, bounded | Eq.8–9 refinement, slack, active set, strict audits and deterministic recovery are implemented. |
+| 10 | GRAB end-to-end retargeting | Complete, bounded | End-to-end GRAB→Arti-MANO/Wuji reference generation is available. |
+| 11 | Core contract freeze | Complete | CanonicalHOI, DatasetAdapter, RobotHandPlugin, RobotReference and MetricRegistry contracts are frozen. |
+| 12 | Dataset Adapter v1 | Complete | DexYCB, OakInk, HO-Cap and ContactPose adapters are qualified on 8/8 frozen selections with strict final results. |
+| 13 | Complex HOI adapters | TODO | Add ARCTIC, OakInk2 and TACO; extend articulated-object, bimanual and SMPL-X hand extraction contracts. |
+| 14 | Universal robot-hand plugin validation | TODO / partial foundation | Validate additional robot topologies and the full URDF/MJCF plugin capability matrix. |
+| 15 | Baselines and ablations | TODO | Add fair OmniRetarget, Mink, DexPilot, GeoRT and relevant baseline comparisons. |
+| 16 | Reference-tracking PPO | TODO | Add simulation playback, reference export validation, PPO training and evaluation. |
+| 17 | Paper experiment reproduction | TODO | Reproduce paper tables, figures, seeds, ContactPose benchmark and formal reports. |
+| 18 | Performance and v1.0 release | TODO | Establish production benchmarks, packaging, CI matrices and release criteria. |
+| 19 | Non-paper extensions | TODO | Keep MANO cleanup, SPIDER integration, penetration objectives and other extensions explicitly separated. |
+
+Optional research extensions—morphology-aware warm start, robot-surface contact proxies,
+contact-aware final objectives, and cross-trajectory profile selection—do not block Stage 13.
+
+## Dataset support
+
+| Dataset | Adapter | Source qualification | Strict final qualification | Notes |
+|---|---|---:|---:|---|
+| GRAB | Complete | Validated | Validated | Primary initial dynamic reference dataset |
+| DexYCB | Complete | 2/2 | 2/2 | Native PCA45 and subject-shape routing |
+| OakInk | Complete | 2/2 | 2/2 | Native hand vertices/joints and object transforms |
+| HO-Cap | Complete | 2/2 | 2/2 | PCA45, subject shape and qxyzw object pose |
+| ContactPose | Complete | 2/2 static | 2/2 strict | Static one-frame samples; official joints; paper contact benchmark not reproduced |
+| ARCTIC | TODO | — | — | Stage 13 |
+| OakInk2 | TODO | — | — | Stage 13 |
+| TACO | TODO | — | — | Stage 13 |
+
+## Robot-hand support
+
+| Target | Kinematics | Retarget | Collision | Simulation/RL |
+|---|---|---|---|---|
+| Arti-MANO | Validated | Validated | Validated | Not RL-qualified |
+| Wuji Hand2 Beta1 | Validated | Validated | Validated | Offline reference generation only |
+| Generic URDF/MJCF | Import foundation | Manifest required | Profile required | Not automatically guaranteed |
 
 ## Environment setup
 
@@ -455,8 +497,12 @@ Licensed-data tests are opt-in and require the configured local GRAB/MANO resour
   [contributing](CONTRIBUTING.md),
   [third-party notices](THIRD_PARTY_NOTICES.md)
 
-Detailed numbered-stage reports remain under [`docs/stages/`](docs/stages/) and are intentionally
-not duplicated in the main README.
+Detailed stage history and implementation notes are maintained in:
+
+- [docs/DEVELOPMENT_LOG.md](docs/DEVELOPMENT_LOG.md)
+- [docs/ROADMAP.md](docs/ROADMAP.md)
+- [docs/stages/](docs/stages/)
+- [solver feasibility note](docs/SOLVER_FEASIBILITY_RESTORATION.md)
 
 ## License
 
