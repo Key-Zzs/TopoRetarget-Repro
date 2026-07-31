@@ -287,6 +287,13 @@ exactness remains unresolved.
 
 ## Stage 16 reference-tracking PPO boundary
 
+The current Stage 16 qualification status is `STAGE16_BLOCKED_WITH_BOUNDED_EVIDENCE`.
+Both approved 41-frame HO-Cap references pass the kinematic contract, but the shared
+MuJoCo free-object setup fails the frame-0 zero-residual and object-blind oracle gate at
+approximately 13–15% progress. Stage 16.2/16.3 training is therefore gate-blocked; this
+does not diagnose PPO failure. The current environment and per-object mesh remain engineering
+assumptions and are not author-exact simulation evidence.
+
 Stage 16 preserves the paper-exact Appendix A.5 values in
 configs/paper/rl.yaml and records its additional choices in
 docs/rl/PAPER_FIDELITY_LEDGER.yaml. The simulator, contact model, PD gains,

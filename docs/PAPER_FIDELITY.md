@@ -392,6 +392,10 @@ default.
 
 ## Stage 16 reference-tracking PPO boundary
 
+The implemented Stage 16.0 functional pipeline is not the qualification result. The formal
+`frame0_deterministic_eval_v1` gate was run on the two user-approved HO-Cap clips and is
+currently `STAGE16_1_CONTROLLABILITY_BLOCKED`; no Stage 16.2 or 16.3 PPO success is claimed.
+
 Stage 16 implements the public Appendix A.5 MDP/PPO contract: base-frame
 references, residual actions, the `[0,1,3,5]` reference observation, Table 4
 reward/termination, Table 5 randomization ranges, and Table 6 model/training

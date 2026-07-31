@@ -2,7 +2,7 @@
 
 ## Stage 16 status
 
-Stage 16 Reference-Tracking PPO implementation is on the dedicated feature branch. It uses the local PDF's Appendix A.5 as the fidelity source, keeps unpublished simulator/control details explicit, and stores all generated data under ignored `.local/`. The user-authorized functional protocol now materializes two accepted post-repair HO-Cap trajectories, derives per-object collision meshes, runs bounded MuJoCo PPO T1–T3, and reports all nominal/robust episodes. It is not the authors' undisclosed simulator, 4096-environment scale, or HOCap-32 paper evaluation. Create the isolated environment with `conda env create -f environment.stage16.yml` and run `conda run -n toporetarget-rl python scripts/rl/audit_stage16_environment.py`.
+Stage 16 is currently `STAGE16_BLOCKED_WITH_BOUNDED_EVIDENCE`. The functional T1/T2/T3 pipeline remains frozen, but the new frame-0 controllability qualification failed on both approved HO-Cap clips: the free object exceeded the 5 cm termination gate at about 13–15% progress under zero-residual and oracle diagnostics. Therefore Stage 16.2/16.3 PPO qualification was not started. This is not a claim that PPO failed. Create the isolated environment with `conda env create -f environment.stage16.yml` and run `bash scripts/bootstrap_stage16_env.sh` for the documented setup.
 
 [中文 README](README.zh-CN.md)
 
@@ -59,8 +59,9 @@ exact object-local BVH, certified sign reuse, compiled deterministic generalized
 full-surface audit, and CPU float64. It is an engineering backend, not the authors' specified
 backend and not a real-time production claim.
 
-Current boundaries: full ContactPose paper benchmark is **NOT_REPRODUCED**; Stage 16 has a
-two-clip **FUNCTIONAL_HOCAP_COMPLETE** result, while HOCap-32 and Pen-Spin remain out of scope and
+Current boundaries: full ContactPose paper benchmark is **NOT_REPRODUCED**; Stage 16 is
+**CONTROLLABILITY_BLOCKED_WITH_BOUNDED_EVIDENCE** after a two-clip functional baseline, while
+HOCap-32 and Pen-Spin remain out of scope and
 paper tables/figures/seeds plus ARCTIC/OakInk2/TACO remain TODO. Real-time retargeting,
 cross-subject/full-dataset production validation, author-exact simulation, and paper-scale RL are
 not claimed.
@@ -90,10 +91,90 @@ Detailed stage history and implementation notes are maintained in
 | 13 | Complex HOI adapters | DEFERRED | Add ARCTIC, OakInk2 and TACO; extend articulated-object, bimanual and SMPL-X hand extraction contracts. |
 | 14 | Universal robot-hand plugin validation | DEFERRED | Validate additional robot topologies and the full URDF/MJCF plugin capability matrix. |
 | 15 | Baselines and ablations | DEFERRED | Add fair OmniRetarget, Mink, DexPilot, GeoRT and relevant baseline comparisons. |
-| 16 | Reference-tracking PPO | Functional HO-Cap protocol complete | Two accepted HO-Cap clips run through derived-object MuJoCo T1–T3 training and nominal/robust evaluation; not HOCap-32, Pen-Spin, author-exact, or paper-scale RL. |
+| 16 | Reference-tracking PPO | 16.0 functional complete; 16.1 BLOCKED; 16.2/16.3 gate-blocked | Two approved clips are frozen. Frame-0 kinematic replay passes, but zero-residual and oracle free-object qualification fail the shared 5 cm object gate; no long PPO claim is made. |
 | 17 | Paper experiment reproduction | TODO | Reproduce paper tables, figures, seeds, ContactPose benchmark and formal reports. |
 | 18 | Performance and v1.0 release | TODO | Establish production benchmarks, packaging, CI matrices and release criteria. |
 | 19 | Non-paper extensions | TODO | Keep MANO cleanup, SPIDER integration, penetration objectives and other extensions explicitly separated. |
+
+## Stage-16 reference tracking commands
+
+The two approved inputs are fixed at:
+
+```bash
+export STAGE16_ROOT=.local/stage16_reference_tracking_ppo
+export STAGE16_REPORT=.local/reports/stage16_1_3
+export STAGE16_RUN=.local/experiments/stage16_reference_tracking_ppo/stage16_1_3_20260731T192400Z_e605dab
+```
+
+Validate the references and the pre-training actuator profile:
+
+```bash
+conda run -n toporetarget-rl python scripts/rl/validate_reference_clips.py \
+  "$STAGE16_ROOT/references/hocap_170105.stage16.npz"
+conda run -n toporetarget-rl python scripts/rl/validate_reference_clips.py \
+  "$STAGE16_ROOT/references/hocap_170650.stage16.npz"
+conda run -n toporetarget-rl python scripts/rl/qualify_hocap_pd.py \
+  --reference "$STAGE16_ROOT/references/hocap_170105.stage16.npz" \
+  --reference "$STAGE16_ROOT/references/hocap_170650.stage16.npz" \
+  --report "$STAGE16_REPORT/pd_qualification.json"
+```
+
+Run the bounded Stage 16.1 qualification (the current result is
+`STAGE16_1_CONTROLLABILITY_BLOCKED`):
+
+```bash
+conda run -n toporetarget-rl python scripts/rl/qualify_stage16_1.py \
+  --reference "$STAGE16_ROOT/references/hocap_170105.stage16.npz" \
+  --reference "$STAGE16_ROOT/references/hocap_170650.stage16.npz" \
+  --object-mesh "$STAGE16_ROOT/objects/hocap_170105.obj" \
+  --object-mesh "$STAGE16_ROOT/objects/hocap_170650.obj" \
+  --scene-root "$STAGE16_RUN/stage16_1" \
+  --report "$STAGE16_REPORT/stage16_1_controllability.json" \
+  --episodes-per-clip 20 --candidate-episodes 1
+```
+
+Stage 16.2/16.3 training is gate-controlled and must not run while Stage 16.1 is blocked. Once a future run has a completed gate, the executable trainer uses 4 epochs, 32 minibatches, balanced two-clip collection, and only the bounded sample ladder:
+
+```bash
+conda run -n toporetarget-rl python scripts/rl/train_stage16_qualification.py \
+  --stage single --budget 32768 --rollout-steps 320 \
+  --controllability-report "$STAGE16_REPORT/stage16_1_controllability.json" \
+  --reference "$STAGE16_ROOT/references/hocap_170105.stage16.npz" \
+  --object-mesh "$STAGE16_ROOT/objects/hocap_170105.obj" \
+  --scene-root "$STAGE16_RUN/single_170105" \
+  --checkpoint-directory .local/checkpoints/stage16_reference_tracking_ppo/single_170105 \
+  --report "$STAGE16_REPORT/stage16_2_170105_training.json"
+```
+
+Frame-0 evaluation retains failed episodes and supports the formal 20-episode population:
+
+```bash
+conda run -n toporetarget-rl python scripts/rl/evaluate_hocap_reference_policy.py \
+  --checkpoint .local/checkpoints/stage16_reference_tracking_ppo/hocap_t3/best.pt \
+  --reference "$STAGE16_ROOT/references/hocap_170105.stage16.npz" \
+  --reference "$STAGE16_ROOT/references/hocap_170650.stage16.npz" \
+  --object-mesh "$STAGE16_ROOT/objects/hocap_170105.obj" \
+  --object-mesh "$STAGE16_ROOT/objects/hocap_170650.obj" \
+  --scene-root "$STAGE16_RUN/eval_nominal" --episodes-per-clip 20 \
+  --report "$STAGE16_REPORT/highest_functional_checkpoint_eval.json" \
+  --episodes-output "$STAGE16_REPORT/highest_functional_checkpoint_episodes.json"
+```
+
+Interactive MuJoCo and headless inspection use the same CLI. The current highest-level checkpoint is still the old functional T3 checkpoint; it is not a qualified tracker:
+
+```bash
+conda run -n toporetarget-rl python scripts/rl/visualize_hocap_policy_mujoco.py \
+  --policy oracle --reference "$STAGE16_ROOT/references/hocap_170105.stage16.npz" \
+  --object-mesh "$STAGE16_ROOT/objects/hocap_170105.obj" --mode interactive \
+  --start-frame 0 --deterministic --show-reference-ghost --show-axis-points \
+  --show-tracked-links --show-contacts
+conda run -n toporetarget-rl python scripts/rl/visualize_hocap_policy_mujoco.py \
+  --policy checkpoint --checkpoint .local/checkpoints/stage16_reference_tracking_ppo/hocap_t3/best.pt \
+  --reference "$STAGE16_ROOT/references/hocap_170650.stage16.npz" \
+  --object-mesh "$STAGE16_ROOT/objects/hocap_170650.obj" --mode headless \
+  --start-frame 0 --deterministic --show-reference-ghost --show-axis-points \
+  --show-tracked-links --show-contacts --output-frames "$STAGE16_REPORT/visual/t3_170650"
+```
 
 Optional research extensions—morphology-aware warm start, robot-surface contact proxies,
 contact-aware final objectives, and cross-trajectory profile selection—do not block Stage 13.

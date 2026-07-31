@@ -2,7 +2,7 @@
 
 ## Stage 16 状态
 
-Stage 16 Reference-Tracking PPO 位于独立 feature 分支。实现以本地论文 Appendix A.5 为唯一 fidelity 来源，未公开的模拟器与控制细节均显式记录，所有生成数据只写入被忽略的 `.local/`。经用户授权的功能协议现已将两条修复后验收的 HO-Cap 轨迹物化为 reference、生成逐物体 collision mesh，并执行有界 MuJoCo PPO T1–T3 及全部名义/随机化 episode 报告；它不等同于作者未公开的模拟器、4096 环境规模或 HOCap-32 论文评测。环境命令：`conda env create -f environment.stage16.yml`，审计命令：`conda run -n toporetarget-rl python scripts/rl/audit_stage16_environment.py`。
+Stage 16 当前状态为 `STAGE16_BLOCKED_WITH_BOUNDED_EVIDENCE`。T1/T2/T3 功能流水线已冻结，但新的 frame-0 可控性验收在两条批准的 HO-Cap clip 上失败：zero-residual 和 oracle 诊断中 free object 均在约 13–15% 进度超过 5 cm termination gate。因此没有启动 Stage 16.2/16.3 PPO 资格训练；这不等于 PPO 方法失败。环境命令：`conda env create -f environment.stage16.yml`，推荐执行 `bash scripts/bootstrap_stage16_env.sh`。
 
 [English README](README.md)
 
@@ -55,8 +55,8 @@ manifest。当前推荐的离线 reference 后端是
 exact object-local BVH、认证式 sign reuse、compiled deterministic generalized winding、strict
 full-surface audit 与 CPU float64。它是工程后端，不声称是作者指定的后端，也不代表实时生产能力。
 
-当前边界：完整 ContactPose 论文 benchmark 为 **NOT_REPRODUCED**；Stage 16 已得到两条轨迹的
-**FUNCTIONAL_HOCAP_COMPLETE** 结果，但 HOCap-32 与 Pen-Spin 均不在本次范围内，完整论文
+当前边界：完整 ContactPose 论文 benchmark 为 **NOT_REPRODUCED**；Stage 16 在两条功能性
+clip 的可控性验收处于 **CONTROLLABILITY_BLOCKED_WITH_BOUNDED_EVIDENCE**，HOCap-32 与 Pen-Spin 均不在本次范围内，完整论文
 tables/figures/seeds 以及 ARCTIC/OakInk2/TACO 仍为 TODO；不声称实时重定向、跨 subject/全数据集
 生产验证、作者精确模拟器或论文规模 RL。
 
@@ -84,13 +84,44 @@ tables/figures/seeds 以及 ARCTIC/OakInk2/TACO 仍为 TODO；不声称实时重
 | 13 | 复杂 HOI adapter | DEFERRED | 加入 ARCTIC、OakInk2、TACO；扩展 articulated-object、bimanual 与 SMPL-X hand extraction contract。 |
 | 14 | 通用机器人手 plugin 验证 | DEFERRED | 验证更多机器人拓扑与完整 URDF/MJCF plugin 能力矩阵。 |
 | 15 | baseline 与消融 | DEFERRED | 加入公平的 OmniRetarget、Mink、DexPilot、GeoRT 及相关 baseline 对比。 |
-| 16 | reference-tracking PPO | HOCap 功能协议完成 | 两条已验收 HO-Cap clip 已完成逐物体 MuJoCo T1–T3 训练及名义/随机化评测；不声称 HOCap-32、Pen-Spin、作者精确或论文规模 RL。 |
+| 16 | reference-tracking PPO | 16.0 功能完成；16.1 BLOCKED；16.2/16.3 被 gate 阻断 | 两条 clip 已冻结；kinematic replay 通过，但 zero-residual/oracle free-object 验收未通过，不声称长期 PPO 或论文结果。 |
 | 17 | 论文实验复现 | TODO | 复现论文 tables、figures、seeds、ContactPose benchmark 与正式报告。 |
 | 18 | 性能与 v1.0 发布 | TODO | 建立 production benchmark、打包、CI 矩阵与发布标准。 |
 | 19 | 非论文扩展 | TODO | 将 MANO cleanup、SPIDER integration、penetration objective 等扩展明确隔离。 |
 
 可选研究扩展——morphology-aware warm start、robot-surface contact proxy、contact-aware final
 objective、cross-trajectory profile selection——不阻塞阶段 13。
+
+## Stage-16 reference tracking 命令
+
+两条批准输入固定在 `.local/stage16_reference_tracking_ppo/`。可控性验收命令如下；当前真实结果为 `STAGE16_1_CONTROLLABILITY_BLOCKED`：
+
+```bash
+conda run -n toporetarget-rl python scripts/rl/qualify_stage16_1.py \
+  --reference .local/stage16_reference_tracking_ppo/references/hocap_170105.stage16.npz \
+  --reference .local/stage16_reference_tracking_ppo/references/hocap_170650.stage16.npz \
+  --object-mesh .local/stage16_reference_tracking_ppo/objects/hocap_170105.obj \
+  --object-mesh .local/stage16_reference_tracking_ppo/objects/hocap_170650.obj \
+  --scene-root .local/experiments/stage16_reference_tracking_ppo/stage16_1_3_20260731T192400Z_e605dab/stage16_1 \
+  --report .local/reports/stage16_1_3/stage16_1_controllability.json \
+  --episodes-per-clip 20 --candidate-episodes 1
+```
+
+Stage 16.2/16.3 只有 Stage 16.1 `COMPLETE` 才允许训练；训练器强制读取 `--controllability-report` 并在 gate 失败时退出，固定 4 epochs、32 minibatches、nominal/no-DR、均衡 clip 与有界 sample ladder。frame-0 评测命令：
+
+```bash
+conda run -n toporetarget-rl python scripts/rl/evaluate_hocap_reference_policy.py \
+  --checkpoint .local/checkpoints/stage16_reference_tracking_ppo/hocap_t3/best.pt \
+  --reference .local/stage16_reference_tracking_ppo/references/hocap_170105.stage16.npz \
+  --reference .local/stage16_reference_tracking_ppo/references/hocap_170650.stage16.npz \
+  --object-mesh .local/stage16_reference_tracking_ppo/objects/hocap_170105.obj \
+  --object-mesh .local/stage16_reference_tracking_ppo/objects/hocap_170650.obj \
+  --scene-root .local/experiments/stage16_reference_tracking_ppo/stage16_1_3_20260731T192400Z_e605dab/eval_nominal \
+  --episodes-per-clip 20 --report .local/reports/stage16_1_3/highest_functional_checkpoint_eval.json \
+  --episodes-output .local/reports/stage16_1_3/highest_functional_checkpoint_episodes.json
+```
+
+MuJoCo 交互/无窗口检查使用 `scripts/rl/visualize_hocap_policy_mujoco.py`；当前 GL renderer 不可用时会保留数值 fallback PNG 与 dashboard，而不会伪造几何截图。
 
 ## 数据集支持
 

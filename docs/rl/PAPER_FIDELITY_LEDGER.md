@@ -6,6 +6,14 @@
 | Action | `q_ref + residual` | `residual_target` | PAPER_EXACT | A.5.1, p. 13 |
 | Observation | q, qdot, previous action, axes, refs [0,1,3,5] | `build_observation` | PAPER_EXACT | A.5.2, p. 13 |
 | Reset | uniform reference start frame | environment reset contract | PAPER_EXACT | A.5.3, p. 13 |
+
+## Qualification boundary
+
+`frame0_deterministic_eval_v1` is the formal engineering evaluation protocol for this branch:
+all episodes reset at `reference_index=0`, use the deterministic actor mean, and retain failed
+episodes. Stage 16.1 is blocked because both approved clips fail the shared free-object
+controllability gate under zero-residual and object-blind oracle diagnostics. The old 512-sample
+functional T3 run is frozen separately and is not evidence of tracking qualification.
 | Reward | Table 4 | `paper_literal_reward_v1` | PAPER_EXACT | Table 4, p. 14 |
 | Termination | Table 4 | `classify_termination` | PAPER_EXACT | Table 4, p. 14 |
 | DR | Table 5 | `DomainRandomizationConfig` | PAPER_EXACT | Table 5, p. 15 |

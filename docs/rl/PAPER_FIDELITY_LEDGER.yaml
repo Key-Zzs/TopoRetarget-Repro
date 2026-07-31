@@ -1,4 +1,12 @@
 schema_version: toporetarget.stage16.paper_fidelity_ledger.v1
+qualification:
+  protocol: frame0_deterministic_eval_v1
+  stage16_1_status: STAGE16_1_CONTROLLABILITY_BLOCKED
+  stage16_2_status: NOT_STARTED_GATE_BLOCKED
+  stage16_3_status: NOT_STARTED_GATE_BLOCKED
+  overall_status: STAGE16_BLOCKED_WITH_BOUNDED_EVIDENCE
+  oracle_is_ppo_result: false
+  old_functional_512_sample_run_is_qualification: false
 items:
   - {id: reference_frame, classification: PAPER_EXACT, evidence: "Appendix A.5 p.13", mapping: "Stage16ReferenceClip"}
   - {id: reward_table4, classification: PAPER_EXACT, evidence: "Table 4 p.14", mapping: "paper_literal_reward_v1"}

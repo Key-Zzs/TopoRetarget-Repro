@@ -2,15 +2,23 @@ name: toporetarget-rl
 channels:
   - defaults
 dependencies:
-  - python=3.12
+  - python=3.12.13
   - pip
   - pip:
       - -e .[dev,rl]
       - mujoco==3.3.6
       - torch==2.13.0
-      - numpy>=2.0,<3.0
-      - scipy>=1.13
-      - PyYAML>=6.0
+      - numpy==2.5.1
+      - scipy==1.18.0
+      - PyYAML==6.0.3
+      - matplotlib==3.11.1
+      - Pillow==12.3.0
+      - trimesh==4.12.2
+      - zarr==2.18.7
+      - numcodecs==0.15.1
+      - imageio==2.37.0
 
 # Reproduction note: the local audit selected MuJoCo CPU correctness mode.
 # The paper does not disclose its simulator, solver, or version.
+# The CUDA-enabled torch wheel is retained for import/GPU diagnostics; current
+# machine validation selected CPU MuJoCo because no NVIDIA driver was available.
