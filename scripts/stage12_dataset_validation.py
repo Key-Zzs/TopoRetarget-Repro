@@ -69,6 +69,15 @@ from toporetarget.retarget.interaction_graph import build_source_interaction_gra
 from toporetarget.retarget.pipeline import build_warm_start_trajectory, source_cache_hash
 from toporetarget.retarget.refinement_performance import RefinementExecutionProfile
 from toporetarget.retarget.solver import load_solver_profile
+from toporetarget.retarget.static_runtime_policy import (
+    STATIC_FRAME_ACCEPTED,
+    STATIC_FRAME_ACCEPTED_WITH_RUNTIME_WARNING,
+    STATIC_FRAME_GEOMETRY_FAILURE,
+    STATIC_FRAME_HARD_RUNTIME_FAILURE,
+    STATIC_FRAME_SOLVER_FAILURE,
+    classify_runtime_health,
+    is_static_single_frame_contract,
+)
 from toporetarget.robots.registry import get_robot_registry
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -274,7 +283,12 @@ def _final_output_path(root: Path, checkpoint: Path) -> Path:
     return next((path for path in candidates if path.is_dir()), candidates[0])
 
 
-def _health_gate(metadata: dict[str, Any], rows: list[dict[str, Any]]) -> str | None:
+def _health_gate(
+    metadata: dict[str, Any],
+    rows: list[dict[str, Any]],
+    *,
+    static_single_frame: bool,
+) -> str | None:
     """Stage-12 stop conditions evaluated from immutable per-frame evidence."""
 
     elapsed = float(metadata.get("solve_time_s", float("inf")))
@@ -292,19 +306,17 @@ def _health_gate(metadata: dict[str, Any], rows: list[dict[str, Any]]) -> str | 
         )
     ):
         return "worker_thread_oversubscription"
-    if not np.isfinite(elapsed):
-        return "nonfinite_frame_runtime"
-    if elapsed > 90.0:
-        return f"single_frame_over_90s:{elapsed:.3f}"
+    runtime = classify_runtime_health(
+        elapsed_s=elapsed,
+        frame_times_s=[float(item.get("solve_time_s", np.nan)) for item in rows],
+        static_single_frame=static_single_frame,
+    )
+    if runtime.terminal_reason is not None:
+        return runtime.terminal_reason
     if int(metadata.get("unqueried_soft_violation_count", 0)) != 0:
         return "unqueried_violation"
     if not bool(metadata.get("strict_accepted", False)):
         return "strict_acceptance_failed"
-    times = np.asarray([float(item.get("solve_time_s", np.nan)) for item in rows], dtype=np.float64)
-    if len(times) >= 10 and float(np.percentile(times[-10:], 95)) > 30.0:
-        return "rolling_10_frame_p95_over_30s"
-    if len(times) >= 3 and bool(np.all(times[-3:] > 45.0)):
-        return "three_consecutive_frames_over_45s"
     return None
 
 
@@ -313,10 +325,11 @@ def _formal_v4_health_gate(
     rows: list[dict[str, Any]],
     *,
     first_ten_report: Path | None,
+    static_single_frame: bool,
 ) -> str | None:
     """Apply the v4 formal evidence gates without restarting a qualified job."""
 
-    failure = _health_gate(metadata, rows)
+    failure = _health_gate(metadata, rows, static_single_frame=static_single_frame)
     if failure is not None:
         return failure
     diagnostics = dict(metadata.get("diagnostics", {}))
@@ -481,15 +494,19 @@ def _aggregate_existing_reports(output_root: Path, rows: list[dict[str, Any]]) -
                 ),
             }
         )
-    completed = [
-        item for item in results if item["status"] in {"pass", "completed_with_solver_failures"}
-    ]
+    completed_statuses = {
+        "pass",
+        "completed_with_solver_failures",
+        STATIC_FRAME_ACCEPTED,
+        STATIC_FRAME_ACCEPTED_WITH_RUNTIME_WARNING,
+    }
+    completed = [item for item in results if item["status"] in completed_statuses]
     return {
         "schema_version": "toporetarget.stage12.summary.v1",
         "target": {"robot": "wuji_hand2_beta1_rh", "profile": "wuji_continuous_sequential_v1"},
         "selection_count": len(rows),
         "report_count": len(results) - sum(item["status"] == "missing_report" for item in results),
-        "pass_count": sum(item["status"] == "pass" for item in results),
+        "pass_count": sum(item["status"] in completed_statuses for item in results),
         "completed_with_solver_failures": sum(
             item["status"] == "completed_with_solver_failures" for item in results
         ),
@@ -604,7 +621,29 @@ def run_one(
                 "contact_benchmark_status": canonical.metadata.metadata.get(
                     "contact_benchmark_status", "NOT_AVAILABLE"
                 ),
+                "sample_mode": row.get(
+                    "sample_mode",
+                    row.get(
+                        "sample_type",
+                        canonical.metadata.metadata.get(
+                            "sample_mode",
+                            canonical.metadata.metadata.get("sample_type"),
+                        ),
+                    ),
+                ),
+                "temporal_metrics_applicable": row.get(
+                    "temporal_metrics_applicable",
+                    canonical.metadata.metadata.get("temporal_metrics_applicable"),
+                ),
             }
+        )
+        static_single_frame = is_static_single_frame_contract(
+            row,
+            canonical.metadata.metadata,
+            frame_count=canonical.num_frames,
+        )
+        payload["input"]["runtime_sample_kind"] = (
+            "static_single_frame" if static_single_frame else "dynamic_trajectory"
         )
         validation = adapter.validate(canonical)
         if validation["errors"]:
@@ -789,9 +828,10 @@ def run_one(
                             )
                             if formal_v4 and dataset == "oakink"
                             else None,
+                            static_single_frame=static_single_frame,
                         )
                         if formal_v4
-                        else _health_gate(metadata, rows)
+                        else _health_gate(metadata, rows, static_single_frame=static_single_frame)
                     )
                 ),
             )
@@ -838,20 +878,33 @@ def run_one(
         html_smoke = smoke_html(paths["html"], expected_frames=canonical.num_frames, profiles=2)
         if html_smoke.get("status") != "pass":
             raise ValueError(f"Stage 12 HTML smoke failed: {html_smoke}")
+        frame_rows = list(checkpoint_status.get("frame_rows", []))
+        runtime = classify_runtime_health(
+            elapsed_s=float(final.arrays.get("solve_time_s", np.asarray([np.nan]))[-1]),
+            frame_times_s=[float(item.get("solve_time_s", np.nan)) for item in frame_rows],
+            static_single_frame=static_single_frame,
+        )
+        accepted = bool(np.all(final.arrays.get("accepted", False)))
+        final_status = (
+            runtime.status
+            if static_single_frame and accepted
+            else STATIC_FRAME_SOLVER_FAILURE
+            if static_single_frame
+            else "pass"
+            if accepted
+            else "completed_with_solver_failures"
+        )
         payload.update(
             {
-                "status": "pass"
-                if bool(np.all(final.arrays.get("accepted", False)))
-                else "completed_with_solver_failures",
+                "status": final_status,
                 "quality": _metrics(canonical, warm, final, time.perf_counter() - started),
                 "final_diagnostics": diagnostics,
+                "runtime_policy": runtime.as_dict(),
                 "html_smoke": html_smoke,
                 "failure_diagnosis": {
-                    "category": "none"
-                    if bool(np.all(final.arrays.get("accepted", False)))
-                    else "solver_issue",
+                    "category": "none" if accepted else "solver_issue",
                     "detail": "No failure diagnosed"
-                    if bool(np.all(final.arrays.get("accepted", False)))
+                    if accepted
                     else "final artifact retained with per-frame optimizer/audit state",
                 },
             }
@@ -860,10 +913,31 @@ def run_one(
         reason = str(exc)
         pause_state = PAUSE_STATE if reason == PAUSE_STATE else HEALTH_GATE_PAUSE_STATE
         diagnosis = "operator_control" if pause_state == PAUSE_STATE else "health_gate"
+        static_status = None
+        if "static_single_frame" in locals() and static_single_frame and reason != PAUSE_STATE:
+            static_status = (
+                STATIC_FRAME_HARD_RUNTIME_FAILURE
+                if "static_frame_over_300s" in reason
+                else STATIC_FRAME_SOLVER_FAILURE
+                if ("solver" in reason or "optimizer" in reason or "strict_acceptance" in reason)
+                else STATIC_FRAME_GEOMETRY_FAILURE
+            )
+        if "static_single_frame" in locals() and static_single_frame:
+            elapsed = float("nan")
+            frame_rows = []
+            if "checkpoint_status" in locals():
+                frame_rows = list(checkpoint_status.get("frame_rows", []))
+                if frame_rows:
+                    elapsed = float(frame_rows[-1].get("solve_time_s", np.nan))
+            payload["runtime_policy"] = classify_runtime_health(
+                elapsed_s=elapsed,
+                frame_times_s=[float(item.get("solve_time_s", np.nan)) for item in frame_rows],
+                static_single_frame=True,
+            ).as_dict()
         append_heartbeat(job_id, "job_paused", {"reason": reason, "state": pause_state}, root=repo)
         payload.update(
             {
-                "status": pause_state,
+                "status": static_status or pause_state,
                 "error": reason,
                 "failure_diagnosis": {"category": diagnosis, "detail": reason},
             }
@@ -879,9 +953,16 @@ def run_one(
             category = "solver_issue"
         elif "collision" in text or "sdf" in text or "penetr" in text:
             category = "collision_issue"
+        static_status = None
+        if "static_single_frame" in locals() and static_single_frame:
+            static_status = (
+                STATIC_FRAME_SOLVER_FAILURE
+                if category == "solver_issue"
+                else STATIC_FRAME_GEOMETRY_FAILURE
+            )
         payload.update(
             {
-                "status": "blocked",
+                "status": static_status or "blocked",
                 "error": str(exc),
                 "failure_diagnosis": {"category": category, "detail": str(exc)},
                 "quality": _metrics(canonical, warm, None, time.perf_counter() - started)
@@ -988,7 +1069,15 @@ def main() -> int:
         "schema_version": "toporetarget.stage12.summary.v1",
         "target": {"robot": "wuji_hand2_beta1_rh", "profile": "wuji_continuous_sequential_v1"},
         "selection_count": len(rows),
-        "pass_count": sum(result["status"] == "pass" for result in results),
+        "pass_count": sum(
+            result["status"]
+            in {
+                "pass",
+                STATIC_FRAME_ACCEPTED,
+                STATIC_FRAME_ACCEPTED_WITH_RUNTIME_WARNING,
+            }
+            for result in results
+        ),
         "completed_with_solver_failures": sum(
             result["status"] == "completed_with_solver_failures" for result in results
         ),
