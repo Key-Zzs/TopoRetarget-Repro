@@ -28,6 +28,17 @@ from .stage12_base import (
 )
 
 
+def static_mano_to_object_transform(fit: dict[str, Any]) -> np.ndarray:
+    """Return the static ContactPose MANO-to-object transform.
+
+    ``hTo`` belongs to the RGB-D rigid-observation stream. It must not be
+    composed into a one-frame MANO fit: doing so places every source joint in
+    a second, unrelated hand frame and produces an apparent finger error.
+    """
+
+    return np.linalg.inv(pose_json_wxyz(fit["mTc"]))
+
+
 class ContactPoseAdapterV1(Stage12AdapterBase):
     """Load one ContactPose object in object coordinates.
 
@@ -164,19 +175,15 @@ class ContactPoseAdapterV1(Stage12AdapterBase):
             source_annotation_path=fits_path,
             source_annotation_hash=sha256_paths([annotation_path, fits_path, object_mesh_path]),
         )
-        htm = np.linalg.inv(pose_json_wxyz(fit["mTc"]))
+        htm = static_mano_to_object_transform(fit)
         base_vertices = np.asarray(base.vertices[0], dtype=np.float64)
         base_joints = np.asarray(base.posed_joints_native[0], dtype=np.float64)
         base_wrist = np.asarray(base.wrist_pose_scene[0], dtype=np.float64)
         vertices: list[np.ndarray] = []
         joints: list[np.ndarray] = []
         wrists: list[np.ndarray] = []
-        for frame in selected:
-            if bool(hands[1].get("moving")) and "hTo" in frame:
-                oth = np.linalg.inv(pose_json_wxyz(frame["hTo"][1]))
-            else:
-                oth = np.eye(4, dtype=np.float64)
-            otm = oth @ htm
+        for _frame in selected:
+            otm = htm
             vertices.append(transform_points(otm[None, ...], base_vertices[None, ...])[0])
             joints.append(transform_points(otm[None, ...], base_joints[None, ...])[0])
             wrists.append(otm @ base_wrist)
@@ -208,7 +215,7 @@ class ContactPoseAdapterV1(Stage12AdapterBase):
                 "flat_hand_mean": False,
                 "mano_reconstruction": base.reconstruction_manifest,
                 "joint_source": "contactpose_official_mano16_plus_tip_vertices",
-                "wrist_transform_source": "hTm=inv(mTc); oTm=oTh@hTm",
+                "wrist_transform_source": "oTm=inv(mTc); hTo retained as observation evidence only",
                 "contact_annotation_available": False,
                 "contact_benchmark_status": "NOT_AVAILABLE",
             },
@@ -237,8 +244,8 @@ class ContactPoseAdapterV1(Stage12AdapterBase):
             source_hash=sha256_paths([annotation_path, fits_path, object_mesh_path]),
             adapter_name=self.adapter_name,
             coordinate_convention=(
-                "ContactPose object scene; MANO fit and moving-hand hTo are "
-                "composed into object coordinates"
+                "ContactPose object scene; static MANO fit uses inv(mTc), while "
+                "moving-hand hTo remains rigid-observation evidence only"
             ),
             conversion_options={
                 "requested_observation_frame_range": [requested_start, requested_stop],
@@ -250,6 +257,7 @@ class ContactPoseAdapterV1(Stage12AdapterBase):
                 "articulated_frame_count": 1,
                 "temporal_metrics_applicable": False,
                 "rigid_observation_sequence_available": bool(hands[1].get("moving")),
+                "hTo_applied_to_static_mano": False,
             },
             metadata={
                 "participant": row["p_num"],
@@ -267,6 +275,7 @@ class ContactPoseAdapterV1(Stage12AdapterBase):
                 "articulated_motion": False,
                 "temporal_metrics": "NOT_APPLICABLE",
                 "rigid_observation_sequence_available": bool(hands[1].get("moving")),
+                "hTo_applied_to_static_mano": False,
                 "repeated_pose_manufacturing": False,
                 "contactpose_official_tip_vertex_ids": {
                     "index": 333,

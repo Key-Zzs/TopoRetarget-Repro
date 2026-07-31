@@ -147,9 +147,7 @@ def _dataset_manifest(adapter: Any, output_root: Path) -> Path:
 
 
 def _primary_object(sequence: CanonicalHOIv2) -> Any:
-    if not sequence.rigid_objects:
-        raise ValueError("Stage 12 canonical sequence has no rigid object")
-    return sequence.rigid_objects[0]
+    return sequence.primary_rigid_object()
 
 
 def _metrics(
@@ -607,6 +605,7 @@ def run_one(
                 sequence_id,
                 frame_range=FrameRange(frame_start, frame_stop),
                 hand=str(row.get("hand", "right")),
+                primary_object_id=row.get("primary_object"),
             )
             write_progress("canonicalize")
             canonical = adapter.convert_to_canonical(raw)

@@ -442,16 +442,10 @@ def build_source_interaction_graph(
     if track.positions_scene.shape != (sequence.num_frames, HAND_VERTEX_COUNT, 3):
         raise InteractionGraphError("canonical hand track must have shape [T,21,3]")
     if object_id in {"primary", "object"}:
-        obj = next(
-            (
-                item
-                for item in sequence.rigid_objects
-                if item.metadata.get("role") == "primary_manipulation_object"
-            ),
-            sequence.rigid_objects[0] if sequence.rigid_objects else None,
-        )
-        if obj is None:
-            raise InteractionGraphError("canonical sequence has no rigid object")
+        try:
+            obj = sequence.primary_rigid_object()
+        except KeyError as exc:
+            raise InteractionGraphError(str(exc)) from exc
     else:
         obj = sequence.rigid_object(object_id)
     if obj.pose_scene.pose_scene.shape != (sequence.num_frames, 4, 4):

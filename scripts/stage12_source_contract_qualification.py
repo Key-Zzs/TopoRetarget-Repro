@@ -498,8 +498,10 @@ def _contactpose_reference(
     frame = annotations["frames"][int(row["frame_range"][0])]
     htm = np.linalg.inv(_pose_wxyz(fit["mTc"]))
     moving = bool(annotations["hands"][hand_index].get("moving"))
-    oth = np.linalg.inv(_pose_wxyz(frame["hTo"][hand_index])) if moving else np.eye(4)
-    otm = (oth @ htm)[None]
+    observed_h_to = (
+        np.linalg.inv(_pose_wxyz(frame["hTo"][hand_index])) if moving and "hTo" in frame else None
+    )
+    otm = htm[None]
     fixed_vertices = _transform(otm, fixed["vertices"])
     fixed_joints = _transform(otm, fixed["joints"])
     old_vertices = _transform(otm, old["vertices"])
@@ -521,9 +523,10 @@ def _contactpose_reference(
             "pca_basis_hash": fixed["basis_hash"],
             "hand_mean_hash": fixed["hand_mean_hash"],
             "hTm": htm.tolist(),
-            "oTh": oth.tolist(),
+            "hTo_observation": None if observed_h_to is None else observed_h_to.tolist(),
             "oTm": otm[0].tolist(),
             "rigid_observation_sequence_available": moving,
+            "hTo_applied_to_static_mano": False,
         },
         native_joints=_contactpose21(fixed_joints, fixed_vertices),
     )
@@ -755,12 +758,24 @@ def _bounds(
 HTML_TEMPLATE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>__TITLE__</title><style>
-:root{font-family:system-ui,sans-serif;color-scheme:dark}body{margin:0;background:#111827;color:#e5e7eb}main{display:grid;grid-template-columns:minmax(0,1fr) 380px;height:100vh}canvas{width:100%;height:100%;display:block;background:#f8fafc}aside{overflow:auto;padding:16px;background:#1f2937;box-sizing:border-box}h1{font-size:18px;margin:0 0 8px}h2{font-size:13px;color:#93c5fd;margin:16px 0 7px}.badge{padding:3px 6px;background:#334155;border-radius:4px;font:11px ui-monospace,monospace}.static{background:#7c2d12;color:#ffedd5}label{display:block;margin:8px 0;font-size:12px}input[type=range]{width:100%}button{padding:6px 9px;border:0;border-radius:4px;background:#2563eb;color:#fff}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.35 ui-monospace,monospace}.legend{font-size:12px;line-height:1.65}.red{color:#ff677c}.green{color:#43e58f}.blue{color:#5ba5ff}.yellow{color:#ffd75e}.cyan{color:#68e8ff}</style></head>
+:root{font-family:system-ui,sans-serif;color-scheme:dark}body{margin:0;background:#111827;color:#e5e7eb}main{display:grid;grid-template-columns:minmax(0,1fr) 380px;height:100vh}canvas{width:100%;height:100%;display:block;background:#f8fafc}aside{overflow:auto;padding:16px;background:#1f2937;box-sizing:border-box}h1{font-size:18px;margin:0 0 8px}h2{font-size:13px;color:#93c5fd;margin:16px 0 7px}.badge{padding:3px 6px;background:#334155;border-radius:4px;font:11px ui-monospace,monospace}.static{background:#7c2d12;color:#ffedd5}label{display:block;margin:8px 0;font-size:12px}input[type=range]{width:100%}button{padding:6px 9px;border:0;border-radius:4px;background:#2563eb;color:#fff}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.35 ui-monospace,monospace}.legend{font-size:12px;line-height:1.65}.red{color:#ff677c}.green{color:#43e58f}.blue{color:#5ba5ff}.purple{color:#c084fc}.yellow{color:#ffd75e}.cyan{color:#68e8ff}</style></head>
 <body><main><section><canvas id="scene"></canvas></section><aside><h1>__HEADING__</h1><div id="badge" class="badge"></div>
 <h2>Frame</h2><label><input id="frame" type="range" min="0" max="__MAX_FRAME__" value="__START_FRAME__"></label><span id="frameLabel"></span> <button id="play" __PLAY_DISABLED__>Play</button>
-<h2>Layers</h2><div class="legend"><span class="green">green: fixed native-contract MANO</span><br><span class="red">red: historical v4 MANO</span><br><span class="blue">blue: object mesh</span><br><span class="yellow">yellow: native joints</span><br><span class="cyan">cyan: canonical MediaPipe21</span></div>
+<h2>Layers</h2><div class="legend"><span class="green">green: fixed native-contract MANO</span><br><span class="red">red: historical v4 MANO</span><br><span class="purple">purple: explicit primary object</span><br><span class="blue">blue: context object part</span><br><span class="yellow">yellow: native joints</span><br><span class="cyan">cyan: canonical MediaPipe21</span></div>
 <h2>Source contract status</h2><pre id="status"></pre><h2>Frame metrics</h2><pre id="metrics"></pre></aside></main>
-<script>const DATA=__DATA__;const qs=new URLSearchParams(location.search);const canvas=document.getElementById('scene'),ctx=canvas.getContext('2d');const slider=document.getElementById('frame'),play=document.getElementById('play');let frame=Math.min(Number(qs.get('frame')||__START_FRAME__),DATA.frame_count-1),timer=null,yaw=.6,pitch=-.35,zoom=1;slider.value=frame;document.title=DATA.title;document.getElementById('badge').textContent=DATA.static?'STATIC CONTACT EVALUATION ONLY':'SOURCE CONTRACT QUALIFICATION';if(DATA.static)document.getElementById('badge').classList.add('static');document.getElementById('status').textContent=JSON.stringify(DATA.status,null,2);function mul(m,p){return[m[0][0]*p[0]+m[0][1]*p[1]+m[0][2]*p[2]+m[0][3],m[1][0]*p[0]+m[1][1]*p[1]+m[1][2]*p[2]+m[1][3],m[2][0]*p[0]+m[2][1]*p[1]+m[2][2]*p[2]+m[2][3]]}function rot(p){let cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch),a=[cy*p[0]+sy*p[2],p[1],-sy*p[0]+cy*p[2];return[a[0],cp*a[1]-sp*a[2],sp*a[1]+cp*a[2]]}function project(p){let q=rot(p),lo=DATA.bounds[0],hi=DATA.bounds[1],e=Math.max(hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2]),s=.78*Math.min(canvas.width,canvas.height)/e*zoom,c=[(lo[0]+hi[0])/2,(lo[1]+hi[1])/2,(lo[2]+hi[2])/2];return[canvas.width/2+(q[0]-c[0])*s,canvas.height/2-(q[1]-c[1])*s]}function mesh(v,f,color,a){ctx.strokeStyle=color;ctx.globalAlpha=a;ctx.lineWidth=.5;ctx.beginPath();for(const t of f){const x=project(v[t[0]]),y=project(v[t[1]]),z=project(v[t[2]]);ctx.moveTo(x[0],x[1]);ctx.lineTo(y[0],y[1]);ctx.lineTo(z[0],z[1]);ctx.closePath()}ctx.stroke();ctx.globalAlpha=1}function dots(v,color,r){ctx.fillStyle=color;for(const p of v){const q=project(p);ctx.beginPath();ctx.arc(q[0],q[1],r,0,6.29);ctx.fill()}}function draw(){frame=Number(slider.value);const mode=qs.get('mode')||'mesh_object';ctx.clearRect(0,0,canvas.width,canvas.height);for(const o of DATA.objects){const w=o.vertices.map(p=>mul(o.poses[frame],p));mesh(w,o.faces,'#5ba5ff',.55)}if(mode==='before_after')mesh(DATA.old[frame],DATA.faces,'#ff677c',.62);mesh(DATA.fixed[frame],DATA.faces,'#43e58f',.86);if(mode!=='mesh_object'){dots(DATA.native_joints[frame],'#ffd75e',3);dots(DATA.mediapipe21[frame],'#68e8ff',2)}if(DATA.contact_points&&mode!=='mesh_object')dots(DATA.contact_points,'#ff69d4',1.5);document.getElementById('frameLabel').textContent='frame '+frame+' / '+(DATA.frame_count-1);document.getElementById('metrics').textContent=JSON.stringify(DATA.metrics[frame]||DATA.metrics[0],null,2)}function resize(){canvas.width=canvas.clientWidth*devicePixelRatio;canvas.height=canvas.clientHeight*devicePixelRatio;draw()}slider.oninput=draw;play.onclick=()=>{if(timer){clearInterval(timer);timer=null;play.textContent='Play'}else{timer=setInterval(()=>{slider.value=(Number(slider.value)+1)%DATA.frame_count;draw()},100);play.textContent='Pause'}};window.onresize=resize;resize();</script></body></html>"""
+<script>
+const DATA=__DATA__,qs=new URLSearchParams(location.search),canvas=document.getElementById('scene'),ctx=canvas.getContext('2d'),slider=document.getElementById('frame'),play=document.getElementById('play');
+let frame=Math.min(Number(qs.get('frame')||__START_FRAME__),DATA.frame_count-1),timer=null,yaw=.6,pitch=-.35,zoom=1;
+slider.value=frame;document.title=DATA.title;document.getElementById('badge').textContent=DATA.static?'STATIC CONTACT EVALUATION ONLY':'SOURCE CONTRACT QUALIFICATION';if(DATA.static)document.getElementById('badge').classList.add('static');document.getElementById('status').textContent=JSON.stringify(DATA.status,null,2);
+function mul(m,p){return[m[0][0]*p[0]+m[0][1]*p[1]+m[0][2]*p[2]+m[0][3],m[1][0]*p[0]+m[1][1]*p[1]+m[1][2]*p[2]+m[1][3],m[2][0]*p[0]+m[2][1]*p[1]+m[2][2]*p[2]+m[2][3]]}
+function rot(p){const cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch),a=[cy*p[0]+sy*p[2],p[1],-sy*p[0]+cy*p[2]];return[a[0],cp*a[1]-sp*a[2],sp*a[1]+cp*a[2]]}
+function project(p){const q=rot(p),lo=DATA.bounds[0],hi=DATA.bounds[1],e=Math.max(hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2]),s=.78*Math.min(canvas.width,canvas.height)/e*zoom,c=rot([(lo[0]+hi[0])/2,(lo[1]+hi[1])/2,(lo[2]+hi[2])/2]);return[canvas.width/2+(q[0]-c[0])*s,canvas.height/2-(q[1]-c[1])*s]}
+function mesh(v,f,color,a){ctx.strokeStyle=color;ctx.globalAlpha=a;ctx.lineWidth=.5;ctx.beginPath();for(const t of f){const x=project(v[t[0]]),y=project(v[t[1]]),z=project(v[t[2]]);ctx.moveTo(x[0],x[1]);ctx.lineTo(y[0],y[1]);ctx.lineTo(z[0],z[1]);ctx.closePath()}ctx.stroke();ctx.globalAlpha=1}
+function dots(v,color,r){ctx.fillStyle=color;for(const p of v){const q=project(p);ctx.beginPath();ctx.arc(q[0],q[1],r,0,6.29);ctx.fill()}}
+function draw(){frame=Number(slider.value);const mode=qs.get('mode')||'mesh_object';ctx.clearRect(0,0,canvas.width,canvas.height);for(const o of DATA.objects){const w=o.vertices.map(p=>mul(o.poses[frame],p));mesh(w,o.faces,o.is_primary?'#c084fc':'#5ba5ff',o.is_primary?.9:.55)}if(mode==='before_after')mesh(DATA.old[frame],DATA.faces,'#ff677c',.62);mesh(DATA.fixed[frame],DATA.faces,'#43e58f',.86);if(mode!=='mesh_object'){dots(DATA.native_joints[frame],'#ffd75e',3);dots(DATA.mediapipe21[frame],'#68e8ff',2)}if(DATA.contact_points&&mode!=='mesh_object')dots(DATA.contact_points,'#ff69d4',1.5);document.getElementById('frameLabel').textContent='frame '+frame+' / '+(DATA.frame_count-1);document.getElementById('metrics').textContent=JSON.stringify(DATA.metrics[frame]||DATA.metrics[0],null,2)}
+function resize(){canvas.width=canvas.clientWidth*devicePixelRatio;canvas.height=canvas.clientHeight*devicePixelRatio;draw()}
+slider.oninput=draw;play.onclick=()=>{if(timer){clearInterval(timer);timer=null;play.textContent='Play'}else{timer=setInterval(()=>{slider.value=(Number(slider.value)+1)%DATA.frame_count;draw()},100);play.textContent='Pause'}};window.onresize=resize;resize();
+</script></body></html>"""
 
 
 def _html_document(payload: dict[str, Any], *, diagnostic: bool) -> str:
@@ -773,11 +788,6 @@ def _html_document(payload: dict[str, Any], *, diagnostic: bool) -> str:
         .replace("__HEADING__", heading)
         .replace("__MAX_FRAME__", str(frame_count - 1))
         .replace("__START_FRAME__", str(start_frame))
-        .replace("-sy*p[0]+cy*p[2];return", "-sy*p[0]+cy*p[2]];return")
-        .replace(
-            "c=[(lo[0]+hi[0])/2,(lo[1]+hi[1])/2,(lo[2]+hi[2])/2]",
-            "c=rot([(lo[0]+hi[0])/2,(lo[1]+hi[1])/2,(lo[2]+hi[2])/2])",
-        )
         .replace("__PLAY_DISABLED__", "disabled" if frame_count == 1 else "")
         .replace("__DATA__", json.dumps(payload, allow_nan=False, separators=(",", ":")))
     )
@@ -1106,7 +1116,11 @@ def _selection_report(
     selection_id = _selection_id(row)
     adapter = get_dataset_adapter_registry().create(dataset)
     start, stop = (int(value) for value in row["frame_range"])
-    sequence = adapter.load_sequence(str(row["sequence"]), frame_range=FrameRange(start, stop))
+    sequence = adapter.load_sequence(
+        str(row["sequence"]),
+        frame_range=FrameRange(start, stop),
+        primary_object_id=row.get("primary_object"),
+    )
     source = sequence.hands[0]
     raw = _raw_reference(row, adapter, sequence, reference)
     native = np.asarray(source.keypoint_tracks["mediapipe21"].positions_scene, dtype=np.float64)
@@ -1188,6 +1202,8 @@ def _selection_report(
                 "vertices": np.round(mesh_vertices, 7).tolist(),
                 "faces": mesh_faces.tolist(),
                 "poses": np.round(object_track.pose_scene.pose_scene, 10).tolist(),
+                "role": object_track.metadata.get("role", "object_part"),
+                "is_primary": object_track.metadata.get("role") == "primary_manipulation_object",
             }
         )
     preview_faces = _mesh_preview(vertices[0], raw.faces, maximum_faces=1600)[1]
@@ -1228,6 +1244,7 @@ def _selection_report(
             ),
             "object_pose_source": "raw dataset annotation exact passthrough",
             "object_ids": [item["id"] for item in objects],
+            "primary_object_id": next((item["id"] for item in objects if item["is_primary"]), None),
             "coordinate_frame": "S",
             "units": "metre",
             "frame_classification": sequence.metadata.metadata.get(
@@ -1364,7 +1381,8 @@ def _selection_report(
             "source_status": source_status,
             "temporal_contract": report["temporal_contract"],
             "reference_transforms": {
-                key: raw.reference_manifest.get(key) for key in ("hTm", "oTh", "oTm")
+                key: raw.reference_manifest.get(key)
+                for key in ("hTm", "hTo_observation", "oTm", "hTo_applied_to_static_mano")
             },
             "contact_intensity_points": 0
             if raw.contact_points is None
@@ -1823,11 +1841,16 @@ def main() -> int:
     _write_text(REPORT_ROOT / "dataset_summary.md", _summary_markdown(reports))
     _write_json(REPORT_ROOT / "dataset_summary.json", summary)
     _write_text(REPORT_ROOT / "dashboard.html", _dashboard(reports))
-    _write_aggregate_reports(reports, status)
+    if len(reports) == 8:
+        _write_aggregate_reports(reports, status)
     if all_images:
         _contact_sheet(all_images, REPORT_ROOT / "all_selection_contact_sheet.png")
     print(status, flush=True)
-    return 0 if status == "STAGE12_SOURCE_REQUALIFICATION_PASS" else 2
+    return (
+        0
+        if all(item["source_status"].startswith("SOURCE_QUALIFICATION_PASS") for item in reports)
+        else 2
+    )
 
 
 if __name__ == "__main__":

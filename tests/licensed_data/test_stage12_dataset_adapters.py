@@ -40,6 +40,7 @@ def test_stage12_adapter_loads_canonical_provenance_and_viewer_handle(
     source = adapter.load_sequence(
         sequence,
         frame_range=FrameRange(frame_start, min(frame_start + 3, frame_stop)),
+        primary_object_id=selection.get("primary_object"),
     )
     canonical = adapter.convert_to_canonical(source)
     assert canonical.metadata.schema_version == "toporetarget.hoi.v2"
@@ -82,6 +83,7 @@ def test_stage12_adapter_loads_canonical_provenance_and_viewer_handle(
         reconstruction = hand.metadata["mano_reconstruction"]
         assert reconstruction["execution"] == ("pca45_explicit_basis_expansion_single_mean")
         assert reconstruction["execution_flat_hand_mean"] is True
+        assert canonical.primary_rigid_object().object_id == selection["primary_object"]
     elif dataset == "contactpose":
         assert canonical.num_frames == 1
         assert canonical.metadata.metadata["temporal_metrics"] == "NOT_APPLICABLE"
@@ -113,5 +115,7 @@ def test_stage12_freezes_two_right_hand_trajectories_per_dataset() -> None:
             assert row["sample_type"] == "static_contact_evaluation_only"
             assert row["articulated_frame_count"] == 1
             assert row["temporal_metrics_applicable"] is False
+        elif row["dataset"] == "hocap":
+            assert row["primary_object"] in row["object"]
         else:
             assert frame_count == 60

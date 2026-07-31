@@ -23,10 +23,7 @@ from .interaction_objective import InteractionMeshObjective, InteractionMeshResi
 def _source_object(sequence: Any, object_id: str) -> Any:
     if object_id not in {"primary", "object"}:
         return sequence.rigid_object(object_id)
-    for item in sequence.rigid_objects:
-        if item.metadata.get("role") == "primary_manipulation_object":
-            return item
-    return sequence.rigid_objects[0]
+    return sequence.primary_rigid_object()
 
 
 def _write_json(value: Any, path: str | Path) -> None:

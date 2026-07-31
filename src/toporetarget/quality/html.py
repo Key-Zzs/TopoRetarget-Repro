@@ -360,7 +360,7 @@ def render_clip_html(
     model = get_robot_registry(repo_root=Path(__file__).resolve().parents[3]).load(
         clip.robot, asset_root=asset_root
     )
-    object_track = sequence.rigid_objects[0]
+    object_track = sequence.primary_rigid_object()
     object_vertices, object_faces = _clustered_mesh_preview(
         np.asarray(object_track.mesh.vertices_local, dtype=np.float64),
         np.asarray(object_track.mesh.faces, dtype=np.int64),

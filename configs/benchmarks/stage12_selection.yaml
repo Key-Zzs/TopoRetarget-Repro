@@ -38,13 +38,15 @@ selections:
     hand: right
     frame_range: [0, 60]
     object: [G10_1, G10_2, G10_3, G10_4]
-    reason: first 60 contiguous frames of a right-hand HOCap G10 multi-part object trajectory
+    primary_object: G10_2
+    reason: first 60 contiguous frames; G10_2 is the frozen source-contact part and other G10 parts are context geometry
   - dataset: hocap
     sequence: hocap:subject_1/20231025_170650
     hand: right
     frame_range: [0, 60]
     object: [G04_1, G04_2, G04_3, G04_4]
-    reason: first 60 contiguous frames of a second right-hand HOCap object family and acquisition session
+    primary_object: G04_2
+    reason: first 60 contiguous frames; G04_2 is the frozen source-contact part and other G04 parts are context geometry
   - dataset: contactpose
     sequence: contactpose:full1_use/mug
     hand: right

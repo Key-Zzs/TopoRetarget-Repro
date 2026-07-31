@@ -999,9 +999,7 @@ def _source_frame_offset(path: Path) -> int:
 
 def _object_for_graph(sequence: Any, object_id: str) -> Any:
     if object_id in {"primary", "object"}:
-        if not sequence.rigid_objects:
-            raise ValueError("canonical sequence has no rigid object")
-        return sequence.rigid_objects[0]
+        return sequence.primary_rigid_object()
     return sequence.rigid_object(object_id)
 
 

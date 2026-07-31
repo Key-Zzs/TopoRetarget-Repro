@@ -38,14 +38,12 @@ FINGER_REGION = {
 
 
 def _object_track(sequence: Any) -> Any:
-    if hasattr(sequence, "rigid_object"):
+    if hasattr(sequence, "primary_rigid_object"):
         try:
-            return sequence.rigid_object("primary")
+            return sequence.primary_rigid_object()
         except (KeyError, ValueError):
             pass
-    if not sequence.rigid_objects:
-        raise ValueError("canonical sequence has no object track")
-    return sequence.rigid_objects[0]
+    raise ValueError("canonical sequence has no explicit primary object track")
 
 
 def _finger_label(label_name: str) -> str | None:

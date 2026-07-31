@@ -45,8 +45,14 @@ Stage 12 集成工作树为 `integration/dataset-adapter-v1`；对应的本地 a
 `final/final_retarget.zarr`、物体采样、interaction graph、Wuji 碰撞采样、HTML 和
 JSON/Markdown 报告。
 报告包含 Ebone、EIM/RMSE、各手指 RMSE、穿透、连续性、运行时间和求解/审计计数，并给出
-失败分类。HO-Cap canonical 保留全部物体部件；当前共享 Stage 8/9 重定向管线使用第一个
-声明部件作为 primary object，完整部件列表仍写入溯源和报告。
+失败分类。HO-Cap canonical 保留全部物体部件。多部件 selection 必须显式给出唯一的
+`primary_object`；adapter 将其标记为 `primary_manipulation_object`，共享 Stage 8/9 路径
+不再从数组顺序猜测目标。其余声明部件是 context geometry，并持续显示在 source
+qualification HTML 中。
+
+ContactPose 是物体坐标中的单帧静态 MANO fit，source 变换固定为 `inv(mTc)`。
+RGB-D annotation 中 moving-hand 的 `hTo` 仅保留为刚体观测证据，绝不再复合进静态 MANO
+顶点或关节。
 
 ```bash
 PYTHONNOUSERSITE=1 \

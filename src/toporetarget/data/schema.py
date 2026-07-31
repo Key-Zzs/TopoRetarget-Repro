@@ -279,6 +279,34 @@ class HOISequence:
                 return item
         raise KeyError(f"Unknown object_id: {object_id}")
 
+    def primary_rigid_object(self) -> RigidObjectTrack:
+        """Return the explicitly declared manipulation object.
+
+        A multi-part source cannot safely inherit the first object in an input
+        array: that order is storage metadata, not interaction semantics.  A
+        single-object sequence remains unambiguous, while multi-object
+        sequences must declare exactly one ``primary_manipulation_object``.
+        """
+
+        if not self.rigid_objects:
+            raise KeyError("Canonical HOI sequence has no rigid objects")
+        primary = [
+            item
+            for item in self.rigid_objects
+            if item.metadata.get("role") == "primary_manipulation_object"
+        ]
+        if len(primary) == 1:
+            return primary[0]
+        if len(primary) > 1:
+            raise KeyError("Canonical HOI sequence declares multiple primary manipulation objects")
+        if len(self.rigid_objects) == 1:
+            return self.rigid_objects[0]
+        ids = ", ".join(item.object_id for item in self.rigid_objects)
+        raise KeyError(
+            "Multi-object canonical HOI sequence requires exactly one "
+            f"primary_manipulation_object; available objects: {ids}"
+        )
+
     def validate(self, *, raise_on_error: bool = True) -> list[str]:
         errors: list[str] = []
 

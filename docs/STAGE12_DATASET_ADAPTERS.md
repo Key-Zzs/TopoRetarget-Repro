@@ -65,9 +65,16 @@ html/source_warm_final_wuji_smoke.json
 
 Reports include warm/final Ebone, EIM/RMSE, per-finger RMSE, penetration,
 continuity, runtime, solver/audit counts, and a failure category. HOCap keeps
-all object parts in the canonical artifact; the current shared Stage 8/9
-retarget pipeline uses the first declared part as its primary object input and
-records the complete part list in provenance and reports.
+all object parts in the canonical artifact. A multi-object selection must name
+exactly one `primary_object`; the adapter assigns it
+`primary_manipulation_object` and the shared Stage 8/9 path refuses to infer a
+target from array order. The remaining declared parts are context geometry and
+remain visible in source qualification HTML.
+
+ContactPose is a one-frame static MANO fit in object coordinates. Its source
+transform is `inv(mTc)`. A moving-hand `hTo` in the RGB-D annotations is kept
+only as rigid-observation evidence and is never compounded into static MANO
+vertices or joints.
 
 Run the matrix with the repository environment:
 

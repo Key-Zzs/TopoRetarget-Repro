@@ -70,16 +70,10 @@ def build_input_audit(
         sequence = load_hoi_sequence(canonical)
         hand_id = str(item.get("hand_id") or sequence.hands[0].hand_id)
         hand = sequence.hand(hand_id)
-        object_track = next(
-            (
-                item
-                for item in sequence.rigid_objects
-                if item.metadata.get("role") == "primary_manipulation_object"
-            ),
-            sequence.rigid_objects[0] if sequence.rigid_objects else None,
-        )
-        if object_track is None:
-            raise ValueError(f"canonical sequence has no rigid object: {canonical}")
+        try:
+            object_track = sequence.primary_rigid_object()
+        except KeyError as exc:
+            raise ValueError(f"canonical primary object is invalid: {canonical}") from exc
         mesh = audit_mesh(object_track.mesh.vertices_local, object_track.mesh.faces)
         warm = load_warm_start(warm_path)
         records.append(
@@ -221,17 +215,8 @@ def compare_object_scales(
     object_track = (
         sequence.rigid_object(object_id)
         if object_id not in {"primary", "object"}
-        else next(
-            (
-                item
-                for item in sequence.rigid_objects
-                if item.metadata.get("role") == "primary_manipulation_object"
-            ),
-            sequence.rigid_objects[0] if sequence.rigid_objects else None,
-        )
+        else sequence.primary_rigid_object()
     )
-    if object_track is None:
-        raise ValueError("canonical sequence has no rigid object")
     mesh_vertices = np.asarray(object_track.mesh.vertices_local, dtype=np.float64)
     original_points, _ = transform_surface_samples(
         samples, object_track.pose_scene.pose_scene[frame]

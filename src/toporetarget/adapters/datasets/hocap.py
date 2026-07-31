@@ -109,6 +109,20 @@ class HOCapAdapterV1(Stage12AdapterBase):
             )
         return result
 
+    @staticmethod
+    def _primary_object_id(object_ids: list[str], requested: str | None) -> str | None:
+        """Validate the frozen selection's semantic target, if supplied."""
+
+        if requested is None:
+            return None
+        primary = str(requested)
+        if primary not in object_ids:
+            raise Stage12AdapterError(
+                "HOCap primary object is absent from this sequence: "
+                f"primary={primary!r}, available={object_ids!r}"
+            )
+        return primary
+
     def _subject_betas(
         self, *, meta: dict[str, Any], sequence_dir: Path
     ) -> tuple[np.ndarray, Path]:
@@ -138,6 +152,7 @@ class HOCapAdapterV1(Stage12AdapterBase):
         *,
         frame_range: FrameRange | None = None,
         hand: str = "right",
+        primary_object_id: str | None = None,
         **kwargs: Any,
     ) -> HOISequence:
         del kwargs
@@ -221,6 +236,7 @@ class HOCapAdapterV1(Stage12AdapterBase):
             native_joint_track=backend_posed_joint_track(render, valid=valid),
         )
         object_ids = self._object_ids(meta, poses_o.shape[1])
+        primary_object_id = self._primary_object_id(object_ids, primary_object_id)
         objects = []
         object_pose_values = np.asarray(poses_o[start:stop], dtype=np.float64)
         for object_index, object_id in enumerate(object_ids):
@@ -242,7 +258,19 @@ class HOCapAdapterV1(Stage12AdapterBase):
                     poses_scene=poses,
                     valid=object_valid,
                     mesh_hash=sha256_paths([mesh_path]),
-                    metadata={"role": "hocap_object_part", "object_index": object_index},
+                    metadata={
+                        "role": (
+                            "primary_manipulation_object"
+                            if object_id == primary_object_id
+                            else "hocap_object_part"
+                        ),
+                        "object_index": object_index,
+                        "primary_object_selection": (
+                            "explicit_selection_contract"
+                            if object_id == primary_object_id
+                            else "context_object_part"
+                        ),
+                    },
                 )
             )
         source_paths = [meta_path, poses_m_path, poses_o_path, calibration_path]
@@ -266,10 +294,12 @@ class HOCapAdapterV1(Stage12AdapterBase):
                 "selected_frame_range": [start, stop],
                 "selected_hand": "right",
                 "object_ids": object_ids,
+                "primary_object_id": primary_object_id,
                 "rgb_depth_read": False,
             },
             metadata={
                 "object_ids": object_ids,
+                "primary_object_id": primary_object_id,
                 "source_hand_index": hand_index,
                 "mano_calibration_path": str(calibration_path),
                 "mano_calibration_hash": sha256_paths([calibration_path]),
