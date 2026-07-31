@@ -12,6 +12,7 @@ from toporetarget.rl.environments.mujoco_backend import (
     materialize_free_object_scene,
 )
 from toporetarget.rl.observations import ObservationContract
+from toporetarget.rl.randomization import DomainRandomizationConfig
 from toporetarget.rl.termination import TerminationType
 
 
@@ -54,3 +55,5 @@ def test_mujoco_backend_compiles_resets_steps_and_builds_observation(tmp_path: P
     assert next_state["object_pose"].shape == (4, 4)
     assert np.isfinite(list(reward.values())).all()
     assert terminal in {None, TerminationType.SUCCESS_REFERENCE_COMPLETE.value}
+    assert "pd" in backend.capabilities.supported_randomizations
+    backend.apply_randomization(DomainRandomizationConfig(enabled=False))

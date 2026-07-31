@@ -7,8 +7,6 @@ import argparse
 import json
 from pathlib import Path
 
-import numpy as np
-
 from toporetarget.rl.contracts import Stage16ReferenceClip
 
 
@@ -19,10 +17,12 @@ def main() -> int:
     args = parser.parse_args()
     clip = Stage16ReferenceClip.from_npz(args.reference)
     report = {
-        "status": "E0_KINEMATIC_REPLAY_PASS",
+        "status": "E0_REFERENCE_CONTRACT_REPLAY_PASS",
         "not_rl_success": True,
+        "not_physics_replay": True,
         "frames": clip.frame_count,
-        "max_q_replay_error": float(np.max(np.abs(clip.q_finger_ref - clip.q_finger_ref))),
+        "array_integrity_only": True,
+        "max_q_replay_error": 0.0,
         "max_object_replay_error_m": 0.0,
         "reference_hash": clip.content_hash(),
     }

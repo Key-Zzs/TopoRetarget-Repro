@@ -66,6 +66,26 @@ def test_shortest_arc_slerp_normalizes_and_uses_short_path() -> None:
     assert abs(result[3]) == pytest.approx(1.0)
 
 
+def test_resampling_recomputes_axes_and_base_frame_angular_velocity() -> None:
+    source = _clip()
+    source.object_pose_base_ref[2, :3, :3] = np.asarray(
+        [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
+    )
+    source.object_axis_points_base_ref = object_axis_points_from_poses(source.object_pose_base_ref)
+    output = resample_reference_20hz(source)
+    assert output.metadata["axis_resampling"] == "recomputed_from_resampled_pose"
+    assert np.linalg.norm(output.object_velocity_ref[:, 3:], axis=1).max() > 0.0
+    assert output.object_axis_points_base_ref[-1, 0].tolist() == pytest.approx([0.2, 0.05, 0.0])
+
+
+def test_resampling_180_degree_rotation_has_finite_angular_velocity() -> None:
+    source = _clip()
+    source.object_pose_base_ref[-1, :3, :3] = np.diag([-1.0, -1.0, 1.0])
+    source.object_axis_points_base_ref = object_axis_points_from_poses(source.object_pose_base_ref)
+    output = resample_reference_20hz(source)
+    assert np.isfinite(output.object_velocity_ref).all()
+
+
 def test_observation_order_dimension_and_delay() -> None:
     clip = resample_reference_20hz(_clip())
     contract = ObservationContract(dof_count=2, link_count=2)

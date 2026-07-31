@@ -57,4 +57,24 @@ class VectorizedReferenceTrackingEnv(ABC):
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[dict[str, Any]]]: ...
 
 
-__all__ = ["BackendCapabilities", "SimulationBackend", "VectorizedReferenceTrackingEnv"]
+class PhysicsRandomizationBackend(ABC):
+    """Explicit runtime randomization interface; unsupported fields must fail visibly."""
+
+    @abstractmethod
+    def apply_randomization(self, config: Any) -> None: ...
+
+
+class RendererBackend(ABC):
+    """Optional backend renderer interface used by review tooling."""
+
+    @abstractmethod
+    def render_rgb(self, *, width: int = 640, height: int = 480) -> np.ndarray: ...
+
+
+__all__ = [
+    "BackendCapabilities",
+    "PhysicsRandomizationBackend",
+    "RendererBackend",
+    "SimulationBackend",
+    "VectorizedReferenceTrackingEnv",
+]

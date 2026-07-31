@@ -9,8 +9,11 @@ Run environment audit:
 ```bash
 conda env create -f environment.stage16.yml
 conda run -n toporetarget-rl python scripts/rl/audit_stage16_environment.py
+conda run -n toporetarget-rl python scripts/rl/qualify_stage16_environment.py
 ```
 
 Only a provenance-complete dynamic `Stage16ReferenceClip` is eligible for training. The implementation refuses static ContactPose samples. The currently installed MuJoCo backend is an isolated CPU correctness backend; it is never reported as the author-exact backend or as a 4096-environment reproduction.
 
 Results, generated references, videos, checkpoints, reports, and build products are ignored under `.local/`.
+The qualification command exercises E0--E4 only against a synthetic neutral Wuji asset reference;
+it is a simulator/contract check, never a HOCap reference or policy result.

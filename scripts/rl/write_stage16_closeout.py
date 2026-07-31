@@ -54,6 +54,16 @@ def main() -> int:
     penspin = read_json(root / "penspin_availability.json")
     penspin_status = penspin.get("status", penspin.get("penspin_status", "UNKNOWN"))
     recovery = read_json(root / "recovery_summary.json")
+    environment_qualification = (
+        read_json(root / "environment_qualification.json")
+        if (root / "environment_qualification.json").is_file()
+        else {"status": "NOT_RUN"}
+    )
+    resource_use = (
+        read_json(root / "resource_use.json")
+        if (root / "resource_use.json").is_file()
+        else {"status": "NOT_RUN"}
+    )
     eligible = bool(inventory["accepted_dynamic_hocap_robot_reference_available"])
     now = datetime.now(UTC).isoformat()
     blocked_reason = inventory["blocker"]
@@ -188,12 +198,14 @@ def main() -> int:
             "base": git_value("merge-base", "HEAD", "origin/main"),
         },
         "environment": environment,
+        "environment_qualification": environment_qualification,
         "ppo_numerical_smoke": ppo,
         "pd_qualification": pd,
         "reference_validation": reference_validation,
         "hocap_32_evaluation": hocap,
         "penspin": penspin,
         "recovery": recovery,
+        "resource_use": resource_use,
         "comparison_to_paper": (
             "NOT_COMPARABLE: no physical HOCap evaluation episodes or private Pen-Spin data."
         ),

@@ -37,6 +37,15 @@ def main() -> int:
     }
     review_path = output.with_name("visual_review.json")
     review_path.write_text(json.dumps(review, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    review_path.with_suffix(".md").write_text(
+        "# Stage 16 visual review\n\n"
+        "- Status: `VISUALIZATION_BACKEND_UNAVAILABLE`\n"
+        "- Fallback: numerical dashboard only\n"
+        "- Rendered physics claim: `false`\n"
+        f"- Dashboard: `{output.resolve()}`\n"
+        "- Reason: no eligible dynamic HO-Cap reference exists for rollout rendering.\n",
+        encoding="utf-8",
+    )
     print(json.dumps(review, indent=2, sort_keys=True))
     return 0
 

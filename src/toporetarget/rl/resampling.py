@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from .axis_points import object_axis_points_from_poses
 from .contracts import Stage16ReferenceClip
 
 REFERENCE_RESAMPLER_ID = "reference_resampler_20hz_v1"
@@ -96,8 +97,69 @@ def _interpolate_linear(times: np.ndarray, values: np.ndarray, new_times: np.nda
     return result.reshape((new_times.size, *values.shape[1:]))
 
 
+def _interpolate_joints(
+    times: np.ndarray,
+    values: np.ndarray,
+    new_times: np.ndarray,
+    periodic_joint_indices: tuple[int, ...],
+) -> np.ndarray:
+    """Interpolate bounded joints directly and unwrap only declared periodic joints."""
+
+    source = np.asarray(values, dtype=np.float64).copy()
+    for index in periodic_joint_indices:
+        if index < 0 or index >= source.shape[1]:
+            raise ValueError(f"periodic joint index out of range: {index}")
+        source[:, index] = np.unwrap(source[:, index])
+    return _interpolate_linear(times, source, new_times)
+
+
+def _rotation_vector(rotation: np.ndarray) -> np.ndarray:
+    """Return the SO(3) logarithm vector for a proper rotation matrix."""
+
+    value = np.asarray(rotation, dtype=np.float64)
+    cosine = float(np.clip((np.trace(value) - 1.0) / 2.0, -1.0, 1.0))
+    angle = float(np.arccos(cosine))
+    vector = np.asarray(
+        [value[2, 1] - value[1, 2], value[0, 2] - value[2, 0], value[1, 0] - value[0, 1]]
+    )
+    if angle < 1e-8:
+        return 0.5 * vector
+    if np.pi - angle < 1e-6:
+        # The usual ``angle / sin(angle)`` form is singular at 180 degrees.
+        # Pick a deterministic axis from the symmetric part instead.
+        axis = np.sqrt(np.maximum((np.diag(value) + 1.0) * 0.5, 0.0))
+        largest = int(np.argmax(axis))
+        if axis[largest] > 1e-8:
+            for other in range(3):
+                if other != largest:
+                    axis[other] = (value[largest, other] + value[other, largest]) / (
+                        4.0 * axis[largest]
+                    )
+        return angle * axis / np.linalg.norm(axis)
+    return angle / (2.0 * np.sin(angle)) * vector
+
+
+def _angular_velocity_from_poses(poses: np.ndarray, timestamps: np.ndarray) -> np.ndarray:
+    """Central-difference base-frame angular velocity with one-sided endpoints."""
+
+    rotations = np.asarray(poses, dtype=np.float64)[:, :3, :3]
+    times = np.asarray(timestamps, dtype=np.float64)
+    result = np.empty((rotations.shape[0], 3), dtype=np.float64)
+    result[0] = _rotation_vector(rotations[1] @ rotations[0].T) / (times[1] - times[0])
+    result[-1] = _rotation_vector(rotations[-1] @ rotations[-2].T) / (times[-1] - times[-2])
+    for index in range(1, rotations.shape[0] - 1):
+        result[index] = _rotation_vector(rotations[index + 1] @ rotations[index - 1].T) / (
+            times[index + 1] - times[index - 1]
+        )
+    return result
+
+
 def resample_reference_20hz(
-    clip: Stage16ReferenceClip, *, target_hz: float = 20.0
+    clip: Stage16ReferenceClip,
+    *,
+    target_hz: float = 20.0,
+    periodic_joint_indices: tuple[int, ...] = (),
+    axis_length_m: float = 0.05,
 ) -> Stage16ReferenceClip:
     """Resample a dynamic clip without duplicated timestamps and keep the final time."""
 
@@ -109,9 +171,8 @@ def resample_reference_20hz(
     new_times = np.arange(start, finish, interval, dtype=np.float64)
     if new_times.size == 0 or not np.isclose(new_times[-1], finish, atol=1e-12):
         new_times = np.append(new_times, finish)
-    q = _interpolate_linear(clip.timestamps, clip.q_finger_ref, new_times)
+    q = _interpolate_joints(clip.timestamps, clip.q_finger_ref, new_times, periodic_joint_indices)
     links = _interpolate_linear(clip.timestamps, clip.tracked_link_positions_base_ref, new_times)
-    axes = _interpolate_linear(clip.timestamps, clip.object_axis_points_base_ref, new_times)
     poses = np.empty((new_times.size, 4, 4), dtype=np.float64)
     rotations = np.asarray(
         [_quaternion_from_matrix(value[:3, :3]) for value in clip.object_pose_base_ref]
@@ -131,6 +192,7 @@ def resample_reference_20hz(
             shortest_arc_slerp(rotations[lower], rotations[upper], fraction)
         )
         poses[index, :3, 3] = translations[index]
+    axes = object_axis_points_from_poses(poses, axis_length_m=axis_length_m)
     qdot = np.gradient(q, new_times, axis=0, edge_order=1)
     linear_velocity = np.gradient(translations, new_times, axis=0, edge_order=1)
     result = Stage16ReferenceClip(
@@ -148,12 +210,14 @@ def resample_reference_20hz(
         },
         qdot_ref=qdot,
         object_velocity_ref=np.concatenate(
-            [linear_velocity, np.zeros_like(linear_velocity)], axis=1
+            [linear_velocity, _angular_velocity_from_poses(poses, new_times)], axis=1
         ),
         reference_indices=np.arange(new_times.size, dtype=np.int64),
         metadata={
             **clip.metadata,
             "target_hz": target_hz,
+            "periodic_joint_indices": list(periodic_joint_indices),
+            "axis_resampling": "recomputed_from_resampled_pose",
             "link_resampling": "linear_fallback_no_fk_callable",
         },
     )

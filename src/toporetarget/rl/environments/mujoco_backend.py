@@ -25,7 +25,12 @@ from ..randomization import (
 )
 from ..rewards import paper_literal_reward
 from ..termination import TerminationInput, classify_termination
-from .base import BackendCapabilities, SimulationBackend
+from .base import (
+    BackendCapabilities,
+    PhysicsRandomizationBackend,
+    RendererBackend,
+    SimulationBackend,
+)
 
 
 def _require_mujoco() -> Any:
@@ -118,7 +123,9 @@ class MujocoBackendConfig:
     nominal_pd_kd: float = 0.05
 
 
-class MujocoReferenceTrackingBackend(SimulationBackend):
+class MujocoReferenceTrackingBackend(
+    SimulationBackend, PhysicsRandomizationBackend, RendererBackend
+):
     """One actual free-object MuJoCo environment with residual PD targets."""
 
     def __init__(
@@ -245,9 +252,31 @@ class MujocoReferenceTrackingBackend(SimulationBackend):
                 "observation_noise",
                 "observation_delay",
                 "reset_noise",
+                "object_com",
+                "robot_friction_and_geometry",
+                "object_mass_and_inertia",
+                "pd",
+                "joint_dynamics",
+                "encoder_bias",
+                "robot_link_mass_and_inertia",
                 "external_disturbance",
             ),
         )
+
+    def apply_randomization(self, config: DomainRandomizationConfig) -> None:
+        """Install an explicit Table-5 configuration for the next reset."""
+
+        self.randomization_config = config
+
+    def render_rgb(self, *, width: int = 640, height: int = 480) -> np.ndarray:
+        """Render one RGB frame when the local MuJoCo rendering backend is available."""
+
+        renderer = self.mujoco.Renderer(self.model, height=height, width=width)
+        try:
+            renderer.update_scene(self.data)
+            return renderer.render().copy()
+        finally:
+            renderer.close()
 
     def _current_object_pose(self) -> np.ndarray:
         position = self.data.qpos[self.object_qpos_address : self.object_qpos_address + 3]
