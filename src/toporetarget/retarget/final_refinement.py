@@ -2165,6 +2165,87 @@ def _independent_constraints(
     }
 
 
+def strict_recovery_trigger(
+    *,
+    status_code: int,
+    recovery_policy: str,
+    value: np.ndarray,
+    context: _FrameContext,
+) -> tuple[bool, dict[str, Any]]:
+    """Return whether a failed SLSQP point may seed a clean generic restart.
+
+    Status 8 (line-search directional derivative) and status 9 (iteration
+    limit) are solver-engineering failures, not acceptance states.  A retry is
+    allowed only from a finite point that remains within the original physical
+    q/slack bounds.  It never changes the objective, constraints, tolerances,
+    or strict final acceptance; it only discards stale SLSQP line-search state
+    and rebuilds the same problem with the reference point Jacobian backend.
+    """
+
+    current = np.asarray(value, dtype=np.float64).reshape(-1)
+    _, _, qpos, slack = context.unpack(current)
+    q_lower = np.asarray(context.robot_model.joint_lower, dtype=np.float64)
+    q_upper = np.asarray(context.robot_model.joint_upper, dtype=np.float64)
+    slack_upper = float(context.paper.b - context.paper.tau)
+    finite = bool(np.all(np.isfinite(current)))
+    q_bounds = bool(np.all(qpos >= q_lower - 1e-10) and np.all(qpos <= q_upper + 1e-10))
+    slack_bounds = bool(np.all(slack >= -1e-10) and np.all(slack <= slack_upper + 1e-10))
+    eligible_status = int(status_code) in {8, 9}
+    enabled = recovery_policy == "reference_batched_from_primary_result_v1"
+    eligible = bool(enabled and eligible_status and finite and q_bounds and slack_bounds)
+    return eligible, {
+        "recovery_policy_enabled": enabled,
+        "recoverable_status": eligible_status,
+        "candidate_all_finite": finite,
+        "candidate_q_bounds_pass": q_bounds,
+        "candidate_slack_bounds_pass": slack_bounds,
+        "status_code": int(status_code),
+        "triggered": eligible,
+    }
+
+
+def restore_slack_feasibility(
+    context: _FrameContext, value: np.ndarray, query_set: CollisionQuerySet
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Produce a bounded Phase-II seed with exactly re-evaluated slack.
+
+    This is a deterministic feasibility restoration at fixed base/qpos, never
+    a final result.  It is available only when the original hard constraints
+    are feasible and every required soft slack fits the original bound.
+    """
+
+    candidate = np.asarray(value, dtype=np.float64).copy()
+    independent = _independent_constraints(context, candidate, query_set)
+    _, _, _, slack = context.unpack(candidate)
+    slack_before = np.asarray(slack, dtype=np.float64).copy()
+    required = np.asarray(independent["slack_required"], dtype=np.float64)
+    upper = float(context.paper.b - context.paper.tau)
+    hard_feasible = bool(independent["min_hard_residual"] >= 0.0)
+    representable = bool(np.all(required <= upper))
+    restored = slack_before
+    if hard_feasible and representable:
+        restored = np.maximum(slack_before, required)
+        # Use the exact active-query required slack and move only to the next
+        # representable float.  This changes neither a physical bound nor a
+        # constraint tolerance, and is not a fixed interior padding.
+        needs_restoration = required > slack_before
+        required_interior = np.minimum(np.nextafter(required, np.inf), upper)
+        restored = np.where(needs_restoration, required_interior, slack_before)
+        if len(restored):
+            candidate[-len(restored) :] = restored
+    return candidate, {
+        "hard_feasible": hard_feasible,
+        "soft_slack_representable": representable,
+        "min_hard_residual_before": float(independent["min_hard_residual"]),
+        "min_soft_residual_before": float(independent["min_soft_residual"]),
+        "slack_adjusted_count": int(
+            np.count_nonzero(np.asarray(restored) != slack_before)
+            if hard_feasible and representable
+            else 0
+        ),
+    }
+
+
 def strict_acceptance_decision(
     *,
     optimizer_converged: bool,
@@ -2273,13 +2354,21 @@ def refine_frame(
             "primary_backend": point_jacobian_backend,
             "recovery_used": False,
         }
-        if (
-            int(getattr(primary_result, "status", -1)) == 9
-            and strict_recovery == "reference_batched_from_primary_result_v1"
-        ):
+        recovery_allowed, recovery_trigger = strict_recovery_trigger(
+            status_code=int(getattr(primary_result, "status", -1)),
+            recovery_policy=strict_recovery,
+            value=np.asarray(primary_result.x, dtype=np.float64),
+            context=context,
+        )
+        attempt["recovery_trigger"] = recovery_trigger
+        if recovery_allowed:
+            recovery_seed, restoration = restore_slack_feasibility(
+                context, np.asarray(primary_result.x, dtype=np.float64), query_set
+            )
+            attempt["feasibility_restoration"] = restoration
             result, recovery_diag = _solver_call(
                 context,
-                np.asarray(primary_result.x, dtype=np.float64),
+                recovery_seed,
                 query_set,
                 solver,
                 point_jacobian_backend="reference_batched_torch_v1",

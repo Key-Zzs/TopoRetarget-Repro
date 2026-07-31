@@ -678,3 +678,10 @@ generalized-winding sign 与 v2 fallback。
 
 新增可选的确定性 C++17 generalized-winding handle、严格的 near-threshold Python fallback，
 以及 1-Lipschitz FD-probe 符号复用认证。v4 profile 保持 float64 CPU、非默认。
+
+## 2026-07-31 -- ContactPose mug status-8 可行性修复
+
+先冻结 rejected baseline，再以 CPU float64 重现 active-soft 边界上的 status-8。通用有界恢复仅在
+固定 base/q 下重算现有 active-query slack，并以 reference-Jacobian retry；不接受 status 8，也不放宽
+任一最终 gate。两个独立 mug 严格重放及一个逐字节一致的 ContactPose banana shadow replay 均通过，
+final queue 始终保持暂停。ContactPose Eq. 10/Eq. 11 contact benchmark 仍未复现。

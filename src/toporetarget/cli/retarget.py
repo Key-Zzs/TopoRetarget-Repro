@@ -1971,9 +1971,28 @@ def refine_command(
     asset_root: Path | None = typer.Option(None, "--asset-root"),
     force: bool = typer.Option(False, "--force"),
     quality_extension: Path | None = typer.Option(None, "--quality-extension"),
+    controlled_replay_while_queue_paused: bool = typer.Option(
+        False,
+        "--controlled-replay-while-queue-paused",
+        help="Run this explicit single-process replay without reopening the final-job queue.",
+    ),
 ) -> None:
     try:
         if checkpoint_root is not None:
+            replay_health_gate = None
+            if controlled_replay_while_queue_paused:
+                # A controlled replay is deliberately fail-closed exactly like
+                # the Stage-12 runner: rejected frames remain diagnostics and
+                # never enter the resumable accepted checkpoint chain.
+                def replay_health_gate(
+                    latest: dict[str, Any], _rows: list[dict[str, Any]]
+                ) -> str | None:
+                    return (
+                        None
+                        if bool(latest.get("strict_accepted", False))
+                        else "strict_acceptance_failed"
+                    )
+
             value = _run_checkpoint_refinement(
                 canonical=canonical,
                 warm_start=warm_start,
@@ -1996,6 +2015,8 @@ def refine_command(
                 progress_log=progress_log,
                 force=force,
                 quality_extension_path=quality_extension,
+                allow_shadow_while_queue_paused=controlled_replay_while_queue_paused,
+                frame_health_gate=replay_health_gate,
             )
             _json_write(value, None)
             return

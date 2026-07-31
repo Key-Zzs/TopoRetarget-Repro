@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -12,7 +13,9 @@ from toporetarget.retarget.final_refinement import (
     RefinementSolverProfile,
     active_set_is_monotonic,
     continue_active_set_initial,
+    restore_slack_feasibility,
     strict_acceptance_decision,
+    strict_recovery_trigger,
 )
 from toporetarget.retarget.solver_benchmark import (
     BENCHMARK_SCHEMA_VERSION,
@@ -91,6 +94,57 @@ def test_feasible_but_not_converged_is_distinct_from_acceptance() -> None:
     assert result["checks"]["active_constraints_feasible"] is True
     assert result["checks"]["full_surface_hard_audit_pass"] is True
     assert result["accepted"] is False
+
+
+def test_status_8_reference_recovery_is_generic_and_bound_checked() -> None:
+    context = SimpleNamespace(
+        robot_model=SimpleNamespace(
+            joint_lower=np.asarray([-1.0, -2.0]),
+            joint_upper=np.asarray([1.0, 2.0]),
+        ),
+        paper=SimpleNamespace(b=0.03, tau=0.001),
+        unpack=lambda value: (value[:3], value[3:6], value[6:8], value[8:]),
+    )
+    value = np.asarray([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.4, -0.5, 0.001])
+    allowed, trace = strict_recovery_trigger(
+        status_code=8,
+        recovery_policy="reference_batched_from_primary_result_v1",
+        value=value,
+        context=context,
+    )
+    assert allowed is True
+    assert trace["recoverable_status"] is True
+    assert trace["candidate_q_bounds_pass"] is True
+    assert trace["candidate_slack_bounds_pass"] is True
+
+    nonrecoverable, _ = strict_recovery_trigger(
+        status_code=7,
+        recovery_policy="reference_batched_from_primary_result_v1",
+        value=value,
+        context=context,
+    )
+    out_of_bounds, bounds_trace = strict_recovery_trigger(
+        status_code=8,
+        recovery_policy="reference_batched_from_primary_result_v1",
+        value=np.asarray([*value[:-1], 0.04]),
+        context=context,
+    )
+    assert nonrecoverable is False
+    assert out_of_bounds is False
+    assert bounds_trace["candidate_slack_bounds_pass"] is False
+
+
+def test_slack_feasibility_restoration_only_adjusts_representable_slack() -> None:
+    context = SimpleNamespace(
+        paper=SimpleNamespace(b=0.03, tau=0.001),
+        unpack=lambda value: (value[:3], value[3:6], value[6:7], value[7:]),
+        constraint_query=lambda *_args: SimpleNamespace(signed_distance=np.asarray([-0.001001])),
+    )
+    restored, trace = restore_slack_feasibility(context, np.zeros(8, dtype=np.float64), _query([0]))
+    assert trace["hard_feasible"] is True
+    assert trace["soft_slack_representable"] is True
+    assert trace["slack_adjusted_count"] == 1
+    assert restored[-1] > 0.0
 
 
 def test_v1_profile_is_unchanged_and_v2_has_independent_hash() -> None:

@@ -40,6 +40,13 @@ The central contracts are [HOI data](docs/HOI_DATA_INTERFACE.md),
 
 ## Current Status
 
+Stage-12 adapter qualification includes a generic strict-solver feasibility
+restoration path for recoverable SLSQP status-8/9 exits. It re-evaluates the
+unchanged active constraints and reconstructs only representable slack for the
+returned q/base state before the existing strict solve and independent audit.
+This is paper-external solver engineering, has no dataset/object conditional,
+and does not claim reproduction of the ContactPose paper contact benchmark.
+
 Stage 0–10 are complete within their documented bounded scopes. Stage 11,
 Core Contract Freeze, is complete: Canonical HOI v2, DatasetAdapter v1,
 RobotHandPlugin v1, RobotReference v2, and MetricRegistry v1 are frozen with
@@ -492,6 +499,11 @@ the mathematical contract and exact sign backend unchanged. See
 P4 adds an experimental exact compiled generalized-winding path with certified
 FD-probe reuse and strict reference fallback; it is still non-default and does
 not alter Stage-12 artifacts.  See [fast exact v4](docs/FAST_EXACT_V4_COMPILED_SIGN.md).
+
+The bounded ContactPose mug status-8 repair is documented separately in
+[the solver-feasibility note](docs/SOLVER_FEASIBILITY_RESTORATION.md).  Its
+controlled replays leave the final-job queue paused, retain rejected diagnostics,
+and do not claim ContactPose Eq. 10/Eq. 11 benchmark reproduction.
 
 ## License
 

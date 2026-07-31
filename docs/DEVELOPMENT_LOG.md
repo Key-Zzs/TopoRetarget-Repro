@@ -804,3 +804,13 @@ batches; reference generalized-winding signs and v2 fallback remain intact.
 Added the optional deterministic C++17 generalized-winding handle, a strict
 near-threshold Python fallback, and the 1-Lipschitz FD-probe reuse certificate.
 The v4 profile is non-default and uses only float64 CPU execution.
+
+## 2026-07-31 -- ContactPose mug status-8 feasibility repair
+
+Recorded a frozen rejected baseline, then reproduced the status-8 active-soft
+boundary failure under CPU float64.  The generic bounded recovery recomputes
+only the existing active-query slack at fixed base/q before a reference-Jacobian
+retry; it does not accept status 8 or relax any final gate.  Two independent
+strict mug replays and a bitwise-identical ContactPose banana shadow replay
+passed while the final queue remained paused.  ContactPose Eq. 10/Eq. 11 contact
+benchmark evaluation remains not reproduced.

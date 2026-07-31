@@ -38,6 +38,11 @@ author-exact、全数据集、实时、真实硬件控制、physics 或 RL 复�
 
 ## 当前状态
 
+Stage-12 adapter qualification 包含对可恢复 SLSQP status-8/9 的通用严格可行性恢复：在
+返回 q/base 不变的情况下重新评价原 active constraints，仅重建可表示的 slack，然后仍经过原有
+严格求解和独立审计。它是 paper-external solver engineering，不含 dataset/object 条件，也不声称
+复现 ContactPose 论文 contact benchmark。
+
 阶段 0–10 已在各自文档化的有界范围内完成。Stage 11 Core Contract Freeze 已完成：
 Canonical HOI v2、DatasetAdapter v1、RobotHandPlugin v1、RobotReference v2 和
 MetricRegistry v1 已冻结，并提供 compatibility migration 与测试。GRAB 是第一个
@@ -476,6 +481,10 @@ P4 新增实验性的精确 compiled generalized-winding 与认证式 FD probe �
 reference fallback；它仍非默认，也不改变 Stage-12 artifact。见 [fast exact v4](docs/FAST_EXACT_V4_COMPILED_SIGN.md)。
 详见 [final-job scheduler](docs/FINAL_JOB_SCHEDULER.md) 与
 [performance repair](docs/FINAL_REFINEMENT_PERFORMANCE.md)。
+
+受限 ContactPose mug status-8 修复详见
+[solver-feasibility 说明](docs/SOLVER_FEASIBILITY_RESTORATION.md)。其受控重放保持 final-job
+queue 暂停、保留 rejected diagnostic，且不声称复现 ContactPose Eq. 10/Eq. 11 benchmark。
 
 ## License
 
