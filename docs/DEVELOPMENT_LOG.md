@@ -827,3 +827,16 @@ Dynamic HO-Cap references must be regenerated from the repaired adapter
 contract, but the final-job control is paused, so protocol training/evaluation
 is input-gated. Pre-repair Stage-12 artifacts remain immutable historical
 evidence. Pen-Spin remains unavailable locally.
+
+## 2026-08-01 -- Stage 16 accepted HOCap functional protocol
+
+With explicit user authorization, two accepted post-repair HOCap Stage-12 finals
+were read from ignored local artifacts and joined with their canonical object
+poses into validated RobotReference v2 and 20 Hz Stage-16 clips. Their immutable
+object meshes were derived only into ignored local OBJ build products; no raw
+dataset or MANO asset was copied into the repository. Per-object MuJoCo scenes,
+non-learning PD scale qualification, bounded T1/T2/T3 PPO updates, checkpoint
+reloads, and all nominal/robust episodes executed. The two-clip results are
+functional evidence only: the HOCap wrist-relative frame requires explicit
+zero-gravity/no-ground engineering handling, success was 0% in the recorded
+episodes, and neither HOCap-32 nor Pen-Spin paper metrics are claimed.

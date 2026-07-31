@@ -2,7 +2,7 @@
 
 ## Stage 16 status
 
-Stage 16 Reference-Tracking PPO implementation is on the dedicated feature branch. It uses the local PDF's Appendix A.5 as the fidelity source, keeps unpublished simulator/control details explicit, and stores all generated data under ignored `.local/`. The MuJoCo correctness path and numerical PPO smoke are validated, but protocol training/evaluation is blocked until a post-source-contract dynamic HO-Cap `RobotReference` is approved; the final-job control remains paused. Create the isolated environment with `conda env create -f environment.stage16.yml` and run `conda run -n toporetarget-rl python scripts/rl/audit_stage16_environment.py`.
+Stage 16 Reference-Tracking PPO implementation is on the dedicated feature branch. It uses the local PDF's Appendix A.5 as the fidelity source, keeps unpublished simulator/control details explicit, and stores all generated data under ignored `.local/`. The user-authorized functional protocol now materializes two accepted post-repair HO-Cap trajectories, derives per-object collision meshes, runs bounded MuJoCo PPO T1–T3, and reports all nominal/robust episodes. It is not the authors' undisclosed simulator, 4096-environment scale, or HOCap-32 paper evaluation. Create the isolated environment with `conda env create -f environment.stage16.yml` and run `conda run -n toporetarget-rl python scripts/rl/audit_stage16_environment.py`.
 
 [中文 README](README.zh-CN.md)
 
@@ -59,12 +59,11 @@ exact object-local BVH, certified sign reuse, compiled deterministic generalized
 full-surface audit, and CPU float64. It is an engineering backend, not the authors' specified
 backend and not a real-time production claim.
 
-Current boundaries: full ContactPose paper benchmark is **NOT_REPRODUCED**; Stage 16 protocol
-training/evaluation is **BLOCKED_PENDING_QUALIFIED_HOCAP_REFERENCE** and Pen-Spin is
-**STAGE16_PENSPIN_DATA_UNAVAILABLE**; complete paper tables/figures/seeds and ARCTIC/OakInk2/TACO
-remain TODO; real-time retargeting and
-cross-subject/full-dataset production validation are not claimed. The final queue remains paused
-by operator control with no active workers and no new final tasks allowed.
+Current boundaries: full ContactPose paper benchmark is **NOT_REPRODUCED**; Stage 16 has a
+two-clip **FUNCTIONAL_HOCAP_COMPLETE** result, while HOCap-32 and Pen-Spin remain out of scope and
+paper tables/figures/seeds plus ARCTIC/OakInk2/TACO remain TODO. Real-time retargeting,
+cross-subject/full-dataset production validation, author-exact simulation, and paper-scale RL are
+not claimed.
 
 ## TODO and Full Roadmap
 
@@ -91,7 +90,7 @@ Detailed stage history and implementation notes are maintained in
 | 13 | Complex HOI adapters | DEFERRED | Add ARCTIC, OakInk2 and TACO; extend articulated-object, bimanual and SMPL-X hand extraction contracts. |
 | 14 | Universal robot-hand plugin validation | DEFERRED | Validate additional robot topologies and the full URDF/MJCF plugin capability matrix. |
 | 15 | Baselines and ablations | DEFERRED | Add fair OmniRetarget, Mink, DexPilot, GeoRT and relevant baseline comparisons. |
-| 16 | Reference-tracking PPO | Implementation complete; evaluation blocked | Appendix A.5 MDP/PPO, MuJoCo correctness backend, reference gates and numerical smoke pass; protocol run requires an approved dynamic HO-Cap RobotReference. |
+| 16 | Reference-tracking PPO | Functional HO-Cap protocol complete | Two accepted HO-Cap clips run through derived-object MuJoCo T1–T3 training and nominal/robust evaluation; not HOCap-32, Pen-Spin, author-exact, or paper-scale RL. |
 | 17 | Paper experiment reproduction | TODO | Reproduce paper tables, figures, seeds, ContactPose benchmark and formal reports. |
 | 18 | Performance and v1.0 release | TODO | Establish production benchmarks, packaging, CI matrices and release criteria. |
 | 19 | Non-paper extensions | TODO | Keep MANO cleanup, SPIDER integration, penetration objectives and other extensions explicitly separated. |

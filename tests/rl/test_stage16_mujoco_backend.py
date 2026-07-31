@@ -57,3 +57,22 @@ def test_mujoco_backend_compiles_resets_steps_and_builds_observation(tmp_path: P
     assert terminal in {None, TerminationType.SUCCESS_REFERENCE_COMPLETE.value}
     assert "pd" in backend.capabilities.supported_randomizations
     backend.apply_randomization(DomainRandomizationConfig(enabled=False))
+    first_state = backend.reset(reference_index=0)
+    assert np.allclose(first_state["object_pose"], clip.object_pose_base_ref[0])
+
+
+def test_mujoco_backend_references_a_per_object_mesh_without_copying(tmp_path: Path) -> None:
+    mujoco = pytest.importorskip("mujoco")
+    source = Path("third_party/robot_hands/wuji_hand2_beta1/mjcf/right.xml")
+    object_mesh = tmp_path / "object.obj"
+    object_mesh.write_text(
+        "v 0 0 0\nv 0.02 0 0\nv 0 0.02 0\nv 0 0 0.02\nf 1 3 2\nf 1 2 4\nf 1 4 3\nf 2 3 4\n",
+        encoding="utf-8",
+    )
+    scene = materialize_free_object_scene(
+        source, tmp_path / "scene", object_mesh=object_mesh, include_ground=False
+    )
+    model = mujoco.MjModel.from_xml_path(str(scene))
+    assert model.nmesh >= 1
+    assert str(object_mesh.resolve()) in scene.read_text(encoding="utf-8")
+    assert "stage16_ground" not in scene.read_text(encoding="utf-8")

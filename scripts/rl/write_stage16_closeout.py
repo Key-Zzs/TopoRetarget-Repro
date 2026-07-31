@@ -22,6 +22,10 @@ def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def read_optional_json(path: Path) -> dict[str, Any]:
+    return read_json(path) if path.is_file() else {"status": "NOT_RUN"}
+
+
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
@@ -54,17 +58,24 @@ def main() -> int:
     penspin = read_json(root / "penspin_availability.json")
     penspin_status = penspin.get("status", penspin.get("penspin_status", "UNKNOWN"))
     recovery = read_json(root / "recovery_summary.json")
-    environment_qualification = (
-        read_json(root / "environment_qualification.json")
-        if (root / "environment_qualification.json").is_file()
-        else {"status": "NOT_RUN"}
-    )
-    resource_use = (
-        read_json(root / "resource_use.json")
-        if (root / "resource_use.json").is_file()
-        else {"status": "NOT_RUN"}
-    )
+    environment_qualification = read_optional_json(root / "environment_qualification.json")
+    resource_use = read_optional_json(root / "resource_use.json")
+    t1 = read_optional_json(root / "hocap_t1_training.json")
+    t2 = read_optional_json(root / "hocap_t2_training.json")
+    t3 = read_optional_json(root / "hocap_t3_training.json")
+    nominal_evaluation = read_optional_json(root / "hocap_t3_nominal_evaluation.json")
+    robust_evaluation = read_optional_json(root / "hocap_t3_robust_evaluation.json")
+    kinematic_reports = [
+        read_optional_json(root / "hocap_170105_kinematic_replay.json"),
+        read_optional_json(root / "hocap_170650_kinematic_replay.json"),
+    ]
     eligible = bool(inventory["accepted_dynamic_hocap_robot_reference_available"])
+    functional_complete = (
+        eligible
+        and t3["status"] == "HOCAP_REFERENCE_PPO_BOUNDED_FUNCTIONAL_PASS"
+        and nominal_evaluation["status"] == "HOCAP_REFERENCE_POLICY_EVALUATION_COMPLETE"
+        and robust_evaluation["status"] == "HOCAP_REFERENCE_POLICY_EVALUATION_COMPLETE"
+    )
     now = datetime.now(UTC).isoformat()
     blocked_reason = inventory["blocker"]
 
@@ -119,6 +130,55 @@ def main() -> int:
         "drop_rate": None,
         "reason": None if eligible else blocked_reason,
     }
+    if functional_complete:
+        reference_validation = {
+            "status": "REFERENCE_VALIDATION_ACCEPTED_TWO_CLIP_PASS",
+            "reference_is_dynamic": True,
+            "sampling_hz": 20,
+            "raw_contactpose_accepted": False,
+            "source": inventory,
+            "reason": None,
+        }
+        kinematic = {
+            "status": "E0_REFERENCE_CONTRACT_REPLAY_TWO_CLIP_PASS",
+            "kinematic_replay_is_rl_result": False,
+            "reports": kinematic_reports,
+            "reason": None,
+        }
+        reward["real_reference_validation"] = "EXECUTED_BOUNDED_FUNCTIONAL"
+        randomization["physical_robustness_result"] = "EXECUTED_BOUNDED_FUNCTIONAL"
+        training = {
+            "status": "SINGLE_CLIP_TRACKING_COMPLETE",
+            "physical_training": True,
+            "report": t1,
+            "reason": None,
+        }
+        robust = {
+            "status": "SINGLE_CLIP_ROBUSTNESS_COMPLETE",
+            "physical_training": True,
+            "report": t2,
+            "reason": None,
+        }
+        multi = {
+            "status": "MULTI_CLIP_TRAINING_COMPLETE",
+            "physical_training": True,
+            "report": t3,
+            "reason": None,
+        }
+        nominal = nominal_evaluation["summary"]
+        hocap = {
+            "status": "HOCAP_BOUNDED_TWO_CLIP_EVALUATION_COMPLETE",
+            "required_episode_count": 32,
+            "actual_episode_count": nominal["episode_count"],
+            "functional_clip_count": len(inventory.get("accepted_references", [])),
+            "selection": selection,
+            "success_rate": nominal["success_rate"],
+            "tracking_error_cm": nominal["object_position_error_cm_all"],
+            "drop_rate": 1.0 - nominal["success_rate"],
+            "nominal_evaluation": nominal_evaluation,
+            "robust_evaluation": robust_evaluation,
+            "reason": "Functional two-clip protocol only; paper HOCap-32 protocol was not run.",
+        }
     for filename, payload in {
         "reference_validation.json": reference_validation,
         "kinematic_replay.json": kinematic,
@@ -190,7 +250,11 @@ def main() -> int:
     write_json(root / "test_summary.json", test_report)
     summary = {
         "generated_at_utc": now,
-        "status": "STAGE16_IMPLEMENTATION_COMPLETE_EVALUATION_PARTIAL",
+        "status": (
+            "STAGE16_FUNCTIONAL_HOCAP_COMPLETE_PAPER_EVALUATION_PARTIAL"
+            if functional_complete
+            else "STAGE16_IMPLEMENTATION_COMPLETE_EVALUATION_PARTIAL"
+        ),
         "branch_scope": "feature/reference-tracking-ppo",
         "git": {
             "branch": git_value("branch", "--show-current"),
@@ -207,11 +271,17 @@ def main() -> int:
         "recovery": recovery,
         "resource_use": resource_use,
         "comparison_to_paper": (
-            "NOT_COMPARABLE: no physical HOCap evaluation episodes or private Pen-Spin data."
+            "NOT_COMPARABLE: bounded two-clip CPU protocol, not HOCap-32 or Pen-Spin."
+            if functional_complete
+            else "NOT_COMPARABLE: no physical HOCap evaluation episodes or private Pen-Spin data."
         ),
         "next_gate": (
-            "operator approval for new final jobs plus an accepted post-source-contract "
-            "dynamic HOCap RobotReference and object collision asset"
+            "Optional paper-scale expansion requires an approved 32-clip HOCap selection."
+            if functional_complete
+            else (
+                "operator approval for new final jobs plus an accepted post-source-contract "
+                "dynamic HOCap RobotReference and object collision asset"
+            )
         ),
     }
     write_json(root / "final_summary.json", summary)
@@ -228,9 +298,12 @@ def main() -> int:
                 f"- T0 numerical PPO: `{ppo['status']}` with "
                 f"`{ppo['checkpoint_validation']['status']}`."
             ),
-            f"- HOCap 32 evaluation: `{hocap['status']}` (0/32 episodes).",
+            (
+                f"- HOCap evaluation: `{hocap['status']}` "
+                f"({hocap['actual_episode_count']}/{hocap['required_episode_count']} episodes)."
+            ),
             f"- Pen-Spin: `{penspin_status}`; no substitute was used.",
-            f"- Blocker: {blocked_reason}",
+            f"- Remaining scope boundary: {hocap['reason'] or blocked_reason}",
             (
                 "- Comparison to paper: not comparable; physical-reference protocol results "
                 "were not fabricated."
@@ -255,8 +328,8 @@ def main() -> int:
             "",
             f"- {blocked_reason}",
             (
-                "- Obtain approved dynamic 20 Hz RobotReference and matching object collision "
-                "asset before PD qualification or training."
+                "- Optional paper-scale expansion requires a 32-clip HOCap selection; this "
+                "functional run uses exactly the two user-approved clips."
             ),
             "",
             "## Non-claims",

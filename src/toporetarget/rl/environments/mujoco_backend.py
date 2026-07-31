@@ -24,7 +24,12 @@ from ..randomization import (
     sample_randomization,
 )
 from ..rewards import paper_literal_reward
-from ..termination import TerminationInput, classify_termination
+from ..termination import (
+    PAPER_TERMINATION,
+    TerminationInput,
+    TerminationProfile,
+    classify_termination,
+)
 from .base import (
     BackendCapabilities,
     PhysicsRandomizationBackend,
@@ -68,12 +73,20 @@ def _rotation_from_axis_angle(axis: np.ndarray, angle: float) -> np.ndarray:
 
 
 def materialize_free_object_scene(
-    hand_mjcf: str | Path, output_directory: str | Path, *, object_half_extent_m: float = 0.025
+    hand_mjcf: str | Path,
+    output_directory: str | Path,
+    *,
+    object_half_extent_m: float = 0.025,
+    object_mesh: str | Path | None = None,
+    object_mass_kg: float = 0.05,
+    include_ground: bool = True,
+    gravity_mps2: tuple[float, float, float] | None = None,
 ) -> Path:
-    """Copy no assets: add a generic free box only to an ignored generated scene.
+    """Create an ignored free-object scene without copying source assets.
 
-    It is valid for integration qualification only.  Main HOCap protocol runs
-    require a provenance-complete per-object collision mesh and inertia.
+    With ``object_mesh=None`` this is the synthetic-box qualification scene.
+    A supplied mesh is referenced by absolute path and is used unchanged for a
+    HOCap clip; physical mass/friction remain documented engineering choices.
     """
 
     source = Path(hand_mjcf).resolve()
@@ -84,6 +97,8 @@ def materialize_free_object_scene(
     if option is None:
         option = ET.SubElement(root, "option")
     option.set("timestep", "0.01")
+    if gravity_mps2 is not None:
+        option.set("gravity", " ".join(f"{value:.17g}" for value in gravity_mps2))
     compiler = root.find("compiler")
     if compiler is not None and compiler.get("meshdir"):
         # The tracked MJCF uses a path relative to its original directory.
@@ -93,22 +108,36 @@ def materialize_free_object_scene(
     worldbody = root.find("worldbody")
     if worldbody is None:
         worldbody = ET.SubElement(root, "worldbody")
-    ET.SubElement(
-        worldbody, "geom", name="stage16_ground", type="plane", size="2 2 0.1", rgba="0.2 0.2 0.2 1"
-    )
+    if include_ground:
+        ET.SubElement(
+            worldbody,
+            "geom",
+            name="stage16_ground",
+            type="plane",
+            size="2 2 0.1",
+            rgba="0.2 0.2 0.2 1",
+        )
     object_body = ET.SubElement(worldbody, "body", name="stage16_object", pos="0 0 0.15")
     ET.SubElement(object_body, "freejoint", name="stage16_object_free")
-    extent = f"{object_half_extent_m} {object_half_extent_m} {object_half_extent_m}"
-    ET.SubElement(
-        object_body,
-        "geom",
-        name="stage16_object_geom",
-        type="box",
-        size=extent,
-        mass="0.05",
-        friction="1 0.005 0.0001",
-        rgba="0.8 0.3 0.2 1",
-    )
+    geom_attributes = {
+        "name": "stage16_object_geom",
+        "mass": str(object_mass_kg),
+        "friction": "1 0.005 0.0001",
+        "rgba": "0.8 0.3 0.2 1",
+    }
+    if object_mesh is None:
+        extent = f"{object_half_extent_m} {object_half_extent_m} {object_half_extent_m}"
+        geom_attributes |= {"type": "box", "size": extent}
+    else:
+        mesh_path = Path(object_mesh).resolve()
+        if not mesh_path.is_file():
+            raise FileNotFoundError(f"Stage-16 object mesh is unavailable: {mesh_path}")
+        asset = root.find("asset")
+        if asset is None:
+            asset = ET.SubElement(root, "asset")
+        ET.SubElement(asset, "mesh", name="stage16_object_mesh", file=str(mesh_path))
+        geom_attributes |= {"type": "mesh", "mesh": "stage16_object_mesh"}
+    ET.SubElement(object_body, "geom", attrib=geom_attributes)
     destination = destination_root / "wuji_hand2_stage16_free_object.xml"
     ET.ElementTree(root).write(destination, encoding="utf-8", xml_declaration=True)
     return destination
@@ -121,6 +150,7 @@ class MujocoBackendConfig:
     action_scale_fraction: float = 0.10
     nominal_pd_kp: float = 3.0
     nominal_pd_kd: float = 0.05
+    termination_profile: TerminationProfile = PAPER_TERMINATION
 
 
 class MujocoReferenceTrackingBackend(
@@ -307,8 +337,15 @@ class MujocoReferenceTrackingBackend(
         }
 
     def reset(self, **kwargs: Any) -> dict[str, np.ndarray]:
-        del kwargs
-        self.reference_index = int(self.rng.integers(0, self.reference.frame_count))
+        requested_reference_index = kwargs.pop("reference_index", None)
+        if kwargs:
+            raise TypeError(f"unsupported reset keyword arguments: {sorted(kwargs)}")
+        if requested_reference_index is None:
+            self.reference_index = int(self.rng.integers(0, self.reference.frame_count))
+        else:
+            self.reference_index = int(requested_reference_index)
+            if not 0 <= self.reference_index < self.reference.frame_count:
+                raise ValueError("reference_index is outside the reference clip")
         self.step_index = 0
         self.previous_action.fill(0.0)
         self.second_previous_action.fill(0.0)
@@ -444,7 +481,8 @@ class MujocoReferenceTrackingBackend(
                         )
                     )
                 ),
-            )
+            ),
+            profile=self.config.termination_profile,
         )
         return state, reward, None if termination is None else termination.value
 

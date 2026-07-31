@@ -33,6 +33,7 @@ class TerminationProfile:
 
 
 PAPER_TERMINATION = TerminationProfile()
+BASE_RELATIVE_HOCAP_TERMINATION = TerminationProfile(object_height_min_m=-float("inf"))
 
 
 @dataclass(frozen=True)
@@ -88,6 +89,7 @@ def classify_termination(
 
 
 __all__ = [
+    "BASE_RELATIVE_HOCAP_TERMINATION",
     "PAPER_TERMINATION",
     "TerminationInput",
     "TerminationProfile",

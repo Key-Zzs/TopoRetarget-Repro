@@ -2,7 +2,7 @@
 
 ## Stage 16 状态
 
-Stage 16 Reference-Tracking PPO 位于独立 feature 分支。实现以本地论文 Appendix A.5 为唯一 fidelity 来源，未公开的模拟器与控制细节均显式记录，所有生成数据只写入被忽略的 `.local/`。MuJoCo correctness 链路与 PPO 数值 smoke 已验证，但协议训练/评测仍等待经过 source-contract 修复后的动态 HO-Cap `RobotReference` 获准，final-job control 继续暂停。环境命令：`conda env create -f environment.stage16.yml`，审计命令：`conda run -n toporetarget-rl python scripts/rl/audit_stage16_environment.py`。
+Stage 16 Reference-Tracking PPO 位于独立 feature 分支。实现以本地论文 Appendix A.5 为唯一 fidelity 来源，未公开的模拟器与控制细节均显式记录，所有生成数据只写入被忽略的 `.local/`。经用户授权的功能协议现已将两条修复后验收的 HO-Cap 轨迹物化为 reference、生成逐物体 collision mesh，并执行有界 MuJoCo PPO T1–T3 及全部名义/随机化 episode 报告；它不等同于作者未公开的模拟器、4096 环境规模或 HOCap-32 论文评测。环境命令：`conda env create -f environment.stage16.yml`，审计命令：`conda run -n toporetarget-rl python scripts/rl/audit_stage16_environment.py`。
 
 [English README](README.md)
 
@@ -55,11 +55,10 @@ manifest。当前推荐的离线 reference 后端是
 exact object-local BVH、认证式 sign reuse、compiled deterministic generalized winding、strict
 full-surface audit 与 CPU float64。它是工程后端，不声称是作者指定的后端，也不代表实时生产能力。
 
-当前边界：完整 ContactPose 论文 benchmark 为 **NOT_REPRODUCED**；Stage 16 协议训练/评测为
-**BLOCKED_PENDING_QUALIFIED_HOCAP_REFERENCE**，Pen-Spin 为
-**STAGE16_PENSPIN_DATA_UNAVAILABLE**；完整论文 tables/figures/seeds 以及 ARCTIC/OakInk2/TACO
-仍为 TODO；不声称实时重定向或跨 subject/全
-数据集生产验证。final queue 仍为 operator control 暂停状态，无 active worker，也不允许新 final task。
+当前边界：完整 ContactPose 论文 benchmark 为 **NOT_REPRODUCED**；Stage 16 已得到两条轨迹的
+**FUNCTIONAL_HOCAP_COMPLETE** 结果，但 HOCap-32 与 Pen-Spin 均不在本次范围内，完整论文
+tables/figures/seeds 以及 ARCTIC/OakInk2/TACO 仍为 TODO；不声称实时重定向、跨 subject/全数据集
+生产验证、作者精确模拟器或论文规模 RL。
 
 ## TODO 与完整路线图
 
@@ -85,7 +84,7 @@ full-surface audit 与 CPU float64。它是工程后端，不声称是作者指�
 | 13 | 复杂 HOI adapter | DEFERRED | 加入 ARCTIC、OakInk2、TACO；扩展 articulated-object、bimanual 与 SMPL-X hand extraction contract。 |
 | 14 | 通用机器人手 plugin 验证 | DEFERRED | 验证更多机器人拓扑与完整 URDF/MJCF plugin 能力矩阵。 |
 | 15 | baseline 与消融 | DEFERRED | 加入公平的 OmniRetarget、Mink、DexPilot、GeoRT 及相关 baseline 对比。 |
-| 16 | reference-tracking PPO | 实现完成；评测受阻 | Appendix A.5 MDP/PPO、MuJoCo correctness backend、reference gate 与数值 smoke 已通过；协议运行仍需获准的动态 HO-Cap RobotReference。 |
+| 16 | reference-tracking PPO | HOCap 功能协议完成 | 两条已验收 HO-Cap clip 已完成逐物体 MuJoCo T1–T3 训练及名义/随机化评测；不声称 HOCap-32、Pen-Spin、作者精确或论文规模 RL。 |
 | 17 | 论文实验复现 | TODO | 复现论文 tables、figures、seeds、ContactPose benchmark 与正式报告。 |
 | 18 | 性能与 v1.0 发布 | TODO | 建立 production benchmark、打包、CI 矩阵与发布标准。 |
 | 19 | 非论文扩展 | TODO | 将 MANO cleanup、SPIDER integration、penetration objective 等扩展明确隔离。 |

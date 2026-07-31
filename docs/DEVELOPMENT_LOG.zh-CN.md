@@ -695,3 +695,13 @@ observation、reward、Table-5 sampling 与有界 PPO 数值 smoke 均通过；�
 模拟器或物理训练结果。动态 HO-Cap reference 必须基于修复后的 adapter contract 重新生成，
 但 final-job control 仍暂停，协议训练/评测因此受输入 gate 阻断。修复前的 Stage-12 artifact
 继续仅作为不可变历史证据。Pen-Spin 在本机仍不可用。
+
+## 2026-08-01 -- Stage 16 已验收 HOCap 功能协议
+
+在用户明确授权后，读取两条已验收、修复后的 HOCap Stage-12 final，并与其 canonical object
+pose 合并为已验证的 RobotReference v2 和 20 Hz Stage-16 clip。不可变 object mesh 只导出到被
+忽略的本地 OBJ 构建产物；没有将 raw dataset 或 MANO asset 复制进仓库。逐物体 MuJoCo 场景、
+非学习 PD scale 资格验证、有界 T1/T2/T3 PPO 更新、checkpoint reload 以及全部名义/随机化
+episode 均已执行。两条轨迹结果仅作为功能证据：HOCap wrist-relative frame 需要显式的
+zero-gravity/no-ground 工程处理，记录的 episode 成功率为 0%，不声称 HOCap-32 或 Pen-Spin
+论文指标。
