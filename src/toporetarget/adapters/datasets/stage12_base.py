@@ -21,7 +21,12 @@ import numpy as np
 from toporetarget.contracts.canonical import CanonicalHOIv2
 from toporetarget.contracts.dataset import DatasetAdapter
 from toporetarget.data.adapters.base import FrameRange, HOIDatasetAdapter
-from toporetarget.data.mano_backends.base import ManoRenderResult
+from toporetarget.data.mano_backends.contracts import (
+    ManoJointSource,
+    ManoPoseRepresentation,
+    ManoReconstructionRequest,
+    ManoReconstructionResult,
+)
 from toporetarget.data.mano_backends.smplx_backend import SmplxManoBackend
 from toporetarget.data.schema import (
     HandTrack,
@@ -36,7 +41,6 @@ from toporetarget.data.schema import (
 )
 from toporetarget.keypoints.mano_to_mediapipe import (
     ManoToMediaPipe21Converter,
-    load_mano_model_geometry,
 )
 from toporetarget.keypoints.registry import get_layout
 
@@ -138,29 +142,47 @@ def transform_points(poses: np.ndarray, points: np.ndarray) -> np.ndarray:
     return np.einsum("tij,tvj->tvi", matrix[:, :3, :3], value) + matrix[:, None, :3, 3]
 
 
-def render_mano_fullpose(
+def render_mano_pca45(
     pose_51: np.ndarray,
     *,
     side: str,
     mano_model_root: Path,
-    v_template: np.ndarray | None = None,
-) -> ManoRenderResult:
-    """Render the native 51-vector convention used by DexYCB and HOCap."""
+    betas: np.ndarray,
+    dataset_name: str,
+    source_annotation_path: Path,
+    source_annotation_hash: str,
+) -> ManoReconstructionResult:
+    """Render the explicit AA3 + PCA45 + translation3 dataset convention."""
 
     pose = np.asarray(pose_51, dtype=np.float64)
     if pose.ndim != 2 or pose.shape[1:] != (51,):
         raise Stage12AdapterError(f"MANO pose must have shape [T,51], got {pose.shape}")
-    geometry = load_mano_model_geometry(mano_model_root, side=side, expected_vertex_count=778)
     backend = SmplxManoBackend(mano_model_root)
-    return backend.render(
-        params={
-            "global_orient": pose[:, :3],
-            "fullpose": pose[:, 3:48],
-            "transl": pose[:, 48:51],
-        },
-        v_template=geometry.v_template if v_template is None else v_template,
+    provenance = backend.model_provenance(
         side=side,
-        frame_count=pose.shape[0],
+        dataset_name=dataset_name,
+        source_annotation_path=source_annotation_path,
+        source_annotation_hash=source_annotation_hash,
+    )
+    return backend.reconstruct(
+        ManoReconstructionRequest(
+            side=side,
+            pose_representation=ManoPoseRepresentation.PCA,
+            global_orient=pose[:, :3],
+            hand_pose=pose[:, 3:48],
+            num_pca_components=45,
+            translation=pose[:, 48:51],
+            betas=np.asarray(betas, dtype=np.float64),
+            flat_hand_mean=False,
+            units="metre",
+            dtype=np.float64,
+            model_path=provenance.model_path,
+            model_hash=provenance.model_hash,
+            model_version=provenance.model_version,
+            dataset_name=provenance.dataset_name,
+            source_annotation_path=provenance.source_annotation_path,
+            source_annotation_hash=provenance.source_annotation_hash,
+        )
     )
 
 
@@ -169,8 +191,11 @@ def render_mano_pca(
     *,
     side: str,
     mano_model_root: Path,
-    v_template: np.ndarray | None = None,
-) -> ManoRenderResult:
+    betas: np.ndarray,
+    dataset_name: str,
+    source_annotation_path: Path,
+    source_annotation_hash: str,
+) -> ManoReconstructionResult:
     """Render ContactPose's [global axis-angle, PCA-15] MANO fit."""
 
     pose = np.asarray(pose_18, dtype=np.float64).reshape(1, -1)
@@ -178,29 +203,45 @@ def render_mano_pca(
         raise Stage12AdapterError(
             f"ContactPose MANO fit pose must have 18 values, got {pose.shape}"
         )
-    geometry = load_mano_model_geometry(mano_model_root, side=side, expected_vertex_count=778)
     backend = SmplxManoBackend(mano_model_root)
-    return backend.render(
-        params={
-            "global_orient": np.repeat(pose[:, :3], 1, axis=0),
-            "hand_pose": pose[:, 3:18],
-            "transl": np.zeros((1, 3), dtype=np.float64),
-        },
-        v_template=geometry.v_template if v_template is None else v_template,
+    provenance = backend.model_provenance(
         side=side,
-        frame_count=1,
+        dataset_name=dataset_name,
+        source_annotation_path=source_annotation_path,
+        source_annotation_hash=source_annotation_hash,
+    )
+    return backend.reconstruct(
+        ManoReconstructionRequest(
+            side=side,
+            pose_representation=ManoPoseRepresentation.PCA,
+            global_orient=pose[:, :3],
+            hand_pose=pose[:, 3:18],
+            num_pca_components=15,
+            translation=np.zeros((1, 3), dtype=np.float64),
+            betas=np.asarray(betas, dtype=np.float64),
+            flat_hand_mean=False,
+            units="metre",
+            dtype=np.float64,
+            model_path=provenance.model_path,
+            model_hash=provenance.model_hash,
+            model_version=provenance.model_version,
+            dataset_name=provenance.dataset_name,
+            source_annotation_path=provenance.source_annotation_path,
+            source_annotation_hash=provenance.source_annotation_hash,
+        )
     )
 
 
-def _mano_native_track(
-    vertices: np.ndarray, *, side: str, mano_model_root: Path, valid: np.ndarray
+def backend_posed_joint_track(
+    result: ManoReconstructionResult, *, valid: np.ndarray
 ) -> KeypointTrack:
-    geometry = load_mano_model_geometry(mano_model_root, side=side, expected_vertex_count=778)
-    positions = np.einsum("jv,tvc->tjc", geometry.joint_regressor, np.asarray(vertices))
-    if positions.shape[1] != 16:
+    """Preserve actual backend posed joints; never rest-regress posed vertices."""
+
+    positions = np.asarray(result.posed_joints_native, dtype=np.float64)
+    if result.posed_joint_layout != "mano16_smplx" or positions.shape[1] != 16:
         raise Stage12AdapterError(
-            f"MANO regressor for {side} has {positions.shape[1]} joints; "
-            "expected the audited 16-joint layout"
+            "Stage12 backend joint mapping requires explicit mano16_smplx posed joints, got "
+            f"{result.posed_joint_layout!r} with shape {positions.shape}"
         )
     names = list(get_layout("mano16_smplx").semantic_names)
     point_valid = np.broadcast_to(valid[:, None], positions.shape[:2]).copy()
@@ -213,24 +254,160 @@ def _mano_native_track(
         frame_name="S",
         units="m",
         provenance={
-            "source": "MANO J_regressor applied to source MANO vertices",
-            "mapping_mode": "explicit_joint_regression",
-            "mano_model_hash": geometry.model_hash,
+            "source": ManoJointSource.BACKEND_POSED.value,
+            "mapping_mode": "backend_forward_posed_joints",
+            "mano_model_hash": result.model_provenance.model_hash,
+            "mano_reconstruction_manifest": result.reconstruction_manifest,
+        },
+    )
+
+
+def native_mano21_track(
+    positions: np.ndarray,
+    *,
+    valid: np.ndarray,
+    source_name: str,
+    source_path: str | None = None,
+) -> KeypointTrack:
+    """Keep an audited dataset-native 21-joint array with semantic labels."""
+
+    value = np.asarray(positions, dtype=np.float64)
+    if value.ndim != 3 or value.shape[1:] != (21, 3):
+        raise Stage12AdapterError(
+            f"{source_name} native joints must have shape [T,21,3], got {value.shape}"
+        )
+    names = list(get_layout("mano21_named").semantic_names)
+    point_valid = np.broadcast_to(np.asarray(valid, dtype=bool)[:, None], value.shape[:2]).copy()
+    point_valid &= np.isfinite(value).all(axis=-1)
+    if not point_valid.all():
+        raise Stage12AdapterError(f"{source_name} native joints contain invalid values")
+    return KeypointTrack(
+        value,
+        layout_name="mano21_named",
+        valid=point_valid,
+        semantic_names=names,
+        frame_name="S",
+        units="m",
+        provenance={
+            "source": ManoJointSource.DATASET_NATIVE.value,
+            "source_name": source_name,
+            "source_path": source_path,
+            "layout_contract": "wrist, thumb, index, middle, ring, pinky",
+        },
+    )
+
+
+def contactpose_official_mano21_track(
+    posed_joints: np.ndarray,
+    vertices: np.ndarray,
+    *,
+    valid: np.ndarray,
+) -> KeypointTrack:
+    """Build ContactPose's documented MANO-21 convention from posed data.
+
+    ContactPose uses MANO's 16 posed joints plus its own fingertip vertices:
+    index/middle/pinky/ring/thumb = 333/444/672/555/745.  They are not the
+    repository-wide SMPL-X anchors, so this path deliberately does not reuse
+    the generic MANO-to-MediaPipe profile.
+    """
+
+    joints = np.asarray(posed_joints, dtype=np.float64)
+    mesh = np.asarray(vertices, dtype=np.float64)
+    if joints.ndim != 3 or joints.shape[1:] != (16, 3):
+        raise Stage12AdapterError(
+            f"ContactPose posed joints must have shape [T,16,3], got {joints.shape}"
+        )
+    if mesh.shape != (joints.shape[0], 778, 3):
+        raise Stage12AdapterError(
+            f"ContactPose vertices must have shape [{joints.shape[0]},778,3], got {mesh.shape}"
+        )
+    mano_names = list(get_layout("mano16_smplx").semantic_names)
+    target_names = list(get_layout("mediapipe21").semantic_names)
+    mano_index = {name: index for index, name in enumerate(mano_names)}
+    output = np.empty((joints.shape[0], 21, 3), dtype=np.float64)
+    tip_vertices = {
+        "index_tip": 333,
+        "middle_tip": 444,
+        "pinky_tip": 672,
+        "ring_tip": 555,
+        "thumb_tip": 745,
+    }
+    for target_index, semantic_name in enumerate(target_names):
+        if semantic_name in tip_vertices:
+            output[:, target_index] = mesh[:, tip_vertices[semantic_name]]
+        else:
+            output[:, target_index] = joints[:, mano_index[semantic_name]]
+    point_valid = np.broadcast_to(np.asarray(valid, dtype=bool)[:, None], output.shape[:2]).copy()
+    point_valid &= np.isfinite(output).all(axis=-1)
+    if not point_valid.all():
+        raise Stage12AdapterError("ContactPose official MANO21 joints contain invalid values")
+    return KeypointTrack(
+        output,
+        layout_name="mano21_named",
+        valid=point_valid,
+        semantic_names=target_names,
+        frame_name="S",
+        units="m",
+        provenance={
+            "source": ManoJointSource.CONTACTPOSE_OFFICIAL.value,
+            "mapping_mode": "contactpose_official_mano16_plus_tip_vertices",
+            "mano_internal_layout": "mano16_smplx",
+            "target_layout": "mediapipe21",
+            "fingertip_vertex_ids": tip_vertices,
+            "no_generic_smplx_tip_anchor": True,
+        },
+    )
+
+
+def _native_mano21_to_mediapipe21(track: KeypointTrack) -> KeypointTrack:
+    """Semantically reorder a named native 21-joint track, never shape-cast it."""
+
+    source_names = list(track.semantic_names or [])
+    target_names = list(get_layout("mediapipe21").semantic_names)
+    if len(source_names) != 21 or len(set(source_names)) != 21:
+        raise Stage12AdapterError("native MANO21 source has no complete unique semantic layout")
+    source_index = {name: index for index, name in enumerate(source_names)}
+    if set(source_index) != set(target_names):
+        raise Stage12AdapterError("native MANO21 semantic names do not exactly cover MediaPipe21")
+    indices = [source_index[name] for name in target_names]
+    return KeypointTrack(
+        track.positions_scene[:, indices],
+        layout_name="mediapipe21",
+        valid=None if track.valid is None else track.valid[:, indices],
+        semantic_names=target_names,
+        frame_name="S",
+        units="m",
+        provenance={
+            "source": track.provenance.get("source", ManoJointSource.DATASET_NATIVE.value),
+            "mapping_mode": "explicit_semantic_named_reorder",
+            "source_layout": track.layout_name,
+            "target_layout": "mediapipe21",
+            "no_vertex_regression": True,
         },
     )
 
 
 def attach_mediapipe21(
-    hand: HandTrack, *, frame_count: int, mano_model_root: Path, valid: np.ndarray
+    hand: HandTrack,
+    *,
+    frame_count: int,
+    mano_model_root: Path,
+    valid: np.ndarray,
+    native_joint_track: KeypointTrack,
 ) -> None:
-    """Attach the existing audited semantic converter; no shape-only reorder."""
+    """Attach canonical joints from an explicit native source only."""
 
     if hand.vertices_scene is None:
         raise Stage12AdapterError(f"hand {hand.hand_id} has no scene vertices")
-    native = _mano_native_track(
-        hand.vertices_scene, side=hand.side, mano_model_root=mano_model_root, valid=valid
-    )
+    native = native_joint_track
     hand.keypoint_tracks[native.layout_name] = native
+    if native.layout_name == "mano21_named":
+        hand.keypoint_tracks["mediapipe21"] = _native_mano21_to_mediapipe21(native)
+        return
+    if native.layout_name != "mano16_smplx":
+        raise Stage12AdapterError(
+            f"unsupported explicit native joint layout {native.layout_name!r}; refusing fallback"
+        )
     converter = ManoToMediaPipe21Converter("mano_v1_2_smplx_to_mediapipe21")
     hand.keypoint_tracks["mediapipe21"] = converter.convert_hand_track(
         hand, frame_count=frame_count, mano_model_root=mano_model_root
@@ -248,6 +425,8 @@ def make_hand(
     mano_parameters: ManoParameterTrack | None,
     mano_model_root: Path,
     metadata: dict[str, Any],
+    native_joint_track: KeypointTrack,
+    wrist_orientation_available: bool = True,
 ) -> HandTrack:
     vertices = np.asarray(vertices_scene, dtype=np.float64)
     valid_mask = np.asarray(valid, dtype=bool).reshape(-1)
@@ -260,6 +439,7 @@ def make_hand(
             valid=valid_mask,
             frame_name="S",
             child_frame_name=f"W_{side}",
+            orientation_available=wrist_orientation_available,
         ),
         valid=valid_mask,
         mesh=MeshDefinition(
@@ -274,7 +454,11 @@ def make_hand(
         metadata=metadata,
     )
     attach_mediapipe21(
-        hand, frame_count=len(valid_mask), mano_model_root=mano_model_root, valid=valid_mask
+        hand,
+        frame_count=len(valid_mask),
+        mano_model_root=mano_model_root,
+        valid=valid_mask,
+        native_joint_track=native_joint_track,
     )
     return hand
 
@@ -472,7 +656,10 @@ __all__ = [
     "make_object",
     "pose_hocap_qxyzw",
     "pose_json_wxyz",
-    "render_mano_fullpose",
+    "backend_posed_joint_track",
+    "contactpose_official_mano21_track",
+    "native_mano21_track",
+    "render_mano_pca45",
     "render_mano_pca",
     "sequence_metadata",
     "sha256_file",

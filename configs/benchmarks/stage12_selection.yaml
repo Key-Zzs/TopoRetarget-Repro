@@ -48,12 +48,20 @@ selections:
   - dataset: contactpose
     sequence: contactpose:full1_use/mug
     hand: right
-    frame_range: [0, 60]
+    frame_range: [0, 1]
     object: mug
-    reason: complete contiguous right-hand ContactPose mug clip; contact benchmark remains NOT_AVAILABLE without verified hand-bone attribution
+    sample_type: static_contact_evaluation_only
+    articulated_frame_count: 1
+    temporal_metrics_applicable: false
+    rigid_observation_sequence_available: false
+    reason: one static right-hand ContactPose mug articulation; RGB-D observations do not create a temporal MANO trajectory
   - dataset: contactpose
     sequence: contactpose:full31_use/banana
     hand: right
-    frame_range: [0, 60]
+    frame_range: [0, 1]
     object: banana
-    reason: complete contiguous right-hand moving-hand ContactPose clip; preserves hTo composition while contact benchmark remains NOT_AVAILABLE
+    sample_type: static_contact_evaluation_only
+    articulated_frame_count: 1
+    temporal_metrics_applicable: false
+    rigid_observation_sequence_available: true
+    reason: one static right-hand ContactPose banana articulation; hTo supplies only optional rigid-observation evidence

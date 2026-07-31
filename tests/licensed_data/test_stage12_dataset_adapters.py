@@ -42,11 +42,32 @@ def test_stage12_adapter_loads_canonical_provenance_and_viewer_handle(
     )
     canonical = adapter.convert_to_canonical(source)
     assert canonical.metadata.schema_version == "toporetarget.hoi.v2"
-    assert canonical.hands[0].keypoint_tracks["mediapipe21"].positions_scene.shape == (3, 21, 3)
+    expected_frames = 1 if dataset == "contactpose" else min(3, frame_stop - frame_start)
+    assert canonical.hands[0].keypoint_tracks["mediapipe21"].positions_scene.shape == (
+        expected_frames,
+        21,
+        3,
+    )
     assert canonical.metadata.provenance.source_sequence
     assert canonical.metadata.provenance.source_hash
     assert adapter.validate(canonical)["status"] == "ok"
     assert adapter.visualize(canonical)["status"] == "ready"
+    hand = canonical.hands[0]
+    if dataset == "dexycb":
+        assert hand.keypoint_tracks["mano21_named"].provenance["source"] == "dataset_native"
+        assert hand.metadata["mano_representation"] == "pca"
+        assert hand.metadata["num_pca_components"] == 45
+    elif dataset == "hocap":
+        assert hand.keypoint_tracks["mano16_smplx"].provenance["source"] == "backend_posed"
+        assert hand.metadata["mano_representation"] == "pca"
+        assert hand.metadata["num_pca_components"] == 45
+    elif dataset == "contactpose":
+        assert canonical.num_frames == 1
+        assert canonical.metadata.metadata["temporal_metrics"] == "NOT_APPLICABLE"
+        assert hand.keypoint_tracks["mano21_named"].provenance["source"] == "contactpose_official"
+    elif dataset == "oakink":
+        assert hand.keypoint_tracks["mano21_named"].provenance["source"] == "dataset_native"
+        assert hand.wrist_pose_scene.orientation_available is False
 
 
 def test_stage12_registry_has_four_new_adapters() -> None:
@@ -64,4 +85,12 @@ def test_stage12_freezes_two_right_hand_trajectories_per_dataset() -> None:
         "contactpose": 2,
     }
     assert all(row["hand"] == "right" for row in selections)
-    assert all(int(row["frame_range"][1]) - int(row["frame_range"][0]) == 60 for row in selections)
+    for row in selections:
+        frame_count = int(row["frame_range"][1]) - int(row["frame_range"][0])
+        if row["dataset"] == "contactpose":
+            assert frame_count == 1
+            assert row["sample_type"] == "static_contact_evaluation_only"
+            assert row["articulated_frame_count"] == 1
+            assert row["temporal_metrics_applicable"] is False
+        else:
+            assert frame_count == 60

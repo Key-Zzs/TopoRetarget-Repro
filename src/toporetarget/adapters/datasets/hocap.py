@@ -15,11 +15,12 @@ from toporetarget.data.schema import HOISequence, ManoParameterTrack
 from .stage12_base import (
     Stage12AdapterBase,
     Stage12AdapterError,
+    backend_posed_joint_track,
     load_mesh,
     make_hand,
     make_object,
     pose_hocap_qxyzw,
-    render_mano_fullpose,
+    render_mano_pca45,
     sequence_metadata,
     sha256_paths,
 )
@@ -108,6 +109,29 @@ class HOCapAdapterV1(Stage12AdapterBase):
             )
         return result
 
+    def _subject_betas(
+        self, *, meta: dict[str, Any], sequence_dir: Path
+    ) -> tuple[np.ndarray, Path]:
+        """Load required subject calibration rather than silently using zero betas."""
+
+        subject = str(meta.get("subject_id") or sequence_dir.parent.name)
+        if subject != sequence_dir.parent.name:
+            raise Stage12AdapterError(
+                "HOCAP_REQUIRED_MANO_BETAS_MISSING: sequence subject and metadata disagree"
+            )
+        path = self.dataset_dir / "data" / "calibration" / "mano" / f"{subject}.yaml"
+        if not path.is_file():
+            raise Stage12AdapterError(
+                f"HOCAP_REQUIRED_MANO_BETAS_MISSING: calibration file missing: {path}"
+            )
+        payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        betas = np.asarray(payload.get("betas"), dtype=np.float64)
+        if betas.shape != (10,) or not np.isfinite(betas).all():
+            raise Stage12AdapterError(
+                "HOCAP_REQUIRED_MANO_BETAS_MISSING: calibration betas must be finite [10]"
+            )
+        return betas, path
+
     def load_sequence(
         self,
         sequence: str = "",
@@ -127,6 +151,7 @@ class HOCapAdapterV1(Stage12AdapterBase):
         meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
         poses_m_path = sequence_dir / "poses_m.npy"
         poses_o_path = sequence_dir / "poses_o.npy"
+        subject_betas, calibration_path = self._subject_betas(meta=meta, sequence_dir=sequence_dir)
         poses_m = np.load(poses_m_path, mmap_mode="r").astype(np.float64)
         poses_o = np.load(poses_o_path, mmap_mode="r").astype(np.float64)
         if poses_m.ndim != 3 or poses_m.shape[2:] != (51,):
@@ -156,25 +181,44 @@ class HOCapAdapterV1(Stage12AdapterBase):
                 "HOCap selected clip contains invalid right MANO frames: "
                 f"{np.flatnonzero(~valid).tolist()}"
             )
-        render = render_mano_fullpose(
-            pose_values, side="right", mano_model_root=self.mano_model_root
+        mano_source_hash = sha256_paths([meta_path, poses_m_path, calibration_path])
+        render = render_mano_pca45(
+            pose_values,
+            side="right",
+            mano_model_root=self.mano_model_root,
+            betas=subject_betas,
+            dataset_name="hocap",
+            source_annotation_path=poses_m_path,
+            source_annotation_hash=mano_source_hash,
         )
         mano_parameters = ManoParameterTrack(
             global_orient_aa=pose_values[:, :3],
-            hand_pose_aa=pose_values[:, 3:48],
+            hand_pose_aa=render.hand_pose_axis_angle,
             transl=pose_values[:, 48:51],
-            model_profile="hocap_poses_m_world_fullpose",
+            betas=render.betas,
+            model_profile="hocap_poses_m_pca45_explicit_contract_v2",
         )
         hand_track = make_hand(
             hand_id="right_hand",
             side="right",
-            vertices_scene=render.vertices_scene,
+            vertices_scene=render.vertices,
             faces=render.faces,
             wrist_pose_scene=render.wrist_pose_scene,
             valid=valid,
             mano_parameters=mano_parameters,
             mano_model_root=self.mano_model_root,
-            metadata={"source": "HOCap poses_m", "source_hand_index": hand_index},
+            metadata={
+                "source": "HOCap poses_m PCA45 reconstruction",
+                "source_hand_index": hand_index,
+                "mano_representation": "pca",
+                "num_pca_components": 45,
+                "flat_hand_mean": False,
+                "native_pca_coefficients": pose_values[:, 3:48].tolist(),
+                "mano_reconstruction": render.reconstruction_manifest,
+                "calibration_path": str(calibration_path),
+                "calibration_hash": sha256_paths([calibration_path]),
+            },
+            native_joint_track=backend_posed_joint_track(render, valid=valid),
         )
         object_ids = self._object_ids(meta, poses_o.shape[1])
         objects = []
@@ -201,7 +245,7 @@ class HOCapAdapterV1(Stage12AdapterBase):
                     metadata={"role": "hocap_object_part", "object_index": object_index},
                 )
             )
-        source_paths = [meta_path, poses_m_path, poses_o_path]
+        source_paths = [meta_path, poses_m_path, poses_o_path, calibration_path]
         source_paths.extend(
             self.dataset_dir / "data" / "models" / object_id / "textured_mesh.obj"
             for object_id in object_ids
@@ -227,6 +271,8 @@ class HOCapAdapterV1(Stage12AdapterBase):
             metadata={
                 "object_ids": object_ids,
                 "source_hand_index": hand_index,
+                "mano_calibration_path": str(calibration_path),
+                "mano_calibration_hash": sha256_paths([calibration_path]),
                 "contact_annotation_available": False,
                 "articulated_object_parts": True,
             },

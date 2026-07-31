@@ -100,6 +100,7 @@ class PoseTrack:
     valid: np.ndarray | None = None
     frame_name: str = "S"
     child_frame_name: str = "child"
+    orientation_available: bool = True
 
     def __post_init__(self) -> None:
         self.pose_scene = _array(self.pose_scene, dtype=np.float64)
@@ -449,10 +450,20 @@ class HOISequence:
         return errors
 
     def scene_to_wrist(self, hand_id: str, points_scene: np.ndarray) -> np.ndarray:
-        return scene_to_wrist(self.hand(hand_id).wrist_pose_scene.pose_scene, points_scene)
+        wrist = self.hand(hand_id).wrist_pose_scene
+        if not wrist.orientation_available:
+            raise HOIValidationError(
+                f"hand {hand_id} has no source wrist orientation; derive one explicitly before use"
+            )
+        return scene_to_wrist(wrist.pose_scene, points_scene)
 
     def wrist_to_scene(self, hand_id: str, points_wrist: np.ndarray) -> np.ndarray:
-        return wrist_to_scene(self.hand(hand_id).wrist_pose_scene.pose_scene, points_wrist)
+        wrist = self.hand(hand_id).wrist_pose_scene
+        if not wrist.orientation_available:
+            raise HOIValidationError(
+                f"hand {hand_id} has no source wrist orientation; derive one explicitly before use"
+            )
+        return wrist_to_scene(wrist.pose_scene, points_wrist)
 
     def scene_to_object(self, object_id: str, points_scene: np.ndarray) -> np.ndarray:
         return scene_to_object(self.rigid_object(object_id).pose_scene.pose_scene, points_scene)

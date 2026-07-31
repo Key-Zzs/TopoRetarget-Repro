@@ -15,6 +15,7 @@ from toporetarget.data.schema import HOISequence, ManoParameterTrack
 from .stage12_base import (
     Stage12AdapterBase,
     Stage12AdapterError,
+    contactpose_official_mano21_track,
     identity_poses,
     load_mesh,
     make_hand,
@@ -141,8 +142,11 @@ class ContactPoseAdapterV1(Stage12AdapterBase):
         annotation = json.loads(annotation_path.read_text(encoding="utf-8"))
         fits = json.loads(fits_path.read_text(encoding="utf-8"))
         frames = list(annotation.get("frames", []))
-        start, stop = (frame_range or FrameRange()).resolve(len(frames))
-        selected = frames[start:stop]
+        requested_start, requested_stop = (frame_range or FrameRange()).resolve(len(frames))
+        # A ContactPose entry is one fitted hand articulation.  RGB-D frames
+        # may show rigid observation motion, but never form a MANO trajectory.
+        start = requested_start
+        selected = [frames[start]]
         hands = list(annotation.get("hands", []))
         if len(hands) < 2 or not bool(hands[1].get("valid")):
             raise Stage12AdapterError(
@@ -155,11 +159,17 @@ class ContactPoseAdapterV1(Stage12AdapterBase):
             np.asarray(fit["pose"], dtype=np.float64),
             side="right",
             mano_model_root=self.mano_model_root,
+            betas=np.asarray(fit["betas"], dtype=np.float64),
+            dataset_name="contactpose",
+            source_annotation_path=fits_path,
+            source_annotation_hash=sha256_paths([annotation_path, fits_path, object_mesh_path]),
         )
         htm = np.linalg.inv(pose_json_wxyz(fit["mTc"]))
-        base_vertices = np.asarray(base.vertices_scene[0], dtype=np.float64)
+        base_vertices = np.asarray(base.vertices[0], dtype=np.float64)
+        base_joints = np.asarray(base.posed_joints_native[0], dtype=np.float64)
         base_wrist = np.asarray(base.wrist_pose_scene[0], dtype=np.float64)
         vertices: list[np.ndarray] = []
+        joints: list[np.ndarray] = []
         wrists: list[np.ndarray] = []
         for frame in selected:
             if bool(hands[1].get("moving")) and "hTo" in frame:
@@ -168,10 +178,13 @@ class ContactPoseAdapterV1(Stage12AdapterBase):
                 oth = np.eye(4, dtype=np.float64)
             otm = oth @ htm
             vertices.append(transform_points(otm[None, ...], base_vertices[None, ...])[0])
+            joints.append(transform_points(otm[None, ...], base_joints[None, ...])[0])
             wrists.append(otm @ base_wrist)
         hand_vertices = np.stack(vertices, axis=0)
+        hand_joints = np.stack(joints, axis=0)
         hand_wrist = np.stack(wrists, axis=0)
-        valid = np.ones(stop - start, dtype=bool)
+        valid = np.ones(1, dtype=bool)
+        official_joints = contactpose_official_mano21_track(hand_joints, hand_vertices, valid=valid)
         hand = make_hand(
             hand_id="right_hand",
             side="right",
@@ -180,29 +193,33 @@ class ContactPoseAdapterV1(Stage12AdapterBase):
             wrist_pose_scene=hand_wrist,
             valid=valid,
             mano_parameters=ManoParameterTrack(
-                global_orient_aa=np.broadcast_to(
-                    np.asarray(fit["pose"][:3], dtype=np.float64), (stop - start, 3)
-                ).copy(),
-                transl=np.zeros((stop - start, 3), dtype=np.float64),
-                betas=np.broadcast_to(
-                    np.asarray(fit["betas"], dtype=np.float64), (stop - start, 10)
-                ).copy(),
-                model_profile="contactpose_mano_fits_15_pca",
+                global_orient_aa=base.global_orient_axis_angle,
+                hand_pose_aa=base.hand_pose_axis_angle,
+                transl=base.translation,
+                betas=base.betas,
+                model_profile="contactpose_mano_fits_15_pca_explicit_contract_v2",
             ),
             mano_model_root=self.mano_model_root,
             metadata={
                 "source": "ContactPose MANO fit transformed into object frame",
                 "source_pca_pose": np.asarray(fit["pose"], dtype=np.float64).tolist(),
+                "mano_representation": "pca",
+                "num_pca_components": 15,
+                "flat_hand_mean": False,
+                "mano_reconstruction": base.reconstruction_manifest,
+                "joint_source": "contactpose_official_mano16_plus_tip_vertices",
+                "wrist_transform_source": "hTm=inv(mTc); oTm=oTh@hTm",
                 "contact_annotation_available": False,
                 "contact_benchmark_status": "NOT_AVAILABLE",
             },
+            native_joint_track=official_joints,
         )
         object_vertices, object_faces = load_mesh(object_mesh_path)
         object_track = make_object(
             object_id=row["object_name"],
             vertices=object_vertices,
             faces=object_faces,
-            poses_scene=identity_poses(stop - start),
+            poses_scene=identity_poses(1),
             valid=valid,
             mesh_hash=sha256_paths([object_mesh_path]),
             metadata={
@@ -214,7 +231,7 @@ class ContactPoseAdapterV1(Stage12AdapterBase):
         metadata = sequence_metadata(
             dataset="contactpose",
             sequence_id=row["sequence"],
-            frame_count=stop - start,
+            frame_count=1,
             fps=30.0,
             source_file=annotation_path,
             source_hash=sha256_paths([annotation_path, fits_path, object_mesh_path]),
@@ -224,10 +241,15 @@ class ContactPoseAdapterV1(Stage12AdapterBase):
                 "composed into object coordinates"
             ),
             conversion_options={
-                "selected_frame_range": [start, stop],
+                "requested_observation_frame_range": [requested_start, requested_stop],
+                "selected_static_observation_frame": start,
                 "right_hand_index": 1,
                 "contact_benchmark_status": "NOT_AVAILABLE",
                 "official_contact_attribution": False,
+                "sample_type": "static_contact_evaluation_only",
+                "articulated_frame_count": 1,
+                "temporal_metrics_applicable": False,
+                "rigid_observation_sequence_available": bool(hands[1].get("moving")),
             },
             metadata={
                 "participant": row["p_num"],
@@ -239,6 +261,20 @@ class ContactPoseAdapterV1(Stage12AdapterBase):
                     "raw object contact-map PLY has no verified hand-bone "
                     "attribution in this adapter contract"
                 ),
+                "classification": "static_contact_evaluation_only",
+                "frame_count": 1,
+                "articulated_frame_count": 1,
+                "articulated_motion": False,
+                "temporal_metrics": "NOT_APPLICABLE",
+                "rigid_observation_sequence_available": bool(hands[1].get("moving")),
+                "repeated_pose_manufacturing": False,
+                "contactpose_official_tip_vertex_ids": {
+                    "index": 333,
+                    "middle": 444,
+                    "pinky": 672,
+                    "ring": 555,
+                    "thumb": 745,
+                },
             },
         )
         timestamps = self._native_timestamps(selected)

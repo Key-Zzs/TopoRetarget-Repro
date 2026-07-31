@@ -21,7 +21,8 @@ from .stage12_base import (
     load_mesh,
     make_hand,
     make_object,
-    render_mano_fullpose,
+    native_mano21_track,
+    render_mano_pca45,
     sequence_metadata,
     sha256_paths,
 )
@@ -143,6 +144,46 @@ class DexYCBAdapterV1(Stage12AdapterBase):
             )
         return max(scores, key=lambda item: (item[0], item[1]))[1]
 
+    def _subject_betas(
+        self, meta: dict[str, Any], *, sequence_dir: Path
+    ) -> tuple[np.ndarray, Path, str]:
+        """Resolve the right-hand calibration named by this exact sequence meta."""
+
+        sides = [str(value).lower() for value in meta.get("mano_sides", [])]
+        calibrations = [str(value) for value in meta.get("mano_calib", [])]
+        if len(sides) != len(calibrations) or not sides:
+            raise Stage12AdapterError(
+                "DEXYCB_REQUIRED_MANO_BETAS_MISSING: invalid mano calibration"
+            )
+        try:
+            hand_index = sides.index("right")
+        except ValueError as exc:
+            raise Stage12AdapterError(
+                "DEXYCB_REQUIRED_MANO_BETAS_MISSING: right side absent"
+            ) from exc
+        calibration_id = calibrations[hand_index]
+        calibration_path = (
+            self.dataset_dir / "data" / "calibration" / f"mano_{calibration_id}" / "mano.yml"
+        )
+        if not calibration_path.is_file():
+            raise Stage12AdapterError(
+                "DEXYCB_REQUIRED_MANO_BETAS_MISSING: calibration file is missing: "
+                f"{calibration_path}"
+            )
+        payload = yaml.safe_load(calibration_path.read_text(encoding="utf-8")) or {}
+        betas = np.asarray(payload.get("betas"), dtype=np.float64)
+        if betas.shape != (10,) or not np.isfinite(betas).all():
+            raise Stage12AdapterError(
+                "DEXYCB_REQUIRED_MANO_BETAS_MISSING: calibration betas must be finite [10]"
+            )
+        subject_suffix = sequence_dir.parent.name.rsplit("subject-", maxsplit=1)[-1]
+        sequence_subject = f"subject-{subject_suffix}"
+        if sequence_subject not in calibration_id:
+            raise Stage12AdapterError(
+                "DEXYCB_REQUIRED_MANO_BETAS_MISSING: calibration subject does not match sequence"
+            )
+        return betas, calibration_path, calibration_id
+
     def load_sequence(
         self,
         sequence: str = "",
@@ -156,6 +197,9 @@ class DexYCBAdapterV1(Stage12AdapterBase):
         sequence_dir = self._resolve_sequence_dir(row)
         meta_path = sequence_dir / "meta.yml"
         meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+        subject_betas, calibration_path, calibration_id = self._subject_betas(
+            meta, sequence_dir=sequence_dir
+        )
         full_count = int(meta.get("num_frames", row["num_frames_declared"]))
         start, stop = (frame_range or FrameRange()).resolve(full_count)
         indices = range(start, stop)
@@ -168,7 +212,7 @@ class DexYCBAdapterV1(Stage12AdapterBase):
             serial = self._choose_camera(sequence_dir, serials, indices)
 
         labels: list[dict[str, Any]] = []
-        source_paths = [meta_path]
+        source_paths = [meta_path, calibration_path]
         for frame in indices:
             path = sequence_dir / serial / f"labels_{frame:06d}.npz"
             if not path.is_file():
@@ -196,6 +240,7 @@ class DexYCBAdapterV1(Stage12AdapterBase):
 
         valid = np.zeros(stop - start, dtype=bool)
         pose_values = np.full((stop - start, 51), np.nan, dtype=np.float64)
+        raw_joints = np.full((stop - start, 21, 3), np.nan, dtype=np.float64)
         wrist = identity_poses(stop - start)
         source_vertices = np.full((stop - start, 778, 3), np.nan, dtype=np.float64)
         render_faces: np.ndarray | None = None
@@ -204,16 +249,32 @@ class DexYCBAdapterV1(Stage12AdapterBase):
             pose = np.asarray(item.get("pose_m"), dtype=np.float64).reshape(-1)
             ok = pose.shape == (51,) and np.isfinite(pose).all() and not np.allclose(pose, 0.0)
             if ok:
+                joint_3d = np.asarray(item.get("joint_3d"), dtype=np.float64)
+                if joint_3d.shape == (1, 21, 3):
+                    joint_3d = joint_3d[0]
+                if joint_3d.shape != (21, 3) or not np.isfinite(joint_3d).all():
+                    raise Stage12AdapterError(
+                        "DexYCB selected frame has no finite raw joint_3d[21,3]; "
+                        "refusing J_regressor replacement"
+                    )
                 valid[local] = True
                 pose_values[local] = pose
+                raw_joints[local] = joint_3d
                 valid_local.append(local)
         if not valid_local:
             raise Stage12AdapterError(f"DexYCB sequence {sequence} has no valid requested frames")
-        render = render_mano_fullpose(
-            pose_values[valid], side="right", mano_model_root=self.mano_model_root
+        mano_source_hash = sha256_paths(source_paths)
+        render = render_mano_pca45(
+            pose_values[valid],
+            side="right",
+            mano_model_root=self.mano_model_root,
+            betas=subject_betas,
+            dataset_name="dexycb",
+            source_annotation_path=meta_path,
+            source_annotation_hash=mano_source_hash,
         )
         render_faces = render.faces
-        source_vertices[valid] = render.vertices_scene
+        source_vertices[valid] = render.vertices
         wrist[valid] = render.wrist_pose_scene
 
         object_poses = identity_poses(stop - start)
@@ -230,9 +291,19 @@ class DexYCBAdapterV1(Stage12AdapterBase):
 
         mano_parameters = ManoParameterTrack(
             global_orient_aa=pose_values[:, :3],
-            hand_pose_aa=pose_values[:, 3:48],
+            hand_pose_aa=np.full((stop - start, 45), np.nan, dtype=np.float64),
             transl=pose_values[:, 48:51],
-            model_profile="dexycb_pose_m_51_fullpose",
+            betas=np.broadcast_to(subject_betas, (stop - start, 10)).copy(),
+            model_profile="dexycb_pose_m_pca45_explicit_contract_v2",
+        )
+        if mano_parameters.hand_pose_aa is None:  # schema guard for static type checkers
+            raise Stage12AdapterError("DexYCB derived MANO axis-angle track was not allocated")
+        mano_parameters.hand_pose_aa[valid] = render.hand_pose_axis_angle
+        native_joints = native_mano21_track(
+            raw_joints,
+            valid=valid,
+            source_name="DexYCB raw joint_3d",
+            source_path=str(sequence_dir / serial),
         )
         hand = make_hand(
             hand_id="right_hand",
@@ -244,10 +315,20 @@ class DexYCBAdapterV1(Stage12AdapterBase):
             mano_parameters=mano_parameters,
             mano_model_root=self.mano_model_root,
             metadata={
-                "source": "DexYCB pose_m MANO reconstruction",
+                "source": "DexYCB pose_m MANO PCA45 reconstruction",
                 "source_camera_serial": serial,
-                "native_joint_3d_preserved_as_source_evidence": True,
+                "native_joint_3d_preserved_as_canonical_source": True,
+                "mano_representation": "pca",
+                "num_pca_components": 45,
+                "flat_hand_mean": False,
+                "native_pca_coefficients": pose_values[:, 3:48].tolist(),
+                "mano_reconstruction": render.reconstruction_manifest,
+                "calibration_path": str(calibration_path),
+                "calibration_hash": sha256_paths([calibration_path]),
+                "calibration_id": calibration_id,
+                "betas_hash": sha256_paths([calibration_path]),
             },
+            native_joint_track=native_joints,
         )
         object_track = make_object(
             object_id=row["object_name"],
@@ -280,6 +361,9 @@ class DexYCBAdapterV1(Stage12AdapterBase):
                 "subject": sequence_dir.parent.name,
                 "source_frames": [start, stop],
                 "source_camera_serial": serial,
+                "mano_calibration_path": str(calibration_path),
+                "mano_calibration_hash": sha256_paths([calibration_path]),
+                "mano_calibration_id": calibration_id,
                 "object_name": row["object_name"],
                 "contact_annotation_available": False,
                 "invalid_source_frames": np.flatnonzero(~valid).tolist(),

@@ -21,6 +21,7 @@ from .stage12_base import (
     load_pickle,
     make_hand,
     make_object,
+    native_mano21_track,
     sequence_metadata,
     sha256_paths,
 )
@@ -155,22 +156,28 @@ class OakInkAdapterV1(Stage12AdapterBase):
         object_mesh_path = self._object_mesh_path(row["object_name"])
         object_vertices, object_faces = load_mesh(object_mesh_path)
         hand_frames: list[np.ndarray] = []
+        hand_joints: list[np.ndarray] = []
         object_poses: list[np.ndarray] = []
         source_paths = [self.annotation_dir / "seq_all.json", object_mesh_path]
         hand_dir = self.annotation_dir / "hand_v"
+        joint_dir = self.annotation_dir / "hand_j"
         object_transform_dir = self.annotation_dir / "obj_transf"
         for info in selected:
             name = self._info_name(info)
             hand_path = hand_dir / f"{name}.pkl"
+            joint_path = joint_dir / f"{name}.pkl"
             object_path = object_transform_dir / f"{name}.pkl"
-            if not hand_path.is_file() or not object_path.is_file():
+            if not hand_path.is_file() or not joint_path.is_file() or not object_path.is_file():
                 raise Stage12AdapterError(
                     "OakInk frame annotations are incomplete: "
-                    f"hand={hand_path}, object={object_path}"
+                    f"hand={hand_path}, joints={joint_path}, object={object_path}"
                 )
             hand_vertices = np.asarray(load_pickle(hand_path), dtype=np.float64)
             if hand_vertices.shape != (778, 3) or not np.isfinite(hand_vertices).all():
                 raise Stage12AdapterError(f"OakInk hand_v must be finite [778,3]: {hand_path}")
+            hand_joint = np.asarray(load_pickle(joint_path), dtype=np.float64)
+            if hand_joint.shape != (21, 3) or not np.isfinite(hand_joint).all():
+                raise Stage12AdapterError(f"OakInk hand_j must be finite [21,3]: {joint_path}")
             transform = np.asarray(load_pickle(object_path), dtype=np.float64)
             if transform.shape == (3, 4):
                 matrix = np.eye(4, dtype=np.float64)
@@ -179,27 +186,42 @@ class OakInkAdapterV1(Stage12AdapterBase):
             if transform.shape != (4, 4) or not np.isfinite(transform).all():
                 raise Stage12AdapterError(f"OakInk obj_transf must be finite [4,4]: {object_path}")
             hand_frames.append(hand_vertices)
+            hand_joints.append(hand_joint)
             object_poses.append(transform)
-            source_paths.extend([hand_path, object_path])
+            source_paths.extend([hand_path, joint_path, object_path])
         vertices = np.stack(hand_frames, axis=0)
+        joints = np.stack(hand_joints, axis=0)
         poses = np.stack(object_poses, axis=0)
         valid = np.ones(stop - start, dtype=bool)
+        wrist_poses = identity_poses(stop - start)
+        wrist_poses[:, :3, 3] = joints[:, 0]
         hand = make_hand(
             hand_id="right_hand",
             side="right",
             vertices_scene=vertices,
             faces=load_mano_faces(self.mano_model_root),
-            wrist_pose_scene=identity_poses(stop - start),
+            wrist_pose_scene=wrist_poses,
             valid=valid,
             mano_parameters=None,
             mano_model_root=self.mano_model_root,
             metadata={
                 "source": "OakInk-Image hand_v",
-                "source_joint_annotation": (
-                    "hand_j available but canonicalized through MANO geometry"
-                ),
+                "source_joint_annotation": "OakInk-Image hand_j canonical source",
+                "joint_source": "raw hand_j",
+                "hand_vertices_source": "raw hand_v exact passthrough",
+                "wrist_translation_source": "raw hand_j[wrist]",
+                "wrist_orientation_source": "NOT_AVAILABLE",
+                "wrist_orientation_available": False,
+                "wrist_pose_placeholder_orientation": "identity_not_semantic_do_not_consume",
                 "view_id": view_id,
             },
+            native_joint_track=native_mano21_track(
+                joints,
+                valid=valid,
+                source_name="OakInk raw hand_j",
+                source_path=str(joint_dir),
+            ),
+            wrist_orientation_available=False,
         )
         object_track = make_object(
             object_id=row["object_name"],
