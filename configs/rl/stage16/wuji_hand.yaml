@@ -1,0 +1,6 @@
+robot: wuji_hand2_beta1_rh
+source_mjcf: third_party/robot_hands/wuji_hand2_beta1/mjcf/right.xml
+joint_order_profile: configs/robots/joint_orders/wuji_hand2_beta1_rh.yaml
+source_hash: 1bc53b7ca6f2eb84fc66ac736027984cd1734fa30d27f9c1f640495258d626f9
+classification: EXTERNAL_REFERENCE
+fixed_base: true

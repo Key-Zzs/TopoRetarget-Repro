@@ -1,0 +1,9 @@
+schema_version: toporetarget.stage16.simulator.v1
+classification: ENGINEERING_ASSUMPTION
+decision_order: [installed_gpu_vectorized, wuji_compatible_backend, mjx, mujoco_cpu_reference]
+selected_backend: mujoco_cpu_reference
+selected_reason: MuJoCo 3.3.6 is installed in isolated toporetarget-rl; no GPU vectorized backend is installed.
+limitations:
+  - CPU correctness mode is not 4096-env feasible.
+  - Paper simulator, physics solver, PD gains, and object-asset procedure are undisclosed.
+  - Generic free box is qualification only; HO-Cap requires per-object collision/provenance.

@@ -1,0 +1,12 @@
+schema_version: toporetarget.stage16.training_budget_assumption_v1
+evaluation_interval_iterations: 25
+checkpoint_interval_iterations: 25
+plateau_window_evaluations: 10
+stages:
+  T0: {max_iterations: 20, purpose: numerical_smoke}
+  T1: {max_iterations: 500, clips: 1, domain_randomization: false}
+  T2: {max_iterations: 500, clips: 1, domain_randomization: true}
+  T3: {max_iterations: 1000, clips: 2}
+  T4: {max_iterations: 3000, clips: 32}
+  T5: {max_iterations: 3000, clips: 32, dataset: Pen-Spin}
+early_stop: threshold_five_evaluations_and_no_error_regression_and_numerical_stability

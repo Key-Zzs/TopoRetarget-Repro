@@ -1,5 +1,9 @@
 # TopoRetarget-Repro
 
+## Stage 16 status
+
+Stage 16 Reference-Tracking PPO implementation is on the dedicated feature branch. It uses the local PDF's Appendix A.5 as the fidelity source, keeps unpublished simulator/control details explicit, and stores all generated data under ignored `.local/`. The MuJoCo correctness path and numerical PPO smoke are validated, but protocol training/evaluation is blocked until a post-source-contract dynamic HO-Cap `RobotReference` is approved; the final-job control remains paused. Create the isolated environment with `conda env create -f environment.stage16.yml` and run `conda run -n toporetarget-rl python scripts/rl/audit_stage16_environment.py`.
+
 [中文 README](README.zh-CN.md)
 
 TopoRetarget-Repro is an unofficial, independent, paper-traceable reproduction of
@@ -55,8 +59,10 @@ exact object-local BVH, certified sign reuse, compiled deterministic generalized
 full-surface audit, and CPU float64. It is an engineering backend, not the authors' specified
 backend and not a real-time production claim.
 
-Current boundaries: full ContactPose paper benchmark is **NOT_REPRODUCED**; reference-tracking PPO,
-complete paper tables/figures/seeds, and ARCTIC/OakInk2/TACO remain TODO; real-time retargeting and
+Current boundaries: full ContactPose paper benchmark is **NOT_REPRODUCED**; Stage 16 protocol
+training/evaluation is **BLOCKED_PENDING_QUALIFIED_HOCAP_REFERENCE** and Pen-Spin is
+**STAGE16_PENSPIN_DATA_UNAVAILABLE**; complete paper tables/figures/seeds and ARCTIC/OakInk2/TACO
+remain TODO; real-time retargeting and
 cross-subject/full-dataset production validation are not claimed. The final queue remains paused
 by operator control with no active workers and no new final tasks allowed.
 
@@ -82,10 +88,10 @@ Detailed stage history and implementation notes are maintained in
 | 10 | GRAB end-to-end retargeting | Complete, bounded | End-to-end GRAB→Arti-MANO/Wuji reference generation is available. |
 | 11 | Core contract freeze | Complete | CanonicalHOI, DatasetAdapter, RobotHandPlugin, RobotReference and MetricRegistry contracts are frozen. |
 | 12 | Dataset Adapter v1 | Complete | DexYCB, OakInk, HO-Cap and ContactPose adapters are qualified on 8/8 frozen selections with strict final results. |
-| 13 | Complex HOI adapters | TODO | Add ARCTIC, OakInk2 and TACO; extend articulated-object, bimanual and SMPL-X hand extraction contracts. |
-| 14 | Universal robot-hand plugin validation | TODO / partial foundation | Validate additional robot topologies and the full URDF/MJCF plugin capability matrix. |
-| 15 | Baselines and ablations | TODO | Add fair OmniRetarget, Mink, DexPilot, GeoRT and relevant baseline comparisons. |
-| 16 | Reference-tracking PPO | TODO | Add simulation playback, reference export validation, PPO training and evaluation. |
+| 13 | Complex HOI adapters | DEFERRED | Add ARCTIC, OakInk2 and TACO; extend articulated-object, bimanual and SMPL-X hand extraction contracts. |
+| 14 | Universal robot-hand plugin validation | DEFERRED | Validate additional robot topologies and the full URDF/MJCF plugin capability matrix. |
+| 15 | Baselines and ablations | DEFERRED | Add fair OmniRetarget, Mink, DexPilot, GeoRT and relevant baseline comparisons. |
+| 16 | Reference-tracking PPO | Implementation complete; evaluation blocked | Appendix A.5 MDP/PPO, MuJoCo correctness backend, reference gates and numerical smoke pass; protocol run requires an approved dynamic HO-Cap RobotReference. |
 | 17 | Paper experiment reproduction | TODO | Reproduce paper tables, figures, seeds, ContactPose benchmark and formal reports. |
 | 18 | Performance and v1.0 release | TODO | Establish production benchmarks, packaging, CI matrices and release criteria. |
 | 19 | Non-paper extensions | TODO | Keep MANO cleanup, SPIDER integration, penetration objectives and other extensions explicitly separated. |
@@ -503,6 +509,7 @@ Detailed stage history and implementation notes are maintained in:
 - [docs/ROADMAP.md](docs/ROADMAP.md)
 - [docs/stages/](docs/stages/)
 - [solver feasibility note](docs/SOLVER_FEASIBILITY_RESTORATION.md)
+- [Stage 16 reference-tracking PPO](docs/stages/STAGE16_REFERENCE_TRACKING_PPO.md)
 
 ## License
 

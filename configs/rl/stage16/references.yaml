@@ -1,0 +1,9 @@
+schema_version: toporetarget.stage16.references.v1
+resampler: reference_resampler_20hz_v1
+target_hz: 20
+static_reference_policy: fail_closed
+source_requirements: [dynamic_frames_ge_2, finite, q_limits, object_pose, tracked_links, axis_points, provenance, reload]
+classification:
+  source_coordinates: PAPER_EXACT
+  axis_geometry: ENGINEERING_ASSUMPTION
+  tracked_link_profile: ENGINEERING_ASSUMPTION

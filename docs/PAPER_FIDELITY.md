@@ -389,3 +389,21 @@ execution engineering. It preserves the generalized-winding definition,
 float64 contract, solver and audit; uncertain classifications use the qualified
 reference fallback. It is experimental, not author-exact, and not a Stage-12
 default.
+
+## Stage 16 reference-tracking PPO boundary
+
+Stage 16 implements the public Appendix A.5 MDP/PPO contract: base-frame
+references, residual actions, the `[0,1,3,5]` reference observation, Table 4
+reward/termination, Table 5 randomization ranges, and Table 6 model/training
+values. The implementation is independently mapped in
+[`docs/rl/PAPER_FIDELITY_LEDGER.yaml`](rl/PAPER_FIDELITY_LEDGER.yaml). MuJoCo
+3.3.6 is a CPU correctness backend only; the paper does not disclose the
+simulator, solver, contact model, PD gains, tracked links, axis offsets, or
+unlisted PPO values, so none is presented as author-exact.
+
+The local raw HO-Cap root is available, but no accepted dynamic RobotReference
+exists after the source-contract repair, and `.local/control/final_jobs/PAUSED`
+forbids generating a new final job. Consequently, numerical PPO and free-object
+backend checks pass while HOCap protocol training/evaluation is explicitly
+blocked. Pen-Spin remains `STAGE16_PENSPIN_DATA_UNAVAILABLE`; no surrogate data
+is used and no Table 2 result is claimed.

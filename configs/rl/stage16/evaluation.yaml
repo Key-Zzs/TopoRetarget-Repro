@@ -1,0 +1,4 @@
+nominal: {domain_randomization: false, noise: false, deterministic_actor: true}
+robust: {domain_randomization: true, noise: true, disturbances: true, multiple_seeds: true}
+required_populations: [all_valid_timesteps, successful_rollouts_only, failed_rollouts_before_termination]
+required_metrics: [success_rate, final_frame_reach, object_position_error_cm, object_rotation_error_deg, max_axis_point_error, link_position_error, normalized_joint_error, termination_distribution, progress_ratio, reward_components, action_magnitude, action_first_difference, action_second_difference]

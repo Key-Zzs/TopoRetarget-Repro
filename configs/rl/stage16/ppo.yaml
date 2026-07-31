@@ -1,0 +1,4 @@
+paper_protocol: configs/rl/stage16/paper_protocol.yaml
+engineering_assumptions: configs/rl/stage16/engineering_assumptions.yaml
+checkpoint_required_fields: [actor, critic, optimizer, observation_normalization, action_std, iteration, env_steps, rng, reference_selection, assumption_profile, asset_hashes, code_head, dirty_diff_hash, config_hashes]
+evaluation_actor: deterministic_mean

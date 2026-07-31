@@ -1,0 +1,6 @@
+paper_protocol: configs/rl/stage16/paper_protocol.yaml
+all_switches_independent: true
+policy_observation_excludes: [startup_randomization, external_disturbance]
+nominal_evaluation: {randomization: false, noise: false, disturbance: false}
+robust_evaluation: {randomization: true, noise: true, disturbance: true}
+unsupported_backend_policy: explicit_capability_failure

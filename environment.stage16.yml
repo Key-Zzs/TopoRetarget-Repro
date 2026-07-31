@@ -1,0 +1,16 @@
+name: toporetarget-rl
+channels:
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - -e .[dev,rl]
+      - mujoco==3.3.6
+      - torch==2.13.0
+      - numpy>=2.0,<3.0
+      - scipy>=1.13
+      - PyYAML>=6.0
+
+# Reproduction note: the local audit selected MuJoCo CPU correctness mode.
+# The paper does not disclose its simulator, solver, or version.

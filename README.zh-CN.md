@@ -1,5 +1,9 @@
 # TopoRetarget-Repro
 
+## Stage 16 状态
+
+Stage 16 Reference-Tracking PPO 位于独立 feature 分支。实现以本地论文 Appendix A.5 为唯一 fidelity 来源，未公开的模拟器与控制细节均显式记录，所有生成数据只写入被忽略的 `.local/`。MuJoCo correctness 链路与 PPO 数值 smoke 已验证，但协议训练/评测仍等待经过 source-contract 修复后的动态 HO-Cap `RobotReference` 获准，final-job control 继续暂停。环境命令：`conda env create -f environment.stage16.yml`，审计命令：`conda run -n toporetarget-rl python scripts/rl/audit_stage16_environment.py`。
+
 [English README](README.md)
 
 TopoRetarget-Repro 是论文
@@ -51,8 +55,10 @@ manifest。当前推荐的离线 reference 后端是
 exact object-local BVH、认证式 sign reuse、compiled deterministic generalized winding、strict
 full-surface audit 与 CPU float64。它是工程后端，不声称是作者指定的后端，也不代表实时生产能力。
 
-当前边界：完整 ContactPose 论文 benchmark 为 **NOT_REPRODUCED**；reference-tracking PPO、完整
-论文 tables/figures/seeds 以及 ARCTIC/OakInk2/TACO 仍为 TODO；不声称实时重定向或跨 subject/全
+当前边界：完整 ContactPose 论文 benchmark 为 **NOT_REPRODUCED**；Stage 16 协议训练/评测为
+**BLOCKED_PENDING_QUALIFIED_HOCAP_REFERENCE**，Pen-Spin 为
+**STAGE16_PENSPIN_DATA_UNAVAILABLE**；完整论文 tables/figures/seeds 以及 ARCTIC/OakInk2/TACO
+仍为 TODO；不声称实时重定向或跨 subject/全
 数据集生产验证。final queue 仍为 operator control 暂停状态，无 active worker，也不允许新 final task。
 
 ## TODO 与完整路线图
@@ -76,10 +82,10 @@ full-surface audit 与 CPU float64。它是工程后端，不声称是作者指�
 | 10 | GRAB 端到端重定向 | 完成，有界 | GRAB→Arti-MANO/Wuji reference generation 可用。 |
 | 11 | 核心契约冻结 | 完成 | CanonicalHOI、DatasetAdapter、RobotHandPlugin、RobotReference 与 MetricRegistry 契约已冻结。 |
 | 12 | Dataset Adapter v1 | 完成 | DexYCB、OakInk、HO-Cap、ContactPose adapter 在 8/8 个冻结选择上通过 strict final。 |
-| 13 | 复杂 HOI adapter | TODO | 加入 ARCTIC、OakInk2、TACO；扩展 articulated-object、bimanual 与 SMPL-X hand extraction contract。 |
-| 14 | 通用机器人手 plugin 验证 | TODO / 基础部分完成 | 验证更多机器人拓扑与完整 URDF/MJCF plugin 能力矩阵。 |
-| 15 | baseline 与消融 | TODO | 加入公平的 OmniRetarget、Mink、DexPilot、GeoRT 及相关 baseline 对比。 |
-| 16 | reference-tracking PPO | TODO | 加入 simulation playback、reference export validation、PPO training 与 evaluation。 |
+| 13 | 复杂 HOI adapter | DEFERRED | 加入 ARCTIC、OakInk2、TACO；扩展 articulated-object、bimanual 与 SMPL-X hand extraction contract。 |
+| 14 | 通用机器人手 plugin 验证 | DEFERRED | 验证更多机器人拓扑与完整 URDF/MJCF plugin 能力矩阵。 |
+| 15 | baseline 与消融 | DEFERRED | 加入公平的 OmniRetarget、Mink、DexPilot、GeoRT 及相关 baseline 对比。 |
+| 16 | reference-tracking PPO | 实现完成；评测受阻 | Appendix A.5 MDP/PPO、MuJoCo correctness backend、reference gate 与数值 smoke 已通过；协议运行仍需获准的动态 HO-Cap RobotReference。 |
 | 17 | 论文实验复现 | TODO | 复现论文 tables、figures、seeds、ContactPose benchmark 与正式报告。 |
 | 18 | 性能与 v1.0 发布 | TODO | 建立 production benchmark、打包、CI 矩阵与发布标准。 |
 | 19 | 非论文扩展 | TODO | 将 MANO cleanup、SPIDER integration、penetration objective 等扩展明确隔离。 |
@@ -490,6 +496,7 @@ Licensed-data test 是 opt-in，要求已配置本地 GRAB/MANO 资源。
 - [docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md)
 - [docs/stages/](docs/stages/)
 - [solver-feasibility 说明](docs/SOLVER_FEASIBILITY_RESTORATION.md)
+- [Stage 16 reference-tracking PPO](docs/stages/STAGE16_REFERENCE_TRACKING_PPO.md)
 
 ## License
 

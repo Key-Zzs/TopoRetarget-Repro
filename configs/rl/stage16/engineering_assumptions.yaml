@@ -1,0 +1,24 @@
+schema_version: toporetarget.stage16.engineering_assumptions.v1
+classification: ENGINEERING_ASSUMPTION
+tracked_link_profile:
+  id: tracked_link_profile_v1
+  links: [r_wrist, r_thumb_proximal, r_thumb_middle, r_thumb_distal, r_index_finger_proximal, r_index_finger_middle, r_index_finger_distal, r_middle_finger_proximal, r_middle_finger_middle, r_middle_finger_distal, r_ring_finger_proximal, r_ring_finger_middle, r_ring_finger_distal, r_pinky_proximal, r_pinky_middle, r_pinky_distal]
+object_axis_points:
+  id: object_axis_points_v1
+  local_endpoint_length_m: 0.05
+  rationale: Fixed cross-object scale selected before any training; paper does not disclose offsets.
+action_scale:
+  candidates_joint_range_fraction: [0.05, 0.10, 0.20]
+  selected: null
+  selection_gate: non_learning_pd_qualification
+reset_velocity_policy:
+  selected: null
+  candidates: [zero_velocity, reference_finite_difference_velocity]
+ppo_unpublished:
+  clip_epsilon: 0.2
+  value_loss_coefficient: 0.5
+  max_gradient_norm: 1.0
+  value_clipping: false
+  learning_rate_schedule: constant
+  actor_mean: tanh_residual
+  action_std: state_independent_softplus

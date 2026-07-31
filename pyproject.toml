@@ -53,6 +53,15 @@ retarget = [
   "torch>=2.0",
   "zarr>=2.16",
 ]
+rl = [
+  "mujoco==3.3.6",
+  "scipy>=1.13",
+  "torch>=2.13",
+  "matplotlib>=3.8",
+  "trimesh>=4.0",
+  "zarr>=2.16,<3",
+  "numcodecs>=0.11",
+]
 
 [project.scripts]
 toporetarget = "toporetarget.cli.main:app"

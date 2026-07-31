@@ -284,3 +284,14 @@ engineering. It preserves the original objective, physical-unit constraints,
 QuerySet, bounds, tolerance, float64 execution, and independent full audit. It
 is forbidden from selecting behavior by dataset, object, or sample; author
 exactness remains unresolved.
+
+## Stage 16 reference-tracking PPO boundary
+
+Stage 16 preserves the paper-exact Appendix A.5 values in
+configs/paper/rl.yaml and records its additional choices in
+docs/rl/PAPER_FIDELITY_LEDGER.yaml. The simulator, contact model, PD gains,
+tracked-link list, object-axis offsets, exact clip IDs, PPO clip/value/gradient
+settings, and Pen-Spin data are not published. MuJoCo 3.3.6, fixed 5 cm axis
+points, a frozen palm-plus-finger link profile, and the listed PPO defaults are
+engineering assumptions. The implementation must report
+PAPER_PROTOCOL_REPRODUCTION_WITH_ASSUMPTIONS rather than author-exact results.

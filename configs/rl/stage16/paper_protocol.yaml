@@ -1,0 +1,44 @@
+schema_version: toporetarget.stage16.paper_protocol.v1
+classification: PAPER_EXACT
+source:
+  pdf: docs/TopoRetarget.pdf
+  pages: [14, 15, 16]
+reference:
+  frame: robot_base
+  control_hz: 20
+  lookahead_offsets: [0, 1, 3, 5]
+action: residual_joint_command
+control:
+  simulation_dt_s: 0.01
+  decimation: 5
+  episode_seconds: 20
+  episode_control_steps: 400
+reward:
+  id: paper_literal_reward_v1
+  object: {weight: 8.0, sigma_m: 0.04}
+  links: {weight: 1.0, sigma_m: 0.025}
+  joints: {weight: 1.0, sigma_normalized: 0.1}
+  action_smoothness: {weight: -0.01}
+termination:
+  object_height_min_m: 0.06
+  object_linear_velocity_max_mps: 10
+  object_angular_velocity_max_radps: 500
+  object_position_error_max_m: 0.05
+  object_orientation_error_max_deg: 45
+  object_axis_point_error_max_m: 0.05
+ppo:
+  parallel_environments: 4096
+  rollout_steps: 40
+  samples_per_iteration: 163840
+  actor_hidden: [512, 256, 128]
+  critic_hidden: [512, 512, 256, 128]
+  activation: ELU
+  observation_normalization: true
+  action_distribution: SoftplusGaussian
+  optimizer: Adam
+  learning_rate: 0.0001
+  epochs: 4
+  minibatches: 32
+  entropy_coefficient: 0.001
+  gamma: 0.99
+  gae_lambda: 0.95

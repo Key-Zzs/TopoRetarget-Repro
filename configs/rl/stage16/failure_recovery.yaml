@@ -1,0 +1,6 @@
+schema_version: toporetarget.stage16.failure_recovery.v1
+repairs_per_class: 3
+reruns_per_phase: 5
+backend_switches: 3
+major_repairs: 20
+state_flow: [classify, fallback, repair, rerun, accept_or_escalate]

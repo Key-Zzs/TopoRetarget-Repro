@@ -685,3 +685,13 @@ generalized-winding sign 与 v2 fallback。
 固定 base/q 下重算现有 active-query slack，并以 reference-Jacobian retry；不接受 status 8，也不放宽
 任一最终 gate。两个独立 mug 严格重放及一个逐字节一致的 ContactPose banana shadow replay 均通过，
 final queue 始终保持暂停。ContactPose Eq. 10/Eq. 11 contact benchmark 仍未复现。
+
+## 2026-08-01 -- Stage 16 Reference-Tracking PPO 实现
+
+实现了可追溯的 Appendix A.5 reference、MDP、reward、termination、可独立开关的 domain
+randomization、PPO、checkpoint 和有界恢复模块。MuJoCo 3.3.6 位于独立的
+toporetarget-rl 环境，只作为 free-object CPU correctness backend。编译、reset、transition、
+observation、reward、Table-5 sampling 与有界 PPO 数值 smoke 均通过；它们不构成作者精确
+模拟器或物理训练结果。动态 HO-Cap reference 必须基于修复后的 adapter contract 重新生成，
+但 final-job control 仍暂停，协议训练/评测因此受输入 gate 阻断。修复前的 Stage-12 artifact
+继续仅作为不可变历史证据。Pen-Spin 在本机仍不可用。

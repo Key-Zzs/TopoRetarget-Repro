@@ -814,3 +814,16 @@ retry; it does not accept status 8 or relax any final gate.  Two independent
 strict mug replays and a bitwise-identical ContactPose banana shadow replay
 passed while the final queue remained paused.  ContactPose Eq. 10/Eq. 11 contact
 benchmark evaluation remains not reproduced.
+
+## 2026-08-01 -- Stage 16 reference-tracking PPO implementation
+
+Created the paper-traceable Appendix A.5 reference, MDP, reward, termination,
+independently switchable domain randomization, PPO, checkpoint, and bounded
+recovery components. MuJoCo 3.3.6 is isolated in the new toporetarget-rl
+environment as a free-object CPU correctness backend. Compilation, reset,
+transition, observation, reward, Table-5 sampling, and a bounded PPO numerical
+smoke pass; none is an author-exact simulator or physical training result.
+Dynamic HO-Cap references must be regenerated from the repaired adapter
+contract, but the final-job control is paused, so protocol training/evaluation
+is input-gated. Pre-repair Stage-12 artifacts remain immutable historical
+evidence. Pen-Spin remains unavailable locally.

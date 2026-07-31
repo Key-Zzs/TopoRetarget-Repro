@@ -1,0 +1,11 @@
+schema_version: toporetarget.stage16.paper_fidelity_ledger.v1
+items:
+  - {id: reference_frame, classification: PAPER_EXACT, evidence: "Appendix A.5 p.13", mapping: "Stage16ReferenceClip"}
+  - {id: reward_table4, classification: PAPER_EXACT, evidence: "Table 4 p.14", mapping: "paper_literal_reward_v1"}
+  - {id: termination_table4, classification: PAPER_EXACT, evidence: "Table 4 p.14", mapping: "classify_termination"}
+  - {id: randomization_table5, classification: PAPER_EXACT, evidence: "Table 5 p.15", mapping: "DomainRandomizationConfig"}
+  - {id: ppo_table6, classification: PAPER_EXACT, evidence: "Table 6 p.16", mapping: "PPOConfig"}
+  - {id: tracked_link_profile, classification: ENGINEERING_ASSUMPTION, evidence: "not disclosed", mapping: "tracked_link_profile_v1"}
+  - {id: object_axis_profile, classification: ENGINEERING_ASSUMPTION, evidence: "not disclosed", mapping: "object_axis_points_v1"}
+  - {id: simulator, classification: ENGINEERING_ASSUMPTION, evidence: "not disclosed", mapping: "mujoco_cpu_reference"}
+  - {id: pen_spin, classification: UNRESOLVED, evidence: "private dataset", mapping: "STAGE16_PENSPIN_DATA_UNAVAILABLE"}
