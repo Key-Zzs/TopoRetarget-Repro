@@ -214,7 +214,9 @@ class IndependentManoReference:
                 layer = basis_layer
                 call_hand = native_pose
             else:
-                layer = self._layer(side, False, num_pca_components, flat_hand_mean, batch_size)
+                # ``full_hand`` already includes the declared MANO mean.  The
+                # non-PCA execution layer must therefore contribute zero mean.
+                layer = self._layer(side, False, num_pca_components, True, batch_size)
                 call_hand = full_hand
         else:
             raise RuntimeError(f"unknown explicit reference representation {pose_representation!r}")
@@ -303,6 +305,7 @@ class RawReference:
     contact_points: np.ndarray | None
     reference_manifest: dict[str, Any]
     native_joints: np.ndarray | None = None
+    geometry_joints: np.ndarray | None = None
 
 
 def _dexycb_reference(
@@ -377,6 +380,7 @@ def _dexycb_reference(
             "hand_mean_hash": fixed["hand_mean_hash"],
         },
         native_joints=raw_joints,
+        geometry_joints=_smplx_mediapipe21(fixed["joints"], fixed["vertices"]),
     )
 
 
@@ -602,22 +606,89 @@ def _error_metrics(actual: np.ndarray, reference: np.ndarray) -> dict[str, float
     }
 
 
-def _proximity(vertices: np.ndarray, sequence: Any) -> dict[str, float | str]:
+def _true_runs(mask: np.ndarray) -> list[list[int]]:
+    indices = np.flatnonzero(mask)
+    if len(indices) == 0:
+        return []
+    result: list[list[int]] = []
+    start = previous = int(indices[0])
+    for value in indices[1:]:
+        index = int(value)
+        if index != previous + 1:
+            result.append([start, previous])
+            start = index
+        previous = index
+    result.append([start, previous])
+    return result
+
+
+def _proximity(vertices: np.ndarray, sequence: Any) -> dict[str, Any]:
     values: list[float] = []
+    nearest_objects: list[str] = []
     for frame in range(len(vertices)):
-        frame_distances: list[float] = []
+        frame_distances: list[tuple[float, str]] = []
         for object_track in sequence.rigid_objects:
             local = np.asarray(object_track.mesh.vertices_local, dtype=np.float64)
-            if len(local) > 3000:
-                local = local[:: max(1, len(local) // 3000)]
             pose = object_track.pose_scene.pose_scene[frame]
             world = local @ pose[:3, :3].T + pose[:3, 3]
-            frame_distances.append(float(cKDTree(world).query(vertices[frame], k=1)[0].min()))
-        values.append(min(frame_distances))
+            frame_distances.append(
+                (
+                    float(cKDTree(world).query(vertices[frame], k=1)[0].min()),
+                    str(object_track.object_id),
+                )
+            )
+        distance, object_id = min(frame_distances)
+        values.append(distance)
+        nearest_objects.append(object_id)
+    distances = np.asarray(values, dtype=np.float64)
+    threshold_runs = {
+        f"lt_{threshold_mm}mm": _true_runs(distances < threshold_mm / 1000.0)
+        for threshold_mm in (2, 5, 10)
+    }
+    near_contact = np.flatnonzero(distances < 0.005)
     return {
-        "classification": "ENGINEERING_DIAGNOSTIC",
-        "min_m": float(np.min(values)),
-        "mean_m": float(np.mean(values)),
+        "classification": "ENGINEERING_PROXIMITY_PROXY_NOT_CONTACT_GROUND_TRUTH",
+        "min_m": float(np.min(distances)),
+        "mean_m": float(np.mean(distances)),
+        "max_m": float(np.max(distances)),
+        "frame_min_m": distances.tolist(),
+        "nearest_object_id": nearest_objects,
+        "threshold_runs": threshold_runs,
+        "first_near_contact_frame": None if len(near_contact) == 0 else int(near_contact[0]),
+    }
+
+
+def _geometry_joint_consistency(reference: RawReference) -> dict[str, Any]:
+    """Gate mesh morphology against a dataset-native 21-joint source when available."""
+
+    if reference.geometry_joints is None:
+        return {
+            "available": False,
+            "classification": "NOT_AVAILABLE",
+            "pass": True,
+        }
+    geometry = np.asarray(reference.geometry_joints, dtype=np.float64)
+    native = np.asarray(reference.joints, dtype=np.float64)
+    distances = np.linalg.norm(geometry - native, axis=-1)
+    layout = get_layout("mediapipe21")
+    tip_indices = np.asarray(layout.fingertip_indices, dtype=np.int64)
+    non_tip_indices = np.asarray(
+        [index for index in range(layout.point_count) if index not in set(tip_indices.tolist())],
+        dtype=np.int64,
+    )
+    non_tip_max = float(np.max(distances[:, non_tip_indices]))
+    tip_max = float(np.max(distances[:, tip_indices]))
+    return {
+        "available": True,
+        "classification": "DATASET_NATIVE_JOINTS_VS_RECONSTRUCTED_MANO_GEOMETRY",
+        "mean_m": float(np.mean(distances)),
+        "p95_m": float(np.quantile(distances, 0.95)),
+        "max_m": float(np.max(distances)),
+        "non_tip_max_m": non_tip_max,
+        "tip_max_m": tip_max,
+        "non_tip_tolerance_m": 1e-6,
+        "tip_tolerance_m": 1e-2,
+        "pass": non_tip_max <= 1e-6 and tip_max <= 1e-2,
     }
 
 
@@ -694,13 +765,14 @@ HTML_TEMPLATE = r"""<!doctype html>
 
 def _html_document(payload: dict[str, Any], *, diagnostic: bool) -> str:
     frame_count = int(payload["frame_count"])
+    start_frame = int(payload.get("start_frame", 0))
     heading = f"{payload['dataset']} · Source Contract Qualification Viewer"
     title = heading + (" · before/after audit" if diagnostic else " · fixed source")
     return (
         HTML_TEMPLATE.replace("__TITLE__", title)
         .replace("__HEADING__", heading)
         .replace("__MAX_FRAME__", str(frame_count - 1))
-        .replace("__START_FRAME__", "0")
+        .replace("__START_FRAME__", str(start_frame))
         .replace("-sy*p[0]+cy*p[2];return", "-sy*p[0]+cy*p[2]];return")
         .replace(
             "c=[(lo[0]+hi[0])/2,(lo[1]+hi[1])/2,(lo[2]+hi[2])/2]",
@@ -1013,6 +1085,9 @@ def _markdown(selection: dict[str, Any], report: dict[str, Any]) -> str:
                 f"- Frames: `{report['frame_count']}`",
                 f"- Vertex maximum error: `{report['parity']['vertices']['max_m'] * 1000:.9f} mm`",
                 f"- Joint maximum error: `{report['parity']['joints']['max_m'] * 1000:.9f} mm`",
+                f"- Geometry/native-joint gate: `{report['gates']['geometry_joint_consistency']}`",
+                f"- PCA45 single-mean gate: `{report['gates']['pca45_single_mean']}`",
+                f"- HOCap phased proximity gate: `{report['gates']['hocap_contact_proxy']}`",
                 f"- Object transform maximum absolute difference: `{report['object_pose']['max_abs']:.17g}`",
                 f"- Source HTML: `{report['paths']['source_html']}`",
                 f"- Diagnostic HTML: `{report['paths']['diagnostic_html']}`",
@@ -1058,6 +1133,8 @@ def _selection_report(
         )
     native_joint_metrics = _error_metrics(native_track, raw.native_joints)
     object_metrics = _object_checks(sequence, raw)
+    geometry_joint_consistency = _geometry_joint_consistency(raw)
+    proximity = _proximity(vertices, sequence)
     frame_count = sequence.num_frames
     finite = bool(np.isfinite(vertices).all() and np.isfinite(native).all())
     temporal_static = dataset != "contactpose" or (
@@ -1071,6 +1148,16 @@ def _selection_report(
         if dataset == "contactpose"
         else "SOURCE_QUALIFICATION_PASS"
     )
+    reconstruction_manifest = source.metadata.get("mano_reconstruction", {})
+    pca45_mean_gate = dataset not in {"dexycb", "hocap"} or (
+        reconstruction_manifest.get("execution") == "pca45_explicit_basis_expansion_single_mean"
+        and reconstruction_manifest.get("execution_flat_hand_mean") is True
+        and reconstruction_manifest.get("pca_mean_application") == "explicit_basis_expansion_once"
+    )
+    proximity_runs_5mm = proximity["threshold_runs"]["lt_5mm"]
+    hocap_contact_proxy_gate = dataset != "hocap" or any(
+        stop - start + 1 >= 5 for start, stop in proximity_runs_5mm
+    )
     gate_pass = (
         vertex_metrics["mean_m"] <= 1e-6
         and vertex_metrics["max_m"] <= 1e-5
@@ -1080,6 +1167,9 @@ def _selection_report(
         and finite
         and not object_metrics["reflection_detected"]
         and temporal_static
+        and geometry_joint_consistency["pass"]
+        and pca45_mean_gate
+        and hocap_contact_proxy_gate
     )
     if not gate_pass:
         source_status = "SOURCE_QUALIFICATION_FAIL"
@@ -1106,6 +1196,9 @@ def _selection_report(
         "dataset": dataset,
         "selection_id": selection_id,
         "frame_count": frame_count,
+        "start_frame": proximity["first_near_contact_frame"]
+        if dataset == "hocap" and proximity["first_near_contact_frame"] is not None
+        else 0,
         "static": dataset == "contactpose",
         "fixed": np.round(vertices, 7).tolist(),
         "old": np.round(raw.old_vertices, 7).tolist(),
@@ -1124,6 +1217,8 @@ def _selection_report(
         "bounds": _bounds(vertices, objects, raw.old_vertices),
         "status": {
             "source_contract_status": source_status,
+            "qualification_scope": "numerical_geometry_and_browser_render",
+            "manual_visual_acceptance": "REQUIRED_SEPARATELY",
             "mano_representation": source.metadata.get("mano_representation", "not_applicable"),
             "num_pca_components": source.metadata.get("num_pca_components"),
             "flat_hand_mean": source.metadata.get("flat_hand_mean"),
@@ -1139,12 +1234,30 @@ def _selection_report(
                 "classification", "dynamic_source_trajectory"
             ),
             "temporal_metrics_applicable": dataset != "contactpose",
+            "pca45_single_mean_gate": pca45_mean_gate,
+            "geometry_joint_consistency": geometry_joint_consistency,
+            "contact_evidence": (
+                "ENGINEERING_PROXIMITY_PROXY_NOT_CONTACT_GROUND_TRUTH"
+                if dataset == "hocap"
+                else "NOT_APPLICABLE"
+            ),
+            "first_near_contact_frame": proximity["first_near_contact_frame"],
+            "approach_frames_are_expected": dataset == "hocap",
         },
         "metrics": [
             {
                 "frame": index,
                 "native_timestamp_s": float(sequence.timestamps[index]),
                 "object_transforms": [item["poses"][index] for item in objects],
+                "nearest_object_surface_m": proximity["frame_min_m"][index],
+                "nearest_object_id": proximity["nearest_object_id"][index],
+                "interaction_phase": (
+                    "near_contact_proxy"
+                    if proximity["frame_min_m"][index] < 0.005
+                    else "near_object"
+                    if proximity["frame_min_m"][index] < 0.01
+                    else "approach_or_separated"
+                ),
             }
             for index in range(frame_count)
         ],
@@ -1188,11 +1301,17 @@ def _selection_report(
             "joints": joint_metrics,
             "native_joints": native_joint_metrics,
             "native_track_name": native_track_name,
+            "geometry_joint_consistency": geometry_joint_consistency,
         },
         "object_pose": object_metrics,
         "finite": finite,
         "kinematics": _kinematics(native, sequence.timestamps),
-        "proximity": _proximity(vertices, sequence),
+        "proximity": proximity,
+        "gates": {
+            "pca45_single_mean": pca45_mean_gate,
+            "geometry_joint_consistency": geometry_joint_consistency["pass"],
+            "hocap_contact_proxy": hocap_contact_proxy_gate,
+        },
         "temporal_contract": {
             "classification": sequence.metadata.metadata.get(
                 "classification", "dynamic_source_trajectory"
@@ -1218,6 +1337,11 @@ def _selection_report(
             "screenshots": screenshot_records,
             "contact_sheet": str(sheet.resolve()) if sheet.is_file() else None,
             "pass": browser_pass,
+            "scope": "render_integrity_only_not_geometry_or_contact_acceptance",
+        },
+        "visual_acceptance": {
+            "status": "MANUAL_REVIEW_REQUIRED",
+            "automated_browser_result_is_not_visual_acceptance": True,
         },
         "paths": {
             "root": str(root.resolve()),
@@ -1553,7 +1677,7 @@ def _write_aggregate_reports(reports: list[dict[str, Any]], status: str) -> None
         "## Final Status",
         "",
         f"- Overall: `{status}`",
-        "- Next step: `SOURCE_FIX_READY_FOR_RETARGET_REGENERATION`",
+        "- Next step: `SOURCE_FIX_READY_FOR_MANUAL_VISUAL_REVIEW`",
         "- Queue: `STAGE12_FINAL_QUEUE_PAUSED`",
         "- Scope: source-only; no warm/final retarget was run.",
         "",
@@ -1593,10 +1717,11 @@ def _write_aggregate_reports(reports: list[dict[str, Any]], status: str) -> None
                 if item["dataset"] == "contactpose"
             ],
             "",
-            "## Automated Screenshot Review",
+            "## Automated Browser Render Check",
             "",
             "- All selection screenshots loaded in headless Chrome with zero browser errors.",
-            "- Canvas, colored hand layer, colored object layer, and artifact hashes passed.",
+            "- This checks canvas/render integrity only; it is not geometry or contact acceptance.",
+            "- Manual visual acceptance remains required after reviewing the generated HTML.",
             f"- Overview: `{(REPORT_ROOT / 'all_selection_contact_sheet.png').resolve()}`",
             "",
             "## Stage12 v4 Invalidation",
@@ -1607,7 +1732,7 @@ def _write_aggregate_reports(reports: list[dict[str, Any]], status: str) -> None
             "",
             "## Recommended Next Action",
             "",
-            "Await explicit approval before running any source-to-retarget regeneration.",
+            "Review the regenerated source HTML before approving source-to-retarget regeneration.",
         ]
     )
     _write_text(REPORT_ROOT / "handoff.md", "\n".join(handoff_lines) + "\n")

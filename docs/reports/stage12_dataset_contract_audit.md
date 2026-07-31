@@ -173,6 +173,14 @@ the derived 48D axis-angle form, posed joints, faces, beta broadcast, and the
 model/basis/mean hashes.  Layer identity includes side, representation, K,
 flat-hand-mean, model hash, dtype, and device.
 
+A follow-up visual audit found that the first implementation expanded PCA45
+as `coefficients @ components + hand_mean` and then executed that already
+expanded pose through a non-PCA SMPL-X layer with `flat_hand_mean=false`.
+SMPL-X therefore added `pose_mean` a second time.  The execution layer is now
+explicitly flat-mean while the declared dataset contract remains
+`flat_hand_mean=false`, so the native mean is applied exactly once.  A real
+MANO-model regression compares this path with direct single-mean execution.
+
 ## Dataset Adapter Changes
 
 - DexYCB now declares `pose_m = AA3 + PCA45 + translation3`, uses the
@@ -221,13 +229,25 @@ frame 0.  Browser error count is zero and the image validator confirms a
 nonempty canvas plus both hand and object layers.  The authoritative summary is
 `.local/reports/stage12_source_contract_fix/source_qualification_summary.json`.
 
+To prevent the original circular PCA45 check from passing again, DexYCB also
+gates mesh-derived joints against its independent raw `joint_3d`: non-tip
+maximum error is `0.000194 mm`, and the five mesh-tip proxies remain within
+`5.675 mm` of the dataset tip definitions.  HO-Cap has no contact-ground-truth
+track in the selected annotations, so its qualification requires a sustained
+surface-proximity run and reports the approach and near-contact intervals
+separately.  The two viewers open at their first `<5 mm` proxy frames (33 and
+21), while frames before those points remain explicitly classified as
+approach/separated.
+
 ## Remaining Limitations
 
 This repair proves the source-adapter contracts only.  It does not certify a
 new Wuji/solver trajectory, collision outcome, warm start, final refinement,
 or downstream retarget acceptance.  Hand-object proximity values in the new
-reports remain labelled `ENGINEERING_DIAGNOSTIC`; they are not contact ground
-truth.
+reports remain labelled
+`ENGINEERING_PROXIMITY_PROXY_NOT_CONTACT_GROUND_TRUTH`; they are not contact
+ground truth.  The automated browser gate checks render integrity only and is
+not a substitute for manual geometry/contact acceptance.
 
 ## Stage12 v4 Invalidation
 

@@ -163,9 +163,13 @@ class SmplxManoBackend:
         model_path: Path,
         use_pca: bool,
         v_template: np.ndarray | None,
+        execution_flat_hand_mean: bool | None = None,
     ) -> Any:
         template_hash = self._template_hash(v_template)
         representation = ManoPoseRepresentation(request.pose_representation)
+        layer_flat_hand_mean = (
+            request.flat_hand_mean if execution_flat_hand_mean is None else execution_flat_hand_mean
+        )
         # The leading fields are the required cache identity.  The explicit
         # use_pca/template suffix prevents an implementation-detail collision.
         key = (
@@ -178,6 +182,7 @@ class SmplxManoBackend:
             self.device,
             use_pca,
             template_hash,
+            layer_flat_hand_mean,
         )
         if key in self._layer_cache:
             return self._layer_cache[key]
@@ -185,7 +190,7 @@ class SmplxManoBackend:
             "model_path": str(model_path),
             "model_type": "mano",
             "is_rhand": request.side == "right",
-            "flat_hand_mean": request.flat_hand_mean,
+            "flat_hand_mean": layer_flat_hand_mean,
             "batch_size": request.frame_count,
             "use_pca": use_pca,
         }
@@ -243,20 +248,36 @@ class SmplxManoBackend:
         # SMPL-X changes ``use_pca`` to False at K=45.  Passing PCA45 directly
         # would therefore reinterpret it as axis-angle.  Expand with exactly
         # this model's basis/mean, then use the non-PCA layer deliberately.
-        layer = self._layer(
+        declared_layer = self._layer(
             request, model_path=model_path, use_pca=direct_pca, v_template=v_template
         )
+        layer = declared_layer
         hand_pose_axis_angle: np.ndarray
         pca_basis_hash: str | None = None
         hand_mean_hash: str | None = None
         if representation is ManoPoseRepresentation.PCA:
             assert request.num_pca_components is not None
-            basis, hand_mean = self._basis_and_mean(layer, request.num_pca_components)
+            basis, hand_mean = self._basis_and_mean(declared_layer, request.num_pca_components)
             hand_pose_axis_angle = request.hand_pose @ basis + hand_mean
             pca_basis_hash = _sha256_array(basis)
             hand_mean_hash = _sha256_array(hand_mean)
-            model_hand_pose = request.hand_pose if direct_pca else hand_pose_axis_angle
-            execution = "native_pca_layer" if direct_pca else "pca45_explicit_basis_expansion"
+            if direct_pca:
+                model_hand_pose = request.hand_pose
+                execution = "native_pca_layer"
+            else:
+                # SMPL-X forcibly disables PCA at K=45.  ``hand_pose_axis_angle``
+                # already contains the declared MANO mean, so the execution
+                # layer must have a zero pose mean.  Reusing the declared
+                # ``flat_hand_mean=False`` layer here would add the mean twice.
+                layer = self._layer(
+                    request,
+                    model_path=model_path,
+                    use_pca=False,
+                    v_template=v_template,
+                    execution_flat_hand_mean=True,
+                )
+                model_hand_pose = hand_pose_axis_angle
+                execution = "pca45_explicit_basis_expansion_single_mean"
         else:
             hand_pose_axis_angle = request.hand_pose.copy()
             model_hand_pose = hand_pose_axis_angle
@@ -331,6 +352,14 @@ class SmplxManoBackend:
                 "pca_basis_hash": pca_basis_hash,
                 "hand_mean_hash": hand_mean_hash,
                 "execution": execution,
+                "execution_flat_hand_mean": bool(layer.flat_hand_mean),
+                "pca_mean_application": (
+                    "native_pca_layer_once"
+                    if direct_pca
+                    else "explicit_basis_expansion_once"
+                    if representation is ManoPoseRepresentation.PCA
+                    else "not_applicable"
+                ),
             },
         )
 

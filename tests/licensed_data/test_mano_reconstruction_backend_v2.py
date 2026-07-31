@@ -119,6 +119,43 @@ def test_pca_expansion_is_the_backend_layer_basis_times_coefficients_plus_mean()
     assert np.allclose(result.hand_pose_axis_angle, request.hand_pose @ basis + mean)
 
 
+def test_pca45_executes_expanded_pose_without_adding_hand_mean_twice() -> None:
+    backend = _backend()
+    request = _request(
+        backend,
+        representation=ManoPoseRepresentation.PCA,
+        components=45,
+        flat_hand_mean=False,
+    )
+    request.hand_pose[0, :5] = [0.2, -0.1, 0.3, -0.2, 0.1]
+    result = backend.reconstruct(request)
+    execution_layer = backend._layer(  # noqa: SLF001 - exact execution oracle
+        request,
+        model_path=Path(request.model_path),
+        use_pca=False,
+        v_template=None,
+        execution_flat_hand_mean=True,
+    )
+    torch = backend._torch  # noqa: SLF001 - licensed real-model equivalence test
+    with torch.no_grad():
+        expected = execution_layer(
+            global_orient=torch.as_tensor(request.global_orient, dtype=torch.float64),
+            hand_pose=torch.as_tensor(result.hand_pose_axis_angle, dtype=torch.float64),
+            transl=torch.as_tensor(request.translation, dtype=torch.float64),
+            betas=torch.as_tensor(request.broadcast_betas(), dtype=torch.float64),
+        )
+    assert np.allclose(result.vertices, expected.vertices.detach().cpu().numpy(), atol=1e-12)
+    assert np.allclose(
+        result.posed_joints_native,
+        expected.joints.detach().cpu().numpy(),
+        atol=1e-12,
+    )
+    assert result.reconstruction_manifest["execution_flat_hand_mean"] is True
+    assert result.reconstruction_manifest["pca_mean_application"] == (
+        "explicit_basis_expansion_once"
+    )
+
+
 def test_cache_identity_separates_k_flat_hand_mean_and_side() -> None:
     backend = _backend()
     requests = [

@@ -7,6 +7,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 import yaml
 
@@ -57,10 +58,30 @@ def test_stage12_adapter_loads_canonical_provenance_and_viewer_handle(
         assert hand.keypoint_tracks["mano21_named"].provenance["source"] == "dataset_native"
         assert hand.metadata["mano_representation"] == "pca"
         assert hand.metadata["num_pca_components"] == 45
+        native = hand.keypoint_tracks["mano21_named"]
+        name_to_index = {name: index for index, name in enumerate(native.semantic_names or [])}
+        tip_vertices = {
+            "thumb_tip": 744,
+            "index_tip": 320,
+            "middle_tip": 443,
+            "ring_tip": 554,
+            "pinky_tip": 671,
+        }
+        assert hand.vertices_scene is not None
+        for name, vertex_index in tip_vertices.items():
+            native_tip = native.positions_scene[:, name_to_index[name]]
+            error = np.linalg.norm(
+                hand.vertices_scene[:, vertex_index] - native_tip,
+                axis=-1,
+            )
+            assert float(np.max(error)) <= 1e-2
     elif dataset == "hocap":
         assert hand.keypoint_tracks["mano16_smplx"].provenance["source"] == "backend_posed"
         assert hand.metadata["mano_representation"] == "pca"
         assert hand.metadata["num_pca_components"] == 45
+        reconstruction = hand.metadata["mano_reconstruction"]
+        assert reconstruction["execution"] == ("pca45_explicit_basis_expansion_single_mean")
+        assert reconstruction["execution_flat_hand_mean"] is True
     elif dataset == "contactpose":
         assert canonical.num_frames == 1
         assert canonical.metadata.metadata["temporal_metrics"] == "NOT_APPLICABLE"
