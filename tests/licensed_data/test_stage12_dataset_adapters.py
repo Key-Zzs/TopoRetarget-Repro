@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from collections import Counter
 from pathlib import Path
@@ -87,7 +88,18 @@ def test_stage12_adapter_loads_canonical_provenance_and_viewer_handle(
     elif dataset == "contactpose":
         assert canonical.num_frames == 1
         assert canonical.metadata.metadata["temporal_metrics"] == "NOT_APPLICABLE"
-        assert hand.keypoint_tracks["mano21_named"].provenance["source"] == "contactpose_official"
+        native = hand.keypoint_tracks["mano21_named"]
+        assert native.provenance["source"] == "contactpose_official"
+        assert native.provenance["mapping_mode"] == (
+            "contactpose_annotation_openpose21_identity_semantics"
+        )
+        assert native.provenance["fitted_mano_used_for_keypoints"] is False
+        annotation_path = (
+            adapter.dataset_dir / sequence.removeprefix("contactpose:") / "annotations.json"
+        )
+        annotation = json.loads(annotation_path.read_text(encoding="utf-8"))
+        expected = np.asarray(annotation["hands"][1]["joints"], dtype=np.float64)[None, ...]
+        np.testing.assert_array_equal(native.positions_scene, expected)
     elif dataset == "oakink":
         assert hand.keypoint_tracks["mano21_named"].provenance["source"] == "dataset_native"
         assert hand.wrist_pose_scene.orientation_available is False

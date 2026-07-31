@@ -11,6 +11,7 @@ from toporetarget.adapters.datasets.contactpose import static_mano_to_object_tra
 from toporetarget.adapters.datasets.hocap import HOCapAdapterV1
 from toporetarget.adapters.datasets.stage12_base import (
     Stage12AdapterError,
+    contactpose_annotation_mano21_track,
     contactpose_official_mano21_track,
 )
 from toporetarget.data.schema import (
@@ -98,3 +99,17 @@ def test_contactpose_official_mano21_keeps_middle_ring_and_pinky_semantics() -> 
         assert np.array_equal(output[target_index[name]], joints[0, source_index[name]])
     for name, vertex_index in {"middle_tip": 444, "ring_tip": 555, "pinky_tip": 672}.items():
         assert np.array_equal(output[target_index[name]], vertices[0, vertex_index])
+
+
+def test_contactpose_annotation_openpose21_is_the_identity_semantic_source() -> None:
+    positions = np.arange(63, dtype=np.float64).reshape(1, 21, 3)
+    track = contactpose_annotation_mano21_track(
+        positions, valid=np.asarray([True]), source_path="annotations.json"
+    )
+    assert track.layout_name == "mano21_named"
+    assert track.semantic_names == list(get_layout("mediapipe21").semantic_names)
+    assert np.array_equal(track.positions_scene, positions)
+    assert track.provenance["mapping_mode"] == (
+        "contactpose_annotation_openpose21_identity_semantics"
+    )
+    assert track.provenance["fitted_mano_used_for_keypoints"] is False

@@ -15,7 +15,7 @@ from toporetarget.data.schema import HOISequence, ManoParameterTrack
 from .stage12_base import (
     Stage12AdapterBase,
     Stage12AdapterError,
-    contactpose_official_mano21_track,
+    contactpose_annotation_mano21_track,
     identity_poses,
     load_mesh,
     make_hand,
@@ -177,21 +177,25 @@ class ContactPoseAdapterV1(Stage12AdapterBase):
         )
         htm = static_mano_to_object_transform(fit)
         base_vertices = np.asarray(base.vertices[0], dtype=np.float64)
-        base_joints = np.asarray(base.posed_joints_native[0], dtype=np.float64)
         base_wrist = np.asarray(base.wrist_pose_scene[0], dtype=np.float64)
         vertices: list[np.ndarray] = []
-        joints: list[np.ndarray] = []
         wrists: list[np.ndarray] = []
         for _frame in selected:
             otm = htm
             vertices.append(transform_points(otm[None, ...], base_vertices[None, ...])[0])
-            joints.append(transform_points(otm[None, ...], base_joints[None, ...])[0])
             wrists.append(otm @ base_wrist)
         hand_vertices = np.stack(vertices, axis=0)
-        hand_joints = np.stack(joints, axis=0)
         hand_wrist = np.stack(wrists, axis=0)
         valid = np.ones(1, dtype=bool)
-        official_joints = contactpose_official_mano21_track(hand_joints, hand_vertices, valid=valid)
+        raw_joints = np.asarray(hands[1].get("joints"), dtype=np.float64)
+        if raw_joints.shape != (21, 3):
+            raise Stage12AdapterError(
+                "ContactPose right-hand annotation must provide exactly 21 OpenPose joints, "
+                f"got {raw_joints.shape} in {annotation_path}"
+            )
+        official_joints = contactpose_annotation_mano21_track(
+            raw_joints[None, ...], valid=valid, source_path=str(annotation_path)
+        )
         hand = make_hand(
             hand_id="right_hand",
             side="right",
@@ -208,13 +212,17 @@ class ContactPoseAdapterV1(Stage12AdapterBase):
             ),
             mano_model_root=self.mano_model_root,
             metadata={
-                "source": "ContactPose MANO fit transformed into object frame",
+                "source": "ContactPose fitted MANO mesh plus annotated OpenPose-21 keypoints",
                 "source_pca_pose": np.asarray(fit["pose"], dtype=np.float64).tolist(),
                 "mano_representation": "pca",
                 "num_pca_components": 15,
                 "flat_hand_mean": False,
                 "mano_reconstruction": base.reconstruction_manifest,
-                "joint_source": "contactpose_official_mano16_plus_tip_vertices",
+                "joint_source": "contactpose_annotation_openpose21",
+                "joint_mesh_contract": (
+                    "official annotated OpenPose-21 joints drive retargeting; "
+                    "fitted PCA15 MANO mesh remains the source visualization surface"
+                ),
                 "wrist_transform_source": "oTm=inv(mTc); hTo retained as observation evidence only",
                 "contact_annotation_available": False,
                 "contact_benchmark_status": "NOT_AVAILABLE",
@@ -283,6 +291,13 @@ class ContactPoseAdapterV1(Stage12AdapterBase):
                     "pinky": 672,
                     "ring": 555,
                     "thumb": 745,
+                },
+                "contactpose_keypoint_contract": {
+                    "source": "annotations.hands[1].joints",
+                    "layout": "contactpose_openpose21",
+                    "semantic_route": "identity_to_mediapipe21",
+                    "fitted_mano_used_for_keypoints": False,
+                    "fitted_mano_mesh_retained_for_visualization": True,
                 },
             },
         )

@@ -359,6 +359,51 @@ def contactpose_official_mano21_track(
     )
 
 
+def contactpose_annotation_mano21_track(
+    positions: np.ndarray,
+    *,
+    valid: np.ndarray,
+    source_path: str | None = None,
+) -> KeypointTrack:
+    """Preserve ContactPose's annotated OpenPose-21 joints as the source track.
+
+    ContactPose stores one official 21-joint hand annotation in OpenPose order
+    (wrist, thumb, index, middle, ring, pinky).  That is already the canonical
+    semantic order used by ``mediapipe21``.  The fitted MANO mesh remains the
+    visual/source surface, but replacing these annotated joints with joints
+    reconstructed from the fit changes distal articulation and can materially
+    change Stage-7 bone directions.
+    """
+
+    value = np.asarray(positions, dtype=np.float64)
+    if value.ndim != 3 or value.shape[1:] != (21, 3):
+        raise Stage12AdapterError(
+            f"ContactPose annotated joints must have shape [T,21,3], got {value.shape}"
+        )
+    semantic_names = list(get_layout("mediapipe21").semantic_names)
+    point_valid = np.broadcast_to(np.asarray(valid, dtype=bool)[:, None], value.shape[:2]).copy()
+    point_valid &= np.isfinite(value).all(axis=-1)
+    if not point_valid.all():
+        raise Stage12AdapterError("ContactPose annotated OpenPose-21 joints contain invalid values")
+    return KeypointTrack(
+        value,
+        layout_name="mano21_named",
+        valid=point_valid,
+        semantic_names=semantic_names,
+        frame_name="S",
+        units="m",
+        provenance={
+            "source": ManoJointSource.CONTACTPOSE_OFFICIAL.value,
+            "mapping_mode": "contactpose_annotation_openpose21_identity_semantics",
+            "source_path": source_path,
+            "source_layout": "contactpose_openpose21",
+            "target_layout": "mediapipe21",
+            "fitted_mano_used_for_keypoints": False,
+            "fitted_mano_mesh_retained_for_visualization": True,
+        },
+    )
+
+
 def _native_mano21_to_mediapipe21(track: KeypointTrack) -> KeypointTrack:
     """Semantically reorder a named native 21-joint track, never shape-cast it."""
 
@@ -657,6 +702,7 @@ __all__ = [
     "pose_hocap_qxyzw",
     "pose_json_wxyz",
     "backend_posed_joint_track",
+    "contactpose_annotation_mano21_track",
     "contactpose_official_mano21_track",
     "native_mano21_track",
     "render_mano_pca45",
