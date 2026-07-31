@@ -39,7 +39,7 @@ def main() -> int:
     parser.add_argument("--object-mesh", action="append", required=True, type=Path)
     parser.add_argument("--checkpoint", required=True, type=Path)
     parser.add_argument("--scene-root", required=True, type=Path)
-    parser.add_argument("--episodes-per-clip", type=int, default=2)
+    parser.add_argument("--episodes-per-clip", type=int, default=20)
     parser.add_argument("--action-scale-fraction", type=float, default=0.05)
     parser.add_argument("--domain-randomization", action="store_true")
     parser.add_argument("--seed", type=int, default=20260821)
@@ -49,8 +49,8 @@ def main() -> int:
     args = parser.parse_args()
     if len(args.reference) != len(args.object_mesh):
         raise ValueError("--reference and --object-mesh must have equal counts")
-    if not 1 <= args.episodes_per_clip <= 16:
-        raise ValueError("--episodes-per-clip must be in 1..16")
+    if not 1 <= args.episodes_per_clip <= 64:
+        raise ValueError("--episodes-per-clip must be in 1..64")
     model = mujoco.MjModel.from_xml_path(str(WUJI_MJCF))
     bounds = model.jnt_range[: model.njnt].copy()
     joint_order = tuple(
@@ -196,6 +196,12 @@ def main() -> int:
         "checkpoint_iteration": int(checkpoint["iteration"]),
         "references": inventory,
         "episodes_per_clip": args.episodes_per_clip,
+        "protocol": {
+            "id": "frame0_deterministic_eval_v1",
+            "reset_reference_index": 0,
+            "deterministic_actor_mean": True,
+            "success_only_filtering": False,
+        },
         "domain_randomization": args.domain_randomization,
         "summary": summary,
         "episodes_path": str(args.episodes_output.resolve()),

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 
@@ -24,6 +25,76 @@ class EpisodeMetrics:
     action_magnitude: float
     action_first_difference: float
     action_second_difference: float
+
+
+@dataclass(frozen=True)
+class ClipEvaluation:
+    """All-episode metrics for one fixed reference clip."""
+
+    clip_id: str
+    episodes: tuple[EpisodeMetrics, ...]
+    summary: dict[str, object]
+
+
+class FrameZeroEvaluator:
+    """Deterministic frame-0 evaluator that retains failed episodes."""
+
+    def __init__(self, *, episodes_per_clip: int = 20, seed: int = 0) -> None:
+        if episodes_per_clip < 1:
+            raise ValueError("episodes_per_clip must be positive")
+        self.episodes_per_clip = episodes_per_clip
+        self.seed = seed
+
+    def evaluate(
+        self,
+        clips: Iterable[tuple[str, Any]],
+        run_episode: Callable[[Any, int, int], EpisodeMetrics],
+    ) -> tuple[ClipEvaluation, ...]:
+        """Run every clip from reference index zero with no success filtering.
+
+        ``run_episode`` owns the simulator and must call its deterministic actor
+        with ``reset(reference_index=0)``.  The callback receives clip, episode
+        index, and a deterministic per-episode seed.
+        """
+
+        results: list[ClipEvaluation] = []
+        for clip_id, clip in clips:
+            episodes = tuple(
+                run_episode(clip, episode_index, self.seed + episode_index)
+                for episode_index in range(self.episodes_per_clip)
+            )
+            results.append(
+                ClipEvaluation(
+                    clip_id=clip_id,
+                    episodes=episodes,
+                    summary=summarize_episodes(episodes),
+                )
+            )
+        return tuple(results)
+
+
+class WorstClipCheckpointSelector:
+    """Select a checkpoint by worst-clip frame-0 performance first."""
+
+    @staticmethod
+    def rank(record: dict[str, Any]) -> tuple[float, float, float, float, float, float]:
+        clips = list(record["clips"])
+        success = [float(clip["success_rate"]) for clip in clips]
+        reach = [float(clip["final_frame_reach_rate"]) for clip in clips]
+        return (
+            min(success),
+            float(record["overall_success_rate"]),
+            min(reach),
+            -float(record["overall_object_position_error_m"]),
+            -float(record["max_axis_point_error_m"]),
+            -float(record["rotation_error_deg"]),
+        )
+
+    def select(self, records: Iterable[dict[str, Any]]) -> dict[str, Any]:
+        candidates = list(records)
+        if not candidates:
+            raise ValueError("checkpoint selection requires at least one candidate")
+        return max(candidates, key=self.rank)
 
 
 def summarize_episodes(episodes: Iterable[EpisodeMetrics]) -> dict[str, object]:

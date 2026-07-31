@@ -8,3 +8,7 @@ optional backends used by dedicated modules and scripts.
 from .contracts import Stage16ReferenceClip, Stage16ReferenceValidationError
 
 __all__ = ["Stage16ReferenceClip", "Stage16ReferenceValidationError"]
+from .evaluation import FrameZeroEvaluator, WorstClipCheckpointSelector
+from .oracle import OracleResidualController
+
+__all__ = ["FrameZeroEvaluator", "OracleResidualController", "WorstClipCheckpointSelector"]

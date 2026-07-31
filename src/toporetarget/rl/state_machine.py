@@ -172,4 +172,38 @@ class Stage16RecoveryStateMachine:
         }
 
 
-__all__ = ["FailureTransition", "RecoveryBudget", "Stage16RecoveryStateMachine"]
+class Stage161RecoveryStateMachine(Stage16RecoveryStateMachine):
+    """Stage-16.1 bounded recovery: three repairs, five reruns per class/phase."""
+
+    def __init__(self, budget: RecoveryBudget | None = None) -> None:
+        super().__init__(
+            budget or RecoveryBudget(repairs_per_class=3, reruns_per_phase=5, major_repairs=12)
+        )
+
+
+class Stage162RecoveryStateMachine(Stage16RecoveryStateMachine):
+    """Stage-16.2 bounded recovery with a sixteen-transition major budget."""
+
+    def __init__(self, budget: RecoveryBudget | None = None) -> None:
+        super().__init__(
+            budget or RecoveryBudget(repairs_per_class=3, reruns_per_phase=5, major_repairs=16)
+        )
+
+
+class Stage163RecoveryStateMachine(Stage16RecoveryStateMachine):
+    """Stage-16.3 bounded recovery with a sixteen-transition major budget."""
+
+    def __init__(self, budget: RecoveryBudget | None = None) -> None:
+        super().__init__(
+            budget or RecoveryBudget(repairs_per_class=3, reruns_per_phase=5, major_repairs=16)
+        )
+
+
+__all__ = [
+    "FailureTransition",
+    "RecoveryBudget",
+    "Stage16RecoveryStateMachine",
+    "Stage161RecoveryStateMachine",
+    "Stage162RecoveryStateMachine",
+    "Stage163RecoveryStateMachine",
+]
