@@ -1740,11 +1740,26 @@ def _write_aggregate_reports(reports: list[dict[str, Any]], status: str) -> None
 
 
 def main() -> int:
+    global EXPERIMENT_ROOT, REPORT_ROOT
     parser = argparse.ArgumentParser()
     parser.add_argument("--selection", action="append", default=[])
     parser.add_argument("--no-screenshots", action="store_true")
     parser.add_argument("--aggregate-only", action="store_true")
+    parser.add_argument(
+        "--experiment-root",
+        type=Path,
+        default=EXPERIMENT_ROOT,
+        help="root for this source-contract qualification lineage",
+    )
+    parser.add_argument(
+        "--report-root",
+        type=Path,
+        default=REPORT_ROOT,
+        help="directory for this source-contract qualification report package",
+    )
     args = parser.parse_args()
+    EXPERIMENT_ROOT = args.experiment_root.expanduser().resolve()
+    REPORT_ROOT = args.report_root.expanduser().resolve()
     if args.no_screenshots:
         raise RuntimeError(
             "Stage 12.5 requires actual browser screenshots; --no-screenshots is forbidden"
