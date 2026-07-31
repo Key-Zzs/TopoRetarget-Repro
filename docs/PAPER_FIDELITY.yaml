@@ -1089,6 +1089,18 @@ wuji_continuous_full_state_v1:
   paper_core_frame_objective: unchanged
   paper_core_collision_constraints: unchanged
   author_exact: unresolved
+generic_status8_slack_restoration:
+  paper_method: false
+  engineering_solver_recovery: true
+  triggers: [SLSQP_status_8, SLSQP_status_9]
+  primary_variables_fixed_during_restoration: true
+  original_objective_unchanged: true
+  original_constraints_unchanged: true
+  bounds_tolerances_penalties_unchanged: true
+  query_set_semantics_unchanged: true
+  independent_full_audit_required: true
+  dataset_object_sample_conditionals: forbidden
+  author_exact: unresolved
 wuji_continuous_sequential_v1:
   paper_method: false
   engineering_extension: true

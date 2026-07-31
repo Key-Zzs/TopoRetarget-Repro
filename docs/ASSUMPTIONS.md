@@ -276,3 +276,11 @@ FD closest-point probes; the paper does not prescribe a compiled backend.
 It preserves CPU float64, formal collision sample identity, solver budgets, and
 the final independent full-surface audit. The paper does not prescribe this BVH,
 spatial-gradient, or Lipschitz-cache implementation; `author_exact` remains unresolved.
+
+## Generic solver-feasibility restoration boundary
+
+Recoverable SLSQP status-8/9 slack restoration is paper-unspecified solver
+engineering. It preserves the original objective, physical-unit constraints,
+QuerySet, bounds, tolerance, float64 execution, and independent full audit. It
+is forbidden from selecting behavior by dataset, object, or sample; author
+exactness remains unresolved.

@@ -99,3 +99,10 @@ P4 adds optional exact float64 compiled generalized winding and certified
 FD-probe sign reuse. Near-threshold winding retains the qualified reference
 fallback. It is experimental and non-default pending fixed-frame and 60-frame
 qualification; Stage-12 remains untouched.
+
+# Stage-12 ContactPose mug solver closeout
+
+The recoverable status-8/9 path reconstructs representable active-set slack at
+fixed q/base and reruns the unchanged strict solver/audit. This generic solver
+engineering is not a paper-method extension and does not establish the
+ContactPose Eq.10/Eq.11 benchmark.
