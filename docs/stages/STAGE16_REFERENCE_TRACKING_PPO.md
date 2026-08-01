@@ -4,16 +4,24 @@ Stage 13 (additional dataset adapters), Stage 14 (robot plugin matrix), and Stag
 
 ## Stage 16.1–16.3 current closeout
 
-The current status is `STAGE16_BLOCKED_WITH_BOUNDED_EVIDENCE`:
+The current status is `STAGE16_1_CONTROLLABILITY_BLOCKED`:
 
 | Stage | Status | Evidence |
 |---|---|---|
 | 16.0 | `FUNCTIONAL_PIPELINE_COMPLETE` | Existing T1/T2/T3 functional run is frozen at 512 T3 samples; its 0% nominal/robust result is not a tracking qualification. |
-| 16.1 | `STAGE16_1_CONTROLLABILITY_BLOCKED` | Both 41-frame references pass kinematic validation. Zero-residual and fixed global oracle candidates terminate around 13–15% progress on object position/axis error. |
+| 16.1 | `STAGE16_1_CONTROLLABILITY_BLOCKED` | Stage-16.1a passes isolated dynamic-hand/kinematic-object PD tracking, but has no hand–object contact or proximity at frames 0/5/10 for either clip; free-object tracking crosses the unchanged 5 cm gate at frames 5–6. |
 | 16.2 | `NOT_STARTED_GATE_BLOCKED` | Requires both clips to pass the Stage 16.1 controllability gate. |
 | 16.3 | `NOT_STARTED_GATE_BLOCKED` | Requires both single-clip overfit gates. |
 
-The formal report is `.local/reports/stage16_1_3/stage16_1_controllability.json`. Recovery attempts are bounded and preserved under `.local/reports/stage16_1_3/`; the prior functional baseline is frozen under `.local/archive/stage16_functional_baseline_20260731T192400Z_e605dab/`. No old checkpoint, Stage 7–12 artifact, or raw NAS data is modified.
+The Stage-16.1a baseline is frozen under `.local/archive/stage16_controllability_failure_baseline_20260801T060846Z_189b2f8/`; corrected A–E evidence is under `.local/reports/stage16_dynamic_coupling_v1_rerun1/`. An initial timestamp-alignment diagnostic pass is retained, unmodified, under `.local/reports/stage16_dynamic_coupling_v1/`; it is not used for the decision. No old checkpoint, Stage 7–12 artifact, or raw NAS data is modified.
+
+## Stage-16.1a dynamic-coupling decision
+
+The runner `scripts/rl/diagnose_stage16_dynamic_coupling.py` preserves formal termination while retaining full 41-frame diagnostic traces. It records physics/control contact traces, collision/proximity evidence, velocity-reset C0–C3, a cloned-state central-difference object-aware 20D residual oracle, and fixed-budget H=5/H=10 shooting. The oracle and shooting controller are engineering diagnostics, never policy results.
+
+Both clips pass Step A (`q` RMSE 0.01544/0.01594 rad; link RMSE 0.789/0.865 mm). Step B finds no actual or expected proximity contact at frames 0/5/10 under any global preload candidate. At later static frames contact does exist, proving collision filters and object geoms are active, but it begins after the dynamic episode has already failed. The selected C3 hand-reference reset retains the best worst-clip progress under the frozen tie-breakers, but does not alter the frame-5/6 failure. The true object-aware oracle has full local rank 20, yet it also fails before final reach.
+
+Therefore this implementation records `REFERENCE_DYNAMICAL_INFEASIBILITY` for the **current** fixed-base, 20D-finger, current-contact setup. It does not establish a paper-level property of the source motions or of PPO. Stage 16.2/16.3 must remain unstarted unless a separately authorized change to the protocol/scene establishes an early supporting contact without changing the frozen references or formal gates.
 
 The current engineering simulator is MuJoCo 3.3.6 CPU with a per-clip collision mesh, a free object, zero gravity, and a wrist-relative frame. These are explicit engineering assumptions, not an author-exact simulator. Oracle output is only a controllability diagnostic; it must not be reported as PPO success.
 

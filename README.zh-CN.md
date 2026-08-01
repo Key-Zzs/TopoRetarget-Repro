@@ -2,7 +2,7 @@
 
 ## Stage 16 状态
 
-Stage 16 当前状态为 `STAGE16_BLOCKED_WITH_BOUNDED_EVIDENCE`。T1/T2/T3 功能流水线已冻结，但新的 frame-0 可控性验收在两条批准的 HO-Cap clip 上失败：zero-residual 和 oracle 诊断中 free object 均在约 13–15% 进度超过 5 cm termination gate。因此没有启动 Stage 16.2/16.3 PPO 资格训练；这不等于 PPO 方法失败。环境命令：`conda env create -f environment.stage16.yml`，推荐执行 `bash scripts/bootstrap_stage16_env.sh`。
+Stage 16.1 当前为 `STAGE16_1_CONTROLLABILITY_BLOCKED`，Stage 16.2 为 `NOT AUTHORIZED`。Stage-16.1a A–E 审计先隔离确认 PD 通过；随后在两条批准的 HO-Cap clip 的第 0/5/10 帧均发现没有手物接触或近接，即使使用共享的 5% joint-range preload 也是如此，而 free object 会在保持不变的 5 cm gate 的第 5–6 帧越界。因此当前协议下的根因是 `REFERENCE_DYNAMICAL_INFEASIBILITY`（fixed base、20D finger action 与当前 collision/contact 假设），而不是 PPO 失败。冻结基线位于 `.local/archive/stage16_controllability_failure_baseline_20260801T060846Z_189b2f8/`；修正后的证据位于 `.local/reports/stage16_dynamic_coupling_v1_rerun1/`。环境命令：`conda env create -f environment.stage16.yml`，推荐执行 `bash scripts/bootstrap_stage16_env.sh`。
 
 [English README](README.md)
 

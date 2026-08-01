@@ -2,7 +2,7 @@
 
 ## Stage 16 status
 
-Stage 16 is currently `STAGE16_BLOCKED_WITH_BOUNDED_EVIDENCE`. The functional T1/T2/T3 pipeline remains frozen, but the new frame-0 controllability qualification failed on both approved HO-Cap clips: the free object exceeded the 5 cm termination gate at about 13–15% progress under zero-residual and oracle diagnostics. Therefore Stage 16.2/16.3 PPO qualification was not started. This is not a claim that PPO failed. Create the isolated environment with `conda env create -f environment.stage16.yml` and run `bash scripts/bootstrap_stage16_env.sh` for the documented setup.
+Stage 16.1 is `STAGE16_1_CONTROLLABILITY_BLOCKED`; Stage 16.2 is `NOT AUTHORIZED`. The Stage-16.1a A–E audit isolates PD as passing, then shows no hand–object contact or proximity at frames 0/5/10 on either approved HO-Cap clip—even with the shared 5%-range preload—while the free object breaches the unchanged 5 cm gate at frames 5–6. The resulting current-protocol root cause is `REFERENCE_DYNAMICAL_INFEASIBILITY` (fixed base, 20D finger action, and current collision/contact assumptions), not PPO failure. The frozen baseline is under `.local/archive/stage16_controllability_failure_baseline_20260801T060846Z_189b2f8/`; the corrected evidence is under `.local/reports/stage16_dynamic_coupling_v1_rerun1/`. Create the isolated environment with `conda env create -f environment.stage16.yml` and run `bash scripts/bootstrap_stage16_env.sh` for the documented setup.
 
 [中文 README](README.zh-CN.md)
 

@@ -287,12 +287,15 @@ exactness remains unresolved.
 
 ## Stage 16 reference-tracking PPO boundary
 
-The current Stage 16 qualification status is `STAGE16_BLOCKED_WITH_BOUNDED_EVIDENCE`.
-Both approved 41-frame HO-Cap references pass the kinematic contract, but the shared
-MuJoCo free-object setup fails the frame-0 zero-residual and object-blind oracle gate at
-approximately 13–15% progress. Stage 16.2/16.3 training is therefore gate-blocked; this
-does not diagnose PPO failure. The current environment and per-object mesh remain engineering
-assumptions and are not author-exact simulation evidence.
+The current Stage 16 qualification status is `STAGE16_1_CONTROLLABILITY_BLOCKED`.
+Both approved 41-frame HO-Cap references pass the kinematic contract and the dynamic-hand /
+kinematic-object PD isolation. In the shared MuJoCo free-object setup, however, frames 0/5/10
+have no actual or expected hand–object proximity contact under the bounded global preload grid,
+while the free object crosses the unchanged 5 cm gate at frame 5 or 6. The recorded root cause
+is `REFERENCE_DYNAMICAL_INFEASIBILITY` for the current fixed-base, 20D residual-action, contact
+assumptions. Stage 16.2/16.3 training is therefore gate-blocked; this does not diagnose PPO
+failure. The environment, per-object collision mesh, preload, and selected velocity reset remain
+engineering assumptions rather than author-exact simulation evidence.
 
 Stage 16 preserves the paper-exact Appendix A.5 values in
 configs/paper/rl.yaml and records its additional choices in

@@ -396,6 +396,13 @@ The implemented Stage 16.0 functional pipeline is not the qualification result. 
 `frame0_deterministic_eval_v1` gate was run on the two user-approved HO-Cap clips and is
 currently `STAGE16_1_CONTROLLABILITY_BLOCKED`; no Stage 16.2 or 16.3 PPO success is claimed.
 
+The Stage-16.1a diagnostic has now separated PD from coupling: the dynamic hand tracks a
+kinematic reference object within the engineering thresholds, but both clips have zero actual and
+expected proximity contacts at frames 0/5/10 and fail the free-object gate at frame 5 or 6.
+`REFERENCE_DYNAMICAL_INFEASIBILITY` is a current-setup diagnosis, not a claim about the paper,
+the source reference, or PPO. Object-aware finite-difference and short shooting oracles are
+engineering controllability probes and never policy results.
+
 Stage 16 implements the public Appendix A.5 MDP/PPO contract: base-frame
 references, residual actions, the `[0,1,3,5]` reference observation, Table 4
 reward/termination, Table 5 randomization ranges, and Table 6 model/training
@@ -405,9 +412,7 @@ values. The implementation is independently mapped in
 simulator, solver, contact model, PD gains, tracked links, axis offsets, or
 unlisted PPO values, so none is presented as author-exact.
 
-The local raw HO-Cap root is available, but no accepted dynamic RobotReference
-exists after the source-contract repair, and `.local/control/final_jobs/PAUSED`
-forbids generating a new final job. Consequently, numerical PPO and free-object
-backend checks pass while HOCap protocol training/evaluation is explicitly
-blocked. Pen-Spin remains `STAGE16_PENSPIN_DATA_UNAVAILABLE`; no surrogate data
-is used and no Table 2 result is claimed.
+The two accepted local dynamic references are retained as immutable Stage-16 inputs; no raw
+HO-Cap data, retarget artifact, or reference array was changed by the diagnosis. HOCap protocol
+training/evaluation remains explicitly blocked by the Stage-16.1 gate. Pen-Spin remains
+`STAGE16_PENSPIN_DATA_UNAVAILABLE`; no surrogate data is used and no Table 2 result is claimed.

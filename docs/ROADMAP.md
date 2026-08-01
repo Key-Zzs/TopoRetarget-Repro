@@ -50,7 +50,7 @@ R0 is MJCF playback/PD, R1 is PPO tracking, and CP remains later.
 | 13 | Complex HOI Expansion | ARCTIC, OakInk2 and TACO adapters | Articulated/complex HOI remains canonical and validated | DEFERRED |
 | 14 | Universal Robot Hand Plugin | Broader arbitrary-hand URDF/MJCF plugin validation | Plugins satisfy RobotHandPlugin v1 and reference export gates | DEFERRED |
 | 15 | Baseline Comparison | OmniRetarget, Mink, DexPilot, GeoRT | Frozen fair baseline runs and reports | DEFERRED |
-| 16 | Reference Tracking PPO | RL controller | Appendix A.5 MDP/PPO implementation, frame-0 controllability qualification, bounded PPO training, and reproducible evaluation | 16.0 functional complete; 16.1 blocked by shared free-object controllability gate; 16.2/16.3 not started |
+| 16 | Reference Tracking PPO | RL controller | Appendix A.5 MDP/PPO implementation, frame-0 controllability qualification, bounded PPO training, and reproducible evaluation | 16.0 functional complete; 16.1a isolates PD as passing but confirms current fixed-base/20D contact timing is dynamically infeasible; 16.2/16.3 not authorized or started |
 | 17 | Paper Experiment Reproduction | Tables/Figures | Full result report with provenance | not started |
 | 18 | Performance Optimization | Packaging and benchmarks | Release criteria pass | not started |
 | 19 | Non-paper Extensions | MANO cleanup, SPIDER, other extensions | Separately labeled extensions | not started |

@@ -51,7 +51,7 @@ warm-start、Q5 Arti-MANO surface contact proxy、Q6 contact-preserving diagnost
 0. 仓库创建与架构搭建；1. 论文忠实度审计；2. canonical HOI schema 与坐标约定；3. MANO
    到 MediaPipe 风格 21 点（有界完成，保留显式假设）；4. 通用 URDF/FK 与 Arti-MANO 目标手适配器（完成，保留显式假设）；5. GRAB 适配器（有界完成，保留显式假设）；6. 物体表面采样、碰撞
    几何与 SDF（有界完成，保留显式假设）；7. 相对骨方向初始化；8. 共享交互图与 Laplacian 坐标（有界完成，保留显式假设）；9. 带 slack 的受限优化；10. GRAB→Arti-MANO
-   端到端重定向；11. Core Contract Freeze（Canonical HOI v2、DatasetAdapter v1、RobotHandPlugin v1、RobotReference v2、MetricRegistry v1，已完成）；12. Dataset Adapter Expansion（TODO）；13. Complex HOI Expansion（DEFERRED）；14. Universal Robot Hand Plugin（DEFERRED）；15. Baseline Comparison（DEFERRED）；16. Reference Tracking PPO（16.0 功能完成；16.1 可控性 gate BLOCKED；16.2/16.3 未启动）；17. Paper Experiment Reproduction（TODO）；18. Performance Optimization（TODO）；19. Non-paper Extensions（TODO）。
+   端到端重定向；11. Core Contract Freeze（Canonical HOI v2、DatasetAdapter v1、RobotHandPlugin v1、RobotReference v2、MetricRegistry v1，已完成）；12. Dataset Adapter Expansion（TODO）；13. Complex HOI Expansion（DEFERRED）；14. Universal Robot Hand Plugin（DEFERRED）；15. Baseline Comparison（DEFERRED）；16. Reference Tracking PPO（16.0 功能完成；16.1a 已隔离确认 PD 通过，但当前 fixed-base/20D 接触时序动态不可行；16.2/16.3 未授权且未启动）；17. Paper Experiment Reproduction（TODO）；18. Performance Optimization（TODO）；19. Non-paper Extensions（TODO）。
 
 阶段 9 的详细边界见 `stages/STAGE_9_FINAL_CONSTRAINED_REFINEMENT.md`。
 

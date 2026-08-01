@@ -45,7 +45,7 @@ audit_contracts:
   stage16_reference_tracking_ppo:
     profile: docs/stages/STAGE16_REFERENCE_TRACKING_PPO.md
     paper_source: "Appendix A.5; Tables 4-6"
-    status: stage16_1_controllability_blocked_bounded_evidence
+    status: stage16_1_reference_dynamical_infeasibility_confirmed
     paper_exact_components: [base_frame_reference, residual_action, observation_offsets_0_1_3_5, table4_reward_termination, table5_randomization_ranges, table6_architecture_and_listed_ppo]
     simulator_backend: mujoco_3_3_6_cpu_correctness_only
     author_exact_simulator: unresolved
@@ -59,9 +59,10 @@ audit_contracts:
     stage16_1_status: STAGE16_1_CONTROLLABILITY_BLOCKED
     stage16_2_status: NOT_STARTED_GATE_BLOCKED
     stage16_3_status: NOT_STARTED_GATE_BLOCKED
+    stage16_1_root_cause: REFERENCE_DYNAMICAL_INFEASIBILITY
     assumptions: [A_STAGE16_SIMULATOR_001, A_STAGE16_TRACKED_LINKS_001, A_STAGE16_AXIS_POINTS_001, A_STAGE16_PD_001, A_STAGE16_PPO_UNLISTED_VALUES_001]
-    evidence: [.local/reports/stage16_reference_tracking_ppo/final_summary.json, .local/reports/stage16_reference_tracking_ppo/environment_validation.json, .local/reports/stage16_reference_tracking_ppo/ppo_smoke.json]
-    notes: "Generic free-object smoke and numerical PPO checks are not HOCap protocol evaluation or author-exact reproduction."
+    evidence: [.local/reports/stage16_dynamic_coupling_v1_rerun1/final_summary.json, .local/reports/stage16_dynamic_coupling_v1_rerun1/step_b_contact_audit.json, .local/reports/stage16_dynamic_coupling_v1_rerun1/root_cause.json]
+    notes: "PD isolation passes, but pre-gate hand-object contact/proximity is absent on both clips; object-aware oracle and shooting remain engineering diagnostics, not PPO or author-exact reproduction."
   stage7_1_warm_start_audit:
     profile: src/toporetarget/workflows/warm_start_audit.py
     formal_stage7_objective_unchanged: true
