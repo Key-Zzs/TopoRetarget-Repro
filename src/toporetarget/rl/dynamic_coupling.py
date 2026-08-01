@@ -70,7 +70,8 @@ def _rotation_vector(rotation: np.ndarray) -> np.ndarray:
         axis = eigenvectors[:, int(np.argmax(eigenvalues))]
     else:
         axis /= 2.0 * sine
-    return angle * axis / max(np.linalg.norm(axis), 1e-12)
+    axis_norm = float(np.linalg.norm(axis))
+    return angle * axis / max(axis_norm, 1e-12)
 
 
 def reference_velocities(clip: Stage16ReferenceClip) -> tuple[np.ndarray, np.ndarray]:

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import mujoco
 import numpy as np
 import pytest
 
@@ -23,6 +22,8 @@ from toporetarget.rl.state_machine import (
     DynamicCouplingPhase,
     Stage161DynamicCouplingStateMachine,
 )
+
+mujoco = pytest.importorskip("mujoco")
 
 
 def _backend(tmp_path: Path) -> MujocoReferenceTrackingBackend:
