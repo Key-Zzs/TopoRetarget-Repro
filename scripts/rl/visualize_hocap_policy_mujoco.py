@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -339,14 +340,26 @@ def _interactive(
         raise RuntimeError("interactive mode requires mujoco.viewer") from exc
     state = backend.reset(reference_index=args.start_frame)
     with mujoco.viewer.launch_passive(backend.model, backend.data) as viewer:
+        # The viewer is passive: without explicit pacing this loop completes a
+        # 41-frame clip in a few milliseconds and closes its GLFW window as the
+        # context manager exits.  Keep the final state visible for inspection.
         for _ in range(args.max_steps):
             if not viewer.is_running():
                 break
+            started_at = time.monotonic()
             action = policy(state, backend.reference_index)
             state, _, reason = backend.transition(action, kinematic_object=args.kinematic_object)
             viewer.sync()
             if reason is not None and not args.diagnostic_continue_after_termination:
                 break
+            remaining = (1.0 / args.playback_fps) - (time.monotonic() - started_at)
+            if remaining > 0:
+                time.sleep(remaining)
+        if not args.close_on_complete:
+            print("Playback complete. Close the MuJoCo window to exit.")
+            while viewer.is_running():
+                viewer.sync()
+                time.sleep(1.0 / 60.0)
     return 0
 
 
@@ -388,6 +401,17 @@ def main() -> int:
     parser.add_argument("--output-video", type=Path)
     parser.add_argument("--output-frames", type=Path)
     parser.add_argument("--max-steps", type=int, default=45)
+    parser.add_argument(
+        "--playback-fps",
+        type=float,
+        default=20.0,
+        help="interactive playback rate; must be positive (default: 20)",
+    )
+    parser.add_argument(
+        "--close-on-complete",
+        action="store_true",
+        help="close the interactive viewer immediately after the rollout",
+    )
     parser.add_argument("--seed", type=int, default=20260801)
     parser.add_argument("--action-scale-fraction", type=float, default=0.05)
     parser.add_argument("--oracle-gain", type=float, default=0.0)
@@ -401,6 +425,8 @@ def main() -> int:
         parser.error("--checkpoint is required with --policy checkpoint")
     if not 0 <= args.start_frame < 41:
         parser.error("--start-frame must be within the 41-frame HOCap reference")
+    if args.playback_fps <= 0:
+        parser.error("--playback-fps must be positive")
     args._reference = Stage16ReferenceClip.from_npz(args.reference)
     args._termination = None
     backend = _backend(args)
