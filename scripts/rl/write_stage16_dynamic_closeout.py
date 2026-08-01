@@ -115,8 +115,11 @@ def main() -> int:
     for clip, profile in selected_profiles.items():
         frames = profile["frames"]
         contacts = sum(int(row["initial"]["hand_object_contact_count"]) for row in frames)
-        force = max(
-            max(abs(value) for value in row["initial"]["object_wrench_world"][:3]) for row in frames
+        normal_force = max(
+            abs(float(contact["force_local"][0]))
+            for row in frames
+            for contact in row["initial"]["contacts"]
+            if contact["is_hand_object"]
         )
         wrench = max(
             sum(value * value for value in row["initial"]["object_wrench_world"]) ** 0.5
@@ -136,7 +139,7 @@ def main() -> int:
             [
                 clip,
                 str(contacts),
-                f"{force:.3f} N",
+                f"{normal_force:.3f} N",
                 f"{wrench:.3f} N-m",
                 f"{push * 1000:.2f} mm",
                 result,
