@@ -62,6 +62,10 @@ def test_platform_config_freezes_official_stable_stack_and_c0_scope() -> None:
     assert config.raw["scope"]["allow_stage16_c1"] is False
     assert "ppo_training" in config.raw["scope"]["prohibited"]
     assert config.raw["licenses"]["authorization_recorded"] is False
+    assert config.raw["recovery"]["installation_method_switches_used"] == 0
+    assert config.raw["recovery"]["retries_used_before_runtime"] == 2
+    assert config.raw["smoke"]["official_primitive_script"].endswith("spawn_prims.py")
+    assert config.raw["smoke"]["official_random_agent_script"].endswith("random_agent.py")
 
 
 def test_environment_manifest_is_isolated_and_python_311() -> None:
@@ -86,10 +90,16 @@ def test_command_construction_uses_fixed_versions_and_parameterized_path(tmp_pat
     assert "isaacsim[all]==5.1.0" in flattened
     assert "extscache" not in flattened
     assert "torch==2.7.0" in flattened
+    assert "setuptools==80.9.0" in flattened
+    assert "--no-build-isolation flatdict==4.0.1" in flattened
+    assert "onnx==1.21.0" in flattened
+    assert "psutil==5.9.8" in flattened
+    assert "typing_extensions==4.12.2" in flattened
     assert "v2.3.2" in flattened
     assert "--editable" in flattened
     assert "source/isaaclab_tasks" in flattened
-    assert "source/isaaclab_rl[none]" in flattened
+    assert "source/isaaclab_rl" in flattened
+    assert "[none]" not in flattened
     assert "isaaclab.sh" not in flattened
     assert str(external) in flattened
     assert "/home/deepcybo" not in Path("scripts/bootstrap_stage16_isaaclab_env.sh").read_text()
@@ -156,6 +166,31 @@ def test_recovery_state_machine_enforces_all_budgets() -> None:
     assert transition.result == "BLOCKED_INSTALLATION_METHOD_SWITCH_BUDGET_EXHAUSTED"
 
 
+def test_recovery_state_machine_restores_consumed_budgets() -> None:
+    history = [
+        {
+            "failure": "ISAAC_LAB_IMPORT_FAILURE",
+            "attempt": attempt,
+            "retried": True,
+            "method_switched": False,
+        }
+        for attempt in (1, 2)
+    ]
+    machine = Stage16C0RecoveryStateMachine.from_history(history)
+    transition = machine.record(
+        failure=Stage16C0Failure.EULA_REQUIRED,
+        evidence={"authorization_recorded": False},
+        fallback="complete_static_audit_only",
+        repair="wait_for_explicit_user_authorization",
+        rerun="none",
+        result="ISAACLAB_EULA_ACCEPTANCE_REQUIRED",
+        retry=False,
+    )
+    assert transition.remaining_retries == 2
+    assert transition.remaining_major_transitions == 13
+    assert machine.as_dict()["retry_count"] == 2
+
+
 def test_status_classifier_is_fail_closed_and_viewer_is_soft_gate() -> None:
     evidence = _complete_evidence()
     assert classify_stage16c0_status(evidence, viewer_available=True) is Stage16C0Status.VALIDATED
@@ -199,3 +234,58 @@ def test_runtime_phase_fails_closed_before_isaac_import_without_eula_authorizati
     assert summary["blocker"] == "ISAACLAB_EULA_ACCEPTANCE_REQUIRED"
     assert summary["eula"]["accepted_for_run"] is False
     assert "OMNI_KIT_ACCEPT_EULA" not in result.stdout
+    assert (tmp_path / "isaac_sim_logs" / "NOT_RUN.md").is_file()
+    transition = yaml.safe_load((tmp_path / "recovery_transitions.jsonl").read_text())
+    assert transition["failure"] == "EULA_REQUIRED"
+    assert transition["attempt"] == 1
+    assert transition["remaining_major_transitions"] == 15
+    handoff = (tmp_path / "handoff.md").read_text()
+    assert handoff.startswith(
+        "# Stage 16-B.1c MuJoCo Closeout and Stage 16-C.0 Isaac Lab Platform Handoff"
+    )
+    assert "## 20. Recommended Next Action" in handoff
+    assert (tmp_path / "git_commits.json").is_file()
+    assert (tmp_path / "tests.json").is_file()
+
+
+def test_static_host_audit_records_required_and_optional_commands(tmp_path: Path) -> None:
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/verify_stage16_isaaclab_platform.py",
+            "--phase",
+            "static",
+            "--output-root",
+            str(tmp_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    host = yaml.safe_load((tmp_path / "host_compatibility.json").read_text())
+    assert set(host["raw_commands"]) == {
+        "date",
+        "uname",
+        "os_release",
+        "ldd",
+        "nvidia_smi",
+        "nvidia_smi_query",
+        "nvcc",
+        "python",
+        "lscpu",
+        "free",
+        "df",
+        "lsblk",
+        "vulkaninfo",
+        "glxinfo",
+        "display",
+        "wayland_display",
+        "xdg_session_type",
+    }
+    assert "count" in host["gpu"]
+    assert "cuda_driver_capability" in host["gpu"]
+    assert host["status"] in {
+        "HOST_COMPATIBILITY_PASS",
+        "HOST_COMPATIBILITY_PASS_WITH_LIMITATIONS",
+        "HOST_COMPATIBILITY_BLOCKED",
+    }

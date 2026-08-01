@@ -51,6 +51,9 @@ status is `STAGE16C0_ISAACLAB_PLATFORM_BLOCKED` because no NVIDIA EULA
 authorization is recorded. Static audit remains reproducible and runtime
 qualification stops before Isaac import:
 
+NVIDIA now labels Isaac Sim 5.1 unsupported; this exact 5.1/v2.3.2 pair is a
+frozen reproduction target, not a claim of continuing vendor support.
+
 ```bash
 bash scripts/bootstrap_stage16_isaaclab_env.sh --dry-run
 conda run -n toporetarget-isaaclab python scripts/verify_stage16_isaaclab_platform.py --phase static

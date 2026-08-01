@@ -48,6 +48,9 @@ Stage 16-C.0 冻结 Python 3.11.15、Isaac Sim 5.1.0、Isaac Lab `v2.3.2`
 `STAGE16C0_ISAACLAB_PLATFORM_BLOCKED`。静态审计仍可复现，运行时资格会在
 Isaac import 前停止：
 
+NVIDIA 当前已将 Isaac Sim 5.1 标记为 unsupported；这里的 5.1/v2.3.2 组合是冻结的
+复现目标，不代表厂商仍提供持续支持。
+
 ```bash
 bash scripts/bootstrap_stage16_isaaclab_env.sh --dry-run
 conda run -n toporetarget-isaaclab python scripts/verify_stage16_isaaclab_platform.py --phase static

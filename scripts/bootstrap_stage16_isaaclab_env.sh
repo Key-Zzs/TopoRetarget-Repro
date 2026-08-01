@@ -212,8 +212,8 @@ run conda run -n "$env_name" python -m pip install --editable \
   "$external_root/source/isaaclab_assets" \
   "$external_root/source/isaaclab_contrib" \
   "$external_root/source/isaaclab_tasks" \
-  "$external_root/source/isaaclab_rl[none]" \
-  "$external_root/source/isaaclab_mimic[none]"
+  "$external_root/source/isaaclab_rl" \
+  "$external_root/source/isaaclab_mimic"
 # Keep the notebook-only chain from overriding Isaac Sim kernel's exact pins.
 run conda run -n "$env_name" python -m pip install \
   "ipython==8.37.0" "onnx==1.21.0" "psutil==5.9.8" \

@@ -15,6 +15,7 @@ import json
 import math
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -30,7 +31,9 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from toporetarget.rl.stage16c0 import (  # noqa: E402
+    Stage16C0Failure,
     Stage16C0PlatformConfig,
+    Stage16C0RecoveryStateMachine,
     classify_stage16c0_status,
 )
 
@@ -54,6 +57,7 @@ def _parser() -> argparse.ArgumentParser:
             "static",
             "imports",
             "empty-scene",
+            "primitive",
             "official-smoke",
             "vector",
             "viewer",
@@ -157,7 +161,26 @@ def _git_value(root: Path, *arguments: str) -> str | None:
 
 
 def _host_evidence() -> dict[str, Any]:
-    ldd = _run(["ldd", "--version"])
+    raw_commands = {
+        "date": _run(["date", "--iso-8601=seconds"]),
+        "uname": _run(["uname", "-a"]),
+        "os_release": _run(["cat", "/etc/os-release"]),
+        "ldd": _run(["ldd", "--version"]),
+        "nvidia_smi": _run(["nvidia-smi"]),
+        "nvidia_smi_query": _run(["nvidia-smi", "-q"]),
+        "nvcc": _run(["nvcc", "--version"]),
+        "python": _run([sys.executable, "--version"]),
+        "lscpu": _run(["lscpu"]),
+        "free": _run(["free", "-h"]),
+        "df": _run(["df", "-h"]),
+        "lsblk": _run(["lsblk"]),
+        "vulkaninfo": _run(["vulkaninfo", "--summary"]),
+        "glxinfo": _run(["glxinfo", "-B"]),
+        "display": _run(["sh", "-c", 'echo "$DISPLAY"']),
+        "wayland_display": _run(["sh", "-c", 'echo "$WAYLAND_DISPLAY"']),
+        "xdg_session_type": _run(["sh", "-c", 'echo "$XDG_SESSION_TYPE"']),
+    }
+    ldd = raw_commands["ldd"]
     gpu = _run(
         [
             "nvidia-smi",
@@ -182,17 +205,41 @@ def _host_evidence() -> dict[str, Any]:
     vram_mib = int(gpu_fields[2]) if len(gpu_fields) >= 3 else None
     compute_capability = gpu_fields[3] if len(gpu_fields) >= 4 else None
     bus_id = gpu_fields[4] if len(gpu_fields) >= 5 else None
+    gpu_count = len(gpu["stdout"].splitlines()) if gpu["returncode"] == 0 else 0
+    cuda_match = re.search(r"CUDA Version:\s*([0-9.]+)", raw_commands["nvidia_smi"]["stdout"])
+    cuda_driver_capability = cuda_match.group(1) if cuda_match else None
     glibc_version = platform.libc_ver()[1]
     checks = {
         "os": os_release.get("ID") == "ubuntu"
         and os_release.get("VERSION_ID") in {"22.04", "24.04"},
         "glibc": _version_tuple(glibc_version) >= _version_tuple("2.35"),
-        "gpu": bool(gpu_name and "RTX" in gpu_name),
+        "gpu": bool(
+            gpu_name
+            and (
+                re.search(r"RTX 40(?:80|90)", gpu_name)
+                or re.search(r"RTX 50(?:80|90)", gpu_name)
+                or "RTX PRO" in gpu_name
+            )
+        ),
         "driver": bool(driver and _version_tuple(driver) >= _version_tuple("580.65.06")),
         "vram": bool(vram_mib is not None and vram_mib >= 16000),
         "ram": mem_total_kib >= 32 * 1024 * 1024,
         "disk": disk.free >= 50 * 1024**3,
     }
+    limitations = []
+    for tool in ("nvcc", "vulkaninfo", "glxinfo"):
+        if raw_commands[tool]["returncode"] != 0:
+            limitations.append(f"{tool}_unavailable")
+    if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+        limitations.append("interactive_display_unavailable")
+    base_status = (
+        "HOST_COMPATIBILITY_PASS" if all(checks.values()) else "HOST_COMPATIBILITY_BLOCKED"
+    )
+    status = (
+        "HOST_COMPATIBILITY_PASS_WITH_LIMITATIONS"
+        if base_status == "HOST_COMPATIBILITY_PASS" and limitations
+        else base_status
+    )
     return {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "platform": platform.platform(),
@@ -202,6 +249,7 @@ def _host_evidence() -> dict[str, Any]:
         "glibc": platform.libc_ver(),
         "ldd": ldd,
         "gpu_query": gpu,
+        "raw_commands": raw_commands,
         "cpu_count": os.cpu_count(),
         "ram_total_bytes": mem_total_kib * 1024,
         "ram_available_bytes": mem_available_kib * 1024,
@@ -209,18 +257,21 @@ def _host_evidence() -> dict[str, Any]:
         "disk_free_bytes": disk.free,
         "gpu": {
             "name": gpu_name,
+            "count": gpu_count,
             "driver": driver,
             "vram_mib": vram_mib,
             "compute_capability": compute_capability,
+            "cuda_driver_capability": cuda_driver_capability,
             "bus_id": bus_id,
         },
+        "vulkan_available": raw_commands["vulkaninfo"]["returncode"] == 0,
+        "glx_available": raw_commands["glxinfo"]["returncode"] == 0,
         "display": os.environ.get("DISPLAY"),
         "wayland_display": os.environ.get("WAYLAND_DISPLAY"),
         "xdg_session_type": os.environ.get("XDG_SESSION_TYPE"),
         "checks": checks,
-        "status": (
-            "HOST_COMPATIBILITY_PASS" if all(checks.values()) else "HOST_COMPATIBILITY_BLOCKED"
-        ),
+        "limitations": limitations,
+        "status": status,
     }
 
 
@@ -306,12 +357,31 @@ def _static_validation(
 ) -> dict[str, bool]:
     host = _host_evidence()
     external = _external_evidence(external_root, config)
-    packages = {
-        name: _package_version(name)
-        for name in ("isaacsim", "torch", "torchvision", "isaaclab", "isaaclab_tasks")
-    }
+    package_names = (
+        "isaacsim",
+        "torch",
+        "torchvision",
+        "isaaclab",
+        "isaaclab_assets",
+        "isaaclab_contrib",
+        "isaaclab_tasks",
+        "isaaclab_rl",
+        "isaaclab_mimic",
+        "setuptools",
+        "flatdict",
+        "ipython",
+        "onnx",
+        "psutil",
+        "typing_extensions",
+    )
+    packages = {name: _package_version(name) for name in package_names}
     python_minor = f"{sys.version_info.major}.{sys.version_info.minor}"
     dependency_check = _run([sys.executable, "-m", "pip", "check"], timeout=120.0)
+    existing_installation = (
+        _read_json(output_root / "installation_manifest.json")
+        if (output_root / "installation_manifest.json").is_file()
+        else {}
+    )
     installation = {
         "install_method": config.install_method,
         "environment_name": config.environment_name,
@@ -327,6 +397,11 @@ def _static_validation(
         "eula_accepted_by_script": False,
         "dependency_check": dependency_check,
         "dependency_consistent": dependency_check["returncode"] == 0,
+        "known_upstream_metadata_limitation": (
+            "Isaac Lab v2.3.2 pins starlette==0.49.1 while Isaac Sim 5.1.0 "
+            "pins fastapi==0.115.7, which declares starlette<0.46.0"
+        ),
+        "installation_events": existing_installation.get("installation_events", []),
     }
     official_sources = {
         **dict(config.raw["official_compatibility"]),
@@ -366,6 +441,9 @@ def _static_validation(
         key: {
             "relative_path": value,
             "exists": (external_root / value).is_file(),
+            "sha256": (
+                _sha256(external_root / value) if (external_root / value).is_file() else None
+            ),
         }
         for key, value in scripts.items()
         if key.endswith("_script")
@@ -404,10 +482,18 @@ def _static_validation(
         and packages["torch"].split("+")[0] == config.torch_version
         and packages["torchvision"] is not None
         and packages["torchvision"].split("+")[0] == config.torchvision_version
+        and all(packages[name] is not None for name in package_names)
+        and packages["setuptools"] == "80.9.0"
+        and packages["flatdict"] == "4.0.1"
+        and packages["ipython"] == "8.37.0"
+        and packages["onnx"] == "1.21.0"
+        and packages["psutil"] == "5.9.8"
+        and packages["typing_extensions"] == "4.12.2"
         and external["validated"] is True
     )
     return {
-        "host_compatible": host["status"] == "HOST_COMPATIBILITY_PASS",
+        "host_compatible": host["status"]
+        in {"HOST_COMPATIBILITY_PASS", "HOST_COMPATIBILITY_PASS_WITH_LIMITATIONS"},
         "isolated_environment": os.environ.get("CONDA_DEFAULT_ENV") == config.environment_name,
         "versions_frozen": installed_versions_match,
         "reproduction_files": all((REPO_ROOT / path).is_file() for path in reproduction_paths),
@@ -415,6 +501,7 @@ def _static_validation(
         "verify_script": False,
         "external_checkout": bool(external["validated"]),
         "python_match": python_minor == config.python_version,
+        "dependency_metadata_consistent": dependency_check["returncode"] == 0,
     }
 
 
@@ -475,13 +562,15 @@ def _empty_scene(*, steps: int, headless: bool) -> dict[str, Any]:
         torch.cuda.synchronize()
         gpu_after = _gpu_snapshot()
         duration = time.monotonic() - started
+        simulation_device = str(simulation_context.device)
         return {
             "result": "PASS",
             "headless": headless,
             "steps": steps,
             "physics_device_requested": "cuda:0",
-            "simulation_device": str(simulation_context.device),
+            "simulation_device": simulation_device,
             "tensor_device": str(tensor.device),
+            "no_cpu_fallback_evidence": simulation_device == "cuda:0",
             "finite": bool(torch.isfinite(tensor).all().item()),
             "torch_peak_allocated_bytes": torch.cuda.max_memory_allocated(),
             "torch_peak_reserved_bytes": torch.cuda.max_memory_reserved(),
@@ -510,8 +599,81 @@ def _first_tensor(value: Any) -> Any:
     return None
 
 
+def _primitive_scene(*, steps: int, headless: bool, reference_script: Path) -> dict[str, Any]:
+    """Run a finite, local-only adaptation of the official spawn-prims tutorial."""
+    started = time.monotonic()
+    launcher = app = simulation_context = None
+    try:
+        launcher, app = _launch_app(headless=headless)
+        import isaaclab.sim as sim_utils
+        import torch
+
+        simulation_context = sim_utils.SimulationContext(
+            sim_utils.SimulationCfg(dt=1.0 / 120.0, device="cuda:0")
+        )
+        ground = sim_utils.GroundPlaneCfg()
+        ground.func("/World/defaultGroundPlane", ground)
+        light = sim_utils.DistantLightCfg(intensity=3000.0)
+        light.func("/World/lightDistant", light, translation=(1.0, 0.0, 10.0))
+        sim_utils.create_prim("/World/Objects", "Xform")
+        cone = sim_utils.ConeCfg(
+            radius=0.15,
+            height=0.5,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(),
+            mass_props=sim_utils.MassPropertiesCfg(mass=1.0),
+            collision_props=sim_utils.CollisionPropertiesCfg(),
+        )
+        cone.func("/World/Objects/ConeRigid", cone, translation=(0.0, 0.0, 1.0))
+        simulation_context.reset()
+        tensor = torch.zeros((1,), device="cuda:0")
+        torch.cuda.reset_peak_memory_stats()
+        gpu_before = _gpu_snapshot()
+        for _ in range(steps):
+            simulation_context.step(render=not headless)
+        torch.cuda.synchronize()
+        gpu_after = _gpu_snapshot()
+        duration = time.monotonic() - started
+        simulation_device = str(simulation_context.device)
+        return {
+            "result": "PASS",
+            "official_reference_script": str(reference_script.resolve()),
+            "official_reference_sha256": _sha256(reference_script),
+            "bounded_adaptation": True,
+            "remote_assets_used": False,
+            "spawned_prims": [
+                "/World/defaultGroundPlane",
+                "/World/lightDistant",
+                "/World/Objects",
+                "/World/Objects/ConeRigid",
+            ],
+            "headless": headless,
+            "steps": steps,
+            "physics_device_requested": "cuda:0",
+            "simulation_device": simulation_device,
+            "tensor_device": str(tensor.device),
+            "no_cpu_fallback_evidence": simulation_device == "cuda:0",
+            "finite": bool(torch.isfinite(tensor).all().item()),
+            "torch_peak_allocated_bytes": torch.cuda.max_memory_allocated(),
+            "torch_peak_reserved_bytes": torch.cuda.max_memory_reserved(),
+            "gpu_before": gpu_before,
+            "gpu_after": gpu_after,
+            "wall_time_s": duration,
+            "physics_steps_per_s": steps / duration,
+        }
+    finally:
+        del simulation_context
+        if app is not None:
+            app.close()
+        del launcher
+
+
 def _official_vector_smoke(
-    *, task_id: str, num_envs: int, steps: int, headless: bool
+    *,
+    task_id: str,
+    num_envs: int,
+    steps: int,
+    headless: bool,
+    reference_script: Path,
 ) -> dict[str, Any]:
     started = time.monotonic()
     launcher = app = env = None
@@ -557,6 +719,9 @@ def _official_vector_smoke(
         origin_rows = torch.unique(origins, dim=0).shape[0]
         return {
             "result": "PASS",
+            "official_reference_script": str(reference_script.resolve()),
+            "official_reference_sha256": _sha256(reference_script),
+            "bounded_adaptation": True,
             "task_id": task_id,
             "num_envs": num_envs,
             "steps": steps,
@@ -584,6 +749,7 @@ def _official_vector_smoke(
             "physics_steps_per_s": num_envs * steps / duration,
             "control_steps_per_s": steps / duration,
             "parallel_envs_proven": bool(origin_rows == num_envs),
+            "no_cpu_fallback_evidence": str(env.unwrapped.device) == "cuda:0",
         }
     finally:
         if env is not None:
@@ -600,6 +766,19 @@ def _runtime_failure(phase: str, exc: BaseException) -> dict[str, Any]:
         "exception_type": type(exc).__name__,
         "error": str(exc),
     }
+
+
+def _write_runtime_logs(output_root: Path, runtime: dict[str, Any]) -> None:
+    log_root = output_root / "isaac_sim_logs"
+    log_root.mkdir(parents=True, exist_ok=True)
+    child_processes = runtime.get("child_processes", {})
+    for phase, process in child_processes.items():
+        if not isinstance(process, dict):
+            continue
+        for stream in ("stdout", "stderr"):
+            (log_root / f"{phase}.{stream}.log").write_text(
+                str(process.get(stream, "")) + "\n", encoding="utf-8"
+            )
 
 
 def _write_closeout_artifacts(
@@ -634,24 +813,175 @@ def _write_closeout_artifacts(
     )
     (output_root / "final_summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
+    host = (
+        _read_json(output_root / "host_compatibility.json")
+        if (output_root / "host_compatibility.json").is_file()
+        else {}
+    )
+    installation = (
+        _read_json(output_root / "installation_manifest.json")
+        if (output_root / "installation_manifest.json").is_file()
+        else {}
+    )
+    external = (
+        _read_json(output_root / "external_dependency_manifest.json")
+        if (output_root / "external_dependency_manifest.json").is_file()
+        else {}
+    )
+    runtime = summary.get("runtime", {})
+    vector = summary.get("vector", [])
+    viewer = summary.get("viewer", {})
+    gpu = host.get("gpu", {})
+    packages = installation.get("packages", {})
+    local_head = _git_value(REPO_ROOT, "rev-parse", "HEAD")
+    remote_head = _git_value(REPO_ROOT, "rev-parse", "origin/feature/reference-tracking-isaaclab")
+    commit_log = _run(["git", "log", "--oneline", "origin/main..HEAD"], timeout=60.0)
     handoff = [
-        "# Stage 16-C handoff",
+        "# Stage 16-B.1c MuJoCo Closeout and Stage 16-C.0 Isaac Lab Platform Handoff",
         "",
-        f"- C.0: `{status}`",
-        f"- C.1 asset migration authorized: `{'YES' if c1_authorized else 'NO'}`",
-        "- C.2 custom DirectRLEnv: `NOT_STARTED`",
-        "- C.3 semantic parity: `NOT_STARTED`",
-        "- C.4 custom-task GPU vectorization: `NOT_STARTED`",
-        "- C.5 PhysX oracle: `NOT_STARTED`",
-        "- C.6/C.7 PPO: `NOT_STARTED`",
-        "- C.8 randomization: `NOT_STARTED`",
-        "- C.9 comparison: `NOT_STARTED`",
-        "- MuJoCo role: correctness/debug/regression/contact/action-replay/visualization",
+        "## 1. Final Status",
+        "",
+        "- Stage 16-B.1c: `STAGE16B_ADAPTIVE_MULTI_HORIZON_ORACLE_PARTIAL`",
+        "- MuJoCo PPO: `MUJOCO_PPO_TRAINING_DEFERRED`; started: `NO`",
+        "- MuJoCo backend: `MUJOCO_CORRECTNESS_BACKEND_CLOSED`",
+        f"- Stage 16-C.0: `{status}`",
+        f"- Stage 16-C.1 authorized: `{'YES' if c1_authorized else 'NO'}`",
+        "",
+        "## 2. Git and Branch Lineage",
+        "",
+        (
+            "- Stage16B branch/head: `feature/reference-tracking-ppo` / "
+            "`bde5b98ded6a0064f7db3179fd3968a2b0bc1e66`."
+        ),
+        f"- Isaac Lab local/remote: `{local_head}` / `{remote_head}`.",
+        "- PR/main merge/tag/release: `NO`.",
+        "",
+        "## 3. Stage 16-B.1c MuJoCo Closeout",
+        "",
+        "- 170650 32x3: 20/20, progress 100%, 0.118897 cm / 0.667071 deg / 0.157986 cm.",
+        "- 170105 32x3: 0/20, progress 80%, 3.405983 cm / 22.496571 deg / 5.193991 cm.",
+        "- 170105 bounded 48x4: 0/20, progress 82.5%, 3.636685 cm / 18.192050 deg / 5.001941 cm.",
+        "",
+        "## 4. MuJoCo Backend Role",
+        "",
+        (
+            "Correctness, deterministic regression, contact diagnostics, action replay, "
+            "and visualization only."
+        ),
+        "",
+        "## 5. Host Compatibility",
+        "",
+        (
+            f"- Status: `{host.get('status')}`; OS "
+            f"`{host.get('os_release', {}).get('PRETTY_NAME')}`; glibc "
+            f"`{(host.get('glibc') or [None, None])[1]}`."
+        ),
+        (
+            f"- GPU `{gpu.get('name')}`; driver `{gpu.get('driver')}`; "
+            f"VRAM `{gpu.get('vram_mib')} MiB`; CUDA driver capability "
+            f"`{gpu.get('cuda_driver_capability')}`."
+        ),
+        "",
+        "## 6. Official Compatibility Basis",
+        "",
+        f"- Isaac Lab release: {config.raw['official_compatibility']['isaac_lab_release']}",
+        (
+            "- Isaac Sim requirements: "
+            f"{config.raw['official_compatibility']['isaac_sim_requirements']}"
+        ),
+        "",
+        "## 7. Isaac Lab Installation",
+        "",
+        f"- Method `{installation.get('install_method')}`; Python `{installation.get('python')}`.",
+        (
+            f"- Isaac Sim `{packages.get('isaacsim')}`; Isaac Lab "
+            f"`{config.isaac_lab_tag}` / `{config.isaac_lab_commit}`."
+        ),
+        f"- Torch `{packages.get('torch')}`; checkout `{external.get('path')}`.",
+        (
+            "- Dependency metadata consistent: "
+            f"`{installation.get('dependency_consistent')}`; known Starlette "
+            "limitation is recorded."
+        ),
+        "",
+        "## 8. Environment Reproduction",
+        "",
+        "    bash scripts/bootstrap_stage16_isaaclab_env.sh --dry-run",
+        (
+            "    bash scripts/bootstrap_stage16_isaaclab_env.sh "
+            "--env-name toporetarget-isaaclab "
+            "--external-root .local/external/IsaacLab"
+        ),
+        (
+            "    conda run -n toporetarget-isaaclab python "
+            "scripts/verify_stage16_isaaclab_platform.py --phase full --steps 1000"
+        ),
+        "",
+        "## 9. Isaac Sim Runtime Validation",
+        "",
+        f"`{runtime.get('result', runtime.get('empty_scene', {}).get('result', 'NOT_RUN'))}`.",
+        "",
+        "## 10. Isaac Lab Official Smoke",
+        "",
+        (
+            "Primitive/task gate: "
+            f"`{'PASS' if evidence.get('official_smoke') else 'NOT_RUN_OR_NOT_PASS'}`."
+        ),
+        "",
+        "## 11. GPU PhysX Validation",
+        "",
+        f"GPU PhysX gate: `{'PASS' if evidence.get('gpu_physx') else 'NOT_RUN_OR_NOT_PASS'}`.",
+        "",
+        "## 12. Vectorized Environment Validation",
+        "",
+        (
+            f"Recorded runs: `{len(vector)}`; 128-env gate: "
+            f"`{'PASS' if evidence.get('vector_128') else 'NOT_RUN_OR_NOT_PASS'}`."
+        ),
+        "",
+        "## 13. Headless and Viewer Validation",
+        "",
+        (
+            f"Headless: `{'PASS' if evidence.get('headless') else 'NOT_RUN_OR_NOT_PASS'}`; "
+            f"viewer: `{viewer.get('result', 'NOT_RUN')}`."
+        ),
+        "",
+        "## 14. Failure-Recovery State Machine",
+        "",
+        "See `recovery_transitions.jsonl`; all budgets are fail-closed.",
+        "",
+        "## 15. Tests",
+        "",
+        "See `tests.json`; runtime-specific smoke remains NOT_RUN when the EULA gate is closed.",
+        "",
+        "## 16. README and Roadmap",
+        "",
+        "English/Chinese README and roadmaps record C.0 blocked and C.1-C.9 TODO.",
+        "",
+        "## 17. Local and Remote Commits",
+        "",
+        commit_log.get("stdout", ""),
+        "",
+        "## 18. Stage 16-C.1 Entry Decision",
+        "",
+        f"`STAGE16C1_ASSET_MIGRATION_AUTHORIZED = {'YES' if c1_authorized else 'NO'}`.",
+        "",
+        "## 19. Remaining Limitations",
+        "",
+        (
+            "Wuji/object migration, custom DirectRLEnv, PhysX oracle, Isaac PPO, "
+            "and MuJoCo/PhysX semantic alignment remain undone."
+        ),
+        "",
+        "## 20. Recommended Next Action",
+        "",
+        (
+            "Obtain explicit EULA authorization and rerun C.0; only a validated "
+            "result can authorize C.1."
+        ),
     ]
     (output_root / "handoff.md").write_text("\n".join(handoff) + "\n", encoding="utf-8")
 
-    runtime = summary.get("runtime", {})
-    vector = summary.get("vector", [])
     _write_json(
         output_root / "resource_usage.json",
         {
@@ -683,6 +1013,32 @@ def _write_closeout_artifacts(
         },
     )
     _write_json(output_root / "recovery_limits.json", config.raw["recovery"])
+    _write_json(
+        output_root / "git_commits.json",
+        {
+            "stage16b_branch": "feature/reference-tracking-ppo",
+            "stage16b_final_commit": "bde5b98ded6a0064f7db3179fd3968a2b0bc1e66",
+            "stage16b_branch_pushed": True,
+            "isaaclab_branch": "feature/reference-tracking-isaaclab",
+            "isaaclab_start_commit": "bde5b98ded6a0064f7db3179fd3968a2b0bc1e66",
+            "isaaclab_local_commit": local_head,
+            "isaaclab_remote_commit": remote_head,
+            "isaaclab_branch_pushed": local_head == remote_head,
+            "origin_main_log": commit_log,
+            "pr_created": False,
+            "main_merged": False,
+            "tag_created": False,
+            "release_created": False,
+        },
+    )
+    if not (output_root / "tests.json").is_file():
+        _write_json(
+            output_root / "tests.json",
+            {
+                "status": "NOT_RECORDED_BY_PLATFORM_VERIFIER",
+                "note": "Populate after running the repository and platform test commands.",
+            },
+        )
     _write_json(
         output_root / "license_authorization.json",
         {
@@ -729,6 +1085,7 @@ def _run_full_children(
 
     imports_process, imports_root = run_child("imports")
     empty_process, empty_root = run_child("empty-scene")
+    primitive_process, primitive_root = run_child("primitive")
     official_process, official_root = run_child("official-smoke", num_envs=1)
     vector_process, vector_root = run_child("vector", num_envs=128)
 
@@ -744,6 +1101,9 @@ def _run_full_children(
 
     imports = load_or_failure(imports_root / "isaac_lab_import.json", "imports", imports_process)
     empty = load_or_failure(empty_root / "isaac_sim_empty_scene.json", "empty-scene", empty_process)
+    primitive = load_or_failure(
+        primitive_root / "isaac_lab_primitive_smoke.json", "primitive", primitive_process
+    )
     official = load_or_failure(
         official_root / "isaac_lab_official_smoke.json", "official-smoke", official_process
     )
@@ -754,16 +1114,35 @@ def _run_full_children(
         *(official.get("runs", []) if isinstance(official, dict) else []),
         *(vector.get("runs", []) if isinstance(vector, dict) else []),
     ]
+    vector_128_pass = any(
+        result.get("num_envs") == 128
+        and result.get("result") == "PASS"
+        and result.get("parallel_envs_proven") is True
+        for result in vector_results
+    )
+    vector_512_process: dict[str, Any] | None = None
+    if vector_128_pass:
+        vector_512_process, vector_512_root = run_child("vector", num_envs=512)
+        vector_512 = load_or_failure(
+            vector_512_root / "isaac_lab_official_smoke.json",
+            "vector-512",
+            vector_512_process,
+        )
+        vector_results.extend(vector_512.get("runs", []) if isinstance(vector_512, dict) else [])
     runtime_results = {
         "imports": imports,
         "empty_scene": empty,
+        "primitive_spawn": primitive,
         "child_processes": {
             "imports": imports_process,
             "empty_scene": empty_process,
+            "primitive": primitive_process,
             "official_smoke": official_process,
             "vector_128": vector_process,
         },
     }
+    if vector_512_process is not None:
+        runtime_results["child_processes"]["vector_512"] = vector_512_process
     if args.viewer:
         viewer_process, viewer_root = run_child("viewer")
         viewer = load_or_failure(viewer_root / "viewer_validation.json", "viewer", viewer_process)
@@ -818,6 +1197,7 @@ def main() -> int:
             "isaac_sim_import.json",
             "isaac_lab_import.json",
             "isaac_sim_empty_scene.json",
+            "isaac_lab_primitive_smoke.json",
             "headless_validation.json",
             "gpu_physx_evidence.json",
             "isaac_lab_official_smoke.json",
@@ -825,17 +1205,36 @@ def main() -> int:
             "viewer_validation.json",
         ):
             _write_json(output_root / report_name, not_run)
-        transition = {
-            "failure": "EULA_REQUIRED",
-            "fallback": "complete_static_audit_only",
-            "repair": "wait_for_explicit_user_authorization",
-            "rerun": "none",
-            "result": "ISAACLAB_EULA_ACCEPTANCE_REQUIRED",
-            "retried": False,
-            "method_switched": False,
-        }
-        (output_root / "recovery_transitions.jsonl").write_text(
-            json.dumps(transition, sort_keys=True) + "\n", encoding="utf-8"
+        log_root = output_root / "isaac_sim_logs"
+        log_root.mkdir(parents=True, exist_ok=True)
+        (log_root / "NOT_RUN.md").write_text(
+            (
+                "# Isaac Sim logs\n\nRuntime was not started because explicit EULA "
+                "authorization is absent.\n"
+            ),
+            encoding="utf-8",
+        )
+        recovery_path = output_root / "recovery_transitions.jsonl"
+        existing_transitions: list[dict[str, Any]] = []
+        if recovery_path.is_file():
+            for line in recovery_path.read_text(encoding="utf-8").splitlines():
+                payload = json.loads(line)
+                if payload.get("failure") != Stage16C0Failure.EULA_REQUIRED.value:
+                    existing_transitions.append(payload)
+        recovery = Stage16C0RecoveryStateMachine.from_history(existing_transitions)
+        recovery.record(
+            failure=Stage16C0Failure.EULA_REQUIRED,
+            evidence={"authorization_recorded": False},
+            fallback="complete_static_audit_only",
+            repair="wait_for_explicit_user_authorization",
+            rerun="none",
+            result="ISAACLAB_EULA_ACCEPTANCE_REQUIRED",
+            retry=False,
+        )
+        transitions = [*existing_transitions, *recovery.as_dict()["transitions"]]
+        recovery_path.write_text(
+            "".join(json.dumps(item, sort_keys=True) + "\n" for item in transitions),
+            encoding="utf-8",
         )
         summary = {
             "phase": args.phase,
@@ -871,8 +1270,13 @@ def main() -> int:
         _write_json(output_root / "isaac_lab_import.json", runtime_results["imports"])
         _write_json(output_root / "isaac_sim_import.json", runtime_results["imports"])
         _write_json(output_root / "isaac_sim_empty_scene.json", runtime_results["empty_scene"])
+        _write_json(
+            output_root / "isaac_lab_primitive_smoke.json",
+            runtime_results["primitive_spawn"],
+        )
         _write_json(output_root / "headless_validation.json", runtime_results["empty_scene"])
         _write_json(output_root / "gpu_physx_evidence.json", runtime_results["empty_scene"])
+        _write_runtime_logs(output_root, runtime_results)
     else:
         if args.phase == "imports":
             try:
@@ -891,6 +1295,21 @@ def main() -> int:
             _write_json(output_root / "headless_validation.json", runtime_results["empty_scene"])
             _write_json(output_root / "gpu_physx_evidence.json", runtime_results["empty_scene"])
 
+        if args.phase == "primitive":
+            try:
+                runtime_results["primitive_spawn"] = _primitive_scene(
+                    steps=steps,
+                    headless=True,
+                    reference_script=external_root
+                    / str(config.raw["smoke"]["official_primitive_script"]),
+                )
+            except BaseException as exc:
+                runtime_results["primitive_spawn"] = _runtime_failure("primitive", exc)
+            _write_json(
+                output_root / "isaac_lab_primitive_smoke.json",
+                runtime_results["primitive_spawn"],
+            )
+
         vector_counts: list[int]
         if args.phase == "official-smoke":
             vector_counts = [1]
@@ -905,6 +1324,8 @@ def main() -> int:
                     num_envs=count,
                     steps=steps,
                     headless=True,
+                    reference_script=external_root
+                    / str(config.raw["smoke"]["official_random_agent_script"]),
                 )
             except BaseException as exc:
                 result = _runtime_failure(f"vector-{count}", exc)
@@ -919,14 +1340,20 @@ def main() -> int:
         else:
             viewer = {"result": "NOT_REQUESTED", "soft_gate": True}
 
-    if vector_results:
-        payload = {"task_id": config.official_task_id, "runs": vector_results}
+    primitive_result = runtime_results.get("primitive_spawn")
+    if vector_results or primitive_result is not None:
+        payload = {
+            "task_id": config.official_task_id,
+            "primitive_spawn": primitive_result,
+            "runs": vector_results,
+        }
         _write_json(output_root / "isaac_lab_official_smoke.json", payload)
         _write_json(output_root / "vector_env_benchmark.json", payload)
     _write_json(output_root / "viewer_validation.json", viewer)
 
     imports_pass = runtime_results.get("imports", {}).get("result") == "PASS"
     empty_pass = runtime_results.get("empty_scene", {}).get("result") == "PASS"
+    primitive_pass = runtime_results.get("primitive_spawn", {}).get("result") == "PASS"
     vector_1 = any(
         result.get("num_envs") == 1 and result.get("result") == "PASS" for result in vector_results
     )
@@ -943,9 +1370,10 @@ def main() -> int:
             "isaac_sim_import": imports_pass,
             "isaac_lab_import": imports_pass,
             "isaac_sim_empty_scene": empty_pass,
-            "official_smoke": vector_1,
+            "official_smoke": primitive_pass and vector_1,
             "gpu_physx": empty_pass
-            and runtime_results["empty_scene"].get("simulation_device") == "cuda:0",
+            and runtime_results["empty_scene"].get("simulation_device") == "cuda:0"
+            and runtime_results["empty_scene"].get("no_cpu_fallback_evidence") is True,
             "headless": empty_pass,
             "vector_128": vector_128,
             "cuda_tensors": vector_128

@@ -68,6 +68,23 @@ class Stage16C0RecoveryStateMachine:
         self.major_transition_count = 0
         self.transitions: list[Stage16C0Transition] = []
 
+    @classmethod
+    def from_history(cls, history: list[Mapping[str, Any]]) -> Stage16C0RecoveryStateMachine:
+        """Restore consumed budgets without replaying or changing prior transitions."""
+
+        machine = cls()
+        for transition in history:
+            failure = str(transition.get("failure", ""))
+            attempt = int(transition.get("attempt", 0))
+            if failure:
+                machine.class_attempts[failure] = max(
+                    machine.class_attempts.get(failure, 0), attempt
+                )
+            machine.retry_count += int(bool(transition.get("retried", False)))
+            machine.method_switch_count += int(bool(transition.get("method_switched", False)))
+            machine.major_transition_count += 1
+        return machine
+
     def record(
         self,
         *,
@@ -344,6 +361,29 @@ def build_install_commands(
             "-m",
             "pip",
             "install",
+            "setuptools==80.9.0",
+        ),
+        (
+            "conda",
+            "run",
+            "-n",
+            environment_name,
+            "python",
+            "-m",
+            "pip",
+            "install",
+            "--no-build-isolation",
+            "flatdict==4.0.1",
+        ),
+        (
+            "conda",
+            "run",
+            "-n",
+            environment_name,
+            "python",
+            "-m",
+            "pip",
+            "install",
             f"isaacsim[all]=={config.isaac_sim_version}",
             "--extra-index-url",
             "https://pypi.nvidia.com",
@@ -372,8 +412,22 @@ def build_install_commands(
             str(root / "source/isaaclab_assets"),
             str(root / "source/isaaclab_contrib"),
             str(root / "source/isaaclab_tasks"),
-            f"{root / 'source/isaaclab_rl'}[none]",
-            f"{root / 'source/isaaclab_mimic'}[none]",
+            str(root / "source/isaaclab_rl"),
+            str(root / "source/isaaclab_mimic"),
+        ),
+        (
+            "conda",
+            "run",
+            "-n",
+            environment_name,
+            "python",
+            "-m",
+            "pip",
+            "install",
+            "ipython==8.37.0",
+            "onnx==1.21.0",
+            "psutil==5.9.8",
+            "typing_extensions==4.12.2",
         ),
     )
 

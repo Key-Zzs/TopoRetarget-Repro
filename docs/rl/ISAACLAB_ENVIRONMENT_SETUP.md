@@ -6,7 +6,7 @@ run a PhysX oracle, or start PPO.
 
 ## Frozen stack
 
-The stack selected on 2026-08-01 is the latest stable, non-beta Isaac Lab
+The stack selected on 2026-08-02 is the latest stable, non-beta Isaac Lab
 release:
 
 | Component | Frozen value |
@@ -22,7 +22,9 @@ release:
 
 Isaac Lab 3.0 was still a beta and its release notes warned about breaking
 changes. Isaac Lab v2.3.2 is the latest stable release and supports Isaac Sim
-5.1. The checked official sources are frozen in
+5.1. NVIDIA now labels Isaac Sim 5.1 unsupported, so this exact pair is frozen
+for reproduction and receives no claim of continuing vendor support. The
+checked official sources are frozen in
 `configs/rl/stage16/isaaclab_platform.yaml`.
 
 ## Host gate
@@ -30,7 +32,10 @@ changes. Isaac Lab v2.3.2 is the latest stable release and supports Isaac Sim
 Isaac Sim 5.1 documents Ubuntu 22.04/24.04, at least 32 GiB RAM, an RTX 4080
 or newer with 16 GB VRAM, and Linux driver 580.65.06. Pip installation also
 requires glibc 2.35 or newer. The qualification verifier records the actual
-host and never upgrades the driver, kernel, glibc, or system CUDA.
+host and never upgrades the driver, kernel, glibc, or system CUDA. Its report
+retains raw output or explicit command-not-found evidence for date, uname,
+OS release, ldd, both NVIDIA-SMI forms, nvcc, Python, lscpu, free, df, lsblk,
+Vulkan, GLX, and display/session variables.
 
 ## Bootstrap
 
@@ -95,6 +100,18 @@ conda run -n toporetarget-isaaclab \
   python scripts/verify_stage16_isaaclab_platform.py \
   --phase empty-scene --steps 1000
 ```
+
+Finite local-only primitive spawn adapted from the frozen official tutorial:
+
+```bash
+conda run -n toporetarget-isaaclab \
+  python scripts/verify_stage16_isaaclab_platform.py \
+  --phase primitive --steps 1000
+```
+
+The result records the official `spawn_prims.py` path and SHA256. The bounded
+adapter omits its remote table asset but preserves ground, light, and rigid
+primitive creation.
 
 Official task smoke and 128-environment vector qualification:
 

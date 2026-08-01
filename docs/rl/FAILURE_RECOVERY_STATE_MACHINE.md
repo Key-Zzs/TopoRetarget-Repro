@@ -47,8 +47,15 @@ network/cache, headless rendering, and GPU PhysX failures. It never upgrades a
 driver, kernel, system glibc, or system CUDA, and it never converts a CPU
 fallback into a GPU pass.
 
-The current transition is `EULA_REQUIRED -> complete_static_audit_only` with
-result `ISAACLAB_EULA_ACCEPTANCE_REQUIRED`. It consumes no retry or install
-method switch: no explicit user authorization is recorded, so the verifier
-stops before importing Isaac Sim. C.0 is therefore blocked, C.1 is not
-authorized, and runtime success is not fabricated.
+Two installation retries were consumed before runtime. The first repaired the
+legacy `flatdict==4.0.1` build by pinning setuptools 80.9.0 and prebuilding it
+without build isolation. The second restored Isaac Sim kernel dependency pins
+with IPython 8.37.0, ONNX 1.21.0, psutil 5.9.8, and typing_extensions 4.12.2.
+No installation-method switch was used. The official packages retain a
+documented FastAPI/Starlette metadata conflict.
+
+The runtime transition is `EULA_REQUIRED -> complete_static_audit_only` with
+result `ISAACLAB_EULA_ACCEPTANCE_REQUIRED`. It consumes no additional retry or
+install method switch: no explicit user authorization is recorded, so the
+verifier stops before importing Isaac Sim. C.0 is therefore blocked, C.1 is
+not authorized, and runtime success is not fabricated.
