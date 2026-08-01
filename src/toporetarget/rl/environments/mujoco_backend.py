@@ -7,6 +7,7 @@ collision asset process, or the target free-body scene.
 
 from __future__ import annotations
 
+import copy
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
@@ -108,6 +109,19 @@ def materialize_free_object_scene(
     worldbody = root.find("worldbody")
     if worldbody is None:
         worldbody = ET.SubElement(root, "worldbody")
+    # The upstream Wuji asset intentionally leaves its collision geoms unnamed.
+    # Give the *generated* Stage-16 scene stable audit-only labels.  This makes
+    # every contact trace attributable without changing source assets or any
+    # collision parameter.  Visual geoms (contype=conaffinity=0) remain unnamed.
+    collision_index = 0
+    for body in root.findall(".//body"):
+        body_name = body.get("name", "unnamed_body")
+        for geom in body.findall("geom"):
+            contype = int(geom.get("contype", "1"))
+            conaffinity = int(geom.get("conaffinity", "1"))
+            if geom.get("name") is None and (contype != 0 or conaffinity != 0):
+                geom.set("name", f"stage16_hand_collision_{body_name}_{collision_index:02d}")
+                collision_index += 1
     if include_ground:
         ET.SubElement(
             worldbody,
@@ -151,6 +165,28 @@ class MujocoBackendConfig:
     nominal_pd_kp: float = 3.0
     nominal_pd_kd: float = 0.05
     termination_profile: TerminationProfile = PAPER_TERMINATION
+
+
+@dataclass
+class MujocoBackendSnapshot:
+    """Complete mutable state needed for deterministic diagnostic lookahead.
+
+    This is deliberately a backend snapshot rather than object-state access.
+    Object-aware diagnostics may clone a state and predict a bounded finger
+    action, but cannot write object state in the live rollout.
+    """
+
+    qpos: np.ndarray
+    qvel: np.ndarray
+    act: np.ndarray
+    ctrl: np.ndarray
+    time: float
+    reference_index: int
+    step_index: int
+    previous_action: np.ndarray
+    second_previous_action: np.ndarray
+    next_disturbance_time_s: float
+    rng_state: Any
 
 
 class MujocoReferenceTrackingBackend(
@@ -245,6 +281,13 @@ class MujocoReferenceTrackingBackend(
         self._sample = sample_randomization(self.rng, randomization)
         self._observation_delay = ObservationDelayBuffer(self._sample["observation_delay_steps"])
         self._next_disturbance_time_s = float(self._sample["next_disturbance_s"])
+        self._reference_qdot: np.ndarray | None = (
+            None if reference.qdot_ref is None else reference.qdot_ref.copy()
+        )
+        self._reference_object_velocity: np.ndarray | None = (
+            None if reference.object_velocity_ref is None else reference.object_velocity_ref.copy()
+        )
+        self.last_physics_trace: list[dict[str, Any]] = []
 
     def _restore_nominal_model(self) -> None:
         for name, value in self._nominal_model.items():
@@ -336,8 +379,276 @@ class MujocoReferenceTrackingBackend(
             "object_velocity": object_velocity,
         }
 
+    def set_reference_velocities(self, *, qdot: np.ndarray, object_velocity: np.ndarray) -> None:
+        """Install externally audited finite-difference reference velocities.
+
+        The source clips may omit velocity arrays.  Stage-16.1 computes them
+        from immutable 20 Hz poses, validates them, and supplies them here for
+        the four reset profiles.  This method never alters reference poses.
+        """
+
+        qdot_array = np.asarray(qdot, dtype=np.float64)
+        object_velocity_array = np.asarray(object_velocity, dtype=np.float64)
+        expected_qdot = (self.reference.frame_count, self.reference.dof_count)
+        expected_velocity = (self.reference.frame_count, 6)
+        if qdot_array.shape != expected_qdot:
+            raise ValueError(f"qdot shape must be {expected_qdot}")
+        if object_velocity_array.shape != expected_velocity:
+            raise ValueError(f"object_velocity shape must be {expected_velocity}")
+        if not np.isfinite(qdot_array).all() or not np.isfinite(object_velocity_array).all():
+            raise ValueError("reference velocities must be finite")
+        self._reference_qdot = qdot_array.copy()
+        self._reference_object_velocity = object_velocity_array.copy()
+
+    def _apply_velocity_reset(self, profile: str) -> None:
+        valid_profiles = {"zero", "full_reference", "object_reference", "hand_reference"}
+        if profile not in valid_profiles:
+            raise ValueError(f"unknown reset velocity profile {profile!r}")
+        if profile == "zero":
+            return
+        if self._reference_qdot is None or self._reference_object_velocity is None:
+            raise RuntimeError(
+                "reference velocity profile requested before velocities were installed"
+            )
+        if profile in {"full_reference", "hand_reference"}:
+            self.data.qvel[self.joint_dof_addresses] = self._reference_qdot[self.reference_index]
+        if profile in {"full_reference", "object_reference"}:
+            start = self.object_dof_address
+            self.data.qvel[start : start + 6] = self._reference_object_velocity[
+                self.reference_index
+            ]
+
+    def _set_object_to_reference(self, reference_index: int) -> None:
+        """Drive only the diagnostic kinematic object; never use in formal control."""
+
+        pose = self.reference.object_pose_base_ref[reference_index]
+        self.data.qpos[self.object_qpos_address : self.object_qpos_address + 3] = pose[:3, 3]
+        quaternion = np.empty(4)
+        self.mujoco.mju_mat2Quat(quaternion, pose[:3, :3].reshape(-1))
+        self.data.qpos[self.object_qpos_address + 3 : self.object_qpos_address + 7] = quaternion
+        if self._reference_object_velocity is not None:
+            start = self.object_dof_address
+            self.data.qvel[start : start + 6] = self._reference_object_velocity[reference_index]
+
+    def snapshot(self) -> MujocoBackendSnapshot:
+        """Capture all mutable simulator/controller state for local simulation."""
+
+        return MujocoBackendSnapshot(
+            qpos=self.data.qpos.copy(),
+            qvel=self.data.qvel.copy(),
+            act=self.data.act.copy(),
+            ctrl=self.data.ctrl.copy(),
+            time=float(self.data.time),
+            reference_index=self.reference_index,
+            step_index=self.step_index,
+            previous_action=self.previous_action.copy(),
+            second_previous_action=self.second_previous_action.copy(),
+            next_disturbance_time_s=float(self._next_disturbance_time_s),
+            rng_state=copy.deepcopy(self.rng.bit_generator.state),
+        )
+
+    def restore(self, snapshot: MujocoBackendSnapshot) -> None:
+        """Restore a snapshot created by :meth:`snapshot` exactly."""
+
+        self.data.qpos[:] = snapshot.qpos
+        self.data.qvel[:] = snapshot.qvel
+        self.data.act[:] = snapshot.act
+        self.data.ctrl[:] = snapshot.ctrl
+        self.data.time = snapshot.time
+        self.reference_index = snapshot.reference_index
+        self.step_index = snapshot.step_index
+        self.previous_action[:] = snapshot.previous_action
+        self.second_previous_action[:] = snapshot.second_previous_action
+        self._next_disturbance_time_s = snapshot.next_disturbance_time_s
+        self.rng.bit_generator.state = copy.deepcopy(snapshot.rng_state)
+        self.mujoco.mj_forward(self.model, self.data)
+
+    def predict_step(
+        self, action: np.ndarray, *, kinematic_object: bool = False
+    ) -> dict[str, np.ndarray]:
+        """One bounded cloned rollout for an engineering diagnostic oracle."""
+
+        snapshot = self.snapshot()
+        try:
+            return self.step(action, kinematic_object=kinematic_object)
+        finally:
+            self.restore(snapshot)
+
+    def contact_report(self, *, proximity_m: float = 0.01) -> dict[str, Any]:
+        """Return contact and collision evidence in a JSON-friendly structure.
+
+        `object_wrench_body` is MuJoCo's accumulated external wrench in the
+        object body frame. Per-contact forces are expressed in world axes with
+        an explicit geometry ordering and are intended for diagnosis, not for
+        force-control commands.
+        """
+
+        object_geom = int(
+            self.mujoco.mj_name2id(self.model, self.mujoco.mjtObj.mjOBJ_GEOM, "stage16_object_geom")
+        )
+        object_position = self.data.xpos[self.object_body_id].copy()
+        contacts: list[dict[str, Any]] = []
+        object_wrench_world = np.zeros(6, dtype=np.float64)
+        for contact_index in range(self.data.ncon):
+            contact = self.data.contact[contact_index]
+            geom1, geom2 = int(contact.geom1), int(contact.geom2)
+            force_local = np.zeros(6, dtype=np.float64)
+            self.mujoco.mj_contactForce(self.model, self.data, contact_index, force_local)
+            frame = np.asarray(contact.frame, dtype=np.float64).reshape(3, 3)
+            force_world = frame @ force_local[:3]
+            torque_world = frame @ force_local[3:]
+            is_object_pair = object_geom in {geom1, geom2}
+            if is_object_pair:
+                # MuJoCo's contact frame force points from geom1 toward geom2.
+                sign = 1.0 if geom2 == object_geom else -1.0
+                object_force = sign * force_world
+                object_torque = sign * (
+                    torque_world + np.cross(np.asarray(contact.pos) - object_position, force_world)
+                )
+                object_wrench_world[:3] += object_force
+                object_wrench_world[3:] += object_torque
+            contacts.append(
+                {
+                    "geom1_id": geom1,
+                    "geom2_id": geom2,
+                    "geom1": self.mujoco.mj_id2name(
+                        self.model, self.mujoco.mjtObj.mjOBJ_GEOM, geom1
+                    ),
+                    "geom2": self.mujoco.mj_id2name(
+                        self.model, self.mujoco.mjtObj.mjOBJ_GEOM, geom2
+                    ),
+                    "body1": self.mujoco.mj_id2name(
+                        self.model,
+                        self.mujoco.mjtObj.mjOBJ_BODY,
+                        int(self.model.geom_bodyid[geom1]),
+                    ),
+                    "body2": self.mujoco.mj_id2name(
+                        self.model,
+                        self.mujoco.mjtObj.mjOBJ_BODY,
+                        int(self.model.geom_bodyid[geom2]),
+                    ),
+                    "position": np.asarray(contact.pos, dtype=np.float64).tolist(),
+                    "normal": frame[:, 0].tolist(),
+                    "distance_m": float(contact.dist),
+                    "friction": np.asarray(contact.friction, dtype=np.float64).tolist(),
+                    "force_local": force_local.tolist(),
+                    "force_world": force_world.tolist(),
+                    "is_hand_object": is_object_pair,
+                }
+            )
+        proximity: list[dict[str, Any]] = []
+        for hand_geom in self._hand_geom_ids:
+            if (
+                self.model.geom_contype[hand_geom] == 0
+                or self.model.geom_conaffinity[hand_geom] == 0
+            ):
+                continue
+            fromto = np.empty(6, dtype=np.float64)
+            distance = float(
+                self.mujoco.mj_geomDistance(
+                    self.model, self.data, int(hand_geom), object_geom, proximity_m, fromto
+                )
+            )
+            if distance < proximity_m:
+                proximity.append(
+                    {
+                        "hand_geom": self.mujoco.mj_id2name(
+                            self.model, self.mujoco.mjtObj.mjOBJ_GEOM, int(hand_geom)
+                        ),
+                        "hand_body": self.mujoco.mj_id2name(
+                            self.model,
+                            self.mujoco.mjtObj.mjOBJ_BODY,
+                            int(self.model.geom_bodyid[hand_geom]),
+                        ),
+                        "distance_m": distance,
+                        "fromto": fromto.tolist(),
+                    }
+                )
+        return {
+            "ncon": int(self.data.ncon),
+            "hand_object_contact_count": int(sum(row["is_hand_object"] for row in contacts)),
+            "contacts": contacts,
+            "expected_proximity_contact_set": proximity,
+            "object_wrench_world": object_wrench_world.tolist(),
+            "object_wrench_body": self.data.cfrc_ext[self.object_body_id].copy().tolist(),
+            "object_geom": {
+                "name": "stage16_object_geom",
+                "body": "stage16_object",
+                "contype": int(self.model.geom_contype[object_geom]),
+                "conaffinity": int(self.model.geom_conaffinity[object_geom]),
+                "friction": self.model.geom_friction[object_geom].copy().tolist(),
+            },
+        }
+
+    def collision_configuration(self) -> list[dict[str, Any]]:
+        """Expose generated hand/object collision settings for the static audit."""
+
+        rows: list[dict[str, Any]] = []
+        for geom_id in [*self._hand_geom_ids.tolist()]:
+            if self.model.geom_contype[geom_id] == 0 and self.model.geom_conaffinity[geom_id] == 0:
+                continue
+            rows.append(
+                {
+                    "geom": self.mujoco.mj_id2name(
+                        self.model, self.mujoco.mjtObj.mjOBJ_GEOM, int(geom_id)
+                    ),
+                    "body": self.mujoco.mj_id2name(
+                        self.model,
+                        self.mujoco.mjtObj.mjOBJ_BODY,
+                        int(self.model.geom_bodyid[geom_id]),
+                    ),
+                    "contype": int(self.model.geom_contype[geom_id]),
+                    "conaffinity": int(self.model.geom_conaffinity[geom_id]),
+                    "friction": self.model.geom_friction[geom_id].copy().tolist(),
+                    "size": self.model.geom_size[geom_id].copy().tolist(),
+                }
+            )
+        object_geom = int(
+            self.mujoco.mj_name2id(self.model, self.mujoco.mjtObj.mjOBJ_GEOM, "stage16_object_geom")
+        )
+        rows.append(
+            {
+                "geom": "stage16_object_geom",
+                "body": "stage16_object",
+                "contype": int(self.model.geom_contype[object_geom]),
+                "conaffinity": int(self.model.geom_conaffinity[object_geom]),
+                "friction": self.model.geom_friction[object_geom].copy().tolist(),
+                "size": self.model.geom_size[object_geom].copy().tolist(),
+            }
+        )
+        return rows
+
+    def _physics_trace_row(self, *, substep: int) -> dict[str, Any]:
+        """Capture one post-step state for diagnostic-only full rollouts."""
+
+        state = self._state()
+        ctrl_low = self.model.actuator_ctrlrange[self.actuator_indices, 0]
+        ctrl_high = self.model.actuator_ctrlrange[self.actuator_indices, 1]
+        ctrl = self.data.ctrl[self.actuator_indices].copy()
+        margin = np.minimum(state["q"] - self.joint_lower, self.joint_upper - state["q"])
+        return {
+            "physics_substep": substep,
+            "time_s": float(self.data.time),
+            "reference_index": self.reference_index,
+            "q": state["q"].tolist(),
+            "qdot": state["qdot"].tolist(),
+            "object_qpos": self.data.qpos[
+                self.object_qpos_address : self.object_qpos_address + 7
+            ].tolist(),
+            "object_qvel": self.data.qvel[
+                self.object_dof_address : self.object_dof_address + 6
+            ].tolist(),
+            "ctrl": ctrl.tolist(),
+            "ctrl_saturated": (np.isclose(ctrl, ctrl_low) | np.isclose(ctrl, ctrl_high)).tolist(),
+            "actuator_force": self.data.actuator_force[self.actuator_indices].copy().tolist(),
+            "joint_limit_margin": margin.tolist(),
+            "object_kinetic_energy": float(self.data.energy[1]),
+            "contact": self.contact_report(),
+        }
+
     def reset(self, **kwargs: Any) -> dict[str, np.ndarray]:
         requested_reference_index = kwargs.pop("reference_index", None)
+        velocity_profile = str(kwargs.pop("velocity_profile", "zero"))
         if kwargs:
             raise TypeError(f"unsupported reset keyword arguments: {sorted(kwargs)}")
         if requested_reference_index is None:
@@ -380,10 +691,11 @@ class MujocoReferenceTrackingBackend(
         quaternion = np.empty(4)
         self.mujoco.mju_mat2Quat(quaternion, pose_rotation.reshape(-1))
         self.data.qpos[self.object_qpos_address + 3 : self.object_qpos_address + 7] = quaternion
+        self._apply_velocity_reset(velocity_profile)
         self.mujoco.mj_forward(self.model, self.data)
         return self._state()
 
-    def step(self, action: np.ndarray) -> dict[str, np.ndarray]:
+    def step(self, action: np.ndarray, *, kinematic_object: bool = False) -> dict[str, np.ndarray]:
         action = np.asarray(action, dtype=np.float64)
         target = residual_target(
             self.reference.q_finger_ref[self.reference_index],
@@ -393,7 +705,11 @@ class MujocoReferenceTrackingBackend(
             action_scale_fraction=self.config.action_scale_fraction,
         )
         self.data.ctrl[self.actuator_indices] = target
-        for _ in range(self.config.decimation):
+        self.last_physics_trace = []
+        for substep in range(self.config.decimation):
+            if kinematic_object:
+                self._set_object_to_reference(self.reference_index)
+                self.mujoco.mj_forward(self.model, self.data)
             self.data.xfrc_applied[self.object_body_id].fill(0.0)
             if self.data.time >= self._next_disturbance_time_s:
                 self.data.xfrc_applied[self.object_body_id, :3] = self._sample[
@@ -406,8 +722,14 @@ class MujocoReferenceTrackingBackend(
                     self.rng.uniform(*self.randomization_config.disturbance_interval_s)
                 )
             self.mujoco.mj_step(self.model, self.data)
+            self.last_physics_trace.append(self._physics_trace_row(substep=substep))
         self.step_index += 1
         self.reference_index = min(self.reference_index + 1, self.reference.frame_count - 1)
+        if kinematic_object:
+            # The physics substeps use the current reference frame, then the
+            # returned state is aligned with the incremented control target.
+            self._set_object_to_reference(self.reference_index)
+            self.mujoco.mj_forward(self.model, self.data)
         return self._state()
 
     def observation(self, state: dict[str, np.ndarray] | None = None) -> np.ndarray:
@@ -437,11 +759,11 @@ class MujocoReferenceTrackingBackend(
         )
 
     def transition(
-        self, action: np.ndarray
+        self, action: np.ndarray, *, kinematic_object: bool = False
     ) -> tuple[dict[str, np.ndarray], dict[str, float], str | None]:
         previous_action = self.previous_action.copy()
         second_previous_action = self.second_previous_action.copy()
-        state = self.step(action)
+        state = self.step(action, kinematic_object=kinematic_object)
         target = self.reference_index
         reward = paper_literal_reward(
             object_axis_points=state["object_axis_points"],
@@ -487,4 +809,9 @@ class MujocoReferenceTrackingBackend(
         return state, reward, None if termination is None else termination.value
 
 
-__all__ = ["MujocoBackendConfig", "MujocoReferenceTrackingBackend", "materialize_free_object_scene"]
+__all__ = [
+    "MujocoBackendConfig",
+    "MujocoBackendSnapshot",
+    "MujocoReferenceTrackingBackend",
+    "materialize_free_object_scene",
+]
