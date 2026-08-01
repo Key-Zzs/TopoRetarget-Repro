@@ -1,0 +1,8 @@
+name: toporetarget-isaaclab
+channels:
+  - defaults
+dependencies:
+  - python=3.11.15
+  - pip=26.1.2
+  - numpy=1.26.0
+  - pyyaml=6.0.2

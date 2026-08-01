@@ -1,0 +1,96 @@
+schema_version: 1
+stage: 16-C.0
+status: qualification_blocked_eula
+
+scope:
+  platform_only: true
+  allow_stage16_c1: false
+  prohibited:
+    - wuji_asset_migration
+    - hocap_object_migration
+    - custom_direct_rl_env
+    - custom_stage16_reward
+    - custom_stage16_action
+    - physx_oracle
+    - ppo_training
+    - mujoco_physx_trajectory_comparison
+    - large_scale_4096_env_benchmark
+
+environment:
+  name: toporetarget-isaaclab
+  external_root: .local/external/IsaacLab
+
+stack:
+  selection: latest_stable_non_beta_as_of_2026-08-01
+  install_method: isaac_sim_pip_plus_isaac_lab_source
+  isaac_sim_bundle: all
+  extension_cache: runtime_on_demand
+  preinstall_full_extension_cache: false
+  python: "3.11"
+  python_exact: 3.11.15
+  pip: 26.1.2
+  numpy: 1.26.0
+  pyyaml: 6.0.2
+  isaac_sim: 5.1.0
+  isaac_lab_source:
+    url: https://github.com/isaac-sim/IsaacLab.git
+    tag: v2.3.2
+    commit: 37ddf626871758333d6ed89cf64ad702aef127d0
+  torch: 2.7.0
+  torchvision: 0.22.0
+  cuda_runtime: cu128
+  package_indexes:
+    isaac_sim: https://pypi.nvidia.com
+    torch: https://download.pytorch.org/whl/cu128
+
+official_compatibility:
+  isaac_lab_release: https://github.com/isaac-sim/IsaacLab/releases/tag/v2.3.2
+  isaac_lab_installation: https://isaac-sim.github.io/IsaacLab/v2.3.2/source/setup/installation/pip_installation.html
+  isaac_sim_requirements: https://docs.isaacsim.omniverse.nvidia.com/5.1.0/installation/requirements.html
+  isaac_sim_python_installation: https://docs.isaacsim.omniverse.nvidia.com/5.1.0/installation/install_python.html
+  selection_note: >-
+    Isaac Lab 3.0 was still a beta with documented breaking-change risk.  The
+    latest stable Isaac Lab release was v2.3.2, compatible with Isaac Sim 5.1.
+
+host_requirements:
+  os:
+    - Ubuntu 22.04
+    - Ubuntu 24.04
+  glibc_minimum: "2.35"
+  driver_linux_minimum: 580.65.06
+  ram_gib_minimum: 32
+  vram_gib_minimum: 16
+  gpu_minimum: NVIDIA GeForce RTX 4080
+
+smoke:
+  device: cuda:0
+  physics_device: cuda:0
+  tensor_device: cuda:0
+  steps: 1000
+  official_empty_scene_script: scripts/tutorials/00_sim/create_empty.py
+  official_primitive_script: scripts/tutorials/00_sim/spawn_prims.py
+  official_task_id: Isaac-Cartpole-Direct-v0
+  official_random_agent_script: scripts/environments/random_agent.py
+  vector_env_counts:
+    - 1
+    - 128
+    - 512
+  required_vector_env_count: 128
+  optional_vector_env_count: 512
+  headless_required: true
+  viewer_required: false
+
+recovery:
+  repairs_per_class: 3
+  retries: 4
+  installation_method_switches: 2
+  installation_method_switches_used: 2
+  retries_used_before_runtime: 4
+  major_transitions: 16
+
+licenses:
+  isaac_lab: BSD-3-Clause
+  isaac_sim: NVIDIA Omniverse License Agreement
+  acceptance_policy: require_explicit_user_authorization
+  authorization_recorded: false
+  authorization_scope: no user authorization is recorded for this qualification

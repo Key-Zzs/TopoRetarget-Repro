@@ -1,0 +1,7 @@
+# Stage 16-C.0 core stack.  Install with scripts/bootstrap_stage16_isaaclab_env.sh
+# so the two official package indexes remain explicit and isolated.
+isaacsim[all]==5.1.0
+torch==2.7.0
+torchvision==0.22.0
+numpy==1.26.0
+PyYAML==6.0.2
