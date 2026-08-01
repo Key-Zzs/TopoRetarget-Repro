@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import mujoco
 import numpy as np
 import pytest
+
+mujoco = pytest.importorskip("mujoco", reason="requires the optional toporetarget[rl] extra")
 
 from toporetarget.contracts.reference import RobotReferenceV2
 from toporetarget.geometry.se3 import invert_transform, relative_transform, transform_points

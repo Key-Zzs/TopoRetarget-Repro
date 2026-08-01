@@ -6,6 +6,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
+
+pytest.importorskip("mujoco", reason="requires the optional toporetarget[rl] extra")
 
 from scripts.rl.visualize_hocap_world_wrist_policy_mujoco import (
     AdaptiveOracleVisualizationPolicy,
