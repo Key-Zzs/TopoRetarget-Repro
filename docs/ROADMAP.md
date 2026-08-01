@@ -52,7 +52,7 @@ R0 is MJCF playback/PD, R1 is PPO tracking, and CP remains later.
 | 15 | Baseline Comparison | OmniRetarget, Mink, DexPilot, GeoRT | Frozen fair baseline runs and reports | DEFERRED |
 | 16-A | Paper/minimal reference tracking | Base-relative 20D residual controller | Appendix A.5 MDP/PPO implementation and frame-0 controllability qualification | Preserved: 16.0 functional complete; 16.1a confirms current fixed-base/20D contact timing is dynamically infeasible; 16.2/16.3 not authorized or started |
 | 16-B.0 | `ENGINEERING_EXTENSION` world-reference export | World wrist/object/links at 20 Hz plus wrist-relative reconstructions | Direct Stage-12 export validates provenance, quaternion convention, ordering, and world-to-wrist reconstruction | complete, bounded |
-| 16-B.1 | Dynamic wrist controllability | Finite-wrench free wrist, free object, 26D residual action, 20-episode H1/H5/H10 oracle gate | Both clips must pass the 26D object-aware oracle before PPO | blocked with bounded evidence: wrist orientation safety/saturation fails before contact |
+| 16-B.1 | Dynamic wrist controllability | Finite-wrench free wrist, free object, 26D residual action, 20-episode H1/H5/H10 oracle gate | Both clips must pass the 26D object-aware oracle before PPO | blocked with bounded evidence: contact-aware sequence MPC passes H10 on `170650`; `170105` reaches 97.5% then fails free-object position |
 | 16-B.2 | Single-clip PPO | One gated 26D policy per clip | Runs only after 16-B.1 oracle validation | not started, gate-blocked |
 | 16-B.3 | Two-clip PPO | Balanced two-clip 26D policy | Runs only after both single-clip gates | not started, gate-blocked |
 | 16-B.4 | Full domain randomization | World-wrist DR suite | Gated by a qualified two-clip nominal policy | TODO |

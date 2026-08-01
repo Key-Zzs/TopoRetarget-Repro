@@ -2,7 +2,7 @@
 
 ## Stage 16 status
 
-Stage 16-A remains the preserved paper/minimal, base-relative 20D finger-residual profile: its full-approach two-clip gate is `STAGE16_1_CONTROLLABILITY_BLOCKED`, not a PPO result. Stage 16-B is the separately labelled `ENGINEERING_EXTENSION` `WORLD_WRIST_FINGER_TRACKING_PROTOCOL`: it exports world wrist/object references and drives a free wrist with a finite 6D wrench plus 20D finger residuals. Its bounded result is `STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE`: world-reference validation passed, but the finite-wrench controller is partial and the 26D oracle fails wrist-orientation safety before PPO is allowed. The Stage-16A baseline is archived at `.local/archive/stage16_controllability_failure_baseline_20260801T100413Z_aeb0995/`; Stage-16B evidence is under `.local/reports/stage16_world_wrist_finger/`.
+Stage 16-A remains the preserved paper/minimal, base-relative 20D finger-residual profile: its full-approach two-clip gate is `STAGE16_1_CONTROLLABILITY_BLOCKED`, not a PPO result. Stage 16-B is the separately labelled `ENGINEERING_EXTENSION` `WORLD_WRIST_FINGER_TRACKING_PROTOCOL`: it exports world wrist/object references and drives a free wrist with a finite 6D wrench plus 20D finger residuals. Its bounded result is `STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE`: world-reference and W2 wrist validation pass, but the contact-aware H-by-26 sequence MPC oracle passes H10 on only one of two clips. The remaining failure is free-object position/axis tracking, not wrist-orientation safety; PPO is not started. The Stage-16A baseline is archived at `.local/archive/stage16_controllability_failure_baseline_20260801T100413Z_aeb0995/`; Stage-16B evidence is under `.local/reports/stage16_world_wrist_finger/`.
 
 [中文 README](README.zh-CN.md)
 
@@ -111,6 +111,7 @@ conda run -n toporetarget-rl python scripts/rl/qualify_stage16_world_wrist.py \
   --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170650.world_wrist.stage16.npz \
   --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170105.obj \
   --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170650.obj \
+  --object-dynamics-audit .local/reports/stage16_object_dynamics_audit/20260801T_object_mpc_v2/object_dynamics_audit.json \
   --scene-root .local/experiments/stage16_world_wrist_finger/qualification_replay \
   --report-root .local/reports/stage16_world_wrist_finger/qualification_replay \
   --formal-episodes 20
@@ -120,7 +121,7 @@ Use the same explicit files for a failure-evidence visualisation:
 
 ```bash
 conda run -n toporetarget-rl python scripts/rl/visualize_hocap_world_wrist_policy_mujoco.py \
-  --policy zero --mode headless --start-frame 0 --deterministic \
+  --policy oracle --oracle-horizon 10 --mode headless --start-frame 0 --deterministic \
   --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170105.world_wrist.stage16.npz \
   --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170105.obj \
   --controller-report .local/reports/stage16_world_wrist_finger/rerun3_effective_inertia/wrist_controller_qualification.json \

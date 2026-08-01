@@ -21,13 +21,13 @@ GPU OOM follows `4096 -> 2048 -> 1024 -> 512 -> 256` with explicit shard account
 
 ## Stage 16-B bounded recovery
 
-The separate world-wrist extension uses the same fail-closed principle. Its
-three retained qualification attempts are: initial world-wrist export/control,
-target-next wrist-control correction, and effective-freejoint-inertia
-correction with the predeclared global profile grid. The third attempt is the
-authoritative final qualification. It records `ACTUATOR_OR_PD_FAILURE` at W2
-and `OBJECT_DYNAMICS_FAILURE` at W4, then stops at the 26D oracle gate.
+The separate world-wrist extension uses the same fail-closed principle. After
+the retained wrist-control corrections, the authorized contact-aware MPC
+extension audits mass/inertia/support, records substep contact impulse, and
+compares the shared 12x2, 24x3, and 32x3 sequence-search budgets. The selected
+32x3 H10 controller passes `170650`, but `170105` reaches 97.5% and fails
+`FAILURE_OBJECT_POSITION`; W4 therefore remains `OBJECT_DYNAMICS_FAILURE`.
 
-No fourth controller/physics search, clip-specific tuning, object pose write,
-or PPO bypass is permitted. The complete final transition log is
-`.local/reports/stage16_world_wrist_finger/rerun3_effective_inertia/failure_transition_log.jsonl`.
+No clip-specific tuning, object pose write, physical-parameter selection by
+tracking score, or PPO bypass is permitted. The complete selected transition
+log is `.local/reports/stage16_world_wrist_finger/contact_mpc_formal_selected_20260801/failure_transition_log.jsonl`.

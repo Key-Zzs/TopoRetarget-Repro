@@ -27,7 +27,7 @@ world_wrist_finger_extension:
   finite_wrench_wrist: {classification: ENGINEERING_EXTENSION, mapping: "CartesianWristImpedanceController"}
   action_26d: {classification: ENGINEERING_EXTENSION, mapping: "6D wrist residual plus 20D finger residual"}
   world_relative_observation: {classification: ENGINEERING_EXTENSION, mapping: "WorldWristObservationContractV1"}
-  oracle: {classification: ENGINEERING_DIAGNOSTIC, mapping: "clone-only H1/H5/H10"}
+  oracle: {classification: ENGINEERING_DIAGNOSTIC, mapping: "clone-only contact-aware H-by-26 sequence MPC at H1/H5/H10"}
   ppo_started: false
   no_direct_object_control: true
   assumptions: [A_STAGE16B_FREE_WRIST_001, A_STAGE16B_ZERO_GRAVITY_001, A_STAGE16B_WRIST_SAFETY_001]

@@ -2,7 +2,7 @@
 
 ## Stage 16 状态
 
-Stage 16-A 保留为论文 minimal、base-relative 的 20D finger residual profile：完整 approach 的两条 clip gate 为 `STAGE16_1_CONTROLLABILITY_BLOCKED`，这不是 PPO 结果。Stage 16-B 是明确标注的 `ENGINEERING_EXTENSION` `WORLD_WRIST_FINGER_TRACKING_PROTOCOL`：它导出 world wrist/object reference，并用有限 wrench 的 free wrist 6D residual 加 20D finger residual 驱动。当前有界结果为 `STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE`：world reference 已通过，但有限 wrench controller 仅 partial，26D oracle 在允许 PPO 前已触发 wrist-orientation safety。Stage-16A 基线位于 `.local/archive/stage16_controllability_failure_baseline_20260801T100413Z_aeb0995/`，Stage-16B 证据位于 `.local/reports/stage16_world_wrist_finger/`。
+Stage 16-A 保留为论文 minimal、base-relative 的 20D finger residual profile：完整 approach 的两条 clip gate 为 `STAGE16_1_CONTROLLABILITY_BLOCKED`，这不是 PPO 结果。Stage 16-B 是明确标注的 `ENGINEERING_EXTENSION` `WORLD_WRIST_FINGER_TRACKING_PROTOCOL`：它导出 world wrist/object reference，并用有限 wrench 的 free wrist 6D residual 加 20D finger residual 驱动。当前有界结果为 `STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE`：world reference 与 W2 wrist 验证通过，但 contact-aware H-by-26 sequence MPC 的 H10 只通过两个 clip 中的一个；剩余失败来自自由物体 position/axis tracking，不再是 wrist-orientation safety，PPO 未启动。Stage-16A 基线位于 `.local/archive/stage16_controllability_failure_baseline_20260801T100413Z_aeb0995/`，Stage-16B 证据位于 `.local/reports/stage16_world_wrist_finger/`。
 
 [English README](README.md)
 

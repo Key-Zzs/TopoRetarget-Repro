@@ -14,10 +14,10 @@ The current Stage 16-B outcome is `STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE`.
 Both direct 20 Hz world-reference exports and the selected globally shared W2
 impedance profile validate. The corrected world/body-local angular-velocity
 boundary and a 10 ms-stable 2 Nm/rad rotational profile remove wrist-safety
-failures and wrench saturation. The clone-only 26D H=1/5/10 oracle still
-reaches `STAGE16B_26D_ORACLE_BLOCKED` on both clips because the free object
-crosses `FAILURE_OBJECT_AXIS_POINT`; H=10 progresses to 90.0% and 52.5% with
-0% success. Single-clip and two-clip PPO are therefore
+failures and wrench saturation. The clone-only, contact-aware H-by-26 action-
+sequence MPC still reaches `STAGE16B_26D_ORACLE_BLOCKED`: H=10 passes all
+terminal gates on `170650`, but `170105` reaches 97.5% and crosses
+`FAILURE_OBJECT_POSITION`. Single-clip and two-clip PPO are therefore
 `STAGE16B_SINGLE_CLIP_PPO_BLOCKED` and `STAGE16B_TWO_CLIP_PPO_BLOCKED`; no
 Stage-16B checkpoint exists or is claimed.
 

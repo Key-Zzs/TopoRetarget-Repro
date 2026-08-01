@@ -1,5 +1,22 @@
 # 开发日志
 
+## 2026-08-01 —— Stage 16-B contact-aware sequence MPC 与物体审计
+
+将旧的 H 步重复同一个 action 的 oracle 替换为确定性、有界、contact-aware 的真实
+H-by-26 action-sequence CEM MPC。candidate rollout 仍只在 clone state 中运行，只执行正式的
+wrist/finger action，从不控制或写入物体。MuJoCo snapshot 现在保留完整 integration state，
+每个 20 Hz control boundary 使用一致的 forward 语义；一次优化 episode 加 19 次完全相同的
+action-only replay 得到完全一致的终态。physics trace 现在保留每个 10 ms 子步的手物 contact、
+法向力/冲量和 penetration，因此不会漏掉在 control-frame 末端前已经消失的短碰撞。
+
+可复现物体审计确认两份 collision mesh 均非 watertight，source 中也没有权威的 mass、inertia、
+support 或 force metadata。正式 50 g 物体仍只是共享但未标定的工程假设；场景为零重力、无地面、
+无支撑、无阻尼。在共享的 12x2、24x3、32x3 MPC 有界比较后，按 worst-clip H10 progress 选择
+32x3。`170650` 的 20 次确定性 H10 全部门限通过（0.829 cm、7.912 度、axis 1.300 cm）；
+`170105` 到达 97.5% 后以 `FAILURE_OBJECT_POSITION` 终止（5.160 cm、17.803 度、axis
+6.184 cm）。PPO 保持 `NOT_STARTED_GATE_BLOCKED`。两段真实 5 fps MuJoCo overlay MP4 分别
+包含 40/41 帧，时长 8.0/8.2 秒。
+
 ## 2026-08-01 —— Stage 16-B wrist 坐标系与可视化修正
 
 修正 Stage-16B free joint 的速度坐标边界：reference 角速度属于 world frame，而

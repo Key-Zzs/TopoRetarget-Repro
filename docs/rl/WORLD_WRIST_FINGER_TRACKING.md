@@ -11,8 +11,9 @@ sim-to-real transfer.
 
 The current status is `STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE`. The direct
 world reference and finite-wrench W2 wrist controller are validated. The
-clone-only 26D oracle now keeps the wrist stable, but fails the free-object
-axis-point gate for both approved clips. PPO is therefore not started.
+clone-only contact-aware 26D sequence MPC keeps the wrist stable and passes
+H10 on `170650`, but `170105` still fails the free-object gate. PPO is
+therefore not started.
 
 ## Direct reference contract
 
@@ -58,7 +59,7 @@ a[3:6]   wrist rotation residual, local SO(3) log coordinates
 a[6:26]  20 named Wuji finger-joint residuals
 ```
 
-The selected global scale is 20 mm translation, 10 degrees rotation, and 20%
+The selected global scale is 10 mm translation, 5 degrees rotation, and 10%
 of every finger joint range. The selected global controller has translational
 stiffness 250 N/m, damping ratio 1.0, rotational stiffness 2 Nm/rad, damping
 ratio 0.5, force limit 25 N, torque limit 1.5 Nm, and feed-forward twist gain
@@ -85,15 +86,42 @@ degrees wrist-orientation error. Rewards include original object/link/finger
 tracking, wrist position/rotation tracking, and action smoothness. These new
 wrist terms and safety limits are assumptions, not paper values.
 
+## Object dynamics and support audit
+
+Both derived OBJ meshes are non-watertight, and the frozen source artifacts
+provide no authoritative object mass, inertia, support, or force metadata.
+The 50 g MuJoCo mass is therefore retained only as a globally shared
+engineering assumption; bounded 0.5x/1x/2x/5x mass-inertia counterfactuals are
+reported but are ineligible for score-based selection. The formal scene has
+zero gravity, no ground, no support constraint, and zero object free-joint
+damping. Its classification is
+`UNSUPPORTED_FREE_BODY_ZERO_GRAVITY_NO_DAMPING` and physical provenance
+remains `OBJECT_DYNAMICS_PHYSICAL_PROVENANCE_UNRESOLVED`.
+
+Contact is audited at every 10 ms physics substep, including hand-object
+normal force, impulse, penetration, and geom pairs. This matters because the
+`170650` zero-residual trajectory has a two-substep impact that is absent at
+the 50 ms control-frame endpoint. In the unsupported model, such a brief
+off-centre impulse creates object twist that persists after contact is lost.
+The geometric reference has non-zero inertial-wrench demand on 37/41 and
+40/41 frames respectively, but contains no force/support provenance. This is
+the supported root-cause statement; it is not a proof that the source motion
+is physically infeasible.
+
 ## Qualification gate
 
 W1 is exogenous wrist playback only. W2 uses a dynamic wrist with a
 kinematic-object diagnostic. W3/W4 use the full dynamic free-object system.
-The W4 gate uses `WorldWristFingerObjectAwareOracle`, a clone-state only,
-finite-difference 26D controller with the same action bounds at H=1, H=5, and
-H=10. It has no direct object control.
+The W4 gate uses `WorldWristFingerObjectAwareOracle`, a clone-state-only,
+deterministic contact-aware CEM MPC over a true H-by-26 action sequence at
+H=1, H=5, and H=10. The selected shared bounded budget is population 32,
+three iterations, and eight elites. Receding-horizon execution applies only
+the first 26D action through `env.step`; it has no direct object control.
 
-Each H=10 evaluation runs 20 deterministic frame-0 episodes per clip. PPO
+Each H=10 evaluation runs 20 deterministic frame-0 episodes per clip. One
+episode computes the MPC trace and 19 episodes replay that exact trace only
+through `env.step`; full MuJoCo integration state is restored for every clone,
+and all 20 terminal tuples are identical. PPO
 may start only after both clips satisfy the oracle success/final-reach and
 object/axis gates. W2 passes on both clips with the shared controller:
 
@@ -102,15 +130,16 @@ object/axis gates. W2 passes on both clips with the shared controller:
 | `170105` | 100% | 100% | 0.757 cm | 0.417 deg | 0% | 0% |
 | `170650` | 100% | 100% | 0.691 cm | 0.906 deg | 0% | 0% |
 
-The subsequent authoritative H=10 free-object oracle result is:
+The subsequent authoritative selected H=10 free-object oracle result is:
 
 | Clip | Episodes | Success | Progress | Object position | Object rotation | Max axis | Wrist rotation | Saturation |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `170105` | 20 | 0% | 90.0% | 2.466 cm | 44.573 deg | 5.997 cm | 0.595 deg | 0% |
-| `170650` | 20 | 0% | 52.5% | 2.969 cm | 36.722 deg | 5.365 cm | 0.584 deg | 0% |
+| `170105` | 20 | 0% | 97.5% | 5.160 cm | 17.803 deg | 6.184 cm | 1.247 deg | 0% |
+| `170650` | 20 | 100% | 100% | 0.829 cm | 7.912 deg | 1.300 cm | 0.923 deg | 0% |
 
-Both runs deterministically terminate with `FAILURE_OBJECT_AXIS_POINT`;
-wrist-orientation safety no longer fires. No trained checkpoint exists.
+`170105` deterministically terminates with `FAILURE_OBJECT_POSITION`; `170650`
+passes. Wrist-orientation safety no longer fires. Since both clips must pass,
+the oracle remains blocked and no trained checkpoint exists.
 
 ## Commands
 
@@ -120,14 +149,14 @@ conda run -n toporetarget-rl python scripts/rl/qualify_stage16_world_wrist.py \
   --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170650.world_wrist.stage16.npz \
   --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170105.obj \
   --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170650.obj \
+  --object-dynamics-audit .local/reports/stage16_object_dynamics_audit/20260801T_object_mpc_v2/object_dynamics_audit.json \
   --scene-root .local/experiments/stage16_world_wrist_finger/qualification_replay \
   --report-root .local/reports/stage16_world_wrist_finger/qualification_replay \
-  --formal-episodes 20 \
-  --stop-after-w2
+  --formal-episodes 20
 ```
 
-Remove `--stop-after-w2` only after `w2_qualification_status.json` says
-`oracle_authorized=true`.
+Use `--stop-after-w2` only for the isolated W2 gate; a formal oracle run
+requires the explicit object-dynamics audit above.
 
 PPO commands must include the qualifying `--oracle-report`,
 `--controller-report`, and `--action-scale-report`; on the current evidence
@@ -145,8 +174,9 @@ count, and termination. `--kinematic-object-diagnostic` is explicitly W2-only
 and cannot be described as free-object control.
 
 The current ignored visualization bundle is under
-`.local/reports/stage16_world_wrist_finger/oracle_after_w2_stable_20260801T185700/visual/`.
-The two W2 files have 41 frames at 5 fps (8.2 s); the two H=10 oracle files
-have 37 and 22 frames at 5 fps (7.4 s and 4.4 s). The oracle videos are
-failure evidence, not PPO or contact-supported success. No single-clip or
-two-clip PPO video can exist until the oracle gate passes.
+`.local/reports/stage16_world_wrist_finger/contact_mpc_formal_selected_20260801/visual/`.
+The two H=10 files have 40 and 41 real MuJoCo frames at 5 fps (8.0 s and
+8.2 s), with full overlays. The first is failure evidence and the second is an
+oracle pass; neither is PPO or a physically calibrated contact-support claim.
+No single-clip or two-clip PPO video can exist until the two-clip oracle gate
+passes.
