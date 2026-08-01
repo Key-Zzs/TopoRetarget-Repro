@@ -22,7 +22,10 @@ from toporetarget.rl.environments.world_wrist_backend import (
 from toporetarget.rl.ppo.checkpoint import load_checkpoint
 from toporetarget.rl.ppo.trainer import PPOConfig, PPOTrainer
 from toporetarget.rl.world_wrist import WorldWristFingerReferenceV1, quaternion_wxyz_from_matrix
-from toporetarget.rl.world_wrist_oracle import WorldWristFingerObjectAwareOracle
+from toporetarget.rl.world_wrist_oracle import (
+    AdaptiveMultiHorizonContactOracle,
+    WorldWristFingerObjectAwareOracle,
+)
 
 REPO = Path(__file__).resolve().parents[2]
 WUJI_MJCF = REPO / "third_party/robot_hands/wuji_hand2_beta1/mjcf/right.xml"
@@ -38,6 +41,82 @@ OVERLAY_NAMES = (
     "show_wrist_wrench",
     "show_base_target",
 )
+
+
+class AdaptiveOracleVisualizationPolicy:
+    """Run the shared adaptive oracle or replay one of its immutable traces."""
+
+    def __init__(
+        self,
+        backend: WorldWristFingerBackend,
+        *,
+        clip_name: str,
+        action_trace: Path | None,
+        selection_trace: Path | None,
+    ) -> None:
+        self.backend = backend
+        self.oracle = None if action_trace is not None else AdaptiveMultiHorizonContactOracle()
+        self.actions = (
+            None
+            if action_trace is None
+            else np.asarray(np.load(action_trace, allow_pickle=False)["actions"], dtype=np.float64)
+        )
+        self.selection_rows: list[dict[str, Any]] = []
+        if selection_trace is not None:
+            self.selection_rows = [
+                row
+                for line in selection_trace.read_text(encoding="utf-8").splitlines()
+                if (row := json.loads(line)).get("clip", clip_name) == clip_name
+            ]
+        self.index = 0
+        self.last_metadata: dict[str, Any] | None = None
+        self.horizon_counts: dict[str, int] = {}
+        self.trace_source = "live_adaptive_oracle" if action_trace is None else "action_only_replay"
+
+    @staticmethod
+    def _metadata_from_row(row: dict[str, Any]) -> dict[str, Any]:
+        selected_horizon = int(row["selected_requested_horizon"])
+        selected = next(
+            candidate
+            for candidate in row.get("candidates", [])
+            if int(candidate["requested_horizon"]) == selected_horizon
+        )
+        diagnostics = selected["diagnostics"]
+        return {
+            "remaining": int(row["remaining"]),
+            "selected_horizon": selected_horizon,
+            "effective_horizon": int(row["selected_effective_horizon"]),
+            "candidate_gate_values": {
+                f"H{int(candidate['requested_horizon'])}": float(
+                    candidate["diagnostics"]["predicted_gate_violation"]
+                )
+                for candidate in row.get("candidates", [])
+            },
+            "gate_violation": float(diagnostics["predicted_gate_violation"]),
+            "gate_margin": float(diagnostics["minimum_gate_margin"]),
+            "predicted_termination": diagnostics["predicted_termination"],
+            "selection_reason": row["reason"],
+        }
+
+    def __call__(self, _state: dict[str, np.ndarray]) -> np.ndarray:
+        if self.actions is not None:
+            if self.index >= len(self.actions):
+                raise ValueError("adaptive oracle action trace ended before the rollout")
+            action = self.actions[self.index].copy()
+            self.last_metadata = (
+                self._metadata_from_row(self.selection_rows[self.index])
+                if self.index < len(self.selection_rows)
+                else None
+            )
+        else:
+            assert self.oracle is not None
+            action = self.oracle.action(self.backend)
+            self.last_metadata = self._metadata_from_row(self.oracle.selection_trace[-1])
+        if self.last_metadata is not None:
+            key = f"H{self.last_metadata['selected_horizon']}"
+            self.horizon_counts[key] = self.horizon_counts.get(key, 0) + 1
+        self.index += 1
+        return action
 
 
 def _profile(
@@ -92,6 +171,13 @@ def _policy(args: argparse.Namespace, backend: WorldWristFingerBackend) -> Any:
     if args.policy == "oracle":
         oracle = WorldWristFingerObjectAwareOracle()
         return lambda _state: oracle.action(backend, horizon=args.oracle_horizon)
+    if args.policy == "adaptive-oracle":
+        return AdaptiveOracleVisualizationPolicy(
+            backend,
+            clip_name=args.reference.stem,
+            action_trace=args.adaptive_action_trace,
+            selection_trace=args.adaptive_selection_trace,
+        )
     if args.checkpoint is None:
         raise ValueError("--checkpoint is required for --policy ppo")
     trainer = PPOTrainer(backend.observation().size, 26, config=PPOConfig(), device=args.device)
@@ -142,6 +228,10 @@ def _summary(
             else backend.last_control.applied_wrench_world.tolist()
         ),
         "overlays_requested": {name: bool(getattr(args, name)) for name in OVERLAY_NAMES},
+        "diagnostic_hud_requested": {
+            "show_selected_horizon": args.show_selected_horizon,
+            "show_gate_margins": args.show_gate_margins,
+        },
         "non_claim": "visual inspection only; world-wrist oracle is not PPO success",
     }
 
@@ -425,8 +515,12 @@ def _annotate_frame(
     backend: WorldWristFingerBackend,
     *,
     policy_name: str,
-    reward: float | None,
+    policy_metadata: dict[str, Any] | None,
+    action: np.ndarray | None,
+    reward: dict[str, float] | None,
     reason: str | None,
+    show_selected_horizon: bool,
+    show_gate_margins: bool,
 ) -> np.ndarray:
     from PIL import Image, ImageDraw
 
@@ -450,14 +544,59 @@ def _annotate_frame(
         f"wrist error: {position_error_cm:.3f} cm  {rotation_error_deg:.3f} deg",
         f"object error: {object_error_cm:.3f} cm  contacts={backend.data.ncon}",
     ]
+    if policy_metadata is not None and show_selected_horizon:
+        lines.append(
+            "adaptive: "
+            f"H{policy_metadata['selected_horizon']}->H{policy_metadata['effective_horizon']}  "
+            f"remaining={policy_metadata['remaining']}"
+        )
+        lines.append(f"reason={policy_metadata['selection_reason'].split(':', maxsplit=1)[0]}")
+    if policy_metadata is not None and show_gate_margins:
+        candidate_values = "  ".join(
+            f"{name}={value:.3f}"
+            for name, value in policy_metadata["candidate_gate_values"].items()
+        )
+        lines.append(
+            f"candidate gates: {candidate_values}  "
+            f"selected margin={policy_metadata['gate_margin']:.3f}"
+        )
+        if policy_metadata.get("predicted_termination") is not None:
+            lines.append(f"predicted={policy_metadata['predicted_termination']}")
+    if policy_name == "ppo" and action is not None:
+        wrist, finger = action[:6], action[6:]
+        lines.append(
+            f"action: wrist|max|={np.max(np.abs(wrist)):.3f}  "
+            f"finger|max|={np.max(np.abs(finger)):.3f}  "
+            f"saturated={np.mean(np.abs(action) >= 0.999):.1%}"
+        )
+        if backend.last_control is not None:
+            wrench = backend.last_control.applied_wrench_world
+            lines.append(
+                f"wrench: force={np.linalg.norm(wrench[:3]):.3f} N  "
+                f"torque={np.linalg.norm(wrench[3:]):.3f} Nm"
+            )
     if reward is not None:
-        lines.append(f"reward={reward:.4f}")
+        lines.append(
+            "reward: "
+            + "  ".join(
+                f"{name}={reward[name]:.3f}"
+                for name in (
+                    "total",
+                    "object",
+                    "tracked_links",
+                    "finger_joints",
+                    "wrist_position",
+                    "wrist_rotation",
+                    "smoothness",
+                )
+            )
+        )
     if reason is not None:
         lines.append(f"termination={reason}")
     image = Image.fromarray(frame)
     draw = ImageDraw.Draw(image, "RGBA")
     box_height = 18 * len(lines) + 12
-    draw.rectangle((8, 8, 450, 8 + box_height), fill=(0, 0, 0, 175))
+    draw.rectangle((8, 8, min(frame.shape[1] - 8, 632), 8 + box_height), fill=(0, 0, 0, 175))
     for line_index, line in enumerate(lines):
         draw.text((16, 14 + 18 * line_index), line, fill=(255, 255, 255, 255))
     return np.asarray(image)
@@ -482,7 +621,7 @@ def _headless(args: argparse.Namespace, backend: WorldWristFingerBackend, policy
         renderer_status = "PASS_WITH_LIMITATION_NUMERICAL_FALLBACK"
     camera = _camera(backend, args)
 
-    def render_frame(step: int, reward: float | None) -> None:
+    def render_frame(step: int, action: np.ndarray | None, reward: dict[str, float] | None) -> None:
         if renderer is None:
             return
         renderer.update_scene(backend.data, camera=camera)
@@ -493,16 +632,20 @@ def _headless(args: argparse.Namespace, backend: WorldWristFingerBackend, policy
             renderer.render().copy(),
             backend,
             policy_name=args.policy,
+            policy_metadata=getattr(policy, "last_metadata", None),
+            action=action,
             reward=reward,
             reason=reason,
+            show_selected_horizon=args.show_selected_horizon,
+            show_gate_margins=args.show_gate_margins,
         )
         images.append(frame)
         iio.imwrite(args.output_frames / f"frame_{step:04d}.png", frame)
 
-    render_frame(0, None)
+    render_frame(0, None, None)
     for step in range(args.max_steps):
         state = backend._state()  # noqa: SLF001 - renderer samples simulator state
-        action = policy(state)
+        action = np.asarray(policy(state), dtype=np.float64)
         state, reward, reason = backend.transition(
             action, kinematic_object_diagnostic=args.kinematic_object_diagnostic
         )
@@ -531,7 +674,7 @@ def _headless(args: argparse.Namespace, backend: WorldWristFingerBackend, policy
                 ),
             }
         )
-        render_frame(step + 1, float(reward["total"]))
+        render_frame(step + 1, action, reward)
         if reason is not None:
             break
     if renderer is not None:
@@ -588,6 +731,16 @@ def _headless(args: argparse.Namespace, backend: WorldWristFingerBackend, policy
         "renderer_error": None
         if renderer_error is None
         else f"{type(renderer_error).__name__}: {renderer_error}",
+        "adaptive_oracle": (
+            None
+            if not isinstance(policy, AdaptiveOracleVisualizationPolicy)
+            else {
+                "trace_source": policy.trace_source,
+                "selected_horizon_counts": policy.horizon_counts,
+                "selection_trace_attached": bool(policy.selection_rows),
+                "non_claim": "action-only replay is oracle evidence, never PPO evaluation",
+            }
+        ),
     }
     (args.output_frames / "visualization_summary.json").write_text(
         json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -619,11 +772,35 @@ def _interactive(args: argparse.Namespace, backend: WorldWristFingerBackend, pol
                 break
             started = time.monotonic()
             state = backend._state()  # noqa: SLF001 - viewer samples simulator state
-            _, _, reason = backend.transition(
-                policy(state), kinematic_object_diagnostic=args.kinematic_object_diagnostic
+            action = np.asarray(policy(state), dtype=np.float64)
+            _, reward, reason = backend.transition(
+                action, kinematic_object_diagnostic=args.kinematic_object_diagnostic
             )
             viewer.user_scn.ngeom = 0
             _add_overlays(viewer.user_scn, backend, args)
+            metadata = getattr(policy, "last_metadata", None)
+            if metadata is not None and hasattr(viewer, "add_overlay"):
+                title = f"adaptive oracle | frame {backend.reference_index}"
+                details: list[str] = []
+                if args.show_selected_horizon:
+                    details.append(
+                        f"H{metadata['selected_horizon']} -> H{metadata['effective_horizon']} | "
+                        f"remaining {metadata['remaining']}"
+                    )
+                    details.append(metadata["selection_reason"].split(":", maxsplit=1)[0])
+                if args.show_gate_margins:
+                    details.append(
+                        " | ".join(
+                            f"{name}={value:.3f}"
+                            for name, value in metadata["candidate_gate_values"].items()
+                        )
+                    )
+                details.append(f"reward={reward['total']:.3f}")
+                viewer.add_overlay(
+                    mujoco.mjtGridPos.mjGRID_TOPLEFT,
+                    title,
+                    "\n".join(details),
+                )
             viewer.sync()
             if reason is not None:
                 break
@@ -648,7 +825,19 @@ def main() -> int:
     parser.add_argument(
         "--scene-root", type=Path, default=Path(".local/visualize_stage16_world_wrist")
     )
-    parser.add_argument("--policy", choices=("zero", "oracle", "ppo"), default="zero")
+    parser.add_argument(
+        "--policy", choices=("zero", "oracle", "adaptive-oracle", "ppo"), default="zero"
+    )
+    parser.add_argument(
+        "--adaptive-action-trace",
+        type=Path,
+        help="immutable adaptive-oracle action NPZ to replay instead of re-optimizing",
+    )
+    parser.add_argument(
+        "--adaptive-selection-trace",
+        type=Path,
+        help="JSONL selection evidence used to annotate adaptive-oracle replay frames",
+    )
     parser.add_argument(
         "--kinematic-object-diagnostic",
         action="store_true",
@@ -670,6 +859,8 @@ def main() -> int:
     parser.add_argument("--show-contact-forces", action="store_true")
     parser.add_argument("--show-wrist-wrench", action="store_true")
     parser.add_argument("--show-base-target", action="store_true")
+    parser.add_argument("--show-selected-horizon", action="store_true")
+    parser.add_argument("--show-gate-margins", action="store_true")
     parser.add_argument("--camera", default="auto")
     parser.add_argument("--max-steps", type=int, default=45)
     parser.add_argument("--playback-fps", type=float, default=20.0)
@@ -692,6 +883,10 @@ def main() -> int:
         parser.error("--output-frames is required with --mode headless")
     if args.policy == "ppo" and args.checkpoint is None:
         parser.error("--checkpoint is required with --policy ppo")
+    if args.adaptive_action_trace is not None and args.policy != "adaptive-oracle":
+        parser.error("--adaptive-action-trace requires --policy adaptive-oracle")
+    if args.adaptive_selection_trace is not None and args.policy != "adaptive-oracle":
+        parser.error("--adaptive-selection-trace requires --policy adaptive-oracle")
     if args.max_steps < 1 or args.playback_fps <= 0.0 or args.output_fps <= 0.0:
         parser.error("max-steps, playback-fps, and output-fps must be positive")
     reference = WorldWristFingerReferenceV1.from_npz(args.reference)
