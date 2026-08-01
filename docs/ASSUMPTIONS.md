@@ -339,3 +339,24 @@ PAPER_PROTOCOL_REPRODUCTION_WITH_ASSUMPTIONS rather than author-exact results.
   PhysX oracle are required.
 - No Wuji asset, HO-Cap object, custom `DirectRLEnv`, PhysX oracle, or Isaac Lab
   PPO is implemented by Stage 16-C.0 platform qualification.
+
+## Stage 16-C.0 Isaac Lab platform assumptions
+
+- Isaac Sim 5.1.0 and Isaac Lab v2.3.2 are a frozen reproducibility stack for
+  this engineering qualification. Their use does not identify the simulator,
+  contact solver, or low-level controller used by the paper.
+- The pip-installed CUDA 12.8 runtime is isolated from the host's system CUDA.
+  C.0 never upgrades the NVIDIA driver, kernel, glibc, or system toolchain.
+- A successful official Cartpole smoke proves platform import, stepping,
+  tensor placement, GPU PhysX selection, and vectorization only. It does not
+  prove Wuji/HO-Cap asset compatibility, Stage-16 semantic parity, contact
+  controllability, or PPO learnability.
+- The 128-environment gate requires unique environment origins, independent
+  action rows, and a non-synchronized subset reset event. Merely setting
+  `num_envs=128` is not accepted as parallel-execution evidence.
+- Interactive viewer availability is a soft host limitation. Headless GPU
+  execution, CUDA tensors, and 128-environment evidence are hard gates.
+- NVIDIA EULA acceptance is outside the reusable bootstrap. The verifier may
+  set `OMNI_KIT_ACCEPT_EULA=YES` only for an explicitly authorized run, and
+  records that decision in the report. No such authorization is recorded for
+  the current qualification, so runtime is blocked before import.

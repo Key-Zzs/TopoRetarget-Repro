@@ -54,12 +54,12 @@ R0 is MJCF playback/PD, R1 is PPO tracking, and CP remains later.
 | 16-B.0 | `ENGINEERING_EXTENSION` world-reference export | World wrist/object/links at 20 Hz plus wrist-relative reconstructions | Direct Stage-12 export validates provenance, quaternion convention, ordering, and world-to-wrist reconstruction | complete, bounded |
 | 16-B.1 | Finite-wrench wrist controller | Shared 6D finite-wrench wrist plus 20D fingers | W2 controller gates pass without teleport or direct object control | complete |
 | 16-B.1b | Fixed-horizon per-trajectory controllability | Frozen H1/H5/H10 matrix | At least one bounded controller per trajectory | complete: H5 passes `170105`; H10 passes `170650` |
-| 16-B.1c | Shared adaptive multi-horizon MuJoCo oracle | Shared state-only H1/H5/H10 selector, terminal contraction, 20-episode frame-0 gate | Both clips pass one shared bounded oracle | partial / closed: final 48x4 has `170650` 20/20 pass and `170105` 0/20 at 82.5%, axis 5.002 cm |
+| 16-B.1c | Shared adaptive multi-horizon MuJoCo oracle | Shared state-only H1/H5/H10 selector, terminal contraction, 20-episode frame-0 gate | Both clips pass one shared bounded oracle | partial / closed: selected 32x3 has `170650` 20/20 pass and `170105` 0/20 at 80%; bounded 48x4 `170105` reaches 82.5% with 5.002 cm axis error |
 | 16-B.2 | MuJoCo single-clip PPO | One gated 26D policy per clip | Requires B.1c validation | blocked / `NOT_STARTED_GATE_BLOCKED`; 0 samples, no checkpoints |
 | 16-B.3 | MuJoCo two-clip PPO | Balanced two-clip 26D policy | Requires both single-clip gates | TODO / not started |
 | 16-B.4 | Full domain randomization | World-wrist DR suite | Gated by a qualified two-clip nominal policy | TODO |
 | 16-B.5 | Geometry/zero/PPO comparison | Comparable trajectory/contact audit | Gated by a qualified PPO rollout | TODO |
-| 16-C.0 | Isaac Lab platform qualification | Host, isolated install, Isaac Sim/Lab, GPU PhysX, headless and 128-env vector smoke | Platform-only evidence; no custom assets/task/PPO | next / active |
+| 16-C.0 | Isaac Lab platform qualification | Host, isolated install, Isaac Sim/Lab, GPU PhysX, headless and 128-env vector smoke | Platform-only evidence; no custom assets/task/PPO | BLOCKED: `ISAACLAB_EULA_ACCEPTANCE_REQUIRED` |
 | 16-C.1 | Wuji and object asset migration | Wuji Hand2 Beta1 and HO-Cap object migration | Authorized only by C.0 | TODO |
 | 16-C.2 | Isaac Lab `DirectRLEnv` | Stage-16 task shell | Asset migration complete | TODO |
 | 16-C.3 | Single-environment semantic parity | Action/observation/reward/termination parity | DirectRLEnv exists | TODO |
@@ -78,6 +78,16 @@ contact-diagnostic, action-replay, and interactive-visualization backend.
 Isaac Lab is the planned GPU-parallel training backend. MuJoCo and PhysX are
 not required to match bitwise, but semantic parity and a new PhysX oracle gate
 are required before any Isaac Lab PPO; MuJoCo evidence cannot authorize it.
+
+Stage 16-C.0 freezes the independent platform stack to Python 3.11.15, Isaac
+Sim 5.1.0, Isaac Lab v2.3.2 at exact commit
+`37ddf626871758333d6ed89cf64ad702aef127d0`, and Torch 2.7.0 cu128. Its
+qualification is limited to host/install/import, finite official GPU-PhysX,
+headless, viewer, and 128-environment evidence. C.1-C.9 remain TODO and no PPO
+is authorized by C.0 alone. The current C.0 result is
+`STAGE16C0_ISAACLAB_PLATFORM_BLOCKED`: no explicit NVIDIA EULA authorization
+is recorded, so runtime evidence is deliberately not collected and C.1 is not
+authorized.
 
 The Wuji three-clip implementation is available through the generic
 `workflow run-grab-suite` command; its completion status is determined only by

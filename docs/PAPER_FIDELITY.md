@@ -425,9 +425,23 @@ finger-only contract and adds direct Stage-12 world wrist motion, an abstract
 finite-wrench free wrist, a 6D wrist residual, world-frame features, and
 wrist-relative reconstructions. The shared state-adaptive 26D H1/H5/H10
 oracle is a gate diagnostic, not PPO. Its bounded MuJoCo result is
-`STAGE16B_ADAPTIVE_MULTI_HORIZON_ORACLE_PARTIAL`: `170650` passes and `170105`
-does not at 82.5% progress and 5.002 cm axis error; PPO was never started
+`STAGE16B_ADAPTIVE_MULTI_HORIZON_ORACLE_PARTIAL`: selected 32x3 passes
+`170650` and fails `170105` at 80%; its bounded 48x4 upgrade reaches 82.5%
+and still fails at 5.002 cm axis error. PPO was never started
 (0 samples, no checkpoints). MuJoCo is closed as a correctness/reference
 backend, while the planned Isaac Lab GPU lane requires independent platform,
 semantic-parity, and PhysX-oracle qualification. Neither backend is an
 author-exact paper result, sim-to-real result, or HO-Cap-32 comparison.
+
+## Stage 16-C.0 Isaac Lab platform boundary
+
+Stage 16-C.0 is an engineering platform qualification. Its frozen Isaac Sim
+5.1.0 / Isaac Lab v2.3.2 / Torch 2.7.0 cu128 stack is not disclosed by the
+paper and is not presented as author-exact. The official empty-scene and
+Cartpole runs test the platform only; they do not contain Wuji, HO-Cap,
+Stage-16 actions/rewards, a PhysX oracle, or PPO. A validated C.0 can authorize
+only C.1 asset migration. Independent semantic parity and PhysX
+controllability gates are still required before policy training.
+
+The current C.0 status is `STAGE16C0_ISAACLAB_PLATFORM_BLOCKED` with
+`ISAACLAB_EULA_ACCEPTANCE_REQUIRED`; no runtime platform result is claimed.

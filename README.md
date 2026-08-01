@@ -1,9 +1,5 @@
 # TopoRetarget-Repro
 
-## Stage 16 status
-
-Stage 16-A remains the preserved paper-style, base-relative 20D finger-residual MuJoCo reference implementation for grasp-centric references. Stage 16-B is the separate `ENGINEERING_EXTENSION` `WORLD_WRIST_FINGER_TRACKING_PROTOCOL`: B.0 world-reference export and B.1 finite-wrench wrist control are complete; B.1b demonstrates per-trajectory fixed-horizon controllability; and the shared adaptive H1/H5/H10 B.1c oracle is now `PARTIAL / CLOSED`. In the final shared 48x4 attempt, `170650` passes 20/20 while `170105` fails 20/20 at 82.5% progress with 5.002 cm axis error. The single-clip PPO entry is not authorized: training is `NOT_STARTED_GATE_BLOCKED`, with zero samples and no checkpoints. Evidence is under `.local/reports/stage16b_adaptive_oracle_single_ppo/`.
-
 [中文 README](README.zh-CN.md)
 
 TopoRetarget-Repro is an unofficial, independent, paper-traceable reproduction of
@@ -42,183 +38,30 @@ The central contracts are [HOI data](docs/HOI_DATA_INTERFACE.md),
 [coordinate conventions](docs/COORDINATE_CONVENTIONS.md), and the
 [robot-hand target contract](docs/ROBOT_HAND_TARGET_CONTRACT.md).
 
-## Current Status
+## Isaac Lab GPU Backend
 
-Stage 0–10 are complete within their documented bounded scopes. Stage 11 is complete: the
-Canonical HOI, DatasetAdapter, RobotHandPlugin, RobotReference, and MetricRegistry contracts are
-frozen and tested. Dataset Adapter v1 has passed source and strict-final qualification on all
-8/8 frozen selections across DexYCB, OakInk, HO-Cap, and ContactPose. ContactPose uses native
-static one-frame samples and official annotated joints; fitted MANO is visual only. Mug and banana
-strict final qualification passed, but the official ContactPose contact benchmark was not reproduced.
+MuJoCo is retained as the CPU correctness, deterministic-regression, contact
+diagnostic, action-replay, and visualization backend. GPU-parallel platform and
+future policy work move to an isolated Isaac Lab lane; MuJoCo evidence does not
+authorize PhysX assets, an oracle, or PPO.
 
-Arti-MANO and Wuji Hand2 Beta1 are validated target hands. Generic URDF/MJCF kinematic import is
-available, while semantic anchors, contact surfaces, collision profiles, and simulation metadata
-may still require a validated plugin manifest. The recommended offline reference backend is
-`wuji_continuous_sequential_fast_exact_v4_compiled_sign`: analytic signed-distance Jacobians,
-exact object-local BVH, certified sign reuse, compiled deterministic generalized winding, strict
-full-surface audit, and CPU float64. It is an engineering backend, not the authors' specified
-backend and not a real-time production claim.
-
-Current boundaries: full ContactPose paper benchmark is **NOT_REPRODUCED**; preserved Stage 16-A is
-**CONTROLLABILITY_BLOCKED_WITH_BOUNDED_EVIDENCE**, and the separate Stage 16-B world-wrist extension is
-**STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE** before PPO, while
-HOCap-32 and Pen-Spin remain out of scope and
-paper tables/figures/seeds plus ARCTIC/OakInk2/TACO remain TODO. Real-time retargeting,
-cross-subject/full-dataset production validation, author-exact simulation, and paper-scale RL are
-not claimed.
-
-## TODO and Full Roadmap
-
-The roadmap describes bounded repository capabilities, not complete paper-result reproduction.
-Detailed stage history and implementation notes are maintained in
-[docs/DEVELOPMENT_LOG.md](docs/DEVELOPMENT_LOG.md), [docs/ROADMAP.md](docs/ROADMAP.md), and
-[docs/stages/](docs/stages/).
-
-| Stage | Capability | Status | Completion definition / next work |
-|---:|---|---|---|
-| 0 | Repository architecture and path policy | Complete | CLI, configuration, asset discovery, import and validation foundations are available. |
-| 1 | Paper-fidelity audit | Complete | Formula, table, assumption and provenance tracking are available. |
-| 2 | Canonical HOI schema and coordinates | Complete, bounded | Canonical rigid-HOI schema and migrations are validated; complex articulated/bimanual extensions remain Stage 13. |
-| 3 | Source hand / MANO to 21-keypoint contract | Complete, bounded | Explicit PCA15/PCA45/axis-angle routing and dataset-native source contracts are validated. |
-| 4 | Robot-hand kinematic/plugin foundation | Complete, bounded | Generic URDF/MJCF loading and validated Arti-MANO/Wuji plugins are available; arbitrary hands still need semantic manifests. |
-| 5 | GRAB adapter | Complete, bounded | Lazy conversion, provenance, source/contact visualization and validation are available. |
-| 6 | Object sampling, collision geometry and SDF | Complete, bounded | Deterministic sampling, exact distance queries and independent audits are available. |
-| 7 | Relative bone-direction warm start | Complete | Eq.1–2 initialization and temporal handling are implemented. |
-| 8 | Interaction graph and Laplacian coordinates | Complete | Eq.3–7 interaction graph and validation are implemented. |
-| 9 | Constrained final refinement | Complete, bounded | Eq.8–9 refinement, slack, active set, strict audits and deterministic recovery are implemented. |
-| 10 | GRAB end-to-end retargeting | Complete, bounded | End-to-end GRAB→Arti-MANO/Wuji reference generation is available. |
-| 11 | Core contract freeze | Complete | CanonicalHOI, DatasetAdapter, RobotHandPlugin, RobotReference and MetricRegistry contracts are frozen. |
-| 12 | Dataset Adapter v1 | Complete | DexYCB, OakInk, HO-Cap and ContactPose adapters are qualified on 8/8 frozen selections with strict final results. |
-| 13 | Complex HOI adapters | DEFERRED | Add ARCTIC, OakInk2 and TACO; extend articulated-object, bimanual and SMPL-X hand extraction contracts. |
-| 14 | Universal robot-hand plugin validation | DEFERRED | Validate additional robot topologies and the full URDF/MJCF plugin capability matrix. |
-| 15 | Baselines and ablations | DEFERRED | Add fair OmniRetarget, Mink, DexPilot, GeoRT and relevant baseline comparisons. |
-| 16-A | Paper/minimal reference tracking | 16.0 functional complete; 16.1 BLOCKED; 16.2/16.3 gate-blocked | Preserved base-relative, 20D finger-only profile. |
-| 16-B | `ENGINEERING_EXTENSION` MuJoCo world wrist-and-finger tracking | B.0/B.1/B.1b complete; B.1c partial/closed; PPO deferred/not started | MuJoCo remains the correctness/debug/reference backend; the 6D wrist is not a real arm. |
-| 16-C | Isaac Lab GPU backend | C.0 platform qualification next/active; C.1-C.9 TODO | Platform qualification precedes any asset migration, PhysX oracle, or PPO. |
-| 17 | Paper experiment reproduction | TODO | Reproduce paper tables, figures, seeds, ContactPose benchmark and formal reports. |
-| 18 | Performance and v1.0 release | TODO | Establish production benchmarks, packaging, CI matrices and release criteria. |
-| 19 | Non-paper extensions | TODO | Keep MANO cleanup, SPIDER integration, penetration objectives and other extensions explicitly separated. |
-
-## Stage-16 reference tracking commands
-
-### Stage 16-B world wrist-and-finger extension
-
-This engineering extension is closed fail-safe in MuJoCo. The final adaptive
-oracle evidence can be replayed interactively without re-running CEM:
+Stage 16-C.0 freezes Python 3.11.15, Isaac Sim 5.1.0, Isaac Lab `v2.3.2` at
+`37ddf626871758333d6ed89cf64ad702aef127d0`, and Torch 2.7.0 cu128. Its current
+status is `STAGE16C0_ISAACLAB_PLATFORM_BLOCKED` because no NVIDIA EULA
+authorization is recorded. Static audit remains reproducible and runtime
+qualification stops before Isaac import:
 
 ```bash
-conda run -n toporetarget-rl python scripts/rl/visualize_hocap_world_wrist_policy_mujoco.py \
-  --policy adaptive-oracle --mode interactive --start-frame 0 --deterministic \
-  --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170650.world_wrist.stage16.npz \
-  --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170650.obj \
-  --adaptive-action-trace .local/experiments/stage16b_adaptive_oracle_single_ppo/oracle_attempt04_48x4/hocap_170650.world_wrist.stage16.adaptive_actions.npz \
-  --adaptive-selection-trace .local/reports/stage16b_adaptive_oracle_single_ppo/adaptive_oracle_selection_trace.jsonl \
-  --show-reference-ghost --show-axis-points --show-contacts \
-  --show-selected-horizon --show-gate-margins
+bash scripts/bootstrap_stage16_isaaclab_env.sh --dry-run
+conda run -n toporetarget-isaaclab python scripts/verify_stage16_isaaclab_platform.py --phase static
+conda run -n toporetarget-isaaclab python scripts/verify_stage16_isaaclab_platform.py --phase full --steps 1000
 ```
 
-Generate the frozen failure-evidence MP4 without changing the oracle budget:
-
-```bash
-conda run -n toporetarget-rl python scripts/rl/visualize_hocap_world_wrist_policy_mujoco.py \
-  --policy adaptive-oracle --mode headless --start-frame 0 --deterministic \
-  --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170105.world_wrist.stage16.npz \
-  --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170105.obj \
-  --adaptive-action-trace .local/experiments/stage16b_adaptive_oracle_single_ppo/oracle_attempt04_48x4/hocap_170105.world_wrist.stage16.adaptive_actions.npz \
-  --adaptive-selection-trace .local/reports/stage16b_adaptive_oracle_single_ppo/adaptive_oracle_selection_trace.jsonl \
-  --show-reference-ghost --show-axis-points --show-contacts \
-  --show-selected-horizon --show-gate-margins \
-  --output-frames .local/reports/stage16b_adaptive_oracle_single_ppo/visual/adaptive_170105 \
-  --output-video .local/reports/stage16b_adaptive_oracle_single_ppo/visual/adaptive_170105.mp4
-```
-
-There is no Stage-16B PPO command or checkpoint: `MUJOCO_PPO_STARTED = NO`.
-PPO itself does not require physically identified dynamics, but a simulator
-requires a frozen model. `world_wrist_freebody_nominal_v1` is an engineering
-assumption; unresolved physical provenance blocks real-dynamics and sim-to-real
-claims. Full dynamics randomization is B.4 TODO. The abstract 6D wrist is not a
-real arm, and these two clips are not directly comparable with paper HOCap-32.
-
-The two approved inputs are fixed at:
-
-```bash
-export STAGE16_ROOT=.local/stage16_reference_tracking_ppo
-export STAGE16_REPORT=.local/reports/stage16_1_3
-export STAGE16_RUN=.local/experiments/stage16_reference_tracking_ppo/stage16_1_3_20260731T192400Z_e605dab
-```
-
-Validate the references and the pre-training actuator profile:
-
-```bash
-conda run -n toporetarget-rl python scripts/rl/validate_reference_clips.py \
-  "$STAGE16_ROOT/references/hocap_170105.stage16.npz"
-conda run -n toporetarget-rl python scripts/rl/validate_reference_clips.py \
-  "$STAGE16_ROOT/references/hocap_170650.stage16.npz"
-conda run -n toporetarget-rl python scripts/rl/qualify_hocap_pd.py \
-  --reference "$STAGE16_ROOT/references/hocap_170105.stage16.npz" \
-  --reference "$STAGE16_ROOT/references/hocap_170650.stage16.npz" \
-  --report "$STAGE16_REPORT/pd_qualification.json"
-```
-
-Run the bounded Stage 16.1 qualification (the current result is
-`STAGE16_1_CONTROLLABILITY_BLOCKED`):
-
-```bash
-conda run -n toporetarget-rl python scripts/rl/qualify_stage16_1.py \
-  --reference "$STAGE16_ROOT/references/hocap_170105.stage16.npz" \
-  --reference "$STAGE16_ROOT/references/hocap_170650.stage16.npz" \
-  --object-mesh "$STAGE16_ROOT/objects/hocap_170105.obj" \
-  --object-mesh "$STAGE16_ROOT/objects/hocap_170650.obj" \
-  --scene-root "$STAGE16_RUN/stage16_1" \
-  --report "$STAGE16_REPORT/stage16_1_controllability.json" \
-  --episodes-per-clip 20 --candidate-episodes 1
-```
-
-Stage 16.2/16.3 training is gate-controlled and must not run while Stage 16.1 is blocked. Once a future run has a completed gate, the executable trainer uses 4 epochs, 32 minibatches, balanced two-clip collection, and only the bounded sample ladder:
-
-```bash
-conda run -n toporetarget-rl python scripts/rl/train_stage16_qualification.py \
-  --stage single --budget 32768 --rollout-steps 320 \
-  --controllability-report "$STAGE16_REPORT/stage16_1_controllability.json" \
-  --reference "$STAGE16_ROOT/references/hocap_170105.stage16.npz" \
-  --object-mesh "$STAGE16_ROOT/objects/hocap_170105.obj" \
-  --scene-root "$STAGE16_RUN/single_170105" \
-  --checkpoint-directory .local/checkpoints/stage16_reference_tracking_ppo/single_170105 \
-  --report "$STAGE16_REPORT/stage16_2_170105_training.json"
-```
-
-Frame-0 evaluation retains failed episodes and supports the formal 20-episode population:
-
-```bash
-conda run -n toporetarget-rl python scripts/rl/evaluate_hocap_reference_policy.py \
-  --checkpoint .local/checkpoints/stage16_reference_tracking_ppo/hocap_t3/best.pt \
-  --reference "$STAGE16_ROOT/references/hocap_170105.stage16.npz" \
-  --reference "$STAGE16_ROOT/references/hocap_170650.stage16.npz" \
-  --object-mesh "$STAGE16_ROOT/objects/hocap_170105.obj" \
-  --object-mesh "$STAGE16_ROOT/objects/hocap_170650.obj" \
-  --scene-root "$STAGE16_RUN/eval_nominal" --episodes-per-clip 20 \
-  --report "$STAGE16_REPORT/highest_functional_checkpoint_eval.json" \
-  --episodes-output "$STAGE16_REPORT/highest_functional_checkpoint_episodes.json"
-```
-
-Interactive MuJoCo and headless inspection use the same CLI. The current highest-level checkpoint is still the old functional T3 checkpoint; it is not a qualified tracker:
-
-```bash
-conda run -n toporetarget-rl python scripts/rl/visualize_hocap_policy_mujoco.py \
-  --policy oracle --reference "$STAGE16_ROOT/references/hocap_170105.stage16.npz" \
-  --object-mesh "$STAGE16_ROOT/objects/hocap_170105.obj" --mode interactive \
-  --start-frame 0 --deterministic --show-reference-ghost --show-axis-points \
-  --show-tracked-links --show-contacts
-conda run -n toporetarget-rl python scripts/rl/visualize_hocap_policy_mujoco.py \
-  --policy checkpoint --checkpoint .local/checkpoints/stage16_reference_tracking_ppo/hocap_t3/best.pt \
-  --reference "$STAGE16_ROOT/references/hocap_170650.stage16.npz" \
-  --object-mesh "$STAGE16_ROOT/objects/hocap_170650.obj" --mode headless \
-  --start-frame 0 --deterministic --show-reference-ghost --show-axis-points \
-  --show-tracked-links --show-contacts --output-frames "$STAGE16_REPORT/visual/t3_170650"
-```
-
-Optional research extensions—morphology-aware warm start, robot-surface contact proxies,
-contact-aware final objectives, and cross-trajectory profile selection—do not block Stage 13.
+The last command records `ISAACLAB_EULA_ACCEPTANCE_REQUIRED`; it does not
+accept the agreement. Headless and viewer smoke commands are documented in
+[the environment setup](docs/rl/ISAACLAB_ENVIRONMENT_SETUP.md). Wuji/HO-Cap
+asset migration, a custom Isaac Lab task, a PhysX oracle, and PPO are not
+started.
 
 ## Dataset support
 

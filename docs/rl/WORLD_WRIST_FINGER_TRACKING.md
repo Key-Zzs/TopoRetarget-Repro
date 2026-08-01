@@ -135,8 +135,9 @@ The frozen shared adaptive-oracle result is:
 
 | Clip | Episodes | Success | Progress | Object position | Object rotation | Max axis | Wrist rotation | Saturation |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `170105` | 20 | 0% | 82.5% | 3.637 cm | 18.192 deg | 5.002 cm | 4.205 deg | bounded |
-| `170650` | 20 | 100% | 100% | 0.250 cm | 1.836 deg | 0.367 cm | 2.578 deg | bounded |
+| `170105` selected 32x3 | 20 | 0% | 80.0% | 3.406 cm | 22.497 deg | 5.194 cm | 3.165 deg | bounded |
+| `170650` selected 32x3 | 20 | 100% | 100% | 0.119 cm | 0.667 deg | 0.158 cm | 0.877 deg | bounded |
+| `170105` bounded 48x4 upgrade | 20 | 0% | 82.5% | 3.637 cm | 18.192 deg | 5.002 cm | 4.205 deg | bounded |
 
 `170105` deterministically terminates with `FAILURE_OBJECT_AXIS_POINT`;
 `170650` passes. The unique global 48x4 upgrade advances `170105` to 82.5%
@@ -195,3 +196,13 @@ oracle pass; neither is PPO or a physically calibrated contact-support claim.
 No single-clip or two-clip MuJoCo PPO video exists. MuJoCo remains available
 for deterministic debugging and visualization; future PhysX policy work must
 requalify its own oracle and cannot inherit this MuJoCo gate.
+
+## Isaac Lab handoff boundary
+
+Stage 16-C.0 adds only an isolated Isaac Sim/Lab platform qualification. It
+does not consume the world-wrist reference, object mesh, MuJoCo action trace,
+reward, termination, or oracle as a PhysX success result. Semantic parity,
+Wuji/HO-Cap asset migration, a custom task, and a new PhysX oracle remain
+separate C.1-C.5 gates before any C.6 PPO authorization. MuJoCo stays the CPU
+correctness, deterministic-regression, contact-diagnostic, action-replay, and
+interactive-visualization backend.

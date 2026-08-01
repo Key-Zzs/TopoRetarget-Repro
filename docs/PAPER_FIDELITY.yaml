@@ -76,11 +76,12 @@ audit_contracts:
     finite_wrench_abstract_wrist: true
     no_direct_object_control: true
     ppo_started: false
-    ppo_entry: STAGE16B_SINGLE_CLIP_PPO_ENTRY_NOT_AUTHORIZED
-    single_clip_ppo_status: STAGE16B_SINGLE_CLIP_PPO_BLOCKED
-    two_clip_ppo_status: STAGE16B_TWO_CLIP_PPO_BLOCKED
+    ppo_entry: STAGE16B_SINGLE_CLIP_PPO_NOT_STARTED_GATE_BLOCKED
+    single_clip_ppo_status: STAGE16B_SINGLE_CLIP_PPO_NOT_STARTED_GATE_BLOCKED
+    two_clip_ppo_status: STAGE16B_TWO_CLIP_PPO_NOT_STARTED
+    mujoco_ppo_status: MUJOCO_PPO_TRAINING_DEFERRED
     mujoco_role: [correctness, deterministic_regression, contact_diagnostics, action_replay, visualization]
-    adaptive_oracle: {hocap_170105: "0/20 fail at 82.5 percent, axis 5.002 cm", hocap_170650: "20/20 pass, position 0.250 cm, rotation 1.836 deg, axis 0.367 cm"}
+    adaptive_oracle: {hocap_170105: "selected 32x3: 0/20 fail at 80 percent, axis 5.194 cm", hocap_170650: "selected 32x3: 20/20 pass, position 0.119 cm, rotation 0.667 deg, axis 0.158 cm"}
     ppo_samples: 0
     ppo_checkpoints: 0
     global_48x4_upgrade: "170105 fail at 82.5 percent with 5.002 cm axis error"
@@ -92,7 +93,18 @@ audit_contracts:
     notes: "MuJoCo B.1c is partial and closed; PPO never started. Isaac Lab/PhysX must be qualified independently. This extension is not a real arm, sim-to-real, paper-controller, or HO-Cap-32 claim."
   stage16c_isaaclab_gpu_backend:
     label: ENGINEERING_EXTENSION
-    stage16c0_status: NEXT_ACTIVE
+    stage16c0_status: STAGE16C0_ISAACLAB_PLATFORM_BLOCKED
+    blocker: ISAACLAB_EULA_ACCEPTANCE_REQUIRED
+    classification: ENGINEERING_INFRASTRUCTURE
+    python: 3.11.15
+    isaac_sim: 5.1.0
+    isaac_lab_tag: v2.3.2
+    isaac_lab_commit: 37ddf626871758333d6ed89cf64ad702aef127d0
+    torch: 2.7.0
+    torch_cuda_runtime: cu128
+    official_platform_smoke_only: true
+    required_vector_envs: 128
+    viewer_soft_gate: true
     custom_wuji_asset_migrated: false
     hocap_object_migrated: false
     custom_direct_rl_env_implemented: false

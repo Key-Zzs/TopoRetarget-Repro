@@ -1,9 +1,5 @@
 # TopoRetarget-Repro
 
-## Stage 16 状态
-
-Stage 16-A 保留为论文风格、base-relative 的 20D finger residual MuJoCo 参考实现，适用于 grasp-centric reference。Stage 16-B 是独立的 `ENGINEERING_EXTENSION` `WORLD_WRIST_FINGER_TRACKING_PROTOCOL`：B.0 world reference 与 B.1 finite-wrench wrist 已完成，B.1b 已证明逐轨迹 fixed-horizon 可控性，共享自适应 H1/H5/H10 的 B.1c 现正式为 `PARTIAL / CLOSED`。最终共享 48x4 尝试中，`170650` 20/20 通过，`170105` 20/20 失败，在 82.5% 进度处 axis error 为 5.002 cm。single-clip PPO 入口未获授权：训练状态为 `NOT_STARTED_GATE_BLOCKED`，实际样本为 0，checkpoint 为 0。证据位于 `.local/reports/stage16b_adaptive_oracle_single_ppo/`。
-
 [English README](README.md)
 
 TopoRetarget-Repro 是论文
@@ -40,112 +36,27 @@ author-exact、全数据集、实时、真实硬件控制、physics 或 RL 复�
 [坐标约定](docs/COORDINATE_CONVENTIONS.md)和
 [机器人手目标契约](docs/ROBOT_HAND_TARGET_CONTRACT.md)。
 
-## 当前状态
+## Isaac Lab GPU Backend
 
-阶段 0–10 已在各自文档化的有界范围内完成。阶段 11 已完成：Canonical HOI、DatasetAdapter、
-RobotHandPlugin、RobotReference 与 MetricRegistry 契约已冻结并通过测试。Dataset Adapter v1
-在 DexYCB、OakInk、HO-Cap 与 ContactPose 的全部 8/8 个冻结选择上通过 source qualification
-与 strict final qualification。ContactPose 使用原生静态单帧样本和官方标注 joints；fitted MANO
-仅用于可视化。mug 与 banana 已通过 strict final，但官方 ContactPose contact benchmark 尚未复现。
+MuJoCo 保留为 CPU correctness、deterministic regression、contact diagnostic、
+action replay 与 visualization 后端。GPU 并行平台与后续 policy 工作迁移到独立的
+Isaac Lab 路径；MuJoCo 证据不能授权 PhysX 资产、Oracle 或 PPO。
 
-Arti-MANO 与 Wuji Hand2 Beta1 是已验证目标手。通用 URDF/MJCF 运动学导入已建立，但 semantic
-anchor、contact surface、collision profile 与 simulation metadata 仍可能需要经过验证的 plugin
-manifest。当前推荐的离线 reference 后端是
-`wuji_continuous_sequential_fast_exact_v4_compiled_sign`：analytic signed-distance Jacobian、
-exact object-local BVH、认证式 sign reuse、compiled deterministic generalized winding、strict
-full-surface audit 与 CPU float64。它是工程后端，不声称是作者指定的后端，也不代表实时生产能力。
-
-当前边界：完整 ContactPose 论文 benchmark 为 **NOT_REPRODUCED**；保留的 Stage 16-A 在两条功能性
-clip 的可控性验收处于 **CONTROLLABILITY_BLOCKED_WITH_BOUNDED_EVIDENCE**，独立的 Stage 16-B world-wrist 扩展处于 **STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE**，HOCap-32 与 Pen-Spin 均不在本次范围内，完整论文
-tables/figures/seeds 以及 ARCTIC/OakInk2/TACO 仍为 TODO；不声称实时重定向、跨 subject/全数据集
-生产验证、作者精确模拟器或论文规模 RL。
-
-## TODO 与完整路线图
-
-路线图描述的是有界仓库能力，不代表完整论文结果复现。详细阶段历史和实现记录维护在
-[docs/DEVELOPMENT_LOG.zh-CN.md](docs/DEVELOPMENT_LOG.zh-CN.md)、[docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md)
-和 [docs/stages/](docs/stages/) 中。
-
-| 阶段 | 能力 | 状态 | 完成定义 / 后续工作 |
-|---:|---|---|---|
-| 0 | 仓库架构与路径策略 | 完成 | CLI、配置、资产发现、导入和验证基础能力可用。 |
-| 1 | 论文忠实度审计 | 完成 | 公式、表格、假设和 provenance 跟踪可用。 |
-| 2 | Canonical HOI schema 与坐标 | 完成，有界 | canonical rigid-HOI schema 与迁移已验证；复杂 articulated/bimanual 扩展留给阶段 13。 |
-| 3 | source hand / MANO 到 21-keypoint 契约 | 完成，有界 | PCA15/PCA45/axis-angle 路由与 dataset-native source contract 已明确验证。 |
-| 4 | 机器人手运动学与 plugin 基础 | 完成，有界 | 通用 URDF/MJCF 加载及已验证 Arti-MANO/Wuji plugin 可用；任意机器人手仍需 semantic manifest。 |
-| 5 | GRAB adapter | 完成，有界 | lazy conversion、provenance、source/contact 可视化与验证可用。 |
-| 6 | 物体采样、碰撞几何与 SDF | 完成，有界 | 确定性采样、精确距离查询与独立审计可用。 |
-| 7 | 相对骨方向 warm start | 完成 | Eq.1–2 初始化与时间处理已实现。 |
-| 8 | interaction graph 与 Laplacian 坐标 | 完成 | Eq.3–7 interaction graph 与验证已实现。 |
-| 9 | 受限 final refinement | 完成，有界 | Eq.8–9 refinement、slack、active set、strict audit 与确定性恢复已实现。 |
-| 10 | GRAB 端到端重定向 | 完成，有界 | GRAB→Arti-MANO/Wuji reference generation 可用。 |
-| 11 | 核心契约冻结 | 完成 | CanonicalHOI、DatasetAdapter、RobotHandPlugin、RobotReference 与 MetricRegistry 契约已冻结。 |
-| 12 | Dataset Adapter v1 | 完成 | DexYCB、OakInk、HO-Cap、ContactPose adapter 在 8/8 个冻结选择上通过 strict final。 |
-| 13 | 复杂 HOI adapter | DEFERRED | 加入 ARCTIC、OakInk2、TACO；扩展 articulated-object、bimanual 与 SMPL-X hand extraction contract。 |
-| 14 | 通用机器人手 plugin 验证 | DEFERRED | 验证更多机器人拓扑与完整 URDF/MJCF plugin 能力矩阵。 |
-| 15 | baseline 与消融 | DEFERRED | 加入公平的 OmniRetarget、Mink、DexPilot、GeoRT 及相关 baseline 对比。 |
-| 16-A | paper/minimal reference tracking | 16.0 功能完成；16.1 BLOCKED；16.2/16.3 被 gate 阻断 | 保留的 base-relative、20D finger-only profile。 |
-| 16-B | `ENGINEERING_EXTENSION` MuJoCo world wrist-and-finger tracking | B.0/B.1/B.1b 完成；B.1c partial/closed；PPO deferred/not started | MuJoCo 保留为 correctness/debug/reference backend；6D wrist 不是实际机械臂。 |
-| 16-C | Isaac Lab GPU backend | C.0 平台资格 next/active；C.1-C.9 TODO | 资产迁移、PhysX Oracle 或 PPO 前必须先通过平台资格。 |
-| 17 | 论文实验复现 | TODO | 复现论文 tables、figures、seeds、ContactPose benchmark 与正式报告。 |
-| 18 | 性能与 v1.0 发布 | TODO | 建立 production benchmark、打包、CI 矩阵与发布标准。 |
-| 19 | 非论文扩展 | TODO | 将 MANO cleanup、SPIDER integration、penetration objective 等扩展明确隔离。 |
-
-可选研究扩展——morphology-aware warm start、robot-surface contact proxy、contact-aware final
-objective、cross-trajectory profile selection——不阻塞阶段 13。
-
-## Stage-16 reference tracking 命令
-
-### Stage 16-B world wrist-and-finger 工程扩展
-
-该工程扩展已在 MuJoCo 中 fail-closed 收口。以下命令直接回放冻结的 adaptive oracle，
-不会重新运行 CEM：
+Stage 16-C.0 冻结 Python 3.11.15、Isaac Sim 5.1.0、Isaac Lab `v2.3.2`
+（commit `37ddf626871758333d6ed89cf64ad702aef127d0`）与 Torch 2.7.0 cu128。
+由于尚未记录 NVIDIA EULA 授权，当前状态为
+`STAGE16C0_ISAACLAB_PLATFORM_BLOCKED`。静态审计仍可复现，运行时资格会在
+Isaac import 前停止：
 
 ```bash
-conda run -n toporetarget-rl python scripts/rl/visualize_hocap_world_wrist_policy_mujoco.py \
-  --policy adaptive-oracle --mode interactive --start-frame 0 --deterministic \
-  --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170650.world_wrist.stage16.npz \
-  --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170650.obj \
-  --adaptive-action-trace .local/experiments/stage16b_adaptive_oracle_single_ppo/oracle_attempt04_48x4/hocap_170650.world_wrist.stage16.adaptive_actions.npz \
-  --adaptive-selection-trace .local/reports/stage16b_adaptive_oracle_single_ppo/adaptive_oracle_selection_trace.jsonl \
-  --show-reference-ghost --show-axis-points --show-contacts \
-  --show-selected-horizon --show-gate-margins
+bash scripts/bootstrap_stage16_isaaclab_env.sh --dry-run
+conda run -n toporetarget-isaaclab python scripts/verify_stage16_isaaclab_platform.py --phase static
+conda run -n toporetarget-isaaclab python scripts/verify_stage16_isaaclab_platform.py --phase full --steps 1000
 ```
 
-当前没有 Stage-16B PPO 命令或 checkpoint：`MUJOCO_PPO_STARTED = NO`。
-PPO 算法本身不要求物理参数已经辨识，但 simulator 必须使用冻结模型。
-`world_wrist_freebody_nominal_v1` 只是工程假设；物理 provenance 未解决会阻止真实动力学与
-sim-to-real 声明。完整 dynamics randomization 为 B.4 TODO。当前抽象 6D wrist 不是实际机械臂，
-两条结果也不能与论文 HOCap-32 直接比较。
-
-两条批准输入固定在 `.local/stage16_reference_tracking_ppo/`。可控性验收命令如下；当前真实结果为 `STAGE16_1_CONTROLLABILITY_BLOCKED`：
-
-```bash
-conda run -n toporetarget-rl python scripts/rl/qualify_stage16_1.py \
-  --reference .local/stage16_reference_tracking_ppo/references/hocap_170105.stage16.npz \
-  --reference .local/stage16_reference_tracking_ppo/references/hocap_170650.stage16.npz \
-  --object-mesh .local/stage16_reference_tracking_ppo/objects/hocap_170105.obj \
-  --object-mesh .local/stage16_reference_tracking_ppo/objects/hocap_170650.obj \
-  --scene-root .local/experiments/stage16_reference_tracking_ppo/stage16_1_3_20260731T192400Z_e605dab/stage16_1 \
-  --report .local/reports/stage16_1_3/stage16_1_controllability.json \
-  --episodes-per-clip 20 --candidate-episodes 1
-```
-
-Stage 16.2/16.3 只有 Stage 16.1 `COMPLETE` 才允许训练；训练器强制读取 `--controllability-report` 并在 gate 失败时退出，固定 4 epochs、32 minibatches、nominal/no-DR、均衡 clip 与有界 sample ladder。frame-0 评测命令：
-
-```bash
-conda run -n toporetarget-rl python scripts/rl/evaluate_hocap_reference_policy.py \
-  --checkpoint .local/checkpoints/stage16_reference_tracking_ppo/hocap_t3/best.pt \
-  --reference .local/stage16_reference_tracking_ppo/references/hocap_170105.stage16.npz \
-  --reference .local/stage16_reference_tracking_ppo/references/hocap_170650.stage16.npz \
-  --object-mesh .local/stage16_reference_tracking_ppo/objects/hocap_170105.obj \
-  --object-mesh .local/stage16_reference_tracking_ppo/objects/hocap_170650.obj \
-  --scene-root .local/experiments/stage16_reference_tracking_ppo/stage16_1_3_20260731T192400Z_e605dab/eval_nominal \
-  --episodes-per-clip 20 --report .local/reports/stage16_1_3/highest_functional_checkpoint_eval.json \
-  --episodes-output .local/reports/stage16_1_3/highest_functional_checkpoint_episodes.json
-```
-
-MuJoCo 交互/无窗口检查使用 `scripts/rl/visualize_hocap_policy_mujoco.py`；当前 GL renderer 不可用时会保留数值 fallback PNG 与 dashboard，而不会伪造几何截图。
+最后一条命令只记录 `ISAACLAB_EULA_ACCEPTANCE_REQUIRED`，不会接受协议。
+Headless 与 viewer smoke 命令见[环境配置说明](docs/rl/ISAACLAB_ENVIRONMENT_SETUP.md)。
+Wuji/HO-Cap 资产迁移、自定义 Isaac Lab 任务、PhysX Oracle 与 PPO 均未开始。
 
 ## 数据集支持
 

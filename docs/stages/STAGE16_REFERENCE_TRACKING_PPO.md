@@ -14,15 +14,17 @@ Stage 16-B is now closed in MuJoCo with
 `STAGE16B_ADAPTIVE_MULTI_HORIZON_ORACLE_PARTIAL`. B.0 direct 20 Hz world
 references, B.1 finite-wrench wrist control, and B.1b per-trajectory
 fixed-horizon controllability are complete. The shared, state-only adaptive
-H1/H5/H10 B.1c oracle's final 48x4 attempt passes `170650` in 20/20
-deterministic frame-0 episodes at 0.250 cm position, 1.836 degrees rotation,
-and 0.367 cm max-axis error. `170105` fails 20/20 at 82.5% progress with
-3.637 cm position, 18.192 degrees rotation, and 5.002 cm max-axis error. The
-one permitted global budget upgrade is consumed. No further MuJoCo CEM,
+H1/H5/H10 B.1c oracle's selected 32x3 run passes `170650` in 20/20
+deterministic frame-0 episodes at 0.119 cm position, 0.667 degrees rotation,
+and 0.158 cm max-axis error. `170105` fails 20/20 at 80% progress with
+3.406 cm position, 22.497 degrees rotation, and 5.194 cm max-axis error. Its
+one permitted bounded 48x4 upgrade reaches 82.5% with 3.637 cm position,
+18.192 degrees rotation, and 5.002 cm max-axis error, but still fails. The one
+permitted global budget upgrade is consumed. No further MuJoCo CEM,
 horizon, dynamics, or oracle budget is authorized.
 
-The fixed statuses are `STAGE16B_SINGLE_CLIP_PPO_ENTRY_NOT_AUTHORIZED`,
-`STAGE16B_SINGLE_CLIP_PPO_BLOCKED`, `STAGE16B_TWO_CLIP_PPO_BLOCKED`, and
+The fixed statuses are `STAGE16B_SINGLE_CLIP_PPO_NOT_STARTED_GATE_BLOCKED`,
+`STAGE16B_TWO_CLIP_PPO_NOT_STARTED`, `MUJOCO_PPO_TRAINING_DEFERRED`, and
 `MUJOCO_CORRECTNESS_BACKEND_CLOSED`. This is not a PPO failure and does not
 prove that `170105` is physically impossible. MuJoCo remains the correctness,
 deterministic-regression, contact-diagnostic, action-replay, and visualization
@@ -41,6 +43,29 @@ C.2 `DirectRLEnv`, C.3 semantic parity, C.4 vector benchmarks, C.5 PhysX
 oracle, C.6/C.7 PPO, C.8 randomization, and C.9 comparison remain TODO.
 MuJoCo and PhysX need not be bitwise identical, but MuJoCo oracle evidence can
 never directly authorize an Isaac Lab policy run.
+
+## Stage 16-C.0 Isaac Lab platform contract
+
+C.0 is an `ENGINEERING_INFRASTRUCTURE` qualification, not a paper-method or
+policy result. It freezes an isolated Python 3.11.15 environment, Isaac Sim
+5.1.0, Isaac Lab `v2.3.2` at
+`37ddf626871758333d6ed89cf64ad702aef127d0`, and PyTorch 2.7.0 with its CUDA
+12.8 runtime. Qualification requires host compatibility, exact source and
+package identity, Isaac Sim and Isaac Lab imports, a finite 1000-step
+headless GPU-PhysX scene, an official task smoke, CUDA observations/actions,
+and independent step/reset evidence from 128 truly parallel environments.
+The optional viewer is a soft gate.
+
+C.0 cannot migrate Wuji or HO-Cap assets, implement a custom `DirectRLEnv`,
+define Stage-16 reward/action logic, run a PhysX oracle, or start PPO. C.1-C.9
+remain fail-closed until the C.0 evidence bundle is validated. The reusable
+bootstrap never accepts an EULA; the verifier can set the official
+`OMNI_KIT_ACCEPT_EULA=YES` value only when explicit authorization is recorded
+and `--accept-eula` is supplied for that run.
+
+The current result is `STAGE16C0_ISAACLAB_PLATFORM_BLOCKED` with blocker
+`ISAACLAB_EULA_ACCEPTANCE_REQUIRED`. No runtime import, C.1 migration, PhysX
+oracle, or PPO is inferred from the completed static audit.
 
 Stage 13 (additional dataset adapters), Stage 14 (robot plugin matrix), and Stage 15 (complete baseline matrix) are deliberately `DEFERRED`. This branch implements only the TopoRetarget reference-tracking PPO protocol from Appendix A.5.
 
