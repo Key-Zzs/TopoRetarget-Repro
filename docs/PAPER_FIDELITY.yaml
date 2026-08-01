@@ -67,7 +67,7 @@ audit_contracts:
     profile: docs/rl/WORLD_WRIST_FINGER_TRACKING.md
     label: ENGINEERING_EXTENSION
     protocol: WORLD_WRIST_FINGER_TRACKING_PROTOCOL
-    status: STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE
+    status: STAGE16B_ADAPTIVE_MULTI_HORIZON_ORACLE_PARTIAL
     preserves_stage16a_profile: paper_finger_only_base_relative_v1
     paper_method: false
     author_exact_control: unresolved
@@ -76,9 +76,30 @@ audit_contracts:
     finite_wrench_abstract_wrist: true
     no_direct_object_control: true
     ppo_started: false
+    ppo_entry: STAGE16B_SINGLE_CLIP_PPO_ENTRY_NOT_AUTHORIZED
+    single_clip_ppo_status: STAGE16B_SINGLE_CLIP_PPO_BLOCKED
+    two_clip_ppo_status: STAGE16B_TWO_CLIP_PPO_BLOCKED
+    mujoco_role: [correctness, deterministic_regression, contact_diagnostics, action_replay, visualization]
+    adaptive_oracle: {hocap_170105: "0/20 fail at 82.5 percent, axis 5.002 cm", hocap_170650: "20/20 pass, position 0.250 cm, rotation 1.836 deg, axis 0.367 cm"}
+    ppo_samples: 0
+    ppo_checkpoints: 0
+    global_48x4_upgrade: "170105 fail at 82.5 percent with 5.002 cm axis error"
+    further_mujoco_search_authorized: false
+    isaaclab_ppo_authorized: false
+    physx_oracle_required: true
     assumptions: [A_STAGE16B_FREE_WRIST_001, A_STAGE16B_ZERO_GRAVITY_001, A_STAGE16B_WRIST_SAFETY_001]
-    evidence: [.local/reports/stage16_world_wrist_finger/final_summary.json, .local/reports/stage16_world_wrist_finger/oracle_evaluation.json]
-    notes: "Direct world reference export passed; dynamic wrist and clone-only 26D oracle remain blocked before PPO. This extension is not a real arm, sim-to-real, paper-controller, or HO-Cap-32 claim."
+    evidence: [.local/reports/stage16b_adaptive_oracle_single_ppo/final_summary.json, .local/reports/stage16b_adaptive_oracle_single_ppo/adaptive_oracle_evaluation.json]
+    notes: "MuJoCo B.1c is partial and closed; PPO never started. Isaac Lab/PhysX must be qualified independently. This extension is not a real arm, sim-to-real, paper-controller, or HO-Cap-32 claim."
+  stage16c_isaaclab_gpu_backend:
+    label: ENGINEERING_EXTENSION
+    stage16c0_status: NEXT_ACTIVE
+    custom_wuji_asset_migrated: false
+    hocap_object_migrated: false
+    custom_direct_rl_env_implemented: false
+    physx_oracle_run: false
+    ppo_started: false
+    mujoco_oracle_authorizes_physx: false
+    paper_result_claimed: false
   stage7_1_warm_start_audit:
     profile: src/toporetarget/workflows/warm_start_audit.py
     formal_stage7_objective_unchanged: true

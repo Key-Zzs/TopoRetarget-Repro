@@ -36,8 +36,15 @@ functional T3 run is frozen separately and is not evidence of tracking qualifica
 | 26D action | not specified | 6D local wrist residual + original 20D finger residual | ENGINEERING_EXTENSION | `WristFingerActionScaleV1` |
 | World/relative features | not specified | `WorldWristObservationContractV1` (764D) | ENGINEERING_EXTENSION | `REFERENCE_TRACKING_MDP.md` |
 | Dynamic scene | not specified | MuJoCo 3.3.6, zero gravity, no ground, free object | ENGINEERING_ASSUMPTION | `wrist_model_validation.json` |
-| Oracle gate | not specified | clone-only contact-aware H-by-26 sequence MPC at H=1/5/10 | ENGINEERING_DIAGNOSTIC | `oracle_evaluation.json` |
+| Adaptive oracle gate | not specified | shared state-only terminal-contracted H1/H5/H10 CEM with gate-first selection | ENGINEERING_DIAGNOSTIC | `stage16b_adaptive_oracle_single_ppo/adaptive_oracle_evaluation.json` |
+| Nominal simulator profile | not specified | `world_wrist_freebody_nominal_v1`; 0.05 kg, mesh inertia, zero gravity/support/damping | ENGINEERING_ASSUMPTION | `nominal_dynamics_profile.json` |
+| Per-clip PPO | Appendix A.5 does not specify this 26D extension | gate not authorized; 0 samples and no checkpoints | NOT_STARTED_GATE_BLOCKED | `ppo_contract.json` |
+| MuJoCo backend role | not specified | correctness, deterministic regression, contact diagnostics, action replay, visualization | ENGINEERING_INFRASTRUCTURE | Stage 16-B.1c closeout |
+| Isaac Lab GPU lane | not specified | independent Stage 16-C platform/PhysX qualification before PPO | ENGINEERING_EXTENSION | Stage 16-C roadmap |
 
 Stage 16-B preserves the Stage-16A ledger and is not a paper-fidelity upgrade.
-Its authoritative result is `STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE`; PPO did
-not start because the 26D oracle gate failed.
+Its authoritative result is
+`STAGE16B_ADAPTIVE_MULTI_HORIZON_ORACLE_PARTIAL`; `170650` passes while
+`170105` does not under the frozen MuJoCo model and bounded search. PPO did not
+start. This MuJoCo result cannot authorize Isaac Lab PPO, and no PhysX result
+is claimed.

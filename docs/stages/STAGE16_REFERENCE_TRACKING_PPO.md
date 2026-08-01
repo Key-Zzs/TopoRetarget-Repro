@@ -10,22 +10,37 @@ free body driven by a finite Cartesian wrench, and appends its six residual
 degrees of freedom to the preserved 20 finger residuals. It is neither the
 paper's minimal RL controller nor a model of a physical robot arm.
 
-The current Stage 16-B outcome is `STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE`.
-Both direct 20 Hz world-reference exports and the selected globally shared W2
-impedance profile validate. The corrected world/body-local angular-velocity
-boundary and a 10 ms-stable 2 Nm/rad rotational profile remove wrist-safety
-failures and wrench saturation. The clone-only, contact-aware H-by-26 action-
-sequence MPC still reaches `STAGE16B_26D_ORACLE_BLOCKED`: H=10 passes all
-terminal gates on `170650`, but `170105` reaches 97.5% and crosses
-`FAILURE_OBJECT_POSITION`. Single-clip and two-clip PPO are therefore
-`STAGE16B_SINGLE_CLIP_PPO_BLOCKED` and `STAGE16B_TWO_CLIP_PPO_BLOCKED`; no
-Stage-16B checkpoint exists or is claimed.
+Stage 16-B is now closed in MuJoCo with
+`STAGE16B_ADAPTIVE_MULTI_HORIZON_ORACLE_PARTIAL`. B.0 direct 20 Hz world
+references, B.1 finite-wrench wrist control, and B.1b per-trajectory
+fixed-horizon controllability are complete. The shared, state-only adaptive
+H1/H5/H10 B.1c oracle's final 48x4 attempt passes `170650` in 20/20
+deterministic frame-0 episodes at 0.250 cm position, 1.836 degrees rotation,
+and 0.367 cm max-axis error. `170105` fails 20/20 at 82.5% progress with
+3.637 cm position, 18.192 degrees rotation, and 5.002 cm max-axis error. The
+one permitted global budget upgrade is consumed. No further MuJoCo CEM,
+horizon, dynamics, or oracle budget is authorized.
+
+The fixed statuses are `STAGE16B_SINGLE_CLIP_PPO_ENTRY_NOT_AUTHORIZED`,
+`STAGE16B_SINGLE_CLIP_PPO_BLOCKED`, `STAGE16B_TWO_CLIP_PPO_BLOCKED`, and
+`MUJOCO_CORRECTNESS_BACKEND_CLOSED`. This is not a PPO failure and does not
+prove that `170105` is physically impossible. MuJoCo remains the correctness,
+deterministic-regression, contact-diagnostic, action-replay, and visualization
+backend. GPU-parallel training moves to Stage 16-C after independent Isaac Lab
+platform, asset, semantic-parity, and PhysX-oracle qualification.
 
 The direct sources, generated references, and bounded report suite are all
 ignored under `.local/`. The preserved Stage-16A baseline is archived at
 `.local/archive/stage16_controllability_failure_baseline_20260801T100413Z_aeb0995/`;
-the Stage-16B closeout is rooted at `.local/reports/stage16_world_wrist_finger/`.
+the Stage-16B.1c closeout is rooted at
+`.local/reports/stage16b_adaptive_oracle_single_ppo/`.
 The complete contract is [WORLD_WRIST_FINGER_TRACKING.md](../rl/WORLD_WRIST_FINGER_TRACKING.md).
+
+Stage 16-C starts with C.0 platform qualification only. C.1 asset migration,
+C.2 `DirectRLEnv`, C.3 semantic parity, C.4 vector benchmarks, C.5 PhysX
+oracle, C.6/C.7 PPO, C.8 randomization, and C.9 comparison remain TODO.
+MuJoCo and PhysX need not be bitwise identical, but MuJoCo oracle evidence can
+never directly authorize an Isaac Lab policy run.
 
 Stage 13 (additional dataset adapters), Stage 14 (robot plugin matrix), and Stage 15 (complete baseline matrix) are deliberately `DEFERRED`. This branch implements only the TopoRetarget reference-tracking PPO protocol from Appendix A.5.
 

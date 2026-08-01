@@ -423,6 +423,11 @@ training/evaluation remains explicitly blocked by the Stage-16.1 gate. Pen-Spin 
 alternative interpretation of Appendix A.5. It preserves the Stage-16A
 finger-only contract and adds direct Stage-12 world wrist motion, an abstract
 finite-wrench free wrist, a 6D wrist residual, world-frame features, and
-wrist-relative reconstructions. The 26D H=1/5/10 oracle is a gate diagnostic,
-not PPO. Current results are `STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE` before
-PPO, with no paper result, sim-to-real result, or HO-Cap-32 comparison claimed.
+wrist-relative reconstructions. The shared state-adaptive 26D H1/H5/H10
+oracle is a gate diagnostic, not PPO. Its bounded MuJoCo result is
+`STAGE16B_ADAPTIVE_MULTI_HORIZON_ORACLE_PARTIAL`: `170650` passes and `170105`
+does not at 82.5% progress and 5.002 cm axis error; PPO was never started
+(0 samples, no checkpoints). MuJoCo is closed as a correctness/reference
+backend, while the planned Isaac Lab GPU lane requires independent platform,
+semantic-parity, and PhysX-oracle qualification. Neither backend is an
+author-exact paper result, sim-to-real result, or HO-Cap-32 comparison.

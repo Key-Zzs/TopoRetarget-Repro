@@ -24,6 +24,18 @@ If both fail, `visualize_hocap_world_wrist_policy_mujoco.py` writes a numerical 
 dashboard and records `PASS_WITH_LIMITATION`; it does not fabricate geometry screenshots.
 Interactive mode requires a working GLFW/X11 display and uses `mujoco.viewer`.
 
+The Stage-16B command surfaces can be checked without data or training:
+
+```bash
+conda run -n toporetarget-rl python scripts/rl/qualify_stage16b_adaptive_oracle.py --help
+conda run -n toporetarget-rl python scripts/rl/train_stage16_world_wrist_ppo.py --help
+conda run -n toporetarget-rl python scripts/rl/visualize_hocap_world_wrist_policy_mujoco.py --help
+```
+
+No new dependency was required for the adaptive-oracle closeout. The current
+PPO CLI rejects the partial oracle report before creating a run directory or
+checkpoint.
+
 All external dataset/model paths are explicit. The two current references and OBJ meshes are
 under ignored `.local/stage16_reference_tracking_ppo/`; raw NAS data is never copied into the
 repository. Generated scenes, runs, checkpoints, PNG/MP4, and logs remain ignored under

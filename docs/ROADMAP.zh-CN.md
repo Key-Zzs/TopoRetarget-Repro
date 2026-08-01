@@ -65,10 +65,20 @@ gate 完成前不能把该阶段描述为完成或恢复批量运行。
 
 Stage 16-A 仍是保留的 paper/minimal、base-relative 20D finger residual profile；其 full-approach
 可控性证据保持不变。独立的 Stage 16-B 明确标记为 `ENGINEERING_EXTENSION`
-`WORLD_WRIST_FINGER_TRACKING_PROTOCOL`，分为 B.0 world reference export（已完成、有界）、B.1
-dynamic finite-wrench wrist controllability（有界阻断）、B.2 single-clip PPO（gate-blocked）、B.3
-two-clip PPO（gate-blocked）、B.4 full domain randomization（TODO）和 B.5 geometry/zero/PPO
-comparison（TODO）。它不等于真实机械臂控制、不用于 sim-to-real，也不能同论文 HO-Cap-32 结果直接比较。
+`WORLD_WRIST_FINGER_TRACKING_PROTOCOL`。B.0 world reference、B.1 finite-wrench wrist 与 B.1b
+逐轨迹 fixed-horizon 可控性已完成；共享 adaptive H1/H5/H10 的 B.1c 为 `PARTIAL / CLOSED`：
+最终 48x4 中 `170650` 20/20 通过，`170105` 0/20，在 82.5% 进度处以 5.002 cm axis error 失败。
+B.2 MuJoCo single-clip PPO 为 `NOT_STARTED_GATE_BLOCKED`（0 样本、无 checkpoint）；B.3 two-clip PPO
+仍为 TODO / not started；B.4/B.5
+保持 TODO。它不等于真实机械臂控制、不用于 sim-to-real，也不能同论文 HO-Cap-32 结果直接比较。
+
+Stage 16-C 路线为：C.0 Isaac Lab platform qualification（NEXT / ACTIVE）；C.1 Wuji 与物体
+资产迁移、C.2 `DirectRLEnv`、C.3 单环境语义对齐、C.4 GPU vectorization、C.5 PhysX Oracle、
+C.6 single-clip GPU PPO、C.7 two-clip GPU PPO、C.8 dynamics randomization、C.9
+geometry/MuJoCo/Isaac/PPO comparison 均为 TODO。MuJoCo 不删除，继续负责 correctness、
+deterministic regression、contact diagnostics、action replay 与 visualization；Isaac Lab 负责计划中的
+GPU 并行训练。MuJoCo 与 PhysX 不要求 bitwise 一致，但必须重新完成语义对齐和 PhysX Oracle，
+MuJoCo Oracle 不能直接授权 Isaac Lab PPO。当前尚未实现任何 Isaac Lab 自定义任务。
 
 Wuji 三轨迹实现现已由通用 `workflow run-grab-suite` 提供；是否完成只由实验
 根目录下运行生成的 `final_status.json` 决定。

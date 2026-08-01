@@ -2,7 +2,7 @@
 
 ## Stage 16 状态
 
-Stage 16-A 保留为论文 minimal、base-relative 的 20D finger residual profile：完整 approach 的两条 clip gate 为 `STAGE16_1_CONTROLLABILITY_BLOCKED`，这不是 PPO 结果。Stage 16-B 是明确标注的 `ENGINEERING_EXTENSION` `WORLD_WRIST_FINGER_TRACKING_PROTOCOL`：它导出 world wrist/object reference，并用有限 wrench 的 free wrist 6D residual 加 20D finger residual 驱动。当前有界结果为 `STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE`：world reference 与 W2 wrist 验证通过，但 contact-aware H-by-26 sequence MPC 的 H10 只通过两个 clip 中的一个；剩余失败来自自由物体 position/axis tracking，不再是 wrist-orientation safety，PPO 未启动。Stage-16A 基线位于 `.local/archive/stage16_controllability_failure_baseline_20260801T100413Z_aeb0995/`，Stage-16B 证据位于 `.local/reports/stage16_world_wrist_finger/`。
+Stage 16-A 保留为论文风格、base-relative 的 20D finger residual MuJoCo 参考实现，适用于 grasp-centric reference。Stage 16-B 是独立的 `ENGINEERING_EXTENSION` `WORLD_WRIST_FINGER_TRACKING_PROTOCOL`：B.0 world reference 与 B.1 finite-wrench wrist 已完成，B.1b 已证明逐轨迹 fixed-horizon 可控性，共享自适应 H1/H5/H10 的 B.1c 现正式为 `PARTIAL / CLOSED`。最终共享 48x4 尝试中，`170650` 20/20 通过，`170105` 20/20 失败，在 82.5% 进度处 axis error 为 5.002 cm。single-clip PPO 入口未获授权：训练状态为 `NOT_STARTED_GATE_BLOCKED`，实际样本为 0，checkpoint 为 0。证据位于 `.local/reports/stage16b_adaptive_oracle_single_ppo/`。
 
 [English README](README.md)
 
@@ -85,7 +85,8 @@ tables/figures/seeds 以及 ARCTIC/OakInk2/TACO 仍为 TODO；不声称实时重
 | 14 | 通用机器人手 plugin 验证 | DEFERRED | 验证更多机器人拓扑与完整 URDF/MJCF plugin 能力矩阵。 |
 | 15 | baseline 与消融 | DEFERRED | 加入公平的 OmniRetarget、Mink、DexPilot、GeoRT 及相关 baseline 对比。 |
 | 16-A | paper/minimal reference tracking | 16.0 功能完成；16.1 BLOCKED；16.2/16.3 被 gate 阻断 | 保留的 base-relative、20D finger-only profile。 |
-| 16-B | `ENGINEERING_EXTENSION` world wrist-and-finger tracking | world reference 已验证；wrist/oracle 阻断；PPO 未启动 | 6D wrist residual + 20D finger residual 是抽象有限 wrench wrist，不是实际机械臂或论文结果。 |
+| 16-B | `ENGINEERING_EXTENSION` MuJoCo world wrist-and-finger tracking | B.0/B.1/B.1b 完成；B.1c partial/closed；PPO deferred/not started | MuJoCo 保留为 correctness/debug/reference backend；6D wrist 不是实际机械臂。 |
+| 16-C | Isaac Lab GPU backend | C.0 平台资格 next/active；C.1-C.9 TODO | 资产迁移、PhysX Oracle 或 PPO 前必须先通过平台资格。 |
 | 17 | 论文实验复现 | TODO | 复现论文 tables、figures、seeds、ContactPose benchmark 与正式报告。 |
 | 18 | 性能与 v1.0 发布 | TODO | 建立 production benchmark、打包、CI 矩阵与发布标准。 |
 | 19 | 非论文扩展 | TODO | 将 MANO cleanup、SPIDER integration、penetration objective 等扩展明确隔离。 |
@@ -97,20 +98,25 @@ objective、cross-trajectory profile selection——不阻塞阶段 13。
 
 ### Stage 16-B world wrist-and-finger 工程扩展
 
-这是独立且当前被 gate 阻断的工程扩展；以下是无需 NAS 路径的实际 qualification 输入：
+该工程扩展已在 MuJoCo 中 fail-closed 收口。以下命令直接回放冻结的 adaptive oracle，
+不会重新运行 CEM：
 
 ```bash
-conda run -n toporetarget-rl python scripts/rl/qualify_stage16_world_wrist.py \
-  --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170105.world_wrist.stage16.npz \
+conda run -n toporetarget-rl python scripts/rl/visualize_hocap_world_wrist_policy_mujoco.py \
+  --policy adaptive-oracle --mode interactive --start-frame 0 --deterministic \
   --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170650.world_wrist.stage16.npz \
-  --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170105.obj \
   --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170650.obj \
-  --scene-root .local/experiments/stage16_world_wrist_finger/qualification_replay \
-  --report-root .local/reports/stage16_world_wrist_finger/qualification_replay \
-  --formal-episodes 20
+  --adaptive-action-trace .local/experiments/stage16b_adaptive_oracle_single_ppo/oracle_attempt04_48x4/hocap_170650.world_wrist.stage16.adaptive_actions.npz \
+  --adaptive-selection-trace .local/reports/stage16b_adaptive_oracle_single_ppo/adaptive_oracle_selection_trace.jsonl \
+  --show-reference-ghost --show-axis-points --show-contacts \
+  --show-selected-horizon --show-gate-margins
 ```
 
-当前没有 Stage-16B PPO 可视化命令：oracle gate 失败且没有 checkpoint；trainer 会拒绝绕过该 gate。
+当前没有 Stage-16B PPO 命令或 checkpoint：`MUJOCO_PPO_STARTED = NO`。
+PPO 算法本身不要求物理参数已经辨识，但 simulator 必须使用冻结模型。
+`world_wrist_freebody_nominal_v1` 只是工程假设；物理 provenance 未解决会阻止真实动力学与
+sim-to-real 声明。完整 dynamics randomization 为 B.4 TODO。当前抽象 6D wrist 不是实际机械臂，
+两条结果也不能与论文 HOCap-32 直接比较。
 
 两条批准输入固定在 `.local/stage16_reference_tracking_ppo/`。可控性验收命令如下；当前真实结果为 `STAGE16_1_CONTROLLABILITY_BLOCKED`：
 

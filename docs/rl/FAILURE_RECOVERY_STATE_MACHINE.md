@@ -21,13 +21,17 @@ GPU OOM follows `4096 -> 2048 -> 1024 -> 512 -> 256` with explicit shard account
 
 ## Stage 16-B bounded recovery
 
-The separate world-wrist extension uses the same fail-closed principle. After
-the retained wrist-control corrections, the authorized contact-aware MPC
-extension audits mass/inertia/support, records substep contact impulse, and
-compares the shared 12x2, 24x3, and 32x3 sequence-search budgets. The selected
-32x3 H10 controller passes `170650`, but `170105` reaches 97.5% and fails
-`FAILURE_OBJECT_POSITION`; W4 therefore remains `OBJECT_DYNAMICS_FAILURE`.
+The separate world-wrist extension uses the same fail-closed principle.
+`Stage16BAdaptiveOracleStateMachine` limits every failure class to three
+repairs, formal reruns to five, major transitions to twelve, and CEM budget
+upgrades to one. The final shared 48x4 adaptive H1/H5/H10 attempt passes
+`170650` 20/20 but fails `170105` 20/20 at 82.5% progress and 5.002 cm axis
+error. The single global budget upgrade is consumed. The final class is
+`CEM_CONTACT_MODE_MISS` under the frozen engineering simulator; recovery is
+exhausted and the lane closes as partial rather than looping.
 
 No clip-specific tuning, object pose write, physical-parameter selection by
-tracking score, or PPO bypass is permitted. The complete selected transition
-log is `.local/reports/stage16_world_wrist_finger/contact_mpc_formal_selected_20260801/failure_transition_log.jsonl`.
+tracking score, additional horizon/budget, or PPO bypass is permitted. PPO
+remains `NOT_STARTED_GATE_BLOCKED`; the PPO recovery log is empty because no
+PPO transition occurred. This is not a training failure. The final oracle
+log is `.local/reports/stage16b_adaptive_oracle_single_ppo/oracle_failure_transitions.jsonl`.

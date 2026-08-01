@@ -319,8 +319,23 @@ PAPER_PROTOCOL_REPRODUCTION_WITH_ASSUMPTIONS rather than author-exact results.
 - The dynamic scene uses zero gravity, no synthetic ground, the original
   derived object mesh, a 0.05 kg object, and a global finite-wrench profile.
   These are engineering assumptions, not author-exact simulator details.
+- PPO optimization does not intrinsically require physically identified
+  parameters, but simulator rollouts require a frozen model. The nominal model
+  permits functional oracle/PPO work; unresolved physical provenance still
+  blocks real-dynamics, force-accuracy, and sim-to-real claims. Full dynamics
+  randomization remains future work.
 - Formal post-reset rollout never writes object pose or velocity. W1
   exogenous wrist playback and kinematic-object paths are diagnostics only.
 - 20 cm wrist-position and 90 degree wrist-orientation limits are safety
   engineering gates. The reported oracle failure at that gate cannot be
   relabelled as PPO failure.
+- The shared adaptive H1/H5/H10 oracle and its single 48x4 global upgrade are
+  bounded MuJoCo diagnostics. The final result is `170105` 0/20 at 82.5% and
+  `170650` 20/20. Its partial result does not prove physical
+  impossibility and cannot authorize a policy in another simulator.
+- MuJoCo is retained as a correctness/debug/reference backend. Planned
+  GPU-parallel training uses an independently qualified Isaac Lab/PhysX lane;
+  bitwise MuJoCo/PhysX equality is not assumed, and semantic parity plus a new
+  PhysX oracle are required.
+- No Wuji asset, HO-Cap object, custom `DirectRLEnv`, PhysX oracle, or Isaac Lab
+  PPO is implemented by Stage 16-C.0 platform qualification.

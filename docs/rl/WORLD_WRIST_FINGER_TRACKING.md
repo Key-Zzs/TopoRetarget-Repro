@@ -9,11 +9,12 @@ MuJoCo experiment. It does not replace the paper/minimal controller, alter
 Stage 7–12 artifacts, change raw HO-Cap data, model a real robot arm, or claim
 sim-to-real transfer.
 
-The current status is `STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE`. The direct
-world reference and finite-wrench W2 wrist controller are validated. The
-clone-only contact-aware 26D sequence MPC keeps the wrist stable and passes
-H10 on `170650`, but `170105` still fails the free-object gate. PPO is
-therefore not started.
+The MuJoCo lane is closed with
+`STAGE16B_ADAPTIVE_MULTI_HORIZON_ORACLE_PARTIAL`. The direct world reference,
+finite-wrench W2 wrist controller, and per-trajectory fixed-horizon evidence
+are complete. A shared state-adaptive H1/H5/H10 oracle passes `170650` but not
+`170105`; the one global 48x4 upgrade does not change that decision. PPO is
+`NOT_STARTED_GATE_BLOCKED`, never `PPO_TRAINING_FAILED`.
 
 ## Direct reference contract
 
@@ -130,16 +131,27 @@ object/axis gates. W2 passes on both clips with the shared controller:
 | `170105` | 100% | 100% | 0.757 cm | 0.417 deg | 0% | 0% |
 | `170650` | 100% | 100% | 0.691 cm | 0.906 deg | 0% | 0% |
 
-The subsequent authoritative selected H=10 free-object oracle result is:
+The frozen shared adaptive-oracle result is:
 
 | Clip | Episodes | Success | Progress | Object position | Object rotation | Max axis | Wrist rotation | Saturation |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `170105` | 20 | 0% | 97.5% | 5.160 cm | 17.803 deg | 6.184 cm | 1.247 deg | 0% |
-| `170650` | 20 | 100% | 100% | 0.829 cm | 7.912 deg | 1.300 cm | 0.923 deg | 0% |
+| `170105` | 20 | 0% | 82.5% | 3.637 cm | 18.192 deg | 5.002 cm | 4.205 deg | bounded |
+| `170650` | 20 | 100% | 100% | 0.250 cm | 1.836 deg | 0.367 cm | 2.578 deg | bounded |
 
-`170105` deterministically terminates with `FAILURE_OBJECT_POSITION`; `170650`
-passes. Wrist-orientation safety no longer fires. Since both clips must pass,
-the oracle remains blocked and no trained checkpoint exists.
+`170105` deterministically terminates with `FAILURE_OBJECT_AXIS_POINT`;
+`170650` passes. The unique global 48x4 upgrade advances `170105` to 82.5%
+but still terminates at 5.002 cm max-axis error. Since both clips must pass,
+the adaptive oracle is partial and closed, and no trained checkpoint exists.
+No mass, inertia, friction, support, action scale, controller gain, reference,
+or formal gate changed.
+
+`AdaptiveMultiHorizonContactOracle` builds the exact terminal-contracted
+portfolio from remaining transitions, evaluates shared H1/H5/H10 CEM
+candidates, applies a formal-gate barrier, compares them with the state-only
+`GateFirstHorizonSelector`, and executes only the selected first 26D action.
+It has no clip identity or direct object command. The bounded sequence was
+32x3 by default and used the single permitted 48x4 global upgrade; the closeout
+authorizes no further MuJoCo search.
 
 ## Commands
 
@@ -165,12 +177,14 @@ for the future-gated CLI rather than inventing a checkpoint path.
 
 ## Visualization boundary
 
-`visualize_hocap_world_wrist_policy_mujoco.py` supports zero, oracle, and PPO
+`visualize_hocap_world_wrist_policy_mujoco.py` supports zero, fixed oracle,
+adaptive-oracle action replay, and gated PPO checkpoint modes,
 policies, interactive or headless modes, a fixed workspace camera,
 MP4/PNG/contact-sheet output, independently encoded output FPS, and actual
 MuJoCo reference-ghost, frame, axis, link, contact, force, and wrist-wrench
 geometries. A HUD reports frame index, wrist/object error, reward, contact
-count, and termination. `--kinematic-object-diagnostic` is explicitly W2-only
+count, termination, selected/effective horizon, candidate gate values, and
+selection reason. `--kinematic-object-diagnostic` is explicitly W2-only
 and cannot be described as free-object control.
 
 The current ignored visualization bundle is under
@@ -178,5 +192,6 @@ The current ignored visualization bundle is under
 The two H=10 files have 40 and 41 real MuJoCo frames at 5 fps (8.0 s and
 8.2 s), with full overlays. The first is failure evidence and the second is an
 oracle pass; neither is PPO or a physically calibrated contact-support claim.
-No single-clip or two-clip PPO video can exist until the two-clip oracle gate
-passes.
+No single-clip or two-clip MuJoCo PPO video exists. MuJoCo remains available
+for deterministic debugging and visualization; future PhysX policy work must
+requalify its own oracle and cannot inherit this MuJoCo gate.

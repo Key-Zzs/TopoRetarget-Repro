@@ -52,14 +52,32 @@ R0 is MJCF playback/PD, R1 is PPO tracking, and CP remains later.
 | 15 | Baseline Comparison | OmniRetarget, Mink, DexPilot, GeoRT | Frozen fair baseline runs and reports | DEFERRED |
 | 16-A | Paper/minimal reference tracking | Base-relative 20D residual controller | Appendix A.5 MDP/PPO implementation and frame-0 controllability qualification | Preserved: 16.0 functional complete; 16.1a confirms current fixed-base/20D contact timing is dynamically infeasible; 16.2/16.3 not authorized or started |
 | 16-B.0 | `ENGINEERING_EXTENSION` world-reference export | World wrist/object/links at 20 Hz plus wrist-relative reconstructions | Direct Stage-12 export validates provenance, quaternion convention, ordering, and world-to-wrist reconstruction | complete, bounded |
-| 16-B.1 | Dynamic wrist controllability | Finite-wrench free wrist, free object, 26D residual action, 20-episode H1/H5/H10 oracle gate | Both clips must pass the 26D object-aware oracle before PPO | blocked with bounded evidence: contact-aware sequence MPC passes H10 on `170650`; `170105` reaches 97.5% then fails free-object position |
-| 16-B.2 | Single-clip PPO | One gated 26D policy per clip | Runs only after 16-B.1 oracle validation | not started, gate-blocked |
-| 16-B.3 | Two-clip PPO | Balanced two-clip 26D policy | Runs only after both single-clip gates | not started, gate-blocked |
+| 16-B.1 | Finite-wrench wrist controller | Shared 6D finite-wrench wrist plus 20D fingers | W2 controller gates pass without teleport or direct object control | complete |
+| 16-B.1b | Fixed-horizon per-trajectory controllability | Frozen H1/H5/H10 matrix | At least one bounded controller per trajectory | complete: H5 passes `170105`; H10 passes `170650` |
+| 16-B.1c | Shared adaptive multi-horizon MuJoCo oracle | Shared state-only H1/H5/H10 selector, terminal contraction, 20-episode frame-0 gate | Both clips pass one shared bounded oracle | partial / closed: final 48x4 has `170650` 20/20 pass and `170105` 0/20 at 82.5%, axis 5.002 cm |
+| 16-B.2 | MuJoCo single-clip PPO | One gated 26D policy per clip | Requires B.1c validation | blocked / `NOT_STARTED_GATE_BLOCKED`; 0 samples, no checkpoints |
+| 16-B.3 | MuJoCo two-clip PPO | Balanced two-clip 26D policy | Requires both single-clip gates | TODO / not started |
 | 16-B.4 | Full domain randomization | World-wrist DR suite | Gated by a qualified two-clip nominal policy | TODO |
 | 16-B.5 | Geometry/zero/PPO comparison | Comparable trajectory/contact audit | Gated by a qualified PPO rollout | TODO |
+| 16-C.0 | Isaac Lab platform qualification | Host, isolated install, Isaac Sim/Lab, GPU PhysX, headless and 128-env vector smoke | Platform-only evidence; no custom assets/task/PPO | next / active |
+| 16-C.1 | Wuji and object asset migration | Wuji Hand2 Beta1 and HO-Cap object migration | Authorized only by C.0 | TODO |
+| 16-C.2 | Isaac Lab `DirectRLEnv` | Stage-16 task shell | Asset migration complete | TODO |
+| 16-C.3 | Single-environment semantic parity | Action/observation/reward/termination parity | DirectRLEnv exists | TODO |
+| 16-C.4 | GPU vectorization benchmark | Stage-16 task throughput | Semantic parity passes | TODO |
+| 16-C.5 | PhysX oracle | Independent PhysX controllability gate | PhysX task qualified | TODO |
+| 16-C.6 | Single-clip GPU PPO | Per-clip PPO in Isaac Lab | PhysX oracle passes both clips | TODO |
+| 16-C.7 | Two-clip GPU PPO | Shared policy | Both single-clip policies pass | TODO |
+| 16-C.8 | Dynamics randomization | Bounded PhysX DR | Nominal policy qualified | TODO |
+| 16-C.9 | Geometry/MuJoCo/Isaac/PPO comparison | Cross-backend diagnostic comparison | Qualified evidence exists | TODO |
 | 17 | Paper Experiment Reproduction | Tables/Figures | Full result report with provenance | not started |
 | 18 | Performance Optimization | Packaging and benchmarks | Release criteria pass | not started |
 | 19 | Non-paper Extensions | MANO cleanup, SPIDER, other extensions | Separately labeled extensions | not started |
+
+MuJoCo is not removed: it remains the correctness, deterministic-regression,
+contact-diagnostic, action-replay, and interactive-visualization backend.
+Isaac Lab is the planned GPU-parallel training backend. MuJoCo and PhysX are
+not required to match bitwise, but semantic parity and a new PhysX oracle gate
+are required before any Isaac Lab PPO; MuJoCo evidence cannot authorize it.
 
 The Wuji three-clip implementation is available through the generic
 `workflow run-grab-suite` command; its completion status is determined only by

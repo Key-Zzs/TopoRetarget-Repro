@@ -20,14 +20,22 @@ items:
 world_wrist_finger_extension:
   label: ENGINEERING_EXTENSION
   protocol: WORLD_WRIST_FINGER_TRACKING_PROTOCOL
-  status: STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE
+  status: STAGE16B_ADAPTIVE_MULTI_HORIZON_ORACLE_PARTIAL
   preserves_profile: paper_finger_only_base_relative_v1
   paper_method: false
   world_wrist_reference: {classification: ENGINEERING_EXTENSION, mapping: "WorldWristFingerReferenceV1"}
   finite_wrench_wrist: {classification: ENGINEERING_EXTENSION, mapping: "CartesianWristImpedanceController"}
   action_26d: {classification: ENGINEERING_EXTENSION, mapping: "6D wrist residual plus 20D finger residual"}
   world_relative_observation: {classification: ENGINEERING_EXTENSION, mapping: "WorldWristObservationContractV1"}
-  oracle: {classification: ENGINEERING_DIAGNOSTIC, mapping: "clone-only contact-aware H-by-26 sequence MPC at H1/H5/H10"}
+  oracle: {classification: ENGINEERING_DIAGNOSTIC, mapping: "shared state-only terminal-contracted adaptive H1/H5/H10 CEM"}
+  oracle_results: {hocap_170105: "0/20 fail at 82.5 percent, axis 5.002 cm", hocap_170650: "20/20 pass, position 0.250 cm, rotation 1.836 deg, axis 0.367 cm"}
+  budget_upgrade: {population: 48, iterations: 4, elites: 12, count: 1, result: "shared gate partial"}
   ppo_started: false
+  ppo_entry: STAGE16B_SINGLE_CLIP_PPO_ENTRY_NOT_AUTHORIZED
+  ppo_samples: 0
+  ppo_checkpoints: 0
+  mujoco_backend_role: [correctness, deterministic_regression, contact_diagnostics, action_replay, visualization]
+  isaaclab_ppo_authorized_by_mujoco: false
+  physx_oracle_required: true
   no_direct_object_control: true
   assumptions: [A_STAGE16B_FREE_WRIST_001, A_STAGE16B_ZERO_GRAVITY_001, A_STAGE16B_WRIST_SAFETY_001]

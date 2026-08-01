@@ -2,7 +2,7 @@
 
 ## Stage 16 status
 
-Stage 16-A remains the preserved paper/minimal, base-relative 20D finger-residual profile: its full-approach two-clip gate is `STAGE16_1_CONTROLLABILITY_BLOCKED`, not a PPO result. Stage 16-B is the separately labelled `ENGINEERING_EXTENSION` `WORLD_WRIST_FINGER_TRACKING_PROTOCOL`: it exports world wrist/object references and drives a free wrist with a finite 6D wrench plus 20D finger residuals. Its bounded result is `STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE`: world-reference and W2 wrist validation pass, but the contact-aware H-by-26 sequence MPC oracle passes H10 on only one of two clips. The remaining failure is free-object position/axis tracking, not wrist-orientation safety; PPO is not started. The Stage-16A baseline is archived at `.local/archive/stage16_controllability_failure_baseline_20260801T100413Z_aeb0995/`; Stage-16B evidence is under `.local/reports/stage16_world_wrist_finger/`.
+Stage 16-A remains the preserved paper-style, base-relative 20D finger-residual MuJoCo reference implementation for grasp-centric references. Stage 16-B is the separate `ENGINEERING_EXTENSION` `WORLD_WRIST_FINGER_TRACKING_PROTOCOL`: B.0 world-reference export and B.1 finite-wrench wrist control are complete; B.1b demonstrates per-trajectory fixed-horizon controllability; and the shared adaptive H1/H5/H10 B.1c oracle is now `PARTIAL / CLOSED`. In the final shared 48x4 attempt, `170650` passes 20/20 while `170105` fails 20/20 at 82.5% progress with 5.002 cm axis error. The single-clip PPO entry is not authorized: training is `NOT_STARTED_GATE_BLOCKED`, with zero samples and no checkpoints. Evidence is under `.local/reports/stage16b_adaptive_oracle_single_ppo/`.
 
 [中文 README](README.zh-CN.md)
 
@@ -93,7 +93,8 @@ Detailed stage history and implementation notes are maintained in
 | 14 | Universal robot-hand plugin validation | DEFERRED | Validate additional robot topologies and the full URDF/MJCF plugin capability matrix. |
 | 15 | Baselines and ablations | DEFERRED | Add fair OmniRetarget, Mink, DexPilot, GeoRT and relevant baseline comparisons. |
 | 16-A | Paper/minimal reference tracking | 16.0 functional complete; 16.1 BLOCKED; 16.2/16.3 gate-blocked | Preserved base-relative, 20D finger-only profile. |
-| 16-B | `ENGINEERING_EXTENSION` world wrist-and-finger tracking | world reference validated; wrist/oracle blocked; PPO not started | 6D wrist residual plus 20D finger residual is a finite-wrench abstract wrist, not a real arm or a paper result. |
+| 16-B | `ENGINEERING_EXTENSION` MuJoCo world wrist-and-finger tracking | B.0/B.1/B.1b complete; B.1c partial/closed; PPO deferred/not started | MuJoCo remains the correctness/debug/reference backend; the 6D wrist is not a real arm. |
+| 16-C | Isaac Lab GPU backend | C.0 platform qualification next/active; C.1-C.9 TODO | Platform qualification precedes any asset migration, PhysX oracle, or PPO. |
 | 17 | Paper experiment reproduction | TODO | Reproduce paper tables, figures, seeds, ContactPose benchmark and formal reports. |
 | 18 | Performance and v1.0 release | TODO | Establish production benchmarks, packaging, CI matrices and release criteria. |
 | 19 | Non-paper extensions | TODO | Keep MANO cleanup, SPIDER integration, penetration objectives and other extensions explicitly separated. |
@@ -102,37 +103,41 @@ Detailed stage history and implementation notes are maintained in
 
 ### Stage 16-B world wrist-and-finger extension
 
-This is the separate, currently gate-blocked engineering extension. The actual
-qualification inputs are fixed and need no NAS path:
-
-```bash
-conda run -n toporetarget-rl python scripts/rl/qualify_stage16_world_wrist.py \
-  --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170105.world_wrist.stage16.npz \
-  --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170650.world_wrist.stage16.npz \
-  --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170105.obj \
-  --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170650.obj \
-  --object-dynamics-audit .local/reports/stage16_object_dynamics_audit/20260801T_object_mpc_v2/object_dynamics_audit.json \
-  --scene-root .local/experiments/stage16_world_wrist_finger/qualification_replay \
-  --report-root .local/reports/stage16_world_wrist_finger/qualification_replay \
-  --formal-episodes 20
-```
-
-Use the same explicit files for a failure-evidence visualisation:
+This engineering extension is closed fail-safe in MuJoCo. The final adaptive
+oracle evidence can be replayed interactively without re-running CEM:
 
 ```bash
 conda run -n toporetarget-rl python scripts/rl/visualize_hocap_world_wrist_policy_mujoco.py \
-  --policy oracle --oracle-horizon 10 --mode headless --start-frame 0 --deterministic \
-  --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170105.world_wrist.stage16.npz \
-  --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170105.obj \
-  --controller-report .local/reports/stage16_world_wrist_finger/rerun3_effective_inertia/wrist_controller_qualification.json \
-  --scene-root .local/experiments/stage16_world_wrist_finger/visual_replay \
-  --output-frames .local/reports/stage16_world_wrist_finger/visual/replay_170105 \
-  --output-video .local/reports/stage16_world_wrist_finger/visual/replay_170105.mp4
+  --policy adaptive-oracle --mode interactive --start-frame 0 --deterministic \
+  --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170650.world_wrist.stage16.npz \
+  --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170650.obj \
+  --adaptive-action-trace .local/experiments/stage16b_adaptive_oracle_single_ppo/oracle_attempt04_48x4/hocap_170650.world_wrist.stage16.adaptive_actions.npz \
+  --adaptive-selection-trace .local/reports/stage16b_adaptive_oracle_single_ppo/adaptive_oracle_selection_trace.jsonl \
+  --show-reference-ghost --show-axis-points --show-contacts \
+  --show-selected-horizon --show-gate-margins
 ```
 
-There is no Stage-16B PPO visualization command yet because the oracle gate
-failed and no checkpoint was produced; the trainer refuses to bypass that
-gate.
+Generate the frozen failure-evidence MP4 without changing the oracle budget:
+
+```bash
+conda run -n toporetarget-rl python scripts/rl/visualize_hocap_world_wrist_policy_mujoco.py \
+  --policy adaptive-oracle --mode headless --start-frame 0 --deterministic \
+  --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170105.world_wrist.stage16.npz \
+  --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170105.obj \
+  --adaptive-action-trace .local/experiments/stage16b_adaptive_oracle_single_ppo/oracle_attempt04_48x4/hocap_170105.world_wrist.stage16.adaptive_actions.npz \
+  --adaptive-selection-trace .local/reports/stage16b_adaptive_oracle_single_ppo/adaptive_oracle_selection_trace.jsonl \
+  --show-reference-ghost --show-axis-points --show-contacts \
+  --show-selected-horizon --show-gate-margins \
+  --output-frames .local/reports/stage16b_adaptive_oracle_single_ppo/visual/adaptive_170105 \
+  --output-video .local/reports/stage16b_adaptive_oracle_single_ppo/visual/adaptive_170105.mp4
+```
+
+There is no Stage-16B PPO command or checkpoint: `MUJOCO_PPO_STARTED = NO`.
+PPO itself does not require physically identified dynamics, but a simulator
+requires a frozen model. `world_wrist_freebody_nominal_v1` is an engineering
+assumption; unresolved physical provenance blocks real-dynamics and sim-to-real
+claims. Full dynamics randomization is B.4 TODO. The abstract 6D wrist is not a
+real arm, and these two clips are not directly comparable with paper HOCap-32.
 
 The two approved inputs are fixed at:
 
