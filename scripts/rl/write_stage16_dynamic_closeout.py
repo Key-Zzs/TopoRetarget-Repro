@@ -88,6 +88,8 @@ def main() -> int:
         }
     )
     _write(root / "visual_review.json", visual)
+    final["visual_review"] = visual
+    _write(root / "final_summary.json", final)
     visual_md = "# Stage-16.1a visual review\n\n" + "\n".join(
         f"- {item}" for item in visual["observations"]
     )
