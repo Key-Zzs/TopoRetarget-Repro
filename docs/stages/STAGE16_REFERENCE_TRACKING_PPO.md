@@ -11,11 +11,13 @@ degrees of freedom to the preserved 20 finger residuals. It is neither the
 paper's minimal RL controller nor a model of a physical robot arm.
 
 The current Stage 16-B outcome is `STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE`.
-Both direct 20 Hz world-reference exports validate, but the selected globally
-shared impedance profile is `STAGE16B_WRIST_CONTROL_PARTIAL` and the clone-only
-26D H=1/5/10 oracle reaches `STAGE16B_26D_ORACLE_BLOCKED` on both clips. It
-triggers `FAILURE_WRIST_ORIENTATION_SAFETY` with saturated finite wrenches
-before a PPO gate can open. Single-clip and two-clip PPO are therefore
+Both direct 20 Hz world-reference exports and the selected globally shared W2
+impedance profile validate. The corrected world/body-local angular-velocity
+boundary and a 10 ms-stable 2 Nm/rad rotational profile remove wrist-safety
+failures and wrench saturation. The clone-only 26D H=1/5/10 oracle still
+reaches `STAGE16B_26D_ORACLE_BLOCKED` on both clips because the free object
+crosses `FAILURE_OBJECT_AXIS_POINT`; H=10 progresses to 90.0% and 52.5% with
+0% success. Single-clip and two-clip PPO are therefore
 `STAGE16B_SINGLE_CLIP_PPO_BLOCKED` and `STAGE16B_TWO_CLIP_PPO_BLOCKED`; no
 Stage-16B checkpoint exists or is claimed.
 

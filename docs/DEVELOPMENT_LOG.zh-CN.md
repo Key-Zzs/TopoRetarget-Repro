@@ -1,5 +1,21 @@
 # 开发日志
 
+## 2026-08-01 —— Stage 16-B wrist 坐标系与可视化修正
+
+修正 Stage-16B free joint 的速度坐标边界：reference 角速度属于 world frame，而
+MuJoCo free-joint angular `qvel` 属于 body-local frame。reset、observation、playback、
+object diagnostic 与 Cartesian impedance 现在都执行显式转换。旧的 15--30 Nm/rad
+控制器范围相对于模型 10 ms 步长和 wrist 有效惯量不稳定；新的共享有界 W2 网格选择
+2 Nm/rad、阻尼比 0.5。两个冻结 clip 均完整通过 W2，位置误差小于 1 cm、姿态误差小于
+1 度，physics-substep force/torque 限幅占比均为 0。
+
+仅在 W2 通过后重跑 H=1/5/10 oracle qualification。H=10 在两个 clip 上仍为 0%
+success，并以 `FAILURE_OBJECT_AXIS_POINT` 结束，因此 PPO 继续阻塞；wrist orientation
+safety 已不再是失败原因。MuJoCo visualizer 现在真实渲染 reference ghost、坐标轴、
+link/axis 误差标记、contact、force、wrist wrench、固定相机和数值 HUD。两段完整 W2
+与两段失败 H=10 oracle 的 5 fps 慢放 MP4 保存在新的 ignored qualification report
+root 下。
+
 ## 2026-07-29 —— Stage 11 contract freeze
 
 在不增加数据集、也不运行新的重定向的前提下冻结扩展接口。

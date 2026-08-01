@@ -1,5 +1,24 @@
 # Development log
 
+## 2026-08-01 -- Stage 16-B wrist-frame and visualization correction
+
+Corrected the Stage-16B free-joint velocity boundary: reference angular
+velocity is world-frame, while MuJoCo free-joint angular `qvel` is body-local.
+Reset, observation, playback, object diagnostics, and Cartesian impedance now
+convert explicitly. The old 15--30 Nm/rad controller range was also unstable
+at the model's 10 ms step and effective wrist inertia; the shared bounded W2
+grid now selects 2 Nm/rad with damping ratio 0.5. Both frozen clips complete
+W2 with sub-centimetre position error, below-one-degree orientation error, and
+zero physics-substep force/torque saturation.
+
+Only after that W2 pass, the H=1/5/10 oracle qualification was rerun. H=10
+still has 0% success on both clips and ends on `FAILURE_OBJECT_AXIS_POINT`, so
+PPO remains blocked; wrist-orientation safety is no longer the cause. The
+MuJoCo visualizer now renders real reference ghosts, frames, link/axis error
+markers, contacts, forces, wrist wrench, a fixed camera, and a numerical HUD.
+Two complete W2 and two failing H=10 oracle 5 fps slow-motion MP4s are retained
+under the new ignored qualification report root.
+
 ## 2026-07-29 -- Stage 11 contract freeze
 
 Frozen the extension interfaces without adding a dataset or running a new

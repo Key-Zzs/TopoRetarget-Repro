@@ -10,9 +10,9 @@ Stage 7–12 artifacts, change raw HO-Cap data, model a real robot arm, or claim
 sim-to-real transfer.
 
 The current status is `STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE`. The direct
-world reference is validated. The finite-wrench wrist controller is partial,
-and the clone-only 26D oracle fails the formal wrist-safety gate for both
-approved clips. PPO is therefore not started.
+world reference and finite-wrench W2 wrist controller are validated. The
+clone-only 26D oracle now keeps the wrist stable, but fails the free-object
+axis-point gate for both approved clips. PPO is therefore not started.
 
 ## Direct reference contract
 
@@ -58,11 +58,18 @@ a[3:6]   wrist rotation residual, local SO(3) log coordinates
 a[6:26]  20 named Wuji finger-joint residuals
 ```
 
-The selected global scale is 5 mm translation, 2.5 degrees rotation, and 5%
+The selected global scale is 20 mm translation, 10 degrees rotation, and 20%
 of every finger joint range. The selected global controller has translational
-stiffness 250 N/m, damping ratio 1.0, rotational stiffness 15 Nm/rad, damping
-ratio 1.0, force limit 25 N, torque limit 1.5 Nm, and feed-forward twist gain
-1.0. It is a finite-wrench abstract wrist, not a position teleport.
+stiffness 250 N/m, damping ratio 1.0, rotational stiffness 2 Nm/rad, damping
+ratio 0.5, force limit 25 N, torque limit 1.5 Nm, and feed-forward twist gain
+1.0. The lower rotational stiffness keeps the 10 ms physics integration
+stable for the measured free-joint effective inertia. It is a finite-wrench
+abstract wrist, not a position teleport.
+
+Reference twists use world-frame linear and angular velocity. MuJoCo
+free-joint `qvel` uses world-frame linear velocity but body-local angular
+velocity. Reset, observation, playback, object-diagnostic, and impedance-
+controller boundaries convert explicitly between those representations.
 
 ## Observation, reward, and termination
 
@@ -88,15 +95,22 @@ H=10. It has no direct object control.
 
 Each H=10 evaluation runs 20 deterministic frame-0 episodes per clip. PPO
 may start only after both clips satisfy the oracle success/final-reach and
-object/axis gates. The authoritative result is:
+object/axis gates. W2 passes on both clips with the shared controller:
 
-| Clip | H=10 episodes | Success | Final reach | Object position | Wrist position | Wrist rotation | Saturation |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `170105` | 20 | 0% | 0% | 0.192 cm | 7.671 cm | 111.055 deg | 100% |
-| `170650` | 20 | 0% | 0% | 0.024 cm | 2.247 cm | 123.126 deg | 100% |
+| Clip | Success | Final reach | Wrist position | Wrist rotation | Force saturation | Torque saturation |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `170105` | 100% | 100% | 0.757 cm | 0.417 deg | 0% | 0% |
+| `170650` | 100% | 100% | 0.691 cm | 0.906 deg | 0% | 0% |
 
-Both runs terminate early with `FAILURE_WRIST_ORIENTATION_SAFETY`, before
-contact; no trained checkpoint exists.
+The subsequent authoritative H=10 free-object oracle result is:
+
+| Clip | Episodes | Success | Progress | Object position | Object rotation | Max axis | Wrist rotation | Saturation |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `170105` | 20 | 0% | 90.0% | 2.466 cm | 44.573 deg | 5.997 cm | 0.595 deg | 0% |
+| `170650` | 20 | 0% | 52.5% | 2.969 cm | 36.722 deg | 5.365 cm | 0.584 deg | 0% |
+
+Both runs deterministically terminate with `FAILURE_OBJECT_AXIS_POINT`;
+wrist-orientation safety no longer fires. No trained checkpoint exists.
 
 ## Commands
 
@@ -108,8 +122,12 @@ conda run -n toporetarget-rl python scripts/rl/qualify_stage16_world_wrist.py \
   --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170650.obj \
   --scene-root .local/experiments/stage16_world_wrist_finger/qualification_replay \
   --report-root .local/reports/stage16_world_wrist_finger/qualification_replay \
-  --formal-episodes 20
+  --formal-episodes 20 \
+  --stop-after-w2
 ```
+
+Remove `--stop-after-w2` only after `w2_qualification_status.json` says
+`oracle_authorized=true`.
 
 PPO commands must include the qualifying `--oracle-report`,
 `--controller-report`, and `--action-scale-report`; on the current evidence
@@ -118,10 +136,17 @@ for the future-gated CLI rather than inventing a checkpoint path.
 
 ## Visualization boundary
 
-`visualize_hocap_world_wrist_policy_mujoco.py` supports zero, oracle, and
-PPO policies, interactive or headless modes, an automatic workspace camera,
-MP4/PNG/contact-sheet output, and requested reference/contact/wrench display
-flags. Existing headless videos show the actual free wrist and object through
-the safety failure; they are failure evidence, not visual confirmation of a
-successful contact-supported rollout. No single-clip or two-clip PPO video can
-exist until the oracle gate passes.
+`visualize_hocap_world_wrist_policy_mujoco.py` supports zero, oracle, and PPO
+policies, interactive or headless modes, a fixed workspace camera,
+MP4/PNG/contact-sheet output, independently encoded output FPS, and actual
+MuJoCo reference-ghost, frame, axis, link, contact, force, and wrist-wrench
+geometries. A HUD reports frame index, wrist/object error, reward, contact
+count, and termination. `--kinematic-object-diagnostic` is explicitly W2-only
+and cannot be described as free-object control.
+
+The current ignored visualization bundle is under
+`.local/reports/stage16_world_wrist_finger/oracle_after_w2_stable_20260801T185700/visual/`.
+The two W2 files have 41 frames at 5 fps (8.2 s); the two H=10 oracle files
+have 37 and 22 frames at 5 fps (7.4 s and 4.4 s). The oracle videos are
+failure evidence, not PPO or contact-supported success. No single-clip or
+two-clip PPO video can exist until the oracle gate passes.
