@@ -22,6 +22,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from packaging.version import Version
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
@@ -119,6 +121,11 @@ def _package_version(name: str) -> str | None:
         return importlib.metadata.version(name)
     except importlib.metadata.PackageNotFoundError:
         return None
+
+
+def _versions_equivalent(actual: str | None, required: str) -> bool:
+    """Accept equivalent PEP 440 releases such as 5.1.0.0 and 5.1.0."""
+    return actual is not None and Version(actual) == Version(required)
 
 
 def _gpu_snapshot() -> dict[str, Any]:
@@ -304,6 +311,7 @@ def _static_validation(
         for name in ("isaacsim", "torch", "torchvision", "isaaclab", "isaaclab_tasks")
     }
     python_minor = f"{sys.version_info.major}.{sys.version_info.minor}"
+    dependency_check = _run([sys.executable, "-m", "pip", "check"], timeout=120.0)
     installation = {
         "install_method": config.install_method,
         "environment_name": config.environment_name,
@@ -317,6 +325,8 @@ def _static_validation(
         "torch_required": config.torch_version,
         "cuda_runtime_required": config.cuda_runtime,
         "eula_accepted_by_script": False,
+        "dependency_check": dependency_check,
+        "dependency_consistent": dependency_check["returncode"] == 0,
     }
     official_sources = {
         **dict(config.raw["official_compatibility"]),
@@ -389,7 +399,7 @@ def _static_validation(
     _write_json(output_root / "bootstrap_dry_run.json", dry_run)
     installed_versions_match = (
         platform.python_version() == config.python_exact_version
-        and packages["isaacsim"] == config.isaac_sim_version
+        and _versions_equivalent(packages["isaacsim"], config.isaac_sim_version)
         and packages["torch"] is not None
         and packages["torch"].split("+")[0] == config.torch_version
         and packages["torchvision"] is not None

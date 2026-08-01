@@ -4,5 +4,6 @@ channels:
 dependencies:
   - python=3.11.15
   - pip=26.1.2
+  - setuptools=80.9.0
   - numpy=1.26.0
   - pyyaml=6.0.2

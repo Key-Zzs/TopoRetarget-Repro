@@ -66,7 +66,18 @@ bounded smoke runs. Runtime extension resolution remains a hard network/cache
 gate and is recorded as `NETWORK_OR_ASSET_CACHE_FAILURE` if it cannot finish.
 The bootstrap installs the official Torch cu128 wheels before Isaac Sim so
 Isaac Sim resolves those exact CUDA builds instead of downloading a default
-wheel and replacing it later.
+wheel and replacing it later. It also pins `setuptools==80.9.0`: the frozen
+Isaac Lab release depends on `flatdict==4.0.1`, whose legacy build imports
+`pkg_resources` (removed from setuptools 81 and newer). The bootstrap builds
+that fixed package without isolation after pinning setuptools, before Isaac
+Lab dependency resolution. The notebook-only
+dependency chain is constrained to `ipython==8.37.0`, `onnx==1.21.0`,
+`psutil==5.9.8`, and `typing_extensions==4.12.2` so it does not override Isaac
+Sim kernel pins.
+The official packages retain one upstream metadata conflict: Isaac Lab pins
+`starlette==0.49.1`, while Isaac Sim pins FastAPI 0.115.7, which declares
+`starlette<0.46.0`. The verifier records `pip check` verbatim rather than
+claiming complete dependency consistency.
 
 ## Platform verification
 

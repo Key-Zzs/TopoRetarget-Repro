@@ -3,5 +3,11 @@
 isaacsim[all]==5.1.0
 torch==2.7.0
 torchvision==0.22.0
+setuptools==80.9.0
+flatdict==4.0.1
+ipython==8.37.0
+onnx==1.21.0
+psutil==5.9.8
+typing_extensions==4.12.2
 numpy==1.26.0
 PyYAML==6.0.2

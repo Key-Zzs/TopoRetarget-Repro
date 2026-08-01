@@ -19,6 +19,13 @@ from toporetarget.rl.stage16c0 import (
 CONFIG = Path("configs/rl/stage16/isaaclab_platform.yaml")
 
 
+def test_nvidia_trailing_release_zero_is_equivalent() -> None:
+    from scripts.verify_stage16_isaaclab_platform import _versions_equivalent
+
+    assert _versions_equivalent("5.1.0.0", "5.1.0")
+    assert not _versions_equivalent("5.0.0.0", "5.1.0")
+
+
 def _complete_evidence() -> dict[str, bool]:
     return {
         "host_compatible": True,
@@ -61,6 +68,7 @@ def test_environment_manifest_is_isolated_and_python_311() -> None:
     payload = yaml.safe_load(Path("environment.stage16_isaaclab.yml").read_text())
     assert payload["name"] == "toporetarget-isaaclab"
     assert "python=3.11.15" in payload["dependencies"]
+    assert "setuptools=80.9.0" in payload["dependencies"]
     assert "numpy=1.26.0" in payload["dependencies"]
     assert "pyyaml=6.0.2" in payload["dependencies"]
     assert payload["name"] != "toporetarget-rl"
@@ -107,6 +115,7 @@ def test_bootstrap_dry_run_does_not_create_external_root(tmp_path: Path) -> None
     )
     assert "DRY_RUN:" in result.stdout
     assert "isaacsim" in result.stdout
+    assert "--no-build-isolation flatdict==4.0.1" in result.stdout
     assert "v2.3.2" in result.stdout
     assert not external.exists()
     assert (

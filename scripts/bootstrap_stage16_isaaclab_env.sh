@@ -174,6 +174,9 @@ fi
 run conda run -n "$env_name" python -m pip install --upgrade \
   "torch==$torch_version" "torchvision==$torchvision_version" \
   --index-url https://download.pytorch.org/whl/cu128
+run conda run -n "$env_name" python -m pip install "setuptools==80.9.0"
+run conda run -n "$env_name" python -m pip install --no-build-isolation \
+  "flatdict==4.0.1"
 run conda run -n "$env_name" python -m pip install \
   "isaacsim[all]==$isaac_sim_version" \
   --extra-index-url https://pypi.nvidia.com
@@ -201,6 +204,9 @@ fi
 if [[ "$dry_run" -eq 0 ]]; then
   verify_external_checkout
 fi
+# Isaac Lab v2.3.2 pins flatdict 4.0.1, whose legacy setup.py imports
+# pkg_resources. Setuptools 81+ removed that module, so keep the last stable
+# release that provides it before resolving the official source packages.
 run conda run -n "$env_name" python -m pip install --editable \
   "$external_root/source/isaaclab" \
   "$external_root/source/isaaclab_assets" \
@@ -208,4 +214,8 @@ run conda run -n "$env_name" python -m pip install --editable \
   "$external_root/source/isaaclab_tasks" \
   "$external_root/source/isaaclab_rl[none]" \
   "$external_root/source/isaaclab_mimic[none]"
+# Keep the notebook-only chain from overriding Isaac Sim kernel's exact pins.
+run conda run -n "$env_name" python -m pip install \
+  "ipython==8.37.0" "onnx==1.21.0" "psutil==5.9.8" \
+  "typing_extensions==4.12.2"
 run "${verify_command[@]}"
