@@ -255,7 +255,7 @@ def test_contact_aware_mpc_budget_and_object_dynamics_audit_are_fail_closed(
     tmp_path: Path,
 ) -> None:
     with pytest.raises(ValueError, match="population"):
-        ContactAwareMPCConfig(population=33).validate()
+        ContactAwareMPCConfig(population=49).validate()
     acceleration = reference_accelerations(
         np.asarray([0.0, 0.05, 0.1]),
         np.asarray([[0.0] * 6, [0.1] + [0.0] * 5, [0.2] + [0.0] * 5]),
