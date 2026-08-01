@@ -154,7 +154,7 @@ def main() -> int:
     ]
     step_d_rows = []
     for row in final["step_d"]:
-        clip = str(row["label"]).replace(".stage16_step_d_object_oracle", "")
+        clip = str(row["label"]).split("_step_d_object_oracle", maxsplit=1)[0]
         ranks = [entry["rank"] for entry in sensitivity[clip]]
         conditions = [entry["condition_estimate"] for entry in sensitivity[clip]]
         step_d_rows.append(
