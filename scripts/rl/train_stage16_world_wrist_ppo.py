@@ -22,11 +22,15 @@ from toporetarget.rl.environments.world_wrist_backend import (
 from toporetarget.rl.ppo.checkpoint import load_checkpoint, rng_state, save_checkpoint
 from toporetarget.rl.ppo.storage import RolloutStorage
 from toporetarget.rl.ppo.trainer import PPOConfig, PPOTrainer
+from toporetarget.rl.single_clip_ppo import (
+    SINGLE_CLIP_SAMPLE_LADDER,
+    oracle_authorizes_single_clip_ppo,
+)
 from toporetarget.rl.world_wrist import WorldWristFingerReferenceV1
 
 REPO = Path(__file__).resolve().parents[2]
 WUJI_MJCF = REPO / "third_party/robot_hands/wuji_hand2_beta1/mjcf/right.xml"
-SINGLE_SAMPLE_LADDER = (32_768, 131_072, 524_288, 2_097_152, 8_388_608)
+SINGLE_SAMPLE_LADDER = SINGLE_CLIP_SAMPLE_LADDER
 TWO_CLIP_SAMPLE_LADDER = (131_072, 524_288, 2_097_152, 8_388_608, 16_777_216)
 
 
@@ -253,10 +257,11 @@ def main() -> int:
     if args.budget not in ladder:
         raise ValueError(f"budget must be in frozen {args.stage} ladder: {ladder}")
     oracle_report = json.loads(args.oracle_report.read_text(encoding="utf-8"))
-    if oracle_report.get("status") != "STAGE16B_26D_ORACLE_VALIDATED":
+    if not oracle_authorizes_single_clip_ppo(oracle_report):
         raise ValueError(
             "Stage16B single/two-clip PPO is gate-blocked: "
-            f"26-D oracle status is {oracle_report.get('status', 'MISSING')}"
+            f"adaptive oracle status is {oracle_report.get('status', 'MISSING')}; "
+            f"PPO entry is {oracle_report.get('ppo_entry', 'MISSING')}"
         )
     controller_report = json.loads(args.controller_report.read_text(encoding="utf-8"))
     scale_report = json.loads(args.action_scale_report.read_text(encoding="utf-8"))
