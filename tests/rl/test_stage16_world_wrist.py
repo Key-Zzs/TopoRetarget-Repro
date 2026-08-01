@@ -19,6 +19,12 @@ from toporetarget.rl.environments.world_wrist_backend import (
     mujoco_freejoint_velocity_from_world_twist,
     world_twist_from_mujoco_freejoint_velocity,
 )
+from toporetarget.rl.object_dynamics_audit import (
+    impulse_sensitivity_candidates,
+    inertial_wrench_demand,
+    reference_accelerations,
+    support_model_audit,
+)
 from toporetarget.rl.tracked_links import TRACKED_LINKS_WUJI_RH
 from toporetarget.rl.world_wrist import (
     WorldWristFingerReferenceV1,
@@ -26,7 +32,10 @@ from toporetarget.rl.world_wrist import (
     matrix_from_quaternion_wxyz,
     quaternion_wxyz_from_matrix,
 )
-from toporetarget.rl.world_wrist_oracle import WorldWristFingerObjectAwareOracle
+from toporetarget.rl.world_wrist_oracle import (
+    ContactAwareMPCConfig,
+    WorldWristFingerObjectAwareOracle,
+)
 
 
 def _reference(model: mujoco.MjModel) -> WorldWristFingerReferenceV1:
@@ -201,11 +210,80 @@ def test_world_backend_has_two_freejoints_26d_actions_and_clone_only_oracle(tmp_
     assert state["wrist_twist"] == pytest.approx(backend.reference.wrist_twist_world_ref[0])
     assert backend.observation(state).shape == (WorldWristObservationContractV1(20, 16).dimension,)
     snapshot = backend.snapshot()
+    warmstart = backend.data.qacc_warmstart.copy()
     oracle = WorldWristFingerObjectAwareOracle()
-    action = oracle.action(backend, horizon=1)
+    action = oracle.action(backend, horizon=5)
     assert action.shape == (26,)
     assert np.all(np.abs(action) <= 1.0)
+    assert oracle.last_action_sequence is not None
+    assert oracle.last_action_sequence.shape == (2, 26)
+    assert oracle.last_diagnostics is not None
+    assert oracle.last_diagnostics.sequence_shape == (2, 26)
+    assert oracle.last_diagnostics.evaluated_sequences == 100
+    assert oracle.last_diagnostics.direct_object_control is False
     assert np.array_equal(snapshot.qpos, backend.data.qpos)
-    _, reward, _ = backend.transition(np.zeros(26))
+    assert np.array_equal(warmstart, backend.data.qacc_warmstart)
+    replay_backend = WorldWristFingerBackend(
+        scene_path=scene,
+        reference=_reference(model),
+        joint_lower=model.jnt_range[: model.njnt, 0],
+        joint_upper=model.jnt_range[: model.njnt, 1],
+        seed=3,
+    )
+    replay_backend.reset(reference_index=0)
+    backend.transition(action)
+    replay_backend.transition(action)
+    second_action = oracle.action(backend, horizon=5)
+    _, reward, _ = backend.transition(second_action)
+    replay_backend.transition(second_action)
+    assert np.array_equal(backend.data.qpos, replay_backend.data.qpos)
+    assert np.array_equal(backend.data.qvel, replay_backend.data.qvel)
+    assert np.array_equal(backend.data.qacc_warmstart, replay_backend.data.qacc_warmstart)
     assert np.isfinite(list(reward.values())).all()
     assert backend.last_control is not None
+    assert len(backend.last_physics_trace) == backend.decimation
+    assert {
+        "hand_object_contact_count",
+        "hand_object_normal_force_n",
+        "hand_object_normal_impulse_ns",
+        "hand_object_max_penetration_m",
+    }.issubset(backend.last_physics_trace[0])
+    assert backend.model_report()["support_constraint"] == "none_freejoint"
+
+
+def test_contact_aware_mpc_budget_and_object_dynamics_audit_are_fail_closed(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="population"):
+        ContactAwareMPCConfig(population=33).validate()
+    acceleration = reference_accelerations(
+        np.asarray([0.0, 0.05, 0.1]),
+        np.asarray([[0.0] * 6, [0.1] + [0.0] * 5, [0.2] + [0.0] * 5]),
+    )
+    assert acceleration[:, 0] == pytest.approx(2.0)
+
+    source = Path("third_party/robot_hands/wuji_hand2_beta1/mjcf/right.xml")
+    model = mujoco.MjModel.from_xml_path(str(source))
+    mesh = tmp_path / "object.obj"
+    mesh.write_text(
+        "v 0 0 0\nv 0.02 0 0\nv 0 0.02 0\nv 0 0 0.02\nf 1 3 2\nf 1 2 4\nf 1 4 3\nf 2 3 4\n",
+        encoding="utf-8",
+    )
+    scene = materialize_world_wrist_free_object_scene(source, tmp_path / "audit", object_mesh=mesh)
+    backend = WorldWristFingerBackend(
+        scene_path=scene,
+        reference=_reference(model),
+        joint_lower=model.jnt_range[: model.njnt, 0],
+        joint_upper=model.jnt_range[: model.njnt, 1],
+    )
+    support = support_model_audit(backend)
+    assert support["classification"] == "UNSUPPORTED_FREE_BODY_ZERO_GRAVITY_NO_DAMPING"
+    assert support["dataset_support_provenance"] == "unresolved"
+    assert inertial_wrench_demand(backend)["frames_with_nontrivial_demand"] == 0
+    candidates = impulse_sensitivity_candidates(
+        mass_kg=0.05,
+        principal_inertia_kgm2=np.asarray([1e-4, 2e-4, 3e-4]),
+        impulse_ns=0.01,
+    )
+    assert [row["shared_mass_inertia_scale"] for row in candidates] == [0.5, 1.0, 2.0, 5.0]
+    assert not any(row["physical_provenance_eligible"] for row in candidates)

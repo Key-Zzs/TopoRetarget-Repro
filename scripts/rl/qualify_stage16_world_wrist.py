@@ -25,7 +25,10 @@ from toporetarget.rl.environments.world_wrist_backend import (
 from toporetarget.rl.failure_classifier import FailureClass
 from toporetarget.rl.state_machine import RecoveryBudget, Stage16RecoveryStateMachine
 from toporetarget.rl.world_wrist import WorldWristFingerReferenceV1
-from toporetarget.rl.world_wrist_oracle import WorldWristFingerObjectAwareOracle
+from toporetarget.rl.world_wrist_oracle import (
+    ContactAwareMPCConfig,
+    WorldWristFingerObjectAwareOracle,
+)
 
 REPO = Path(__file__).resolve().parents[2]
 WUJI_MJCF = REPO / "third_party/robot_hands/wuji_hand2_beta1/mjcf/right.xml"
@@ -68,13 +71,19 @@ class Episode:
     finger_rmse_rad: float
     link_rmse_m: float
     contact_frame: int | None
+    contact_substep: int | None
     contact_count: int
+    total_normal_impulse_ns: float
+    max_substep_normal_impulse_ns: float
+    max_contact_penetration_m: float
     mean_wrist_wrench_n: float
     mean_wrist_torque_nm: float
     wrist_force_saturation_fraction: float
     wrist_torque_saturation_fraction: float
     wrist_wrench_saturation_fraction: float
     action_magnitude: float
+    oracle_mean_evaluated_sequences: float
+    oracle_mean_sequence_variation_norm: float
 
 
 def _episode(
@@ -83,16 +92,25 @@ def _episode(
     policy: str,
     horizon: int = 1,
     kinematic_object_diagnostic: bool = False,
+    replay_actions: list[np.ndarray] | None = None,
+    action_log: list[np.ndarray] | None = None,
+    oracle_config: ContactAwareMPCConfig | None = None,
 ) -> Episode:
     state = backend.reset(reference_index=0)
-    oracle = WorldWristFingerObjectAwareOracle() if policy == "oracle" else None
+    oracle = WorldWristFingerObjectAwareOracle(config=oracle_config) if policy == "oracle" else None
     contact_frame: int | None = None
+    contact_substep: int | None = None
     contact_count = 0
+    total_normal_impulse = 0.0
+    max_substep_normal_impulse = 0.0
+    max_contact_penetration = 0.0
     force_norms: list[float] = []
     torque_norms: list[float] = []
     force_saturation: list[bool] = []
     torque_saturation: list[bool] = []
     actions: list[np.ndarray] = []
+    optimizer_evaluations: list[int] = []
+    sequence_variations: list[float] = []
     reason: str | None = None
     for step in range(backend.reference.frame_count + 4):
         if policy == "exogenous_wrist":
@@ -103,20 +121,37 @@ def _episode(
                 else None
             )
         else:
-            action = (
-                np.zeros(26, dtype=np.float64)
-                if policy == "zero"
-                else oracle.action(backend, horizon=horizon)
-            )
+            if policy == "zero":
+                action = np.zeros(26, dtype=np.float64)
+            elif policy == "replay":
+                if replay_actions is None or len(actions) >= len(replay_actions):
+                    raise ValueError("replay policy requires a complete frozen action trace")
+                action = replay_actions[len(actions)].copy()
+            else:
+                assert oracle is not None
+                action = oracle.action(backend, horizon=horizon)
+                assert oracle.last_diagnostics is not None
+                optimizer_evaluations.append(oracle.last_diagnostics.evaluated_sequences)
+                sequence_variations.append(oracle.last_diagnostics.sequence_variation_norm)
             actions.append(action)
+            if action_log is not None:
+                action_log.append(action.copy())
             state, _, reason = backend.transition(
                 action, kinematic_object_diagnostic=kinematic_object_diagnostic
             )
-        contact = backend.contact_summary()
-        contact_count += int(contact["hand_object_contact_count"])
-        if contact_frame is None and contact["hand_object_contact_count"]:
-            contact_frame = step
         for physics_row in backend.last_physics_trace:
+            substep_contacts = int(physics_row["hand_object_contact_count"])
+            contact_count += substep_contacts
+            if contact_frame is None and substep_contacts:
+                contact_frame = step
+                contact_substep = int(physics_row["substep"])
+            impulse = float(physics_row["hand_object_normal_impulse_ns"])
+            total_normal_impulse += impulse
+            max_substep_normal_impulse = max(max_substep_normal_impulse, impulse)
+            max_contact_penetration = max(
+                max_contact_penetration,
+                float(physics_row["hand_object_max_penetration_m"]),
+            )
             wrench = np.asarray(physics_row["wrist_wrench_world"], dtype=np.float64)
             force_norms.append(float(np.linalg.norm(wrench[:3])))
             torque_norms.append(float(np.linalg.norm(wrench[3:])))
@@ -169,7 +204,11 @@ def _episode(
             )
         ),
         contact_frame=contact_frame,
+        contact_substep=contact_substep,
         contact_count=contact_count,
+        total_normal_impulse_ns=total_normal_impulse,
+        max_substep_normal_impulse_ns=max_substep_normal_impulse,
+        max_contact_penetration_m=max_contact_penetration,
         mean_wrist_wrench_n=float(np.mean(force_norms)) if force_norms else 0.0,
         mean_wrist_torque_nm=float(np.mean(torque_norms)) if torque_norms else 0.0,
         wrist_force_saturation_fraction=float(np.mean(force_saturation))
@@ -185,6 +224,12 @@ def _episode(
         else 0.0,
         action_magnitude=float(np.mean(np.linalg.norm(action_array, axis=1)))
         if action_array.size
+        else 0.0,
+        oracle_mean_evaluated_sequences=float(np.mean(optimizer_evaluations))
+        if optimizer_evaluations
+        else 0.0,
+        oracle_mean_sequence_variation_norm=float(np.mean(sequence_variations))
+        if sequence_variations
         else 0.0,
     )
 
@@ -211,7 +256,15 @@ def _summary(rows: list[Episode]) -> dict[str, Any]:
         "finger_rmse_rad": float(np.mean([row.finger_rmse_rad for row in rows])),
         "link_rmse_mm": float(np.mean([row.link_rmse_m for row in rows]) * 1000.0),
         "contact_frames": [row.contact_frame for row in rows],
+        "contact_substeps": [row.contact_substep for row in rows],
         "mean_contact_count": float(np.mean([row.contact_count for row in rows])),
+        "mean_total_normal_impulse_ns": float(
+            np.mean([row.total_normal_impulse_ns for row in rows])
+        ),
+        "max_substep_normal_impulse_ns": float(
+            max(row.max_substep_normal_impulse_ns for row in rows)
+        ),
+        "max_contact_penetration_m": float(max(row.max_contact_penetration_m for row in rows)),
         "mean_wrist_wrench_n": float(np.mean([row.mean_wrist_wrench_n for row in rows])),
         "mean_wrist_torque_nm": float(np.mean([row.mean_wrist_torque_nm for row in rows])),
         "wrist_force_saturation_fraction": float(
@@ -224,6 +277,12 @@ def _summary(rows: list[Episode]) -> dict[str, Any]:
             np.mean([row.wrist_wrench_saturation_fraction for row in rows])
         ),
         "action_magnitude": float(np.mean([row.action_magnitude for row in rows])),
+        "oracle_mean_evaluated_sequences": float(
+            np.mean([row.oracle_mean_evaluated_sequences for row in rows])
+        ),
+        "oracle_mean_sequence_variation_norm": float(
+            np.mean([row.oracle_mean_sequence_variation_norm for row in rows])
+        ),
         "termination_distribution": {
             term: sum(row.termination == term for row in rows)
             for term in sorted({row.termination for row in rows})
@@ -282,6 +341,14 @@ def main() -> int:
     parser.add_argument("--report-root", required=True, type=Path)
     parser.add_argument("--formal-episodes", type=int, default=20)
     parser.add_argument("--seed", type=int, default=20260801)
+    parser.add_argument("--mpc-population", type=int, default=32)
+    parser.add_argument("--mpc-iterations", type=int, default=3)
+    parser.add_argument("--mpc-elite-count", type=int, default=8)
+    parser.add_argument(
+        "--object-dynamics-audit",
+        type=Path,
+        help="required before a formal oracle run; audit is evidence, never a pass shortcut",
+    )
     parser.add_argument(
         "--stop-after-w2",
         action="store_true",
@@ -292,6 +359,13 @@ def main() -> int:
         raise ValueError("Stage16B requires exactly two references and two object meshes")
     if args.formal_episodes < 1:
         raise ValueError("formal-episodes must be positive")
+    mpc_config = ContactAwareMPCConfig(
+        population=args.mpc_population,
+        iterations=args.mpc_iterations,
+        elite_count=args.mpc_elite_count,
+        seed=args.seed,
+    )
+    mpc_config.validate()
     started = time.monotonic()
     references = [WorldWristFingerReferenceV1.from_npz(path) for path in args.reference]
     reference_rows = [
@@ -395,6 +469,26 @@ def main() -> int:
         print(json.dumps(w2_status, sort_keys=True))
         return 0 if controller_pass else 2
 
+    if args.object_dynamics_audit is None:
+        raise ValueError("formal oracle qualification requires --object-dynamics-audit")
+    object_dynamics_audit = json.loads(args.object_dynamics_audit.read_text(encoding="utf-8"))
+    if object_dynamics_audit.get("id") != "stage16b_object_dynamics_audit_v1":
+        raise ValueError("object dynamics audit has the wrong or missing contract id")
+    if (
+        object_dynamics_audit.get("selection", {}).get("selected_for_formal_controller_rerun")
+        != "baseline_0.05kg_mujoco_mesh_inertia"
+    ):
+        raise ValueError("formal qualification only accepts the audited shared baseline profile")
+    _write_json(
+        args.report_root / "object_dynamics_audit_link.json",
+        {
+            "path": str(args.object_dynamics_audit.resolve()),
+            "status": object_dynamics_audit["status"],
+            "selected_profile": object_dynamics_audit["selection"],
+            "physical_validation_gate": "UNRESOLVED_NOT_TREATED_AS_PASS",
+        },
+    )
+
     w1_rows: list[dict[str, Any]] = []
     zero_rows: list[dict[str, Any]] = []
     for clip_index, (reference, mesh) in enumerate(
@@ -456,7 +550,12 @@ def main() -> int:
                 action_scale=scale,
                 seed=args.seed + 300 + clip_index,
             )
-            row = _episode(backend, policy="oracle", horizon=1)
+            row = _episode(
+                backend,
+                policy="oracle",
+                horizon=1,
+                oracle_config=mpc_config,
+            )
             clips.append(
                 {"clip": reference.stem, "summary": _summary([row]), "episodes": [asdict(row)]}
             )
@@ -488,10 +587,25 @@ def main() -> int:
                 action_scale=scale,
                 seed=args.seed + 400 + horizon + clip_index,
             )
+            frozen_action_trace: list[np.ndarray] = []
             rows = [
-                _episode(backend, policy="oracle", horizon=horizon)
-                for _ in range(args.formal_episodes)
+                _episode(
+                    backend,
+                    policy="oracle",
+                    horizon=horizon,
+                    action_log=frozen_action_trace,
+                    oracle_config=mpc_config,
+                )
             ]
+            rows.extend(
+                _episode(
+                    backend,
+                    policy="replay",
+                    horizon=horizon,
+                    replay_actions=frozen_action_trace,
+                )
+                for _ in range(args.formal_episodes - 1)
+            )
             oracle_rows[f"H{horizon}"].append(
                 {
                     "clip": reference.stem,
@@ -516,13 +630,22 @@ def main() -> int:
         {
             "status": oracle_status,
             "protocol": (
-                "WorldWristFingerObjectAwareOracle clone-state finite difference "
-                "and bounded shooting"
+                "bounded deterministic contact-aware H-by-26 action-sequence CEM MPC; "
+                "receding horizon executes the first action only"
             ),
+            "mpc_config": asdict(mpc_config),
             "formal_episodes_per_clip": args.formal_episodes,
+            "optimized_episode_count_per_clip": 1,
+            "deterministic_action_only_replay_episode_count_per_clip": (args.formal_episodes - 1),
+            "replay_semantics": (
+                "exact frozen 26D oracle action trace replayed through env.step; no state, "
+                "object, phase, contact, or termination shortcuts"
+            ),
             "horizons": oracle_rows,
             "direct_object_control": False,
             "object_pose_teleport_during_formal_rollout": False,
+            "object_dynamics_audit": str(args.object_dynamics_audit.resolve()),
+            "object_dynamics_physical_provenance": object_dynamics_audit["status"],
         },
     )
 

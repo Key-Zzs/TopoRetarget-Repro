@@ -298,6 +298,7 @@ class CartesianWristImpedanceController:
 
 @dataclass
 class WorldWristBackendSnapshot:
+    integration_state: np.ndarray
     qpos: np.ndarray
     qvel: np.ndarray
     ctrl: np.ndarray
@@ -350,6 +351,7 @@ class WorldWristFingerBackend:
         self.second_previous_action = np.zeros(26, dtype=np.float64)
         self.last_control: WristControlResult | None = None
         self.last_physics_trace: list[dict[str, Any]] = []
+        self.integration_state_spec = self.mujoco.mjtState.mjSTATE_INTEGRATION
 
         def ids(kind: Any, names: tuple[str, ...]) -> np.ndarray:
             result = np.asarray(
@@ -377,6 +379,16 @@ class WorldWristFingerBackend:
         self.object_dof_address = int(self.model.jnt_dofadr[object_joint])
         self.wrist_body_id = int(ids(self.mujoco.mjtObj.mjOBJ_BODY, ("r_wrist",))[0])
         self.object_body_id = int(ids(self.mujoco.mjtObj.mjOBJ_BODY, ("stage16b_object",))[0])
+        self.object_geom_id = int(ids(self.mujoco.mjtObj.mjOBJ_GEOM, ("stage16b_object_geom",))[0])
+        self.hand_geom_ids = frozenset(
+            index
+            for index in range(self.model.ngeom)
+            if int(self.model.geom_bodyid[index]) != self.object_body_id
+            and (
+                int(self.model.geom_contype[index]) != 0
+                or int(self.model.geom_conaffinity[index]) != 0
+            )
+        )
         self.link_body_ids = ids(self.mujoco.mjtObj.mjOBJ_BODY, reference.tracked_link_names)
         self.mujoco.mj_forward(self.model, self.data)
         submass = float(self.model.body_subtreemass[self.wrist_body_id])
@@ -470,7 +482,15 @@ class WorldWristFingerBackend:
         return self._state()
 
     def snapshot(self) -> WorldWristBackendSnapshot:
+        integration_state = np.empty(
+            self.mujoco.mj_stateSize(self.model, self.integration_state_spec),
+            dtype=np.float64,
+        )
+        self.mujoco.mj_getState(
+            self.model, self.data, integration_state, self.integration_state_spec
+        )
         return WorldWristBackendSnapshot(
+            integration_state=integration_state,
             qpos=self.data.qpos.copy(),
             qvel=self.data.qvel.copy(),
             ctrl=self.data.ctrl.copy(),
@@ -483,11 +503,12 @@ class WorldWristFingerBackend:
         )
 
     def restore(self, snapshot: WorldWristBackendSnapshot) -> None:
-        self.data.qpos[:] = snapshot.qpos
-        self.data.qvel[:] = snapshot.qvel
-        self.data.ctrl[:] = snapshot.ctrl
-        self.data.xfrc_applied[:] = snapshot.xfrc_applied
-        self.data.time = snapshot.time
+        self.mujoco.mj_setState(
+            self.model,
+            self.data,
+            snapshot.integration_state,
+            self.integration_state_spec,
+        )
         self.reference_index = snapshot.reference_index
         self.step_index = snapshot.step_index
         self.previous_action[:] = snapshot.previous_action
@@ -535,6 +556,11 @@ class WorldWristFingerBackend:
     def step(
         self, action: np.ndarray, *, kinematic_object_diagnostic: bool = False
     ) -> dict[str, np.ndarray]:
+        # MuJoCo leaves position-dependent derived fields at the pre-integration
+        # state after mj_step.  Normalize them at every 20 Hz control boundary
+        # so a clone restore followed by mj_forward is numerically identical to
+        # an action-only replay that did not run candidate simulations.
+        self.mujoco.mj_forward(self.model, self.data)
         normalized_action = np.asarray(action, dtype=np.float64)
         if normalized_action.shape != (26,) or not np.isfinite(normalized_action).all():
             raise ValueError("Stage-16B action must be finite with shape [26]")
@@ -571,6 +597,7 @@ class WorldWristFingerBackend:
             self.data.xfrc_applied[self.wrist_body_id] = control.applied_wrench_world
             self.mujoco.mj_step(self.model, self.data)
             self.last_control = control
+            contact = self.hand_object_contact_diagnostics(include_contacts=True)
             self.last_physics_trace.append(
                 {
                     "substep": substep,
@@ -585,6 +612,7 @@ class WorldWristFingerBackend:
                         self.object_dof_address : self.object_dof_address + 6
                     ].tolist(),
                     "contact_count": int(self.data.ncon),
+                    **contact,
                 }
             )
         self.step_index += 1
@@ -678,19 +706,32 @@ class WorldWristFingerBackend:
             previous_action=self.previous_action,
         )
 
-    def contact_summary(self) -> dict[str, Any]:
-        object_geom = int(
-            self.mujoco.mj_name2id(
-                self.model, self.mujoco.mjtObj.mjOBJ_GEOM, "stage16b_object_geom"
-            )
-        )
+    def hand_object_contact_diagnostics(self, *, include_contacts: bool = False) -> dict[str, Any]:
+        """Return force/impulse diagnostics for hand-object contacts only.
+
+        This is evaluated after every MuJoCo substep.  Control-frame endpoint
+        contact counts alone miss short impacts that can still dominate the
+        free object's velocity.
+        """
+
         contacts: list[dict[str, Any]] = []
+        normal_force_n = 0.0
+        force_norm_n = 0.0
+        maximum_penetration_m = 0.0
         for index in range(self.data.ncon):
             contact = self.data.contact[index]
-            if object_geom not in {int(contact.geom1), int(contact.geom2)}:
+            geom1 = int(contact.geom1)
+            geom2 = int(contact.geom2)
+            if self.object_geom_id not in {geom1, geom2}:
+                continue
+            other_geom = geom2 if geom1 == self.object_geom_id else geom1
+            if other_geom not in self.hand_geom_ids:
                 continue
             force = np.zeros(6, dtype=np.float64)
             self.mujoco.mj_contactForce(self.model, self.data, index, force)
+            normal_force_n += max(float(force[0]), 0.0)
+            force_norm_n += float(np.linalg.norm(force[:3]))
+            maximum_penetration_m = max(maximum_penetration_m, max(-float(contact.dist), 0.0))
             contacts.append(
                 {
                     "geom1": self.mujoco.mj_id2name(
@@ -705,7 +746,21 @@ class WorldWristFingerBackend:
                     "force_local": force.tolist(),
                 }
             )
-        return {"hand_object_contact_count": len(contacts), "contacts": contacts}
+        result: dict[str, Any] = {
+            "hand_object_contact_count": len(contacts),
+            "hand_object_normal_force_n": normal_force_n,
+            "hand_object_force_norm_n": force_norm_n,
+            "hand_object_normal_impulse_ns": normal_force_n * float(self.model.opt.timestep),
+            "hand_object_max_penetration_m": maximum_penetration_m,
+        }
+        if include_contacts:
+            result["hand_object_contacts"] = contacts
+        return result
+
+    def contact_summary(self) -> dict[str, Any]:
+        diagnostics = self.hand_object_contact_diagnostics(include_contacts=True)
+        diagnostics["contacts"] = diagnostics.pop("hand_object_contacts")
+        return diagnostics
 
     def model_report(self) -> dict[str, Any]:
         return {
@@ -721,8 +776,15 @@ class WorldWristFingerBackend:
             "object_freejoint": "stage16b_object_free",
             "object_qpos_address": self.object_qpos_address,
             "object_dof_address": self.object_dof_address,
+            "object_mass_kg": float(self.model.body_mass[self.object_body_id]),
+            "object_principal_inertia_kgm2": self.model.body_inertia[self.object_body_id].tolist(),
+            "object_center_of_mass_local_m": self.model.body_ipos[self.object_body_id].tolist(),
+            "object_freejoint_damping": self.model.dof_damping[
+                self.object_dof_address : self.object_dof_address + 6
+            ].tolist(),
             "gravity_mps2": self.model.opt.gravity.tolist(),
             "synthetic_ground": False,
+            "support_constraint": "none_freejoint",
             "formal_rollout_object_pose_write": False,
             "reference_twist_frame": "world_linear_world_angular",
             "mujoco_freejoint_qvel_frame": "world_linear_body_local_angular",
