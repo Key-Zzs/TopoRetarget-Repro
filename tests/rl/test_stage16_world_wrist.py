@@ -1,3 +1,5 @@
+# ruff: noqa: E402 -- optional backend gate must precede MuJoCo-dependent imports.
+
 from __future__ import annotations
 
 from pathlib import Path

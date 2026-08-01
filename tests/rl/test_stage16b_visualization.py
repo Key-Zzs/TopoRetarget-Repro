@@ -1,3 +1,5 @@
+# ruff: noqa: E402 -- optional backend gate must precede the MuJoCo CLI import.
+
 from __future__ import annotations
 
 import subprocess
