@@ -53,6 +53,35 @@ def _qpos_from_pose(pose: np.ndarray) -> np.ndarray:
     )
 
 
+def mujoco_freejoint_velocity_from_world_twist(
+    pose_world: np.ndarray, twist_world: np.ndarray
+) -> np.ndarray:
+    """Convert world linear/angular velocity to MuJoCo free-joint qvel.
+
+    MuJoCo stores free-joint linear velocity in world coordinates but angular
+    velocity in the local body frame.  Stage-16B references store both in the
+    world frame, so every write to free-joint qvel must cross this boundary.
+    """
+
+    pose = np.asarray(pose_world, dtype=np.float64)
+    twist = np.asarray(twist_world, dtype=np.float64)
+    if pose.shape != (4, 4) or twist.shape != (6,):
+        raise ValueError("pose/twist must have shapes [4,4] and [6]")
+    return np.concatenate([twist[:3], pose[:3, :3].T @ twist[3:]])
+
+
+def world_twist_from_mujoco_freejoint_velocity(
+    pose_world: np.ndarray, freejoint_velocity: np.ndarray
+) -> np.ndarray:
+    """Convert MuJoCo's hybrid-frame free-joint qvel to a world twist."""
+
+    pose = np.asarray(pose_world, dtype=np.float64)
+    velocity = np.asarray(freejoint_velocity, dtype=np.float64)
+    if pose.shape != (4, 4) or velocity.shape != (6,):
+        raise ValueError("pose/velocity must have shapes [4,4] and [6]")
+    return np.concatenate([velocity[:3], pose[:3, :3] @ velocity[3:]])
+
+
 def materialize_world_wrist_free_object_scene(
     hand_mjcf: str | Path,
     output_directory: str | Path,
@@ -129,8 +158,8 @@ class WristImpedanceProfileV1:
 
     translation_stiffness_npm: float = 250.0
     translation_damping_ratio: float = 1.0
-    rotation_stiffness_nmprad: float = 15.0
-    rotation_damping_ratio: float = 1.0
+    rotation_stiffness_nmprad: float = 2.0
+    rotation_damping_ratio: float = 0.5
     force_limit_n: float = 25.0
     torque_limit_nm: float = 1.5
     feedforward_twist_gain: float = 1.0
@@ -226,19 +255,21 @@ class CartesianWristImpedanceController:
         target_pose_world: np.ndarray,
         target_twist_world: np.ndarray,
         current_pose_world: np.ndarray,
-        current_twist_world: np.ndarray,
+        current_freejoint_velocity: np.ndarray,
     ) -> WristControlResult:
         target_twist = np.asarray(target_twist_world, dtype=np.float64)
-        current_twist = np.asarray(current_twist_world, dtype=np.float64)
-        if target_twist.shape != (6,) or current_twist.shape != (6,):
-            raise ValueError("wrist twists must have shape [6]")
+        current_velocity = np.asarray(current_freejoint_velocity, dtype=np.float64)
+        if target_twist.shape != (6,) or current_velocity.shape != (6,):
+            raise ValueError(
+                "target world twist and MuJoCo free-joint velocity must have shape [6]"
+            )
         current_rotation = np.asarray(current_pose_world, dtype=np.float64)[:3, :3]
         position_error = (
             np.asarray(target_pose_world)[:3, 3] - np.asarray(current_pose_world)[:3, 3]
         )
         rotation_error_local = so3_log(current_rotation.T @ np.asarray(target_pose_world)[:3, :3])
-        linear_velocity_error = target_twist[:3] - current_twist[:3]
-        angular_velocity_error_local = current_rotation.T @ (target_twist[3:] - current_twist[3:])
+        linear_velocity_error = target_twist[:3] - current_velocity[:3]
+        angular_velocity_error_local = current_rotation.T @ target_twist[3:] - current_velocity[3:]
         raw_force = (
             self.profile.translation_stiffness_npm * position_error
             + self.translation_damping_nspm
@@ -381,18 +412,21 @@ class WorldWristFingerBackend:
         )
 
     def _state(self) -> dict[str, np.ndarray]:
+        wrist_pose = self._wrist_pose()
         object_pose = self._object_pose()
         return {
-            "wrist_pose": self._wrist_pose(),
-            "wrist_twist": self.data.qvel[
-                self.wrist_dof_address : self.wrist_dof_address + 6
-            ].copy(),
+            "wrist_pose": wrist_pose,
+            "wrist_twist": world_twist_from_mujoco_freejoint_velocity(
+                wrist_pose,
+                self.data.qvel[self.wrist_dof_address : self.wrist_dof_address + 6],
+            ),
             "q": self.data.qpos[self.finger_qpos_addresses].copy(),
             "qdot": self.data.qvel[self.finger_dof_addresses].copy(),
             "object_pose": object_pose,
-            "object_twist": self.data.qvel[
-                self.object_dof_address : self.object_dof_address + 6
-            ].copy(),
+            "object_twist": world_twist_from_mujoco_freejoint_velocity(
+                object_pose,
+                self.data.qvel[self.object_dof_address : self.object_dof_address + 6],
+            ),
             "object_axis_points": object_axis_points_from_poses(object_pose[None])[0],
             "links": self.data.xpos[self.link_body_ids].copy(),
         }
@@ -415,7 +449,10 @@ class WorldWristFingerBackend:
             self.reference.wrist_pose_world_ref[index]
         )
         self.data.qvel[self.wrist_dof_address : self.wrist_dof_address + 6] = (
-            self.reference.wrist_twist_world_ref[index]
+            mujoco_freejoint_velocity_from_world_twist(
+                self.reference.wrist_pose_world_ref[index],
+                self.reference.wrist_twist_world_ref[index],
+            )
         )
         self.data.qpos[self.finger_qpos_addresses] = self.reference.q_finger_ref[index]
         self.data.qvel[self.finger_dof_addresses] = self.reference.qdot_finger_ref[index]
@@ -423,7 +460,10 @@ class WorldWristFingerBackend:
             self.reference.object_pose_world_ref[index]
         )
         self.data.qvel[self.object_dof_address : self.object_dof_address + 6] = (
-            self.reference.object_twist_world_ref[index]
+            mujoco_freejoint_velocity_from_world_twist(
+                self.reference.object_pose_world_ref[index],
+                self.reference.object_twist_world_ref[index],
+            )
         )
         self.data.xfrc_applied.fill(0.0)
         self.mujoco.mj_forward(self.model, self.data)
@@ -461,7 +501,10 @@ class WorldWristFingerBackend:
             self.reference.object_pose_world_ref[index]
         )
         self.data.qvel[self.object_dof_address : self.object_dof_address + 6] = (
-            self.reference.object_twist_world_ref[index]
+            mujoco_freejoint_velocity_from_world_twist(
+                self.reference.object_pose_world_ref[index],
+                self.reference.object_twist_world_ref[index],
+            )
         )
 
     def exogenous_wrist_playback_step(self) -> dict[str, np.ndarray]:
@@ -478,7 +521,10 @@ class WorldWristFingerBackend:
             self.reference.wrist_pose_world_ref[index]
         )
         self.data.qvel[self.wrist_dof_address : self.wrist_dof_address + 6] = (
-            self.reference.wrist_twist_world_ref[index]
+            mujoco_freejoint_velocity_from_world_twist(
+                self.reference.wrist_pose_world_ref[index],
+                self.reference.wrist_twist_world_ref[index],
+            )
         )
         self.data.ctrl[self.finger_actuator_indices] = self.reference.q_finger_ref[index]
         self.mujoco.mj_step(self.model, self.data)
@@ -512,14 +558,14 @@ class WorldWristFingerBackend:
         self.last_physics_trace = []
         for substep in range(self.decimation):
             current_pose = self._wrist_pose()
-            current_twist = self.data.qvel[
+            current_freejoint_velocity = self.data.qvel[
                 self.wrist_dof_address : self.wrist_dof_address + 6
             ].copy()
             control = self.controller.compute(
                 target_pose_world=target_pose,
                 target_twist_world=self.reference.wrist_twist_world_ref[target_index],
                 current_pose_world=current_pose,
-                current_twist_world=current_twist,
+                current_freejoint_velocity=current_freejoint_velocity,
             )
             self.data.xfrc_applied.fill(0.0)
             self.data.xfrc_applied[self.wrist_body_id] = control.applied_wrench_world
@@ -678,6 +724,8 @@ class WorldWristFingerBackend:
             "gravity_mps2": self.model.opt.gravity.tolist(),
             "synthetic_ground": False,
             "formal_rollout_object_pose_write": False,
+            "reference_twist_frame": "world_linear_world_angular",
+            "mujoco_freejoint_qvel_frame": "world_linear_body_local_angular",
             "abstract_actuated_wrist_engineering_model": True,
             "impedance": self.impedance_profile.as_dict()
             | {

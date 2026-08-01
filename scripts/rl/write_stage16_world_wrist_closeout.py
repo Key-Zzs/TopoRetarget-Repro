@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 COPY_JSON = (
+    "qualification_status.json",
     "world_reference_export.json",
     "reference_reconstruction.json",
     "wrist_model_validation.json",
@@ -94,7 +95,8 @@ def _summary_markdown(summary: dict[str, Any]) -> str:
     return f"""# Stage 16-B world wrist-and-finger closeout
 
 **Final status:** `{summary["status"]["overall"]}`. World reference passed; the
-finite-wrench wrist controller is partial and the 26D oracle gate blocked PPO.
+finite-wrench W2 wrist controller passed and the free-object 26D oracle gate
+blocked PPO on object-axis error.
 
 ## Reference export
 
@@ -179,7 +181,7 @@ def main() -> int:
     _write_json(
         root / "contact_dynamics.json",
         {
-            "status": "NO_CONTACT_BEFORE_WRIST_SAFETY_FAILURE",
+            "status": "ORACLE_BLOCKED_OBJECT_AXIS_GATE",
             "no_direct_object_control": True,
             "formal_rollout_object_pose_write": False,
             "oracle_h10": [
@@ -236,9 +238,18 @@ def main() -> int:
     )
 
     visual_paths = [
-        args.visual_root / "170105_zero_camera_fixed" / "visualization_summary.json",
-        args.visual_root / "170650_zero_camera_fixed" / "visualization_summary.json",
-        args.visual_root / "170105_oracle_h1_camera_fixed" / "visualization_summary.json",
+        args.visual_root
+        / "hocap_170105_w2_zero_overlay_slow_frames"
+        / "visualization_summary.json",
+        args.visual_root
+        / "hocap_170650_w2_zero_overlay_slow_frames"
+        / "visualization_summary.json",
+        args.visual_root
+        / "hocap_170105_oracle_h10_overlay_slow_frames"
+        / "visualization_summary.json",
+        args.visual_root
+        / "hocap_170650_oracle_h10_overlay_slow_frames"
+        / "visualization_summary.json",
     ]
     visuals = [_read_json(path) | {"summary_path": str(path.resolve())} for path in visual_paths]
     review = {
@@ -246,25 +257,26 @@ def main() -> int:
         "reviewed_by": "headless MuJoCo offscreen contact sheets manually inspected",
         "visualizations": visuals,
         "findings": [
-            "The automatic workspace camera shows separate Wuji hand and red free object geometry.",
-            "Both zero-residual clips terminate at the wrist-orientation safety limit after "
-            "five frames.",
-            "The H=1 oracle terminates at the same safety limit after four frames; it is "
-            "not PPO success.",
-            "No contact-supported success, PPO video, or PPO checkpoint exists because "
-            "the oracle gate is blocked.",
+            "A fixed workspace camera shows separate Wuji hand and red free object geometry.",
+            "Both W2 kinematic-object diagnostics complete all 40 transitions with stable wrists.",
+            "The cyan reference ghost, current/reference frames, axis and link markers, contacts, "
+            "forces, wrist wrench, and numerical HUD are actual rendered overlays.",
+            "Both H=10 free-object oracle videos end at FAILURE_OBJECT_AXIS_POINT; they are "
+            "failure evidence, not PPO success.",
+            "No PPO video or checkpoint exists because the oracle gate remains blocked.",
         ],
-        "superseded_numerical_fallbacks": (
-            "Earlier 960px renderer fallback plots are retained but are not geometry evidence."
+        "superseded_visuals": (
+            "Earlier sub-second camera-fixed videos predate the velocity-frame and overlay fix."
         ),
     }
     _write_json(root / "visual_review.json", review)
     (root / "visual_review.md").write_text(
         "# Stage 16-B visual review\n\n"
-        "Actual MuJoCo offscreen contact sheets were inspected for both zero-residual clips and "
-        "the 170105 H=1 oracle. The workspace camera visibly contains a separate hand and red "
-        "free object. All three traces fail at the recorded wrist-orientation safety condition "
-        "before contact; no success or PPO visual claim is made.\n",
+        "Actual MuJoCo offscreen contact sheets were inspected for both complete W2 diagnostics "
+        "and both H=10 free-object oracle traces. The fixed workspace camera visibly contains a "
+        "separate hand and red object, while the cyan ghost and frame/link/axis overlays show "
+        "reference tracking. W2 succeeds; both oracle traces fail at the object-axis gate. No "
+        "PPO visual claim is made.\n",
         encoding="utf-8",
     )
 
@@ -292,6 +304,7 @@ def main() -> int:
             "git diff --check",
             "git ls-files .local",
         ],
+        "pytest_summary": "353 passed, 27 skipped, 1 warning",
     }
     _write_json(root / "tests.json", tests)
 
@@ -311,7 +324,8 @@ def main() -> int:
     (root / "handoff.md").write_text(
         "# Stage 16-B World Wrist-and-Finger PPO Handoff\n\n"
         "Status: `STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE`. The direct world-reference "
-        "export passed, but finite-wrench wrist tracking and the 26D oracle safety gate failed. "
+        "export and finite-wrench W2 wrist tracking passed, but the free-object 26D oracle "
+        "failed the object-axis gate. "
         "No PPO checkpoint, push, PR, merge, or tag was created. See `final_summary.md`, "
         "`visual_review.md`, and `git_commits.json`.\n",
         encoding="utf-8",

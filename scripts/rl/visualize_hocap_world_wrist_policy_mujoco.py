@@ -21,20 +21,34 @@ from toporetarget.rl.environments.world_wrist_backend import (
 )
 from toporetarget.rl.ppo.checkpoint import load_checkpoint
 from toporetarget.rl.ppo.trainer import PPOConfig, PPOTrainer
-from toporetarget.rl.world_wrist import WorldWristFingerReferenceV1
+from toporetarget.rl.world_wrist import WorldWristFingerReferenceV1, quaternion_wxyz_from_matrix
 from toporetarget.rl.world_wrist_oracle import WorldWristFingerObjectAwareOracle
 
 REPO = Path(__file__).resolve().parents[2]
 WUJI_MJCF = REPO / "third_party/robot_hands/wuji_hand2_beta1/mjcf/right.xml"
+OVERLAY_NAMES = (
+    "show_reference_wrist",
+    "show_reference_ghost",
+    "show_world_frame",
+    "show_wrist_frame",
+    "show_axis_points",
+    "show_tracked_links",
+    "show_contacts",
+    "show_contact_forces",
+    "show_wrist_wrench",
+    "show_base_target",
+)
 
 
-def _profile(path: Path | None) -> tuple[WristImpedanceProfileV1, WristFingerActionScaleV1]:
-    if path is None:
-        return WristImpedanceProfileV1(), WristFingerActionScaleV1()
-    report = json.loads(path.read_text(encoding="utf-8"))
-    selected = report["selected"]["profile"]
-    return (
-        WristImpedanceProfileV1(
+def _profile(
+    controller_path: Path | None, action_scale_path: Path | None
+) -> tuple[WristImpedanceProfileV1, WristFingerActionScaleV1]:
+    impedance = WristImpedanceProfileV1()
+    scale = WristFingerActionScaleV1()
+    if controller_path is not None:
+        report = json.loads(controller_path.read_text(encoding="utf-8"))
+        selected = report["selected"]["profile"]
+        impedance = WristImpedanceProfileV1(
             translation_stiffness_npm=float(selected["translation_stiffness_npm"]),
             translation_damping_ratio=float(selected["translation_damping_ratio"]),
             rotation_stiffness_nmprad=float(selected["rotation_stiffness_nmprad"]),
@@ -42,15 +56,22 @@ def _profile(path: Path | None) -> tuple[WristImpedanceProfileV1, WristFingerAct
             force_limit_n=float(selected["force_limit_n"]),
             torque_limit_nm=float(selected["torque_limit_nm"]),
             feedforward_twist_gain=float(selected["feedforward_twist_gain"]),
-        ),
-        WristFingerActionScaleV1(),
-    )
+        )
+    if action_scale_path is not None:
+        report = json.loads(action_scale_path.read_text(encoding="utf-8"))
+        selected = report["selected"]["scale"]
+        scale = WristFingerActionScaleV1(
+            translation_m=float(selected["translation_m"]),
+            rotation_rad=float(selected["rotation_rad"]),
+            finger_joint_range_fraction=float(selected["finger_joint_range_fraction"]),
+        )
+    return impedance, scale
 
 
 def _backend(args: argparse.Namespace) -> WorldWristFingerBackend:
     model = mujoco.MjModel.from_xml_path(str(WUJI_MJCF))
     reference = WorldWristFingerReferenceV1.from_npz(args.reference)
-    impedance, scale = _profile(args.controller_report)
+    impedance, scale = _profile(args.controller_report, args.action_scale_report)
     scene = materialize_world_wrist_free_object_scene(
         WUJI_MJCF, args.scene_root / args.reference.stem, object_mesh=args.object_mesh
     )
@@ -120,21 +141,7 @@ def _summary(
             if backend.last_control is None
             else backend.last_control.applied_wrench_world.tolist()
         ),
-        "overlays_requested": {
-            name: bool(getattr(args, name))
-            for name in (
-                "show_reference_wrist",
-                "show_reference_ghost",
-                "show_world_frame",
-                "show_wrist_frame",
-                "show_axis_points",
-                "show_tracked_links",
-                "show_contacts",
-                "show_contact_forces",
-                "show_wrist_wrench",
-                "show_base_target",
-            )
-        },
+        "overlays_requested": {name: bool(getattr(args, name)) for name in OVERLAY_NAMES},
         "non_claim": "visual inspection only; world-wrist oracle is not PPO success",
     }
 
@@ -162,7 +169,7 @@ def _camera(backend: WorldWristFingerBackend, args: argparse.Namespace) -> Any:
     mujoco.mjv_defaultCamera(camera)
     camera.type = mujoco.mjtCamera.mjCAMERA_FREE
     camera.lookat[:] = points.mean(axis=0)
-    camera.distance = max(0.28, 3.0 * float(np.max(np.ptp(points, axis=0))) + 0.22)
+    camera.distance = max(0.24, 1.4 * float(np.max(np.ptp(points, axis=0))) + 0.16)
     camera.azimuth = 135.0
     camera.elevation = -25.0
     return camera
@@ -173,16 +180,287 @@ def _write_contact_sheet(images: list[np.ndarray], output: Path) -> None:
 
     if not images:
         return
-    columns = min(4, len(images))
-    rows = int(np.ceil(len(images) / columns))
+    selected = images
+    if len(images) > 12:
+        selected = [images[index] for index in np.linspace(0, len(images) - 1, 12, dtype=int)]
+    columns = min(4, len(selected))
+    rows = int(np.ceil(len(selected) / columns))
     height, width, channels = images[0].shape
     sheet = np.zeros((rows * height, columns * width, channels), dtype=images[0].dtype)
-    for index, image in enumerate(images):
+    for index, image in enumerate(selected):
         row, column = divmod(index, columns)
         sheet[row * height : (row + 1) * height, column * width : (column + 1) * width] = image
     import imageio.v3 as iio
 
     iio.imwrite(output, sheet)
+
+
+def _scene_geom(scene: mujoco.MjvScene) -> mujoco.MjvGeom | None:
+    if scene.ngeom >= scene.maxgeom:
+        return None
+    geom = scene.geoms[scene.ngeom]
+    scene.ngeom += 1
+    return geom
+
+
+def _add_marker(
+    scene: mujoco.MjvScene,
+    *,
+    position: np.ndarray,
+    radius: float,
+    rgba: tuple[float, float, float, float],
+) -> bool:
+    geom = _scene_geom(scene)
+    if geom is None:
+        return False
+    mujoco.mjv_initGeom(
+        geom,
+        mujoco.mjtGeom.mjGEOM_SPHERE,
+        np.asarray([radius, radius, radius], dtype=np.float64),
+        np.asarray(position, dtype=np.float64),
+        np.eye(3, dtype=np.float64).reshape(-1),
+        np.asarray(rgba, dtype=np.float32),
+    )
+    return True
+
+
+def _add_connector(
+    scene: mujoco.MjvScene,
+    *,
+    start: np.ndarray,
+    end: np.ndarray,
+    width: float,
+    rgba: tuple[float, float, float, float],
+    arrow: bool = False,
+) -> bool:
+    geom = _scene_geom(scene)
+    if geom is None:
+        return False
+    geom_type = mujoco.mjtGeom.mjGEOM_ARROW if arrow else mujoco.mjtGeom.mjGEOM_LINE
+    mujoco.mjv_initGeom(
+        geom,
+        geom_type,
+        np.zeros(3, dtype=np.float64),
+        np.zeros(3, dtype=np.float64),
+        np.eye(3, dtype=np.float64).reshape(-1),
+        np.asarray(rgba, dtype=np.float32),
+    )
+    mujoco.mjv_connector(
+        geom,
+        geom_type,
+        width,
+        np.asarray(start, dtype=np.float64),
+        np.asarray(end, dtype=np.float64),
+    )
+    return True
+
+
+def _add_frame(
+    scene: mujoco.MjvScene,
+    pose: np.ndarray,
+    *,
+    length: float,
+    alpha: float = 1.0,
+) -> int:
+    origin = np.asarray(pose[:3, 3], dtype=np.float64)
+    rotation = np.asarray(pose[:3, :3], dtype=np.float64)
+    colors = ((1.0, 0.15, 0.15, alpha), (0.15, 1.0, 0.15, alpha), (0.2, 0.45, 1.0, alpha))
+    return sum(
+        _add_connector(
+            scene,
+            start=origin,
+            end=origin + length * rotation[:, axis],
+            width=0.004,
+            rgba=colors[axis],
+            arrow=True,
+        )
+        for axis in range(3)
+    )
+
+
+def _ghost_data(backend: WorldWristFingerBackend, index: int) -> mujoco.MjData:
+    data = mujoco.MjData(backend.model)
+    reference = backend.reference
+    wrist_pose = reference.wrist_pose_world_ref[index]
+    object_pose = reference.object_pose_world_ref[index]
+    data.qpos[backend.wrist_qpos_address : backend.wrist_qpos_address + 7] = np.concatenate(
+        (wrist_pose[:3, 3], quaternion_wxyz_from_matrix(wrist_pose[:3, :3]))
+    )
+    data.qpos[backend.finger_qpos_addresses] = reference.q_finger_ref[index]
+    data.qpos[backend.object_qpos_address : backend.object_qpos_address + 7] = np.concatenate(
+        (object_pose[:3, 3], quaternion_wxyz_from_matrix(object_pose[:3, :3]))
+    )
+    mujoco.mj_forward(backend.model, data)
+    return data
+
+
+def _add_overlays(
+    scene: mujoco.MjvScene,
+    backend: WorldWristFingerBackend,
+    args: argparse.Namespace,
+) -> dict[str, int]:
+    """Append actual MuJoCo geoms for every requested diagnostic overlay."""
+
+    state = backend._state()  # noqa: SLF001 - visualization-only simulator read
+    reference = backend.reference
+    index = backend.reference_index
+    counts = {name: 0 for name in OVERLAY_NAMES}
+
+    if args.show_reference_ghost:
+        first = scene.ngeom
+        option = mujoco.MjvOption()
+        mujoco.mjv_defaultOption(option)
+        perturb = mujoco.MjvPerturb()
+        mujoco.mjv_defaultPerturb(perturb)
+        mujoco.mjv_addGeoms(
+            backend.model,
+            _ghost_data(backend, index),
+            option,
+            perturb,
+            mujoco.mjtCatBit.mjCAT_ALL,
+            scene,
+        )
+        object_geom_id = mujoco.mj_name2id(
+            backend.model, mujoco.mjtObj.mjOBJ_GEOM, "stage16b_object_geom"
+        )
+        for geom_index in range(first, scene.ngeom):
+            geom = scene.geoms[geom_index]
+            if geom.objtype == mujoco.mjtObj.mjOBJ_GEOM and geom.objid == object_geom_id:
+                geom.rgba[3] = 0.0
+                continue
+            geom.rgba[:] = np.asarray([0.0, 0.85, 1.0, 0.28], dtype=np.float32)
+            geom.transparent = 1
+            geom.emission = 0.25
+            counts["show_reference_ghost"] += 1
+
+    if args.show_world_frame:
+        counts["show_world_frame"] += _add_frame(scene, np.eye(4), length=0.08)
+    if args.show_wrist_frame:
+        counts["show_wrist_frame"] += _add_frame(scene, state["wrist_pose"], length=0.05)
+    if args.show_reference_wrist:
+        counts["show_reference_wrist"] += _add_frame(
+            scene, reference.wrist_pose_world_ref[index], length=0.055, alpha=0.65
+        )
+    if args.show_base_target:
+        counts["show_base_target"] += _add_connector(
+            scene,
+            start=state["wrist_pose"][:3, 3],
+            end=reference.wrist_pose_world_ref[index, :3, 3],
+            width=3.0,
+            rgba=(1.0, 0.2, 1.0, 1.0),
+        )
+    if args.show_axis_points:
+        for point in state["object_axis_points"]:
+            counts["show_axis_points"] += _add_marker(
+                scene, position=point, radius=0.004, rgba=(1.0, 0.45, 0.05, 1.0)
+            )
+        for point in reference.object_axis_points_world_ref[index]:
+            counts["show_axis_points"] += _add_marker(
+                scene, position=point, radius=0.003, rgba=(1.0, 1.0, 0.1, 0.75)
+            )
+    if args.show_tracked_links:
+        for current, target in zip(
+            state["links"], reference.tracked_link_positions_world_ref[index], strict=True
+        ):
+            counts["show_tracked_links"] += _add_marker(
+                scene, position=current, radius=0.0025, rgba=(0.2, 1.0, 0.25, 0.9)
+            )
+            counts["show_tracked_links"] += _add_marker(
+                scene, position=target, radius=0.002, rgba=(0.0, 0.9, 1.0, 0.75)
+            )
+            counts["show_tracked_links"] += _add_connector(
+                scene,
+                start=current,
+                end=target,
+                width=1.5,
+                rgba=(0.7, 0.9, 1.0, 0.55),
+            )
+    if args.show_contacts or args.show_contact_forces:
+        for contact_index in range(min(backend.data.ncon, 64)):
+            contact = backend.data.contact[contact_index]
+            if args.show_contacts:
+                counts["show_contacts"] += _add_marker(
+                    scene,
+                    position=contact.pos,
+                    radius=0.0035,
+                    rgba=(1.0, 0.1, 0.1, 1.0),
+                )
+            if args.show_contact_forces:
+                contact_force = np.zeros(6, dtype=np.float64)
+                mujoco.mj_contactForce(backend.model, backend.data, contact_index, contact_force)
+                force_world = contact.frame.reshape(3, 3).T @ contact_force[:3]
+                norm = float(np.linalg.norm(force_world))
+                if norm > 1e-9:
+                    end = contact.pos + min(0.06, 0.002 * norm) * force_world / norm
+                    counts["show_contact_forces"] += _add_connector(
+                        scene,
+                        start=contact.pos,
+                        end=end,
+                        width=0.004,
+                        rgba=(1.0, 0.15, 0.05, 0.9),
+                        arrow=True,
+                    )
+    if args.show_wrist_wrench and backend.last_control is not None:
+        origin = state["wrist_pose"][:3, 3]
+        wrench = backend.last_control.applied_wrench_world
+        for vector, scale, color in (
+            (wrench[:3], 0.003, (1.0, 0.2, 1.0, 0.95)),
+            (wrench[3:], 0.04, (0.2, 0.8, 1.0, 0.95)),
+        ):
+            norm = float(np.linalg.norm(vector))
+            if norm > 1e-9:
+                counts["show_wrist_wrench"] += _add_connector(
+                    scene,
+                    start=origin,
+                    end=origin + min(0.09, scale * norm) * vector / norm,
+                    width=0.005,
+                    rgba=color,
+                    arrow=True,
+                )
+    return counts
+
+
+def _annotate_frame(
+    frame: np.ndarray,
+    backend: WorldWristFingerBackend,
+    *,
+    policy_name: str,
+    reward: float | None,
+    reason: str | None,
+) -> np.ndarray:
+    from PIL import Image, ImageDraw
+
+    state = backend._state()  # noqa: SLF001 - visualization-only simulator read
+    index = backend.reference_index
+    reference = backend.reference
+    position_error_cm = 100.0 * float(
+        np.linalg.norm(state["wrist_pose"][:3, 3] - reference.wrist_pose_world_ref[index, :3, 3])
+    )
+    relative_rotation = (
+        state["wrist_pose"][:3, :3].T @ reference.wrist_pose_world_ref[index, :3, :3]
+    )
+    rotation_error_deg = float(
+        np.degrees(np.arccos(np.clip((np.trace(relative_rotation) - 1.0) * 0.5, -1.0, 1.0)))
+    )
+    object_error_cm = 100.0 * float(
+        np.linalg.norm(state["object_pose"][:3, 3] - reference.object_pose_world_ref[index, :3, 3])
+    )
+    lines = [
+        f"policy={policy_name}  frame={index}/{reference.frame_count - 1}",
+        f"wrist error: {position_error_cm:.3f} cm  {rotation_error_deg:.3f} deg",
+        f"object error: {object_error_cm:.3f} cm  contacts={backend.data.ncon}",
+    ]
+    if reward is not None:
+        lines.append(f"reward={reward:.4f}")
+    if reason is not None:
+        lines.append(f"termination={reason}")
+    image = Image.fromarray(frame)
+    draw = ImageDraw.Draw(image, "RGBA")
+    box_height = 18 * len(lines) + 12
+    draw.rectangle((8, 8, 450, 8 + box_height), fill=(0, 0, 0, 175))
+    for line_index, line in enumerate(lines):
+        draw.text((16, 14 + 18 * line_index), line, fill=(255, 255, 255, 255))
+    return np.asarray(image)
 
 
 def _headless(args: argparse.Namespace, backend: WorldWristFingerBackend, policy: Any) -> int:
@@ -195,16 +473,39 @@ def _headless(args: argparse.Namespace, backend: WorldWristFingerBackend, policy
     reason: str | None = None
     renderer: mujoco.Renderer | None = None
     renderer_error: Exception | None = None
+    overlay_counts = {name: 0 for name in OVERLAY_NAMES}
     try:
         renderer = mujoco.Renderer(backend.model, height=args.height, width=args.width)
         renderer_status = "mujoco_offscreen"
     except Exception as exc:  # noqa: BLE001 - renderer is an optional platform capability
         renderer_error = exc
         renderer_status = "PASS_WITH_LIMITATION_NUMERICAL_FALLBACK"
+    camera = _camera(backend, args)
+
+    def render_frame(step: int, reward: float | None) -> None:
+        if renderer is None:
+            return
+        renderer.update_scene(backend.data, camera=camera)
+        counts = _add_overlays(renderer.scene, backend, args)
+        for name, count in counts.items():
+            overlay_counts[name] += count
+        frame = _annotate_frame(
+            renderer.render().copy(),
+            backend,
+            policy_name=args.policy,
+            reward=reward,
+            reason=reason,
+        )
+        images.append(frame)
+        iio.imwrite(args.output_frames / f"frame_{step:04d}.png", frame)
+
+    render_frame(0, None)
     for step in range(args.max_steps):
         state = backend._state()  # noqa: SLF001 - renderer samples simulator state
         action = policy(state)
-        state, reward, reason = backend.transition(action)
+        state, reward, reason = backend.transition(
+            action, kinematic_object_diagnostic=args.kinematic_object_diagnostic
+        )
         index = backend.reference_index
         trace.append(
             {
@@ -230,11 +531,7 @@ def _headless(args: argparse.Namespace, backend: WorldWristFingerBackend, policy
                 ),
             }
         )
-        if renderer is not None:
-            renderer.update_scene(backend.data, camera=_camera(backend, args))
-            frame = renderer.render().copy()
-            images.append(frame)
-            iio.imwrite(args.output_frames / f"frame_{step:04d}.png", frame)
+        render_frame(step + 1, float(reward["total"]))
         if reason is not None:
             break
     if renderer is not None:
@@ -276,12 +573,21 @@ def _headless(args: argparse.Namespace, backend: WorldWristFingerBackend, policy
         plt.close(figure)
     if args.output_video is not None and images:
         args.output_video.parent.mkdir(parents=True, exist_ok=True)
-        iio.imwrite(args.output_video, np.asarray(images), fps=20)
+        iio.imwrite(args.output_video, np.asarray(images), fps=args.output_fps)
     _write_contact_sheet(images, args.output_frames / "contact_sheet.png")
     result = _summary(backend, images, reason, args) | {
         "renderer": renderer_status,
         "simulated_steps": len(trace),
         "numerical_trace": trace,
+        "output_fps": args.output_fps,
+        "duration_seconds": len(images) / args.output_fps if images else 0.0,
+        "overlays_rendered": overlay_counts,
+        "hud_rendered": bool(images),
+        "camera_fixed_for_rollout": True,
+        "kinematic_object_diagnostic": args.kinematic_object_diagnostic,
+        "renderer_error": None
+        if renderer_error is None
+        else f"{type(renderer_error).__name__}: {renderer_error}",
     }
     (args.output_frames / "visualization_summary.json").write_text(
         json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -313,7 +619,11 @@ def _interactive(args: argparse.Namespace, backend: WorldWristFingerBackend, pol
                 break
             started = time.monotonic()
             state = backend._state()  # noqa: SLF001 - viewer samples simulator state
-            _, _, reason = backend.transition(policy(state))
+            _, _, reason = backend.transition(
+                policy(state), kinematic_object_diagnostic=args.kinematic_object_diagnostic
+            )
+            viewer.user_scn.ngeom = 0
+            _add_overlays(viewer.user_scn, backend, args)
             viewer.sync()
             if reason is not None:
                 break
@@ -334,10 +644,19 @@ def main() -> int:
     parser.add_argument("--reference", required=True, type=Path)
     parser.add_argument("--object-mesh", required=True, type=Path)
     parser.add_argument("--controller-report", type=Path)
+    parser.add_argument("--action-scale-report", type=Path)
     parser.add_argument(
         "--scene-root", type=Path, default=Path(".local/visualize_stage16_world_wrist")
     )
     parser.add_argument("--policy", choices=("zero", "oracle", "ppo"), default="zero")
+    parser.add_argument(
+        "--kinematic-object-diagnostic",
+        action="store_true",
+        help=(
+            "render W2 with reference-driven object pose; never describe this as "
+            "free-object control"
+        ),
+    )
     parser.add_argument("--mode", choices=("interactive", "headless"), default="interactive")
     parser.add_argument("--start-frame", type=int, default=0)
     parser.add_argument("--deterministic", action="store_true")
@@ -354,6 +673,12 @@ def main() -> int:
     parser.add_argument("--camera", default="auto")
     parser.add_argument("--max-steps", type=int, default=45)
     parser.add_argument("--playback-fps", type=float, default=20.0)
+    parser.add_argument(
+        "--output-fps",
+        type=float,
+        default=20.0,
+        help="encoded MP4 frame rate; use 5 for a 4x slow-motion 20 Hz rollout",
+    )
     parser.add_argument("--close-on-complete", action="store_true")
     parser.add_argument("--output-video", type=Path)
     parser.add_argument("--output-frames", type=Path)
@@ -367,8 +692,8 @@ def main() -> int:
         parser.error("--output-frames is required with --mode headless")
     if args.policy == "ppo" and args.checkpoint is None:
         parser.error("--checkpoint is required with --policy ppo")
-    if args.max_steps < 1 or args.playback_fps <= 0.0:
-        parser.error("max-steps and playback-fps must be positive")
+    if args.max_steps < 1 or args.playback_fps <= 0.0 or args.output_fps <= 0.0:
+        parser.error("max-steps, playback-fps, and output-fps must be positive")
     reference = WorldWristFingerReferenceV1.from_npz(args.reference)
     if not 0 <= args.start_frame < reference.frame_count:
         parser.error("--start-frame is outside reference frame range")

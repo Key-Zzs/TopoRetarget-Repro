@@ -31,10 +31,10 @@ REPO = Path(__file__).resolve().parents[2]
 WUJI_MJCF = REPO / "third_party/robot_hands/wuji_hand2_beta1/mjcf/right.xml"
 
 IMPEDANCE_CANDIDATES = (
-    WristImpedanceProfileV1(100.0, 2.0, 5.0, 2.0, 25.0, 1.5),
-    WristImpedanceProfileV1(250.0, 1.0, 15.0, 1.0, 25.0, 1.5),
-    WristImpedanceProfileV1(500.0, 0.5, 30.0, 0.5, 50.0, 3.0),
-    WristImpedanceProfileV1(500.0, 2.0, 30.0, 2.0, 50.0, 3.0),
+    WristImpedanceProfileV1(250.0, 1.0, 0.1, 2.0, 25.0, 1.5),
+    WristImpedanceProfileV1(250.0, 1.0, 0.5, 1.0, 25.0, 1.5),
+    WristImpedanceProfileV1(250.0, 1.0, 1.0, 0.5, 25.0, 1.5),
+    WristImpedanceProfileV1(250.0, 1.0, 2.0, 0.5, 25.0, 1.5),
 )
 ACTION_SCALE_CANDIDATES = (
     WristFingerActionScaleV1(0.005, float(np.deg2rad(2.5)), 0.05),
@@ -70,6 +70,9 @@ class Episode:
     contact_frame: int | None
     contact_count: int
     mean_wrist_wrench_n: float
+    mean_wrist_torque_nm: float
+    wrist_force_saturation_fraction: float
+    wrist_torque_saturation_fraction: float
     wrist_wrench_saturation_fraction: float
     action_magnitude: float
 
@@ -85,8 +88,10 @@ def _episode(
     oracle = WorldWristFingerObjectAwareOracle() if policy == "oracle" else None
     contact_frame: int | None = None
     contact_count = 0
-    wrench_norms: list[float] = []
-    saturation: list[bool] = []
+    force_norms: list[float] = []
+    torque_norms: list[float] = []
+    force_saturation: list[bool] = []
+    torque_saturation: list[bool] = []
     actions: list[np.ndarray] = []
     reason: str | None = None
     for step in range(backend.reference.frame_count + 4):
@@ -111,13 +116,12 @@ def _episode(
         contact_count += int(contact["hand_object_contact_count"])
         if contact_frame is None and contact["hand_object_contact_count"]:
             contact_frame = step
-        if backend.last_control is not None:
-            wrench_norms.append(
-                float(np.linalg.norm(backend.last_control.applied_wrench_world[:3]))
-            )
-            saturation.append(
-                backend.last_control.force_saturated or backend.last_control.torque_saturated
-            )
+        for physics_row in backend.last_physics_trace:
+            wrench = np.asarray(physics_row["wrist_wrench_world"], dtype=np.float64)
+            force_norms.append(float(np.linalg.norm(wrench[:3])))
+            torque_norms.append(float(np.linalg.norm(wrench[3:])))
+            force_saturation.append(bool(physics_row["force_saturated"]))
+            torque_saturation.append(bool(physics_row["torque_saturated"]))
         if reason is not None:
             break
     if reason is None:
@@ -166,8 +170,19 @@ def _episode(
         ),
         contact_frame=contact_frame,
         contact_count=contact_count,
-        mean_wrist_wrench_n=float(np.mean(wrench_norms)) if wrench_norms else 0.0,
-        wrist_wrench_saturation_fraction=float(np.mean(saturation)) if saturation else 0.0,
+        mean_wrist_wrench_n=float(np.mean(force_norms)) if force_norms else 0.0,
+        mean_wrist_torque_nm=float(np.mean(torque_norms)) if torque_norms else 0.0,
+        wrist_force_saturation_fraction=float(np.mean(force_saturation))
+        if force_saturation
+        else 0.0,
+        wrist_torque_saturation_fraction=float(np.mean(torque_saturation))
+        if torque_saturation
+        else 0.0,
+        wrist_wrench_saturation_fraction=float(
+            np.mean(np.logical_or(force_saturation, torque_saturation))
+        )
+        if force_saturation
+        else 0.0,
         action_magnitude=float(np.mean(np.linalg.norm(action_array, axis=1)))
         if action_array.size
         else 0.0,
@@ -198,6 +213,13 @@ def _summary(rows: list[Episode]) -> dict[str, Any]:
         "contact_frames": [row.contact_frame for row in rows],
         "mean_contact_count": float(np.mean([row.contact_count for row in rows])),
         "mean_wrist_wrench_n": float(np.mean([row.mean_wrist_wrench_n for row in rows])),
+        "mean_wrist_torque_nm": float(np.mean([row.mean_wrist_torque_nm for row in rows])),
+        "wrist_force_saturation_fraction": float(
+            np.mean([row.wrist_force_saturation_fraction for row in rows])
+        ),
+        "wrist_torque_saturation_fraction": float(
+            np.mean([row.wrist_torque_saturation_fraction for row in rows])
+        ),
         "wrist_wrench_saturation_fraction": float(
             np.mean([row.wrist_wrench_saturation_fraction for row in rows])
         ),
@@ -260,6 +282,11 @@ def main() -> int:
     parser.add_argument("--report-root", required=True, type=Path)
     parser.add_argument("--formal-episodes", type=int, default=20)
     parser.add_argument("--seed", type=int, default=20260801)
+    parser.add_argument(
+        "--stop-after-w2",
+        action="store_true",
+        help="run world-reference validation and W2 wrist qualification only; never run oracle",
+    )
     args = parser.parse_args()
     if len(args.reference) != 2 or len(args.object_mesh) != 2:
         raise ValueError("Stage16B requires exactly two references and two object meshes")
@@ -320,7 +347,9 @@ def main() -> int:
         seed=args.seed,
     )
     controller_pass = all(
-        float(row["summary"]["wrist_position_error_cm"]) <= 2.0
+        float(row["summary"]["success_rate"]) == 1.0
+        and float(row["summary"]["final_reach_rate"]) == 1.0
+        and float(row["summary"]["wrist_position_error_cm"]) <= 2.0
         and float(row["summary"]["wrist_rotation_error_deg"]) <= 10.0
         and float(row["summary"]["wrist_wrench_saturation_fraction"]) < 0.5
         for row in selected_controller["clips"]
@@ -339,6 +368,32 @@ def main() -> int:
             "selected": selected_controller,
         },
     )
+    if args.stop_after_w2:
+        elapsed = time.monotonic() - started
+        w2_status = {
+            "engineering_extension": "WORLD_WRIST_FINGER_TRACKING_PROTOCOL",
+            "phase": "W2_dynamic_wrist_kinematic_object",
+            "world_reference": "STAGE16B_WORLD_REFERENCE_VALIDATED",
+            "wrist_controller": "STAGE16B_WRIST_CONTROL_VALIDATED"
+            if controller_pass
+            else "STAGE16B_WRIST_CONTROL_PARTIAL",
+            "oracle": "NOT_RUN_W2_GATE",
+            "oracle_authorized": controller_pass,
+            "stop_after_w2": True,
+            "wall_seconds": elapsed,
+        }
+        _write_json(args.report_root / "w2_qualification_status.json", w2_status)
+        _write_json(
+            args.report_root / "resource_usage.json",
+            {
+                "wall_seconds": elapsed,
+                "cpu_backend": "MuJoCo",
+                "peak_rss_mb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0,
+                "phase": "W2_only",
+            },
+        )
+        print(json.dumps(w2_status, sort_keys=True))
+        return 0 if controller_pass else 2
 
     w1_rows: list[dict[str, Any]] = []
     zero_rows: list[dict[str, Any]] = []

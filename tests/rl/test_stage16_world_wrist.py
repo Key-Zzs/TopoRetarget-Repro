@@ -16,6 +16,8 @@ from toporetarget.rl.environments.world_wrist_backend import (
     WristFingerActionScaleV1,
     WristImpedanceProfileV1,
     materialize_world_wrist_free_object_scene,
+    mujoco_freejoint_velocity_from_world_twist,
+    world_twist_from_mujoco_freejoint_velocity,
 )
 from toporetarget.rl.tracked_links import TRACKED_LINKS_WUJI_RH
 from toporetarget.rl.world_wrist import (
@@ -130,10 +132,44 @@ def test_quaternion_shortest_sign_and_se3_residual_controller() -> None:
         target_pose_world=target,
         target_twist_world=np.zeros(6),
         current_pose_world=np.eye(4),
-        current_twist_world=np.zeros(6),
+        current_freejoint_velocity=np.zeros(6),
     )
     assert np.linalg.norm(result.applied_wrench_world[:3]) <= 25.0
     assert np.linalg.norm(result.applied_wrench_world[3:]) <= 1.5
+
+
+def test_default_wrist_profile_stays_below_discrete_time_stability_ceiling() -> None:
+    profile = WristImpedanceProfileV1()
+    minimum_effective_inertia = 7.9e-4
+    physics_timestep_s = 0.01
+    discrete_natural_frequency = (
+        np.sqrt(profile.rotation_stiffness_nmprad / minimum_effective_inertia) * physics_timestep_s
+    )
+    assert discrete_natural_frequency < 0.6
+
+
+def test_world_twist_and_mujoco_freejoint_velocity_frame_contract() -> None:
+    pose = np.eye(4)
+    pose[:3, :3] = matrix_from_quaternion_wxyz(np.asarray([np.sqrt(0.5), 0.0, 0.0, np.sqrt(0.5)]))
+    world_twist = np.asarray([1.0, 2.0, 3.0, 0.2, -0.4, 0.6])
+    freejoint_velocity = mujoco_freejoint_velocity_from_world_twist(pose, world_twist)
+    assert freejoint_velocity[:3] == pytest.approx(world_twist[:3])
+    assert freejoint_velocity[3:] == pytest.approx(pose[:3, :3].T @ world_twist[3:])
+    assert world_twist_from_mujoco_freejoint_velocity(pose, freejoint_velocity) == pytest.approx(
+        world_twist
+    )
+
+    controller = CartesianWristImpedanceController(
+        WristImpedanceProfileV1(), wrist_mass_kg=1.0, wrist_inertia_kgm2=np.ones(3)
+    )
+    result = controller.compute(
+        target_pose_world=pose,
+        target_twist_world=world_twist,
+        current_pose_world=pose,
+        current_freejoint_velocity=freejoint_velocity,
+    )
+    assert result.linear_velocity_error_world_mps == pytest.approx(np.zeros(3))
+    assert result.angular_velocity_error_local_radps == pytest.approx(np.zeros(3))
 
 
 def test_world_backend_has_two_freejoints_26d_actions_and_clone_only_oracle(tmp_path: Path) -> None:
@@ -156,6 +192,13 @@ def test_world_backend_has_two_freejoints_26d_actions_and_clone_only_oracle(tmp_
     assert backend.action_dim == 26
     assert backend.wrist_qpos_address != backend.object_qpos_address
     assert backend.model_report()["formal_rollout_object_pose_write"] is False
+    expected_wrist_qvel = mujoco_freejoint_velocity_from_world_twist(
+        backend.reference.wrist_pose_world_ref[0], backend.reference.wrist_twist_world_ref[0]
+    )
+    assert backend.data.qvel[
+        backend.wrist_dof_address : backend.wrist_dof_address + 6
+    ] == pytest.approx(expected_wrist_qvel)
+    assert state["wrist_twist"] == pytest.approx(backend.reference.wrist_twist_world_ref[0])
     assert backend.observation(state).shape == (WorldWristObservationContractV1(20, 16).dimension,)
     snapshot = backend.snapshot()
     oracle = WorldWristFingerObjectAwareOracle()
