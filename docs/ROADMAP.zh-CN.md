@@ -61,6 +61,15 @@ gate 完成前不能把该阶段描述为完成或恢复批量运行。
 
 每阶段的 objective、major deliverables、definition of done 和 status 以英文路线图为准。
 
+## Stage 16-B world wrist-and-finger 工程扩展
+
+Stage 16-A 仍是保留的 paper/minimal、base-relative 20D finger residual profile；其 full-approach
+可控性证据保持不变。独立的 Stage 16-B 明确标记为 `ENGINEERING_EXTENSION`
+`WORLD_WRIST_FINGER_TRACKING_PROTOCOL`，分为 B.0 world reference export（已完成、有界）、B.1
+dynamic finite-wrench wrist controllability（有界阻断）、B.2 single-clip PPO（gate-blocked）、B.3
+two-clip PPO（gate-blocked）、B.4 full domain randomization（TODO）和 B.5 geometry/zero/PPO
+comparison（TODO）。它不等于真实机械臂控制、不用于 sim-to-real，也不能同论文 HO-Cap-32 结果直接比较。
+
 Wuji 三轨迹实现现已由通用 `workflow run-grab-suite` 提供；是否完成只由实验
 根目录下运行生成的 `final_status.json` 决定。
 ## W2.1 Wuji 连续性修复

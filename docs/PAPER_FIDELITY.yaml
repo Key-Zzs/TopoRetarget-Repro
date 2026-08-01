@@ -63,6 +63,22 @@ audit_contracts:
     assumptions: [A_STAGE16_SIMULATOR_001, A_STAGE16_TRACKED_LINKS_001, A_STAGE16_AXIS_POINTS_001, A_STAGE16_PD_001, A_STAGE16_PPO_UNLISTED_VALUES_001]
     evidence: [.local/reports/stage16_dynamic_coupling_v1_rerun1/final_summary.json, .local/reports/stage16_dynamic_coupling_v1_rerun1/step_b_contact_audit.json, .local/reports/stage16_dynamic_coupling_v1_rerun1/root_cause.json]
     notes: "PD isolation passes, but pre-gate hand-object contact/proximity is absent on both clips; object-aware oracle and shooting remain engineering diagnostics, not PPO or author-exact reproduction."
+  stage16b_world_wrist_finger_tracking:
+    profile: docs/rl/WORLD_WRIST_FINGER_TRACKING.md
+    label: ENGINEERING_EXTENSION
+    protocol: WORLD_WRIST_FINGER_TRACKING_PROTOCOL
+    status: STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE
+    preserves_stage16a_profile: paper_finger_only_base_relative_v1
+    paper_method: false
+    author_exact_control: unresolved
+    author_exact_simulator: unresolved
+    action: 6d_wrist_residual_plus_20d_finger_residual
+    finite_wrench_abstract_wrist: true
+    no_direct_object_control: true
+    ppo_started: false
+    assumptions: [A_STAGE16B_FREE_WRIST_001, A_STAGE16B_ZERO_GRAVITY_001, A_STAGE16B_WRIST_SAFETY_001]
+    evidence: [.local/reports/stage16_world_wrist_finger/final_summary.json, .local/reports/stage16_world_wrist_finger/oracle_evaluation.json]
+    notes: "Direct world reference export passed; dynamic wrist and clone-only 26D oracle remain blocked before PPO. This extension is not a real arm, sim-to-real, paper-controller, or HO-Cap-32 claim."
   stage7_1_warm_start_audit:
     profile: src/toporetarget/workflows/warm_start_audit.py
     formal_stage7_objective_unchanged: true

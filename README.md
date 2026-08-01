@@ -2,7 +2,7 @@
 
 ## Stage 16 status
 
-Stage 16.1 is `STAGE16_1_CONTROLLABILITY_BLOCKED`; Stage 16.2 is `NOT AUTHORIZED`. The Stage-16.1a A–E audit isolates PD as passing, then shows no hand–object contact or proximity at frames 0/5/10 on either approved HO-Cap clip—even with the shared 5%-range preload—while the free object breaches the unchanged 5 cm gate at frames 5–6. The resulting current-protocol root cause is `REFERENCE_DYNAMICAL_INFEASIBILITY` (fixed base, 20D finger action, and current collision/contact assumptions), not PPO failure. The frozen baseline is under `.local/archive/stage16_controllability_failure_baseline_20260801T060846Z_189b2f8/`; the corrected evidence is under `.local/reports/stage16_dynamic_coupling_v1_rerun1/`. Create the isolated environment with `conda env create -f environment.stage16.yml` and run `bash scripts/bootstrap_stage16_env.sh` for the documented setup.
+Stage 16-A remains the preserved paper/minimal, base-relative 20D finger-residual profile: its full-approach two-clip gate is `STAGE16_1_CONTROLLABILITY_BLOCKED`, not a PPO result. Stage 16-B is the separately labelled `ENGINEERING_EXTENSION` `WORLD_WRIST_FINGER_TRACKING_PROTOCOL`: it exports world wrist/object references and drives a free wrist with a finite 6D wrench plus 20D finger residuals. Its bounded result is `STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE`: world-reference validation passed, but the finite-wrench controller is partial and the 26D oracle fails wrist-orientation safety before PPO is allowed. The Stage-16A baseline is archived at `.local/archive/stage16_controllability_failure_baseline_20260801T100413Z_aeb0995/`; Stage-16B evidence is under `.local/reports/stage16_world_wrist_finger/`.
 
 [中文 README](README.zh-CN.md)
 
@@ -59,8 +59,9 @@ exact object-local BVH, certified sign reuse, compiled deterministic generalized
 full-surface audit, and CPU float64. It is an engineering backend, not the authors' specified
 backend and not a real-time production claim.
 
-Current boundaries: full ContactPose paper benchmark is **NOT_REPRODUCED**; Stage 16 is
-**CONTROLLABILITY_BLOCKED_WITH_BOUNDED_EVIDENCE** after a two-clip functional baseline, while
+Current boundaries: full ContactPose paper benchmark is **NOT_REPRODUCED**; preserved Stage 16-A is
+**CONTROLLABILITY_BLOCKED_WITH_BOUNDED_EVIDENCE**, and the separate Stage 16-B world-wrist extension is
+**STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE** before PPO, while
 HOCap-32 and Pen-Spin remain out of scope and
 paper tables/figures/seeds plus ARCTIC/OakInk2/TACO remain TODO. Real-time retargeting,
 cross-subject/full-dataset production validation, author-exact simulation, and paper-scale RL are
@@ -91,12 +92,46 @@ Detailed stage history and implementation notes are maintained in
 | 13 | Complex HOI adapters | DEFERRED | Add ARCTIC, OakInk2 and TACO; extend articulated-object, bimanual and SMPL-X hand extraction contracts. |
 | 14 | Universal robot-hand plugin validation | DEFERRED | Validate additional robot topologies and the full URDF/MJCF plugin capability matrix. |
 | 15 | Baselines and ablations | DEFERRED | Add fair OmniRetarget, Mink, DexPilot, GeoRT and relevant baseline comparisons. |
-| 16 | Reference-tracking PPO | 16.0 functional complete; 16.1 BLOCKED; 16.2/16.3 gate-blocked | Two approved clips are frozen. Frame-0 kinematic replay passes, but zero-residual and oracle free-object qualification fail the shared 5 cm object gate; no long PPO claim is made. |
+| 16-A | Paper/minimal reference tracking | 16.0 functional complete; 16.1 BLOCKED; 16.2/16.3 gate-blocked | Preserved base-relative, 20D finger-only profile. |
+| 16-B | `ENGINEERING_EXTENSION` world wrist-and-finger tracking | world reference validated; wrist/oracle blocked; PPO not started | 6D wrist residual plus 20D finger residual is a finite-wrench abstract wrist, not a real arm or a paper result. |
 | 17 | Paper experiment reproduction | TODO | Reproduce paper tables, figures, seeds, ContactPose benchmark and formal reports. |
 | 18 | Performance and v1.0 release | TODO | Establish production benchmarks, packaging, CI matrices and release criteria. |
 | 19 | Non-paper extensions | TODO | Keep MANO cleanup, SPIDER integration, penetration objectives and other extensions explicitly separated. |
 
 ## Stage-16 reference tracking commands
+
+### Stage 16-B world wrist-and-finger extension
+
+This is the separate, currently gate-blocked engineering extension. The actual
+qualification inputs are fixed and need no NAS path:
+
+```bash
+conda run -n toporetarget-rl python scripts/rl/qualify_stage16_world_wrist.py \
+  --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170105.world_wrist.stage16.npz \
+  --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170650.world_wrist.stage16.npz \
+  --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170105.obj \
+  --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170650.obj \
+  --scene-root .local/experiments/stage16_world_wrist_finger/qualification_replay \
+  --report-root .local/reports/stage16_world_wrist_finger/qualification_replay \
+  --formal-episodes 20
+```
+
+Use the same explicit files for a failure-evidence visualisation:
+
+```bash
+conda run -n toporetarget-rl python scripts/rl/visualize_hocap_world_wrist_policy_mujoco.py \
+  --policy zero --mode headless --start-frame 0 --deterministic \
+  --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170105.world_wrist.stage16.npz \
+  --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170105.obj \
+  --controller-report .local/reports/stage16_world_wrist_finger/rerun3_effective_inertia/wrist_controller_qualification.json \
+  --scene-root .local/experiments/stage16_world_wrist_finger/visual_replay \
+  --output-frames .local/reports/stage16_world_wrist_finger/visual/replay_170105 \
+  --output-video .local/reports/stage16_world_wrist_finger/visual/replay_170105.mp4
+```
+
+There is no Stage-16B PPO visualization command yet because the oracle gate
+failed and no checkpoint was produced; the trainer refuses to bypass that
+gate.
 
 The two approved inputs are fixed at:
 

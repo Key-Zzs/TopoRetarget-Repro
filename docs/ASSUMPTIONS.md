@@ -305,3 +305,22 @@ settings, and Pen-Spin data are not published. MuJoCo 3.3.6, fixed 5 cm axis
 points, a frozen palm-plus-finger link profile, and the listed PPO defaults are
 engineering assumptions. The implementation must report
 PAPER_PROTOCOL_REPRODUCTION_WITH_ASSUMPTIONS rather than author-exact results.
+
+## Stage 16-B world wrist-and-finger assumptions
+
+- `WORLD_WRIST_FINGER_TRACKING_PROTOCOL` is an `ENGINEERING_EXTENSION`; it
+  does not modify the preserved `paper_finger_only_base_relative_v1` profile.
+- The 6D wrist is a free MuJoCo body driven by a finite Cartesian wrench. It
+  is not a robot-arm model, calibration, torque controller, or sim-to-real
+  claim.
+- World wrist/object motion is exported directly from accepted Stage-12
+  `RobotReferenceV2` fields and resampled to 20 Hz. Quaternion convention is
+  active right-handed WXYZ with deterministic shortest-rotation sign.
+- The dynamic scene uses zero gravity, no synthetic ground, the original
+  derived object mesh, a 0.05 kg object, and a global finite-wrench profile.
+  These are engineering assumptions, not author-exact simulator details.
+- Formal post-reset rollout never writes object pose or velocity. W1
+  exogenous wrist playback and kinematic-object paths are diagnostics only.
+- 20 cm wrist-position and 90 degree wrist-orientation limits are safety
+  engineering gates. The reported oracle failure at that gate cannot be
+  relabelled as PPO failure.

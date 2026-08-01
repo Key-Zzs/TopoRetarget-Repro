@@ -416,3 +416,13 @@ The two accepted local dynamic references are retained as immutable Stage-16 inp
 HO-Cap data, retarget artifact, or reference array was changed by the diagnosis. HOCap protocol
 training/evaluation remains explicitly blocked by the Stage-16.1 gate. Pen-Spin remains
 `STAGE16_PENSPIN_DATA_UNAVAILABLE`; no surrogate data is used and no Table 2 result is claimed.
+
+## Stage 16-B world wrist-and-finger extension boundary
+
+`WORLD_WRIST_FINGER_TRACKING_PROTOCOL` is an `ENGINEERING_EXTENSION`, not an
+alternative interpretation of Appendix A.5. It preserves the Stage-16A
+finger-only contract and adds direct Stage-12 world wrist motion, an abstract
+finite-wrench free wrist, a 6D wrist residual, world-frame features, and
+wrist-relative reconstructions. The 26D H=1/5/10 oracle is a gate diagnostic,
+not PPO. Current results are `STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE` before
+PPO, with no paper result, sim-to-real result, or HO-Cap-32 comparison claimed.

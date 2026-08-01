@@ -1,5 +1,30 @@
 # Stage 16 — Reference-Tracking PPO
 
+## Stage 16-B world wrist-and-finger engineering extension
+
+Stage 16-A below is retained unchanged as the paper-oriented, base-relative,
+finger-only profile (`paper_finger_only_base_relative_v1`). Stage 16-B is a
+separate `ENGINEERING_EXTENSION` named `WORLD_WRIST_FINGER_TRACKING_PROTOCOL`.
+It exports Stage-12's world wrist trajectory, models the wrist as a dynamic
+free body driven by a finite Cartesian wrench, and appends its six residual
+degrees of freedom to the preserved 20 finger residuals. It is neither the
+paper's minimal RL controller nor a model of a physical robot arm.
+
+The current Stage 16-B outcome is `STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE`.
+Both direct 20 Hz world-reference exports validate, but the selected globally
+shared impedance profile is `STAGE16B_WRIST_CONTROL_PARTIAL` and the clone-only
+26D H=1/5/10 oracle reaches `STAGE16B_26D_ORACLE_BLOCKED` on both clips. It
+triggers `FAILURE_WRIST_ORIENTATION_SAFETY` with saturated finite wrenches
+before a PPO gate can open. Single-clip and two-clip PPO are therefore
+`STAGE16B_SINGLE_CLIP_PPO_BLOCKED` and `STAGE16B_TWO_CLIP_PPO_BLOCKED`; no
+Stage-16B checkpoint exists or is claimed.
+
+The direct sources, generated references, and bounded report suite are all
+ignored under `.local/`. The preserved Stage-16A baseline is archived at
+`.local/archive/stage16_controllability_failure_baseline_20260801T100413Z_aeb0995/`;
+the Stage-16B closeout is rooted at `.local/reports/stage16_world_wrist_finger/`.
+The complete contract is [WORLD_WRIST_FINGER_TRACKING.md](../rl/WORLD_WRIST_FINGER_TRACKING.md).
+
 Stage 13 (additional dataset adapters), Stage 14 (robot plugin matrix), and Stage 15 (complete baseline matrix) are deliberately `DEFERRED`. This branch implements only the TopoRetarget reference-tracking PPO protocol from Appendix A.5.
 
 ## Stage 16.1–16.3 current closeout

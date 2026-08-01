@@ -2,7 +2,7 @@
 
 ## Stage 16 状态
 
-Stage 16.1 当前为 `STAGE16_1_CONTROLLABILITY_BLOCKED`，Stage 16.2 为 `NOT AUTHORIZED`。Stage-16.1a A–E 审计先隔离确认 PD 通过；随后在两条批准的 HO-Cap clip 的第 0/5/10 帧均发现没有手物接触或近接，即使使用共享的 5% joint-range preload 也是如此，而 free object 会在保持不变的 5 cm gate 的第 5–6 帧越界。因此当前协议下的根因是 `REFERENCE_DYNAMICAL_INFEASIBILITY`（fixed base、20D finger action 与当前 collision/contact 假设），而不是 PPO 失败。冻结基线位于 `.local/archive/stage16_controllability_failure_baseline_20260801T060846Z_189b2f8/`；修正后的证据位于 `.local/reports/stage16_dynamic_coupling_v1_rerun1/`。环境命令：`conda env create -f environment.stage16.yml`，推荐执行 `bash scripts/bootstrap_stage16_env.sh`。
+Stage 16-A 保留为论文 minimal、base-relative 的 20D finger residual profile：完整 approach 的两条 clip gate 为 `STAGE16_1_CONTROLLABILITY_BLOCKED`，这不是 PPO 结果。Stage 16-B 是明确标注的 `ENGINEERING_EXTENSION` `WORLD_WRIST_FINGER_TRACKING_PROTOCOL`：它导出 world wrist/object reference，并用有限 wrench 的 free wrist 6D residual 加 20D finger residual 驱动。当前有界结果为 `STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE`：world reference 已通过，但有限 wrench controller 仅 partial，26D oracle 在允许 PPO 前已触发 wrist-orientation safety。Stage-16A 基线位于 `.local/archive/stage16_controllability_failure_baseline_20260801T100413Z_aeb0995/`，Stage-16B 证据位于 `.local/reports/stage16_world_wrist_finger/`。
 
 [English README](README.md)
 
@@ -55,8 +55,8 @@ manifest。当前推荐的离线 reference 后端是
 exact object-local BVH、认证式 sign reuse、compiled deterministic generalized winding、strict
 full-surface audit 与 CPU float64。它是工程后端，不声称是作者指定的后端，也不代表实时生产能力。
 
-当前边界：完整 ContactPose 论文 benchmark 为 **NOT_REPRODUCED**；Stage 16 在两条功能性
-clip 的可控性验收处于 **CONTROLLABILITY_BLOCKED_WITH_BOUNDED_EVIDENCE**，HOCap-32 与 Pen-Spin 均不在本次范围内，完整论文
+当前边界：完整 ContactPose 论文 benchmark 为 **NOT_REPRODUCED**；保留的 Stage 16-A 在两条功能性
+clip 的可控性验收处于 **CONTROLLABILITY_BLOCKED_WITH_BOUNDED_EVIDENCE**，独立的 Stage 16-B world-wrist 扩展处于 **STAGE16B_BLOCKED_WITH_BOUNDED_EVIDENCE**，HOCap-32 与 Pen-Spin 均不在本次范围内，完整论文
 tables/figures/seeds 以及 ARCTIC/OakInk2/TACO 仍为 TODO；不声称实时重定向、跨 subject/全数据集
 生产验证、作者精确模拟器或论文规模 RL。
 
@@ -84,7 +84,8 @@ tables/figures/seeds 以及 ARCTIC/OakInk2/TACO 仍为 TODO；不声称实时重
 | 13 | 复杂 HOI adapter | DEFERRED | 加入 ARCTIC、OakInk2、TACO；扩展 articulated-object、bimanual 与 SMPL-X hand extraction contract。 |
 | 14 | 通用机器人手 plugin 验证 | DEFERRED | 验证更多机器人拓扑与完整 URDF/MJCF plugin 能力矩阵。 |
 | 15 | baseline 与消融 | DEFERRED | 加入公平的 OmniRetarget、Mink、DexPilot、GeoRT 及相关 baseline 对比。 |
-| 16 | reference-tracking PPO | 16.0 功能完成；16.1 BLOCKED；16.2/16.3 被 gate 阻断 | 两条 clip 已冻结；kinematic replay 通过，但 zero-residual/oracle free-object 验收未通过，不声称长期 PPO 或论文结果。 |
+| 16-A | paper/minimal reference tracking | 16.0 功能完成；16.1 BLOCKED；16.2/16.3 被 gate 阻断 | 保留的 base-relative、20D finger-only profile。 |
+| 16-B | `ENGINEERING_EXTENSION` world wrist-and-finger tracking | world reference 已验证；wrist/oracle 阻断；PPO 未启动 | 6D wrist residual + 20D finger residual 是抽象有限 wrench wrist，不是实际机械臂或论文结果。 |
 | 17 | 论文实验复现 | TODO | 复现论文 tables、figures、seeds、ContactPose benchmark 与正式报告。 |
 | 18 | 性能与 v1.0 发布 | TODO | 建立 production benchmark、打包、CI 矩阵与发布标准。 |
 | 19 | 非论文扩展 | TODO | 将 MANO cleanup、SPIDER integration、penetration objective 等扩展明确隔离。 |
@@ -93,6 +94,23 @@ tables/figures/seeds 以及 ARCTIC/OakInk2/TACO 仍为 TODO；不声称实时重
 objective、cross-trajectory profile selection——不阻塞阶段 13。
 
 ## Stage-16 reference tracking 命令
+
+### Stage 16-B world wrist-and-finger 工程扩展
+
+这是独立且当前被 gate 阻断的工程扩展；以下是无需 NAS 路径的实际 qualification 输入：
+
+```bash
+conda run -n toporetarget-rl python scripts/rl/qualify_stage16_world_wrist.py \
+  --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170105.world_wrist.stage16.npz \
+  --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170650.world_wrist.stage16.npz \
+  --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170105.obj \
+  --object-mesh .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170650.obj \
+  --scene-root .local/experiments/stage16_world_wrist_finger/qualification_replay \
+  --report-root .local/reports/stage16_world_wrist_finger/qualification_replay \
+  --formal-episodes 20
+```
+
+当前没有 Stage-16B PPO 可视化命令：oracle gate 失败且没有 checkpoint；trainer 会拒绝绕过该 gate。
 
 两条批准输入固定在 `.local/stage16_reference_tracking_ppo/`。可控性验收命令如下；当前真实结果为 `STAGE16_1_CONTROLLABILITY_BLOCKED`：
 
