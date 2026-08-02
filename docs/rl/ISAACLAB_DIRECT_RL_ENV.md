@@ -11,9 +11,11 @@ hardware-control, sim-to-real, oracle, or PPO result.
 - One 26-D action: `[0:3]` local wrist translation at 0.01 m, `[3:6]` local
   SO(3) logarithm residual at 5 degrees, and `[6:26]` canonical finger residuals
   scaled to 10 percent of each range. The canonical-to-Isaac mapping is explicit.
-- Global Cartesian wrist wrench: translational stiffness/damping 250 N/m/1.0,
-  rotational 2 Nm/rad/0.5, force limit 25 N, torque limit 1.5 Nm, and reference
-  twist feed-forward 1.0. Finger drive settings are stated in the control YAML.
+- The wrist target is interpolated at every 120 Hz physics substep from the
+  preserved 20 Hz keys (Hermite translation, shortest-arc SLERP rotation).
+  Wrenches are refreshed through Isaac Lab's instantaneous composer every
+  substep. Finite impedance and computed-wrench profiles are implementation
+  candidates, not a C.3-qualified controller.
 - Zero gravity, no ground or support, active object mass 0.05 kg. Observations
   are world-frame at the documented 0/1/3/5 reference offsets; root quaternion
   is Isaac's `wxyz`, and root velocities are world-frame.
@@ -49,8 +51,14 @@ conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
 
 ## Gate boundary
 
-C.3 is `STAGE16C3_SEMANTIC_QUALIFICATION_PARTIAL`, not a qualified PhysX
-semantic/contact result. It records diagnostic wrist errors above 2 cm/10
-degrees and no direct all-hand contact-pair/impulse proof. C.4 vector
-qualification and C.5 oracle are therefore `NOT_RUN_GATE_BLOCKED_BY_C3`; C.6
-PPO is not authorized, with zero samples and zero checkpoints.
+C.3 is `STAGE16C3_WRIST_AND_CONTACT_QUALIFICATION_BLOCKED`, not a qualified
+PhysX semantic/contact result. A baseline-subtracted signed 6-D live PhysX
+probe passes, ruling out a simple world/local or sign inversion. F0/F1/F2
+effective-response probes show coupled articulated dynamics, but their static
+F2 matrix does not stabilize the trajectory. The best shared 10-step profile
+still reaches 3.35 cm/23.00 degrees; the 100 N/6 Nm profile reaches 8.53 cm
+and saturates 83.3% of substeps. The full 21-body sensor inventory is resolved,
+but no all-hand collection trace was produced, so contact causality is not
+claimed. C.4/C.5 are `NOT_RUN_GATE_BLOCKED_BY_C3`; C.6 PPO is not authorized,
+with zero samples and zero checkpoints. See `ISAACLAB_WRIST_DYNAMICS.md` and
+`ISAACLAB_CONTACT_CAUSALITY.md`.

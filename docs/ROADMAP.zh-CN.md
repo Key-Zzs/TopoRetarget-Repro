@@ -78,8 +78,9 @@ Stage 16-C 路线为：C.0 Isaac Lab platform qualification 已在全部硬 gate
 资产迁移已完成真实 PhysX/CUDA、具名接触对及 1/128-env 验证，精确状态为
 `STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED`。C.2 入口已授权为
 `STAGE16C2_DIRECT_RL_ENV_VALIDATED`，真实 GPU 的 1-env、交替 clip 与
-128-env/1000-step smoke 均通过；C.3 为 PARTIAL（wrist 2 cm/10 度诊断界限失败，
-且 contact proof 缺失），所以 C.4 GPU vectorization 和 C.5 PhysX Oracle 均不得运行，
+128-env/1000-step smoke 均通过；C.3 为 BLOCKED：带符号的六轴 probe 通过，但共享
+wrist dynamics 仍未达到 2 cm/10 度（最终 41-step 为 3.35 cm/23.00 度），且 all-hand contact
+causality 未验证。因此 C.4 GPU vectorization 和 C.5 PhysX Oracle 均不得运行，
 C.6 single-clip GPU PPO 未获授权（0 样本、0 checkpoint）。C.7 two-clip GPU PPO、
 C.8 dynamics randomization、C.9 geometry/MuJoCo/Isaac/PPO comparison 均为 TODO。
 MuJoCo 不删除，继续负责 correctness、
@@ -90,7 +91,7 @@ MuJoCo Oracle 不能直接授权 Isaac Lab PPO。当前尚未实现任何 Isaac 
 Stage 16-C.0 将独立平台栈冻结为 Python 3.11.15、Isaac Sim 5.1.0、Isaac Lab v2.3.2
 （精确 commit `37ddf626871758333d6ed89cf64ad702aef127d0`）与 Torch 2.7.0 cu128。
 其资格范围仅包括 host/install/import、有限步官方 GPU-PhysX、headless、viewer 与 128 环境证据。
-C.2 已验证但 C.3 为 PARTIAL；C.4/C.5 被前置 gate 阻断，C.0/C.1/C.2 本身都不能授权 PPO。C.1 使用浮动基座 Wuji
+C.2 已验证但 C.3 已阻断；C.4/C.5 被前置 gate 阻断，C.0/C.1/C.2 本身都不能授权 PPO。C.1 使用浮动基座 Wuji
 Hand2 Beta1、两个冻结 HO-Cap free rigid object、确定性凸包代理，并验证 CUDA tensor、
 128 个唯一环境原点与子集复位。无 DISPLAY 的交互 visual review 是软限制。
 

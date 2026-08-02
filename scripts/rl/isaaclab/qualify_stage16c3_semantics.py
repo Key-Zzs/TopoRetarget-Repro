@@ -19,6 +19,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--steps", type=int, default=41)
     parser.add_argument("--accept-eula", action="store_true")
     parser.add_argument(
+        "--wrist-controller-mode",
+        choices=("wrist_impedance_v1", "computed_wrench_v2", "effective_dynamics_v3"),
+        default="effective_dynamics_v3",
+    )
+    parser.add_argument("--force-limit-n", type=float)
+    parser.add_argument("--torque-limit-nm", type=float)
+    parser.add_argument("--translation-position-gain-s2", type=float)
+    parser.add_argument("--rotation-position-gain-s2", type=float)
+    parser.add_argument("--v1-translation-stiffness-npm", type=float)
+    parser.add_argument("--v1-rotation-stiffness-nmprad", type=float)
+    parser.add_argument("--v1-translation-damping-ratio", type=float)
+    parser.add_argument("--v1-rotation-damping-ratio", type=float)
+    parser.add_argument("--v1-force-limit-n", type=float)
+    parser.add_argument("--v1-torque-limit-nm", type=float)
+    parser.add_argument("--collect-wrist-diagnostics", action="store_true")
+    parser.add_argument("--collect-contact-telemetry", action="store_true")
+    parser.add_argument(
         "--output",
         type=Path,
         default=REPO_ROOT / ".local/reports/stage16c2_c5_isaaclab/c3_semantic_qualification.json",
@@ -44,7 +61,10 @@ def run_clip(
         "object_position_m": 0.0,
         "object_axis_m": 0.0,
         "object_rotation_deg": 0.0,
+        "force_saturation_ratio": 0.0,
+        "torque_saturation_ratio": 0.0,
     }
+    squared_errors = {"wrist_position_m": 0.0, "wrist_rotation_deg": 0.0}
     failures: dict[str, int] = {}
     completed = 0
     for _ in range(steps):
@@ -56,6 +76,21 @@ def run_clip(
         maxima["wrist_rotation_deg"] = max(
             maxima["wrist_rotation_deg"],
             tensor_value(values["wrist_orientation_error_rad"].amax()) * 180.0 / 3.141592653589793,
+        )
+        squared_errors["wrist_position_m"] += tensor_value(
+            values["wrist_position_error_m"].square().mean()
+        )
+        squared_errors["wrist_rotation_deg"] += (
+            tensor_value(values["wrist_orientation_error_rad"].square().mean())
+            * (180.0 / 3.141592653589793) ** 2
+        )
+        maxima["force_saturation_ratio"] = max(
+            maxima["force_saturation_ratio"],
+            tensor_value(values["force_saturation_ratio"].amax()),
+        )
+        maxima["torque_saturation_ratio"] = max(
+            maxima["torque_saturation_ratio"],
+            tensor_value(values["torque_saturation_ratio"].amax()),
         )
         maxima["object_position_m"] = max(
             maxima["object_position_m"], tensor_value(values["object_position_error_m"].amax())
@@ -82,6 +117,7 @@ def run_clip(
         "steps": steps,
         "completed_episodes": completed,
         "maxima": maxima,
+        "rmse": {key: (value / steps) ** 0.5 for key, value in squared_errors.items()},
         "terminal_reasons": failures,
         "finite": bool(torch.isfinite(env._get_observations()["policy"]).all()),
     }
@@ -149,6 +185,29 @@ def main() -> int:
         cfg = IsaacWorldWristFingerDirectRLEnvCfg()
         cfg.scene.num_envs = 1
         cfg.balanced_clip_assignment = False
+        cfg.wrist_controller_mode = args.wrist_controller_mode
+        cfg.collect_wrist_diagnostics = args.collect_wrist_diagnostics
+        cfg.collect_contact_telemetry = args.collect_contact_telemetry
+        if args.force_limit_n is not None:
+            cfg.wrist_force_limit_n = args.force_limit_n
+        if args.torque_limit_nm is not None:
+            cfg.wrist_torque_limit_nm = args.torque_limit_nm
+        if args.translation_position_gain_s2 is not None:
+            cfg.wrist_translation_position_gain_s2 = args.translation_position_gain_s2
+        if args.rotation_position_gain_s2 is not None:
+            cfg.wrist_rotation_position_gain_s2 = args.rotation_position_gain_s2
+        if args.v1_translation_stiffness_npm is not None:
+            cfg.wrist_v1_translation_stiffness_npm = args.v1_translation_stiffness_npm
+        if args.v1_rotation_stiffness_nmprad is not None:
+            cfg.wrist_v1_rotation_stiffness_nmprad = args.v1_rotation_stiffness_nmprad
+        if args.v1_translation_damping_ratio is not None:
+            cfg.wrist_v1_translation_damping_ratio = args.v1_translation_damping_ratio
+        if args.v1_rotation_damping_ratio is not None:
+            cfg.wrist_v1_rotation_damping_ratio = args.v1_rotation_damping_ratio
+        if args.v1_force_limit_n is not None:
+            cfg.wrist_v1_force_limit_n = args.v1_force_limit_n
+        if args.v1_torque_limit_nm is not None:
+            cfg.wrist_v1_torque_limit_nm = args.v1_torque_limit_nm
         env = IsaacWorldWristFingerDirectRLEnv(cfg)
         env.reset(seed=20260802)
         kinematic = []
@@ -181,11 +240,30 @@ def main() -> int:
             for result in kinematic
         )
         free_finite = all(result["finite"] for result in free)
-        # No contact sensor/contact-pair proof exists yet.  This is intentionally
-        # a fail-closed C.3 result rather than a claim based on object velocity.
+        contact_trace_available = args.collect_contact_telemetry and bool(
+            env.contact_substep_records
+        )
+        c3_status = (
+            "STAGE16C3_WRIST_DYNAMIC_TRACKING_BLOCKED"
+            if not kinematic_pass
+            else (
+                "STAGE16C3_CONTACT_CAUSALITY_BLOCKED"
+                if not contact_trace_available
+                else "STAGE16C3_SEMANTIC_QUALIFICATION_PENDING_ANALYSIS"
+            )
+        )
+        c3_blocker = (
+            "C3_WRIST_DYNAMIC_TRACKING_EXCEEDS_2CM_10DEG"
+            if not kinematic_pass
+            else (
+                "C3_CONTACT_DRIVEN_RESPONSE_EVIDENCE_NOT_YET_IMPLEMENTED"
+                if not contact_trace_available
+                else "C3_CONTACT_TRACE_REQUIRES_CAUSALITY_AUDIT"
+            )
+        )
         result = {
-            "status": "STAGE16C3_SEMANTIC_QUALIFICATION_PARTIAL",
-            "blocker": "C3_CONTACT_DRIVEN_RESPONSE_EVIDENCE_NOT_YET_IMPLEMENTED",
+            "status": c3_status,
+            "blocker": c3_blocker,
             "reference_artifact_contract": {
                 "status": "VALIDATED",
                 "clips": list(env.reference_bank.clip_ids),
@@ -209,23 +287,90 @@ def main() -> int:
             },
             "basis_actions": basis,
             "mujoco_trace_replay": {
-                "status": "NOT_RUN_GATE_BLOCKED_BY_C3_CONTACT_EVIDENCE",
+                "status": "NOT_RUN_GATE_BLOCKED_BY_C3",
                 "reason": (
                     "PhysX action-trace replay is not evaluated as semantic acceptance "
-                    "without contact proof"
+                    "until the C.3 wrist and contact gates pass"
                 ),
             },
             "contact": {
-                "status": "NOT_PROVEN",
-                "reason": "No all-hand contact-pair/impulse sensor is wired into the C.2 scene",
+                "status": "CAPTURED_NOT_YET_ANALYZED"
+                if contact_trace_available
+                else "NOT_CAPTURED",
+                "reason": (
+                    "All-hand contact telemetry was written and awaits causal analysis."
+                    if contact_trace_available
+                    else (
+                        "Run with --collect-contact-telemetry for substep pair/force/"
+                        "impulse capture."
+                    )
+                ),
+                "sensor_contract": env.contact_sensor_contract(),
+                "hand_collision_inventory": env.hand_collision_inventory(),
+                "substep_record_count": len(env.contact_substep_records),
+            },
+            "wrist_controller": {
+                "mode": cfg.wrist_controller_mode,
+                "force_limit_n": (
+                    env.wrist_controller.profile.force_limit_n
+                    if cfg.wrist_controller_mode == "wrist_impedance_v1"
+                    else (
+                        env.wrist_controller_v2.profile.force_limit_n
+                        if cfg.wrist_controller_mode == "computed_wrench_v2"
+                        else env.wrist_controller_v3.profile.force_limit_n
+                    )
+                ),
+                "torque_limit_nm": (
+                    env.wrist_controller.profile.torque_limit_nm
+                    if cfg.wrist_controller_mode == "wrist_impedance_v1"
+                    else (
+                        env.wrist_controller_v2.profile.torque_limit_nm
+                        if cfg.wrist_controller_mode == "computed_wrench_v2"
+                        else env.wrist_controller_v3.profile.torque_limit_nm
+                    )
+                ),
+                "translation_position_gain_s2": cfg.wrist_translation_position_gain_s2,
+                "rotation_position_gain_s2": cfg.wrist_rotation_position_gain_s2,
+                "v1_profile": {
+                    "translation_stiffness_npm": (
+                        env.wrist_controller.profile.translation_stiffness_npm
+                    ),
+                    "translation_damping_ratio": (
+                        env.wrist_controller.profile.translation_damping_ratio
+                    ),
+                    "rotation_stiffness_nmprad": (
+                        env.wrist_controller.profile.rotation_stiffness_nmprad
+                    ),
+                    "rotation_damping_ratio": (env.wrist_controller.profile.rotation_damping_ratio),
+                },
+                "substep_diagnostic_record_count": len(env.wrist_diagnostic_records),
             },
             "contract": contract,
         }
         args.output.parent.mkdir(parents=True, exist_ok=True)
+        if args.collect_wrist_diagnostics:
+            wrist_path = args.output.with_name(f"{args.output.stem}_wrist_substeps.json")
+            wrist_path.write_text(
+                json.dumps(env.wrist_diagnostic_records, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            result["wrist_controller"]["substep_diagnostics_path"] = str(wrist_path)
+        if args.collect_contact_telemetry:
+            contact_path = args.output.with_name(f"{args.output.stem}_contact_substeps.jsonl")
+            contact_path.write_text(
+                "".join(
+                    json.dumps(record, sort_keys=True) + "\n"
+                    for record in env.contact_substep_records
+                ),
+                encoding="utf-8",
+            )
+            result["contact"]["substep_trace_path"] = str(contact_path)
         args.output.write_text(
             json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
         print(json.dumps(result, sort_keys=True))
+        # This runner is a qualification collector. A contact trace still
+        # requires the independent causal audit before C.3 can authorize C.4.
         return 1
     finally:
         if env is not None:

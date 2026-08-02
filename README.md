@@ -75,10 +75,13 @@ Generated USDs and reports remain ignored under `.local/`. C.2 is now
 `STAGE16C2_DIRECT_RL_ENV_VALIDATED`: a real GPU `DirectRLEnv` passes 1-env,
 alternating-clip, and 128-env/1000-step finite smokes with no object rollout
 state write or wrist teleport. C.3 is deliberately
-`STAGE16C3_SEMANTIC_QUALIFICATION_PARTIAL`: dynamic wrist tracking misses its
-2 cm/10 degree diagnostic bound and all-hand contact-pair/impulse proof is not
-wired. Therefore C.4 vector qualification and C.5 PhysX oracle are blocked;
-C.6 PPO is not authorized and no samples/checkpoints exist. See the
+`STAGE16C3_WRIST_AND_CONTACT_QUALIFICATION_BLOCKED`: a signed world-frame
+6-D PhysX basis passes, but the final shared 41-step wrist profile reaches
+3.35 cm/23.00 degrees against the 2 cm/10 degree gate; the high-authority
+profile is worse and saturates. The 21-body contact inventory resolves, but
+its all-hand collection path has no valid runtime trace, so contact causality
+is not claimed. Therefore C.4/C.5 are not run and C.6 PPO is not authorized
+with zero samples/checkpoints. See the
 [DirectRLEnv contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md) and
 [the asset migration contract](docs/rl/ISAACLAB_ASSET_MIGRATION.md).
 

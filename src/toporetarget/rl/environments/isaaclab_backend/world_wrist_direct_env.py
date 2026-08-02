@@ -9,11 +9,13 @@ from contact with the free rigid body.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 
 import isaaclab.sim as sim_utils
 import torch
 from isaaclab.assets import Articulation, RigidObject
 from isaaclab.envs import DirectRLEnv
+from isaaclab.sensors import ContactSensorCfg
 
 from .action_adapter import Stage16ActionAdapter
 from .reference_bank import WorldWristReferenceBank, quaternion_to_matrix_wxyz
@@ -22,7 +24,43 @@ from .scene_frame import Stage16CSceneFrameContractV1, global_to_scene, scene_to
 from .tensor_math import apply_local_residual, relative_rotation_log_local
 from .termination_terms import TERMINATION_REASONS, Stage16TerminationProfileV1, stage16_termination
 from .world_wrist_direct_env_cfg import IsaacWorldWristFingerDirectRLEnvCfg
-from .wrist_controller import IsaacCartesianWristImpedanceController
+from .wrist_controller import (
+    ArticulatedHandCompositeInertiaEstimator,
+    IsaacCartesianWristImpedanceController,
+    IsaacComputedWrenchWristControllerV2,
+    IsaacComputedWrenchWristProfileV2,
+    IsaacEffectiveDynamicsWristControllerV3,
+    IsaacEffectiveDynamicsWristProfileV3,
+    IsaacWristImpedanceProfileV1,
+    PhysicsSubstepWristTargetInterpolator,
+)
+
+# These are the C.1-generated collision-bearing links.  Runtime construction
+# verifies every configured sensor resolves to exactly one body; virtual tip
+# links are intentionally absent because they have no generated collision mesh.
+HAND_COLLISION_BODY_NAMES = (
+    "r_wrist",
+    "r_index_finger_proximal",
+    "r_index_finger_proximal_abd",
+    "r_index_finger_middle",
+    "r_index_finger_distal",
+    "r_middle_finger_proximal",
+    "r_middle_finger_proximal_abd",
+    "r_middle_finger_middle",
+    "r_middle_finger_distal",
+    "r_pinky_proximal",
+    "r_pinky_proximal_abd",
+    "r_pinky_middle",
+    "r_pinky_distal",
+    "r_ring_finger_proximal",
+    "r_ring_finger_proximal_abd",
+    "r_ring_finger_middle",
+    "r_ring_finger_distal",
+    "r_thumb_proximal",
+    "r_thumb_proximal_abd",
+    "r_thumb_middle",
+    "r_thumb_distal",
+)
 
 
 class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
@@ -33,9 +71,21 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
     def __init__(
         self, cfg: IsaacWorldWristFingerDirectRLEnvCfg, render_mode: str | None = None, **kwargs
     ):
+        self._install_full_hand_contact_sensors(cfg)
         super().__init__(cfg, render_mode, **kwargs)
         self.scene_frame_contract = Stage16CSceneFrameContractV1()
         self.reference_bank = WorldWristReferenceBank(cfg.reference_paths, device=self.device)
+        self._hand_contact_sensors = {
+            body_name: self.scene[f"hand_object_contact_{body_name}"]
+            for body_name in HAND_COLLISION_BODY_NAMES
+        }
+        unresolved = {
+            body_name: sensor.body_names
+            for body_name, sensor in self._hand_contact_sensors.items()
+            if sensor.num_bodies != 1 or sensor.body_names != [body_name]
+        }
+        if unresolved:
+            raise RuntimeError(f"C3_CONTACT_SENSOR_COVERAGE_FAILURE: {unresolved}")
         self._joint_ids = [
             self._robot.joint_names.index(name) for name in self.reference_bank.joint_order
         ]
@@ -58,15 +108,48 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             joint_upper=upper,
         )
         self.joint_lower, self.joint_upper = lower, upper
-        masses = self._robot.data.default_mass.to(self.device)
-        inertia = self._robot.data.default_inertia.to(self.device)
-        wrist_mass = masses.sum(dim=1)
-        wrist_inertia = torch.stack(
-            (inertia[..., 0].sum(dim=1), inertia[..., 4].sum(dim=1), inertia[..., 8].sum(dim=1)),
-            dim=-1,
+        self._link_masses_kg = self._robot.data.default_mass.to(self.device).clone()
+        self._link_inertia_kgm2 = (
+            self._robot.data.default_inertia.to(self.device)
+            .reshape(self.num_envs, self._robot.num_bodies, 3, 3)
+            .clone()
         )
+        wrist_mass = self._link_masses_kg.sum(dim=1)
+        wrist_inertia = torch.diagonal(self._link_inertia_kgm2.sum(dim=1), dim1=-2, dim2=-1)
         self.wrist_controller = IsaacCartesianWristImpedanceController(
-            mass_kg=wrist_mass, inertia_kgm2=wrist_inertia
+            mass_kg=wrist_mass,
+            inertia_kgm2=wrist_inertia,
+            profile=IsaacWristImpedanceProfileV1(
+                translation_stiffness_npm=cfg.wrist_v1_translation_stiffness_npm,
+                translation_damping_ratio=cfg.wrist_v1_translation_damping_ratio,
+                rotation_stiffness_nmprad=cfg.wrist_v1_rotation_stiffness_nmprad,
+                rotation_damping_ratio=cfg.wrist_v1_rotation_damping_ratio,
+                force_limit_n=cfg.wrist_v1_force_limit_n,
+                torque_limit_nm=cfg.wrist_v1_torque_limit_nm,
+            ),
+        )
+        self.wrist_controller_v2 = IsaacComputedWrenchWristControllerV2(
+            IsaacComputedWrenchWristProfileV2(
+                translation_position_gain_s2=cfg.wrist_translation_position_gain_s2,
+                translation_damping_ratio=cfg.wrist_translation_damping_ratio,
+                rotation_position_gain_s2=cfg.wrist_rotation_position_gain_s2,
+                rotation_damping_ratio=cfg.wrist_rotation_damping_ratio,
+                force_limit_n=cfg.wrist_force_limit_n,
+                torque_limit_nm=cfg.wrist_torque_limit_nm,
+            )
+        )
+        self.wrist_controller_v3 = IsaacEffectiveDynamicsWristControllerV3(
+            IsaacEffectiveDynamicsWristProfileV3(
+                translation_position_gain_s2=cfg.wrist_translation_position_gain_s2,
+                translation_damping_ratio=cfg.wrist_translation_damping_ratio,
+                rotation_position_gain_s2=cfg.wrist_rotation_position_gain_s2,
+                rotation_damping_ratio=cfg.wrist_rotation_damping_ratio,
+                force_limit_n=cfg.wrist_force_limit_n,
+                torque_limit_nm=cfg.wrist_torque_limit_nm,
+            )
+        )
+        self._wrist_interpolator = PhysicsSubstepWristTargetInterpolator(
+            decimation=cfg.decimation, control_dt_s=self.step_dt
         )
         self.reward_profile = Stage16WorldWristRewardProfileV1()
         self.termination_profile = Stage16TerminationProfileV1()
@@ -90,9 +173,29 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         self._wrist_target_twist = torch.zeros(
             (self.num_envs, 6), dtype=torch.float32, device=self.device
         )
+        self._wrist_target_acceleration = torch.zeros_like(self._wrist_target_twist)
+        self._wrist_interval_start_position = torch.zeros_like(self._wrist_target_position)
+        self._wrist_interval_end_position = torch.zeros_like(self._wrist_target_position)
+        self._wrist_interval_start_quaternion = torch.zeros_like(self._wrist_target_quaternion)
+        self._wrist_interval_end_quaternion = torch.zeros_like(self._wrist_target_quaternion)
+        self._wrist_interval_start_twist = torch.zeros_like(self._wrist_target_twist)
+        self._wrist_interval_end_twist = torch.zeros_like(self._wrist_target_twist)
+        self._wrist_translation_residual = torch.zeros_like(self._wrist_target_position)
+        self._wrist_rotation_residual = torch.zeros_like(self._wrist_target_position)
         self._wrist_target_quaternion[:, 0] = 1.0
+        self._wrist_interval_start_quaternion[:, 0] = 1.0
+        self._wrist_interval_end_quaternion[:, 0] = 1.0
+        self._physics_substep = 0
         self._force_saturated = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._torque_saturated = torch.zeros_like(self._force_saturated)
+        self._force_saturation_substeps = torch.zeros(
+            self.num_envs, dtype=torch.long, device=self.device
+        )
+        self._torque_saturation_substeps = torch.zeros_like(self._force_saturation_substeps)
+        self._wrist_substeps = torch.zeros_like(self._force_saturation_substeps)
+        self._wrist_diagnostic_records: list[dict[str, object]] = []
+        self._contact_substep_records: list[dict[str, object]] = []
+        self._pending_contact_sample: dict[str, torch.Tensor | int] | None = None
         self._success = torch.zeros_like(self._force_saturated)
         self._reason_codes = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self._object_state_write_count = torch.zeros(
@@ -101,6 +204,36 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         self._diagnostic_object_state_write_count = torch.zeros_like(self._object_state_write_count)
         self._wrist_step_state_write_count = torch.zeros_like(self._object_state_write_count)
         self._last_reward_terms: dict[str, torch.Tensor] = {}
+
+    @staticmethod
+    def _install_full_hand_contact_sensors(cfg: IsaacWorldWristFingerDirectRLEnvCfg) -> None:
+        """Install one filtered sensor per collision-bearing hand body before scene creation."""
+
+        for body_name in HAND_COLLISION_BODY_NAMES:
+            sensor_name = f"hand_object_contact_{body_name}"
+            if getattr(cfg.scene, sensor_name, None) is not None:
+                continue
+            setattr(
+                cfg.scene,
+                sensor_name,
+                ContactSensorCfg(
+                    prim_path=f"{{ENV_REGEX_NS}}/Robot/{body_name}",
+                    update_period=0.0,
+                    history_length=1,
+                    track_pose=True,
+                    # The filtered normal-force matrix is the causal signal.
+                    # Isaac Lab's variable-length point/friction buffers are
+                    # not stable for 21 simultaneous GPU filtered views.
+                    track_contact_points=False,
+                    track_friction_forces=False,
+                    force_threshold=1.0e-4,
+                    max_contact_data_count_per_prim=cfg.contact_max_data_per_body,
+                    filter_prim_paths_expr=[
+                        "{ENV_REGEX_NS}/Object170105",
+                        "{ENV_REGEX_NS}/Object170650",
+                    ],
+                ),
+            )
 
     def _setup_scene(self) -> None:
         self._robot = Articulation(self.cfg.robot)
@@ -138,28 +271,101 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         rotation_residual = (
             self._actions[:, 3:6] * self.action_adapter.contract.wrist_rotation_scale_rad
         )
-        local_position, self._wrist_target_quaternion = apply_local_residual(
-            reference_position, reference_quaternion, translation_residual, rotation_residual
+        self._wrist_interval_start_position = self.reference_bank.gather(
+            "wrist_pose_translation_world_ref", self._clip_index, self._reference_index
         )
-        self._wrist_target_position = scene_to_global(local_position, self.scene.env_origins)
-        self._wrist_target_twist = self.reference_bank.gather(
+        self._wrist_interval_end_position = reference_position
+        self._wrist_interval_start_quaternion = self.reference_bank.gather(
+            "wrist_pose_quaternion_world_ref_wxyz", self._clip_index, self._reference_index
+        )
+        self._wrist_interval_end_quaternion = reference_quaternion
+        self._wrist_interval_start_twist = self.reference_bank.gather(
+            "wrist_twist_world_ref", self._clip_index, self._reference_index
+        )
+        self._wrist_interval_end_twist = self.reference_bank.gather(
             "wrist_twist_world_ref", self._clip_index, self._target_reference_index
         )
+        # Keep the endpoint target observable for static action-map tests.  The
+        # actual controller target is recomputed from the exact substep sample.
+        local_position, self._wrist_target_quaternion = apply_local_residual(
+            self._wrist_interval_end_position,
+            self._wrist_interval_end_quaternion,
+            translation_residual,
+            rotation_residual,
+        )
+        self._wrist_target_position = scene_to_global(local_position, self.scene.env_origins)
+        self._wrist_target_twist = self._wrist_interval_end_twist
+        self._wrist_translation_residual = translation_residual
+        self._wrist_rotation_residual = rotation_residual
+        self._physics_substep = 0
         self._force_saturated.zero_()
         self._torque_saturated.zero_()
 
     def _apply_action(self) -> None:
+        self._record_completed_contact_substep()
         self._robot.set_joint_position_target(self._joint_target_isaac)
-        wrench = self.wrist_controller.compute(
-            target_position=self._wrist_target_position,
-            target_quaternion_wxyz=self._wrist_target_quaternion,
-            target_twist_world=self._wrist_target_twist,
-            current_position=self._robot.data.root_pos_w,
-            current_quaternion_wxyz=self._robot.data.root_quat_w,
-            current_linear_velocity_world=self._robot.data.root_lin_vel_w,
-            current_angular_velocity_world=self._robot.data.root_ang_vel_w,
+        target = self._wrist_interpolator.sample(
+            position_k=self._wrist_interval_start_position,
+            quaternion_k_wxyz=self._wrist_interval_start_quaternion,
+            twist_k_world=self._wrist_interval_start_twist,
+            position_k1=self._wrist_interval_end_position,
+            quaternion_k1_wxyz=self._wrist_interval_end_quaternion,
+            twist_k1_world=self._wrist_interval_end_twist,
+            substep=self._physics_substep,
         )
-        self._robot.permanent_wrench_composer.set_forces_and_torques(
+        target_scene_position, target_quaternion = apply_local_residual(
+            target.position_world,
+            target.quaternion_wxyz,
+            self._wrist_translation_residual,
+            self._wrist_rotation_residual,
+        )
+        self._wrist_target_position = scene_to_global(target_scene_position, self.scene.env_origins)
+        self._wrist_target_quaternion = target_quaternion
+        self._wrist_target_twist = target.twist_world
+        self._wrist_target_acceleration = target.acceleration_world
+        if self.cfg.wrist_controller_mode == "wrist_impedance_v1":
+            wrench = self.wrist_controller.compute(
+                target_position=self._wrist_target_position,
+                target_quaternion_wxyz=self._wrist_target_quaternion,
+                target_twist_world=self._wrist_target_twist,
+                current_position=self._robot.data.root_pos_w,
+                current_quaternion_wxyz=self._robot.data.root_quat_w,
+                current_linear_velocity_world=self._robot.data.root_lin_vel_w,
+                current_angular_velocity_world=self._robot.data.root_ang_vel_w,
+            )
+            composite = self._composite_inertia()
+        elif self.cfg.wrist_controller_mode == "computed_wrench_v2":
+            composite = self._composite_inertia()
+            wrench = self.wrist_controller_v2.compute(
+                mass_kg=composite.mass_kg,
+                inertia_world_kgm2=composite.inertia_world_kgm2,
+                target_position_world=self._wrist_target_position,
+                target_quaternion_wxyz=self._wrist_target_quaternion,
+                target_twist_world=self._wrist_target_twist,
+                target_acceleration_world=self._wrist_target_acceleration,
+                current_position_world=self._robot.data.root_pos_w,
+                current_quaternion_wxyz=self._robot.data.root_quat_w,
+                current_linear_velocity_world=self._robot.data.root_lin_vel_w,
+                current_angular_velocity_world=self._robot.data.root_ang_vel_w,
+            )
+        elif self.cfg.wrist_controller_mode == "effective_dynamics_v3":
+            composite = self._composite_inertia()
+            wrench = self.wrist_controller_v3.compute(
+                target_position_world=self._wrist_target_position,
+                target_quaternion_wxyz=self._wrist_target_quaternion,
+                target_twist_world=self._wrist_target_twist,
+                target_acceleration_world=self._wrist_target_acceleration,
+                current_position_world=self._robot.data.root_pos_w,
+                current_quaternion_wxyz=self._robot.data.root_quat_w,
+                current_linear_velocity_world=self._robot.data.root_lin_vel_w,
+                current_angular_velocity_world=self._robot.data.root_ang_vel_w,
+            )
+        else:
+            raise RuntimeError(f"C3_WRIST_CONTROLLER_FAILURE: {self.cfg.wrist_controller_mode}")
+        # ``instantaneous`` is reset by Isaac Lab after every write.  Replacing
+        # it every substep refreshes the world-to-link conversion at the live
+        # wrist pose and prevents a stale global wrench frame.
+        self._robot.instantaneous_wrench_composer.set_forces_and_torques(
             forces=wrench["force_world"].unsqueeze(1),
             torques=wrench["torque_world"].unsqueeze(1),
             body_ids=torch.tensor([self._wrist_body_id], device=self.device),
@@ -167,8 +373,290 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         )
         self._force_saturated |= wrench["force_saturated"]
         self._torque_saturated |= wrench["torque_saturated"]
+        self._force_saturation_substeps += wrench["force_saturated"].to(torch.long)
+        self._torque_saturation_substeps += wrench["torque_saturated"].to(torch.long)
+        self._wrist_substeps += 1
+        self._pending_contact_sample = {
+            "control_step": self._reference_index.clone(),
+            "physics_substep": self._physics_substep,
+            "reference_index": self._target_reference_index.clone(),
+            "object_state_before": self._active_object_state().clone(),
+            "force_world": wrench["force_world"].clone(),
+            "torque_world": wrench["torque_world"].clone(),
+        }
+        if self.cfg.collect_wrist_diagnostics:
+            self._append_wrist_diagnostic(composite, wrench, target.alpha)
+        self._physics_substep += 1
         if self.cfg.diagnostic_kinematic_object:
             self._write_kinematic_object_diagnostic(self._target_reference_index)
+
+    def _composite_inertia(self):
+        return ArticulatedHandCompositeInertiaEstimator.estimate(
+            masses_kg=self._link_masses_kg,
+            inertia_link_kgm2=self._link_inertia_kgm2,
+            link_quaternion_world_wxyz=self._robot.data.body_link_quat_w,
+            center_of_mass_world=self._robot.data.body_com_pos_w,
+            root_origin_world=self._robot.data.root_pos_w,
+        )
+
+    def _append_wrist_diagnostic(
+        self, composite: Any, wrench: dict[str, torch.Tensor], alpha: torch.Tensor
+    ) -> None:
+        """Persist compact, finite substep evidence only for explicit diagnostics."""
+
+        for env_id in range(self.num_envs):
+            self._wrist_diagnostic_records.append(
+                {
+                    "env_id": env_id,
+                    "control_step": int(self._reference_index[env_id].item()),
+                    "physics_substep": self._physics_substep,
+                    "reference_alpha": float(alpha[env_id].item()),
+                    "target_position_world_m": self._wrist_target_position[env_id]
+                    .detach()
+                    .cpu()
+                    .tolist(),
+                    "target_twist_world": self._wrist_target_twist[env_id].detach().cpu().tolist(),
+                    "target_acceleration_world": self._wrist_target_acceleration[env_id]
+                    .detach()
+                    .cpu()
+                    .tolist(),
+                    "applied_force_world_n": wrench["force_world"][env_id].detach().cpu().tolist(),
+                    "applied_torque_world_nm": wrench["torque_world"][env_id]
+                    .detach()
+                    .cpu()
+                    .tolist(),
+                    "force_saturated": bool(wrench["force_saturated"][env_id].item()),
+                    "torque_saturated": bool(wrench["torque_saturated"][env_id].item()),
+                    "composite_mass_kg": float(composite.mass_kg[env_id].item()),
+                    "inertia_eigenvalues_kgm2": composite.eigenvalues_kgm2[env_id]
+                    .detach()
+                    .cpu()
+                    .tolist(),
+                    "inertia_condition": float(composite.condition[env_id].item()),
+                }
+            )
+
+    def _record_completed_contact_substep(self) -> None:
+        """Capture filtered hand-object contacts after the preceding PhysX step.
+
+        DirectRLEnv updates sensor buffers after each simulation step.  The next
+        call to ``_apply_action`` therefore observes exactly the previous
+        substep's contact data and its before/after object velocity boundary.
+        ``_get_dones`` flushes the final pending sample.
+        """
+
+        pending = self._pending_contact_sample
+        if pending is None:
+            return
+        self._pending_contact_sample = None
+        if not self.cfg.collect_contact_telemetry:
+            return
+        object_before = pending["object_state_before"]
+        assert isinstance(object_before, torch.Tensor)
+        object_after = self._active_object_state().clone()
+        active_filter = self._clip_index
+        object_names = ("Object170105", "Object170650")
+        object_masses = torch.where(
+            self._clip_index == 0,
+            self._object_170105.data.default_mass[:, 0],
+            self._object_170650.data.default_mass[:, 0],
+        )
+        aggregate_force = torch.zeros((self.num_envs, 3), device=self.device)
+        aggregate_count = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
+        body_records: list[dict[str, object]] = []
+        for body_name, sensor in self._hand_contact_sensors.items():
+            force_matrix = sensor.data.force_matrix_w
+            friction_matrix = sensor.data.friction_forces_w
+            contact_position = sensor.data.contact_pos_w
+            if force_matrix is None:
+                raise RuntimeError("C3_CONTACT_SENSOR_DATA_UNAVAILABLE")
+            for env_id in range(self.num_envs):
+                filter_id = int(active_filter[env_id].item())
+                force_on_hand = force_matrix[env_id, 0, filter_id]
+                friction_on_hand = (
+                    friction_matrix[env_id, 0, filter_id]
+                    if friction_matrix is not None
+                    else torch.zeros(3, device=self.device)
+                )
+                # ``ContactSensorData`` is the supported caching boundary.  Do
+                # not call ``RigidContactView.get_contact_data`` again here:
+                # its variable-length GPU buffers are already consumed by the
+                # sensor to form this filtered pair result.
+                count = int(
+                    torch.linalg.vector_norm(force_on_hand).item() > sensor.cfg.force_threshold
+                )
+                position = (
+                    contact_position[env_id, 0, filter_id]
+                    if contact_position is not None
+                    else torch.full((3,), float("nan"), device=self.device)
+                )
+                aggregate_force[env_id] += force_on_hand
+                aggregate_count[env_id] += count
+                body_records.append(
+                    self._contact_record(
+                        pending=pending,
+                        env_id=env_id,
+                        hand_body_name=body_name,
+                        object_name=object_names[filter_id],
+                        contact_count=count,
+                        force_on_hand=force_on_hand,
+                        friction_on_hand=friction_on_hand,
+                        position=position,
+                        penetration_depth_m=None,
+                        object_before=object_before[env_id],
+                        object_after=object_after[env_id],
+                        object_mass_kg=object_masses[env_id],
+                    )
+                )
+        self._contact_substep_records.extend(body_records)
+        for env_id in range(self.num_envs):
+            filter_id = int(active_filter[env_id].item())
+            self._contact_substep_records.append(
+                self._contact_record(
+                    pending=pending,
+                    env_id=env_id,
+                    hand_body_name="__all_hand_collision_bodies__",
+                    object_name=object_names[filter_id],
+                    contact_count=int(aggregate_count[env_id].item()),
+                    force_on_hand=aggregate_force[env_id],
+                    friction_on_hand=torch.zeros(3, device=self.device),
+                    position=torch.full((3,), float("nan"), device=self.device),
+                    penetration_depth_m=None,
+                    object_before=object_before[env_id],
+                    object_after=object_after[env_id],
+                    object_mass_kg=object_masses[env_id],
+                )
+            )
+
+    def _contact_record(
+        self,
+        *,
+        pending: dict[str, torch.Tensor | int],
+        env_id: int,
+        hand_body_name: str,
+        object_name: str,
+        contact_count: int,
+        force_on_hand: torch.Tensor,
+        friction_on_hand: torch.Tensor,
+        position: torch.Tensor,
+        penetration_depth_m: float | None,
+        object_before: torch.Tensor,
+        object_after: torch.Tensor,
+        object_mass_kg: torch.Tensor,
+    ) -> dict[str, object]:
+        control_step = pending["control_step"]
+        reference_index = pending["reference_index"]
+        force = force_on_hand.detach()
+        impulse_on_object = -force * self.physics_dt
+        delta_v = object_after[7:10] - object_before[7:10]
+        delta_omega = object_after[10:13] - object_before[10:13]
+        contact_position = position.detach().cpu().tolist()
+        if not bool(torch.isfinite(position).all()):
+            contact_position = None
+        return {
+            "env_id": env_id,
+            "control_step": int(control_step[env_id].item())
+            if isinstance(control_step, torch.Tensor)
+            else -1,
+            "physics_substep": int(pending["physics_substep"]),
+            "reference_index": int(reference_index[env_id].item())
+            if isinstance(reference_index, torch.Tensor)
+            else -1,
+            "hand_body_name": hand_body_name,
+            "hand_body_index": self._robot.body_names.index(hand_body_name)
+            if hand_body_name in self._robot.body_names
+            else None,
+            "object_body_name": object_name,
+            "contact_pair": [hand_body_name, object_name],
+            "contact_count": contact_count,
+            "contact_position_world_m": contact_position,
+            "penetration_depth_m": penetration_depth_m,
+            "contact_detection": "filtered normal-force norm exceeds sensor force_threshold",
+            "force_frame": "world; force_on_hand_from_object",
+            "normal_force_world_on_hand_n": force.cpu().tolist(),
+            "tangential_force_world_on_hand_n": friction_on_hand.detach().cpu().tolist(),
+            "total_force_world_on_object_n": (-force).cpu().tolist(),
+            "impulse_world_on_object_ns": impulse_on_object.cpu().tolist(),
+            "raw_point_fields": (
+                "not duplicated; ContactSensor caches the variable-length PhysX buffers"
+            ),
+            "object_linear_velocity_before_world_mps": object_before[7:10].detach().cpu().tolist(),
+            "object_linear_velocity_after_world_mps": object_after[7:10].detach().cpu().tolist(),
+            "object_angular_velocity_before_world_radps": object_before[10:13]
+            .detach()
+            .cpu()
+            .tolist(),
+            "object_angular_velocity_after_world_radps": object_after[10:13]
+            .detach()
+            .cpu()
+            .tolist(),
+            "object_delta_v_world_mps": delta_v.detach().cpu().tolist(),
+            "object_delta_omega_world_radps": delta_omega.detach().cpu().tolist(),
+            "object_delta_momentum_world_ns": (object_mass_kg * delta_v).detach().cpu().tolist(),
+            "object_pose_world": object_after[:7].detach().cpu().tolist(),
+            "applied_wrist_force_world_n": pending["force_world"][env_id].detach().cpu().tolist(),
+            "applied_wrist_torque_world_nm": pending["torque_world"][env_id]
+            .detach()
+            .cpu()
+            .tolist(),
+            "aggregation_level": "body-pair filtered normal-force aggregate",
+        }
+
+    def hand_collision_inventory(self) -> dict[str, object]:
+        """Return the live sensor/body coverage contract without proxy-count assumptions."""
+
+        return {
+            "collision_bodies_configured": list(HAND_COLLISION_BODY_NAMES),
+            "runtime_robot_body_count": len(self._robot.body_names),
+            "sensor_coverage_complete": set(self._hand_contact_sensors)
+            == set(HAND_COLLISION_BODY_NAMES),
+            "sensors": [
+                {
+                    "body_name": body_name,
+                    "body_index": self._robot.body_names.index(body_name),
+                    "sensor_body_names": sensor.body_names,
+                    "sensor_body_count": sensor.num_bodies,
+                    "filter_count": sensor.contact_physx_view.filter_count,
+                    "filter_prim_paths": list(sensor.cfg.filter_prim_paths_expr),
+                }
+                for body_name, sensor in self._hand_contact_sensors.items()
+            ],
+        }
+
+    def contact_sensor_contract(self) -> dict[str, object]:
+        sensor = next(iter(self._hand_contact_sensors.values()))
+        return {
+            "api": "isaaclab.sensors.ContactSensorCfg plus RigidContactView.get_contact_data",
+            "update_period_s": sensor.cfg.update_period,
+            "force_frame": "world; force_matrix_w is force on filtered hand body",
+            "force_matrix_shape": list(sensor.data.force_matrix_w.shape),
+            "friction_force_shape": (
+                list(sensor.data.friction_forces_w.shape)
+                if sensor.data.friction_forces_w is not None
+                else None
+            ),
+            "contact_position_shape": (
+                list(sensor.data.contact_pos_w.shape)
+                if sensor.data.contact_pos_w is not None
+                else None
+            ),
+            "optional_point_and_tangent_fields": (
+                "UNAVAILABLE: disabled for multi-sensor GPU stability"
+            ),
+            "body_sensor_count": len(self._hand_contact_sensors),
+            "max_contact_data_per_body": sensor.cfg.max_contact_data_count_per_prim,
+            "pair_filtering": (
+                "each single hand collision body filtered only to Object170105/Object170650"
+            ),
+        }
+
+    @property
+    def contact_substep_records(self) -> list[dict[str, object]]:
+        return list(self._contact_substep_records)
+
+    @property
+    def wrist_diagnostic_records(self) -> list[dict[str, object]]:
+        return list(self._wrist_diagnostic_records)
 
     def _write_kinematic_object_diagnostic(self, reference_index: torch.Tensor) -> None:
         """C3-1-only object playback; formal free-object rollouts never call this."""
@@ -368,6 +856,7 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         return terms["total"]
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
+        self._record_completed_contact_substep()
         state = self._state()
         index = self._target_reference_index
         termination = stage16_termination(
@@ -411,6 +900,15 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             "wrist_orientation_error_rad": termination["wrist_orientation_error_rad"].clone(),
             "force_saturated": self._force_saturated.clone(),
             "torque_saturated": self._torque_saturated.clone(),
+            "force_saturation_ratio": (
+                self._force_saturation_substeps.to(torch.float32)
+                / self._wrist_substeps.clamp_min(1).to(torch.float32)
+            ),
+            "torque_saturation_ratio": (
+                self._torque_saturation_substeps.to(torch.float32)
+                / self._wrist_substeps.clamp_min(1).to(torch.float32)
+            ),
+            "wrist_substeps": self._wrist_substeps.clone(),
         }
         return termination["terminated"], termination["success"]
 
@@ -440,6 +938,9 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         self._actions[env_ids] = 0.0
         self._force_saturated[env_ids] = False
         self._torque_saturated[env_ids] = False
+        self._force_saturation_substeps[env_ids] = 0
+        self._torque_saturation_substeps[env_ids] = 0
+        self._wrist_substeps[env_ids] = 0
         self._success[env_ids] = False
         self._reason_codes[env_ids] = 0
         clips = self._clip_index[env_ids]

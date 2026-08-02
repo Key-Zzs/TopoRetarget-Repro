@@ -69,10 +69,12 @@ conda run -n toporetarget-isaaclab python scripts/rl/isaaclab/import_hocap_objec
 `STAGE16C2_DIRECT_RL_ENV_VALIDATED`：真实 GPU `DirectRLEnv` 已完成 1-env、
 交替 clip 和 128-env/1000-step 的有限值 smoke，且 rollout 中没有 object state
 write 或 wrist teleport。C.3 明确为
-`STAGE16C3_SEMANTIC_QUALIFICATION_PARTIAL`：dynamic wrist tracking 未达到
-2 cm/10 度诊断界限，且尚未接入 all-hand contact-pair/impulse 证据。因此 C.4
-vector qualification 与 C.5 PhysX Oracle 被 gate 阻断；C.6 PPO 未获授权，0 样本、
-0 checkpoint。详见 [DirectRLEnv 契约](docs/rl/ISAACLAB_DIRECT_RL_ENV.md) 和
+`STAGE16C3_WRIST_AND_CONTACT_QUALIFICATION_BLOCKED`：带符号的 world-frame
+6-D PhysX basis 通过，但最终的共享 41-step wrist profile 为 3.35 cm/23.00 度，
+未达到 2 cm/10 度 gate；高 authority profile 更差且发生 saturation。21 个碰撞
+body 的 inventory 已解析，但 all-hand collection 没有有效 runtime trace，因此不主张
+contact causality。C.4/C.5 不运行，C.6 PPO 未获授权（0 样本、0 checkpoint）。详见
+[DirectRLEnv 契约](docs/rl/ISAACLAB_DIRECT_RL_ENV.md) 和
 [资产迁移契约](docs/rl/ISAACLAB_ASSET_MIGRATION.md)。
 
 ## 数据集支持

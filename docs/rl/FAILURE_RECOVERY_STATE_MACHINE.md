@@ -74,19 +74,21 @@ stateDiagram-v2
     [*] --> C2_VALIDATED
     C2_VALIDATED --> C3_RUNNING
     C3_RUNNING --> C3_VALIDATED: wrist and contact gates pass
-    C3_RUNNING --> C3_PARTIAL: bound or contact proof fails
+    C3_RUNNING --> C3_BLOCKED: wrist or contact proof fails
     C3_VALIDATED --> C4_RUNNING
     C4_RUNNING --> C4_VALIDATED
     C4_VALIDATED --> C5_RUNNING
     C5_RUNNING --> C5_VALIDATED
     C5_VALIDATED --> C6_AUTHORIZED
-    C3_PARTIAL --> C4_BLOCKED
+    C3_BLOCKED --> C4_BLOCKED
     C4_BLOCKED --> C5_BLOCKED
     C5_BLOCKED --> C6_NOT_AUTHORIZED
 ```
 
-C.2 is validated. C.3 is partial because the dynamic-wrist diagnostic exceeds
-2 cm/10 degrees and contact-pair/impulse evidence is absent. The correct
-recovery is to add an observable, batched contact diagnostic and repair the
-demonstrated wrist tracking cause without changing frozen inputs or silently
-changing the controller. Do not run C.4/C.5 or PPO while this state is active.
+C.2 is validated. C.3 is `STAGE16C3_WRIST_AND_CONTACT_QUALIFICATION_BLOCKED`:
+A0 signed wrench convention passes, A1 F0/F1/F2 response identification is
+diagnostic, and A2 fails the dynamic wrist gate (3.35 cm/23.00 degrees versus
+2 cm/10 degrees). The all-hand collection attempt has no valid trace, so
+contact causality is `NOT_PROVEN`. Do not run C.4/C.5 or PPO while this state
+is active. The recovery record is
+`.local/reports/stage16c3_repair_c5_oracle/c3_failure_transitions.json`.

@@ -65,6 +65,32 @@ def quaternion_geodesic(current_wxyz: torch.Tensor, target_wxyz: torch.Tensor) -
     return 2.0 * torch.acos(dot.abs().clamp(min=0.0, max=1.0))
 
 
+def quaternion_slerp_shortest_wxyz(
+    start_wxyz: torch.Tensor, end_wxyz: torch.Tensor, alpha: torch.Tensor
+) -> torch.Tensor:
+    """Shortest-arc spherical interpolation for batched ``wxyz`` quaternions.
+
+    ``alpha`` is broadcast over the quaternion component.  The near-zero-angle
+    branch deliberately uses normalized linear interpolation: it preserves
+    finite unit quaternions without inventing an arbitrary rotation axis.
+    """
+
+    start = normalize_quaternion_wxyz(start_wxyz)
+    end = normalize_quaternion_wxyz(end_wxyz)
+    dot = torch.sum(start * end, dim=-1, keepdim=True)
+    end = torch.where(dot < 0.0, -end, end)
+    dot = torch.sum(start * end, dim=-1, keepdim=True).clamp(-1.0, 1.0)
+    angle = torch.acos(dot)
+    sine = torch.sin(angle)
+    alpha = alpha.unsqueeze(-1) if alpha.ndim == start.ndim - 1 else alpha
+    linear = normalize_quaternion_wxyz((1.0 - alpha) * start + alpha * end)
+    spherical = (
+        torch.sin((1.0 - alpha) * angle) / sine.clamp_min(1.0e-8) * start
+        + torch.sin(alpha * angle) / sine.clamp_min(1.0e-8) * end
+    )
+    return normalize_quaternion_wxyz(torch.where(sine > 1.0e-6, spherical, linear))
+
+
 def apply_local_residual(
     reference_position: torch.Tensor,
     reference_quaternion_wxyz: torch.Tensor,
@@ -89,5 +115,6 @@ __all__ = [
     "quaternion_geodesic",
     "quaternion_log_wxyz",
     "quaternion_multiply_wxyz",
+    "quaternion_slerp_shortest_wxyz",
     "relative_rotation_log_local",
 ]

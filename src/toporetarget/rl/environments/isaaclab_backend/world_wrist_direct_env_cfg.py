@@ -79,6 +79,7 @@ class IsaacWorldWristFingerDirectRLEnvCfg(DirectRLEnvCfg):
         spawn=sim_utils.UsdFileCfg(
             usd_path=str(_ASSET_ROOT / "wuji_hand2_beta1/configuration/wujihand2_physics.usd"),
             copy_from_source=False,
+            activate_contact_sensors=True,
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                 fix_root_link=False,
                 enabled_self_collisions=False,
@@ -102,6 +103,7 @@ class IsaacWorldWristFingerDirectRLEnvCfg(DirectRLEnvCfg):
         spawn=sim_utils.UsdFileCfg(
             usd_path=str(_ASSET_ROOT / "hocap_170105/hocap_170105.usda"),
             copy_from_source=False,
+            activate_contact_sensors=True,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=True,
                 linear_damping=0.0,
@@ -117,6 +119,7 @@ class IsaacWorldWristFingerDirectRLEnvCfg(DirectRLEnvCfg):
         spawn=sim_utils.UsdFileCfg(
             usd_path=str(_ASSET_ROOT / "hocap_170650/hocap_170650.usda"),
             copy_from_source=False,
+            activate_contact_sensors=True,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=True,
                 linear_damping=0.0,
@@ -136,6 +139,22 @@ class IsaacWorldWristFingerDirectRLEnvCfg(DirectRLEnvCfg):
     reset_reference_index = "frame0"
     inactive_object_scene_offset = (5.0, 5.0, -5.0)
     diagnostic_kinematic_object = False
+    collect_contact_telemetry = False
+    collect_wrist_diagnostics = False
+    wrist_controller_mode = "wrist_impedance_v1"
+    wrist_v1_translation_stiffness_npm = 800.0
+    wrist_v1_translation_damping_ratio = 0.8
+    wrist_v1_rotation_stiffness_nmprad = 6.0
+    wrist_v1_rotation_damping_ratio = 0.8
+    wrist_v1_force_limit_n = 50.0
+    wrist_v1_torque_limit_nm = 4.0
+    wrist_translation_position_gain_s2 = 100.0
+    wrist_translation_damping_ratio = 1.0
+    wrist_rotation_position_gain_s2 = 36.0
+    wrist_rotation_damping_ratio = 1.0
+    wrist_force_limit_n = 50.0
+    wrist_torque_limit_nm = 4.0
+    contact_max_data_per_body = 64
     headless_debug = False
 
 
