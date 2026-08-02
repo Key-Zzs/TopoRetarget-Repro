@@ -46,10 +46,11 @@ future policy work move to an isolated Isaac Lab lane; MuJoCo evidence does not
 authorize PhysX assets, an oracle, or PPO.
 
 Stage 16-C.0 freezes Python 3.11.15, Isaac Sim 5.1.0, Isaac Lab `v2.3.2` at
-`37ddf626871758333d6ed89cf64ad702aef127d0`, and Torch 2.7.0 cu128. Its current
-status is `STAGE16C0_ISAACLAB_PLATFORM_BLOCKED` because no NVIDIA EULA
-authorization is recorded. Static audit remains reproducible and runtime
-qualification stops before Isaac import:
+`37ddf626871758333d6ed89cf64ad702aef127d0`, and Torch 2.7.0 cu128. With the
+user's process-scoped EULA authorization, the real GPU qualification is
+`STAGE16C0_ISAACLAB_PLATFORM_VALIDATED_WITH_LIMITATIONS`: every hard gate
+passed; the missing interactive display and an upstream dependency-metadata
+conflict remain soft limitations.
 
 NVIDIA now labels Isaac Sim 5.1 unsupported; this exact 5.1/v2.3.2 pair is a
 frozen reproduction target, not a claim of continuing vendor support.
@@ -57,14 +58,19 @@ frozen reproduction target, not a claim of continuing vendor support.
 ```bash
 bash scripts/bootstrap_stage16_isaaclab_env.sh --dry-run
 conda run -n toporetarget-isaaclab python scripts/verify_stage16_isaaclab_platform.py --phase static
-conda run -n toporetarget-isaaclab python scripts/verify_stage16_isaaclab_platform.py --phase full --steps 1000
+conda run -n toporetarget-isaaclab python scripts/verify_stage16_isaaclab_platform.py --phase full --steps 1000 --accept-eula
+conda run -n toporetarget-isaaclab python scripts/rl/isaaclab/validate_stage16c1_assets.py
+conda run -n toporetarget-isaaclab python scripts/rl/isaaclab/import_wuji_hand2.py --upstream-root /home/deepcybo/workspace/dex/wuji-description --accept-eula
+conda run -n toporetarget-isaaclab python scripts/rl/isaaclab/import_hocap_objects.py --accept-eula
 ```
 
-The last command records `ISAACLAB_EULA_ACCEPTANCE_REQUIRED`; it does not
-accept the agreement. Headless and viewer smoke commands are documented in
-[the environment setup](docs/rl/ISAACLAB_ENVIRONMENT_SETUP.md). Wuji/HO-Cap
-asset migration, a custom Isaac Lab task, a PhysX oracle, and PPO are not
-started.
+`--accept-eula` is valid only after explicit user authorization and sets
+`OMNI_KIT_ACCEPT_EULA=YES` only in the launched runtime process; it does not
+grant privacy or telemetry consent. Stage 16-C.1 now validates the floating
+Wuji articulation and both free HO-Cap rigid objects, including 1/128-env CUDA
+smokes and bounded contact response. Generated USDs and reports remain ignored
+under `.local/`. A custom `DirectRLEnv`, PhysX oracle, and PPO are still not
+started. See [the asset migration contract](docs/rl/ISAACLAB_ASSET_MIGRATION.md).
 
 ## Dataset support
 

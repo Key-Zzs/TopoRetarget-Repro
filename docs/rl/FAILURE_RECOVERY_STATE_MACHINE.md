@@ -54,8 +54,15 @@ with IPython 8.37.0, ONNX 1.21.0, psutil 5.9.8, and typing_extensions 4.12.2.
 No installation-method switch was used. The official packages retain a
 documented FastAPI/Starlette metadata conflict.
 
-The runtime transition is `EULA_REQUIRED -> complete_static_audit_only` with
-result `ISAACLAB_EULA_ACCEPTANCE_REQUIRED`. It consumes no additional retry or
-install method switch: no explicit user authorization is recorded, so the
-verifier stops before importing Isaac Sim. C.0 is therefore blocked, C.1 is
-not authorized, and runtime success is not fabricated.
+The earlier `EULA_REQUIRED -> complete_static_audit_only` transition remains
+historical evidence. After explicit user authorization, the verifier scoped
+`OMNI_KIT_ACCEPT_EULA=YES` to its Isaac processes and completed C.0 as
+`STAGE16C0_ISAACLAB_PLATFORM_VALIDATED_WITH_LIMITATIONS`; no privacy/telemetry
+consent is inferred.
+
+Stage 16-C.1 uses a separate bounded recovery contract: three repairs per
+failure class, five reruns per phase, two import-strategy switches, and twenty
+major transitions. The URDF converter and high-poly collision strategies
+exceeded bounded extension/cooking time, so recovery switched to the exact
+upstream USD plus deterministic low-vertex convex proxies. Reports retain each
+failed strategy; no failed run is relabeled as a pass.

@@ -57,10 +57,11 @@ is claimed.
 | Python/Torch runtime | not specified | Python 3.11.15, Torch 2.7.0 cu128 | ENGINEERING_INFRASTRUCTURE | environment manifests |
 | GPU PhysX smoke | not specified | finite official headless platform smoke only | ENGINEERING_DIAGNOSTIC | Stage 16-C.0 report bundle |
 | 128-env vector smoke | not specified | official task, CUDA tensors, independent actions/resets | ENGINEERING_DIAGNOSTIC | `vector_env_benchmark.json` |
-| Stage-16 assets/task/oracle/PPO | not specified | prohibited during C.0 | NOT_STARTED_SCOPE_BLOCKED | frozen C.0 scope |
+| Stage-16 assets | not specified | C.1 floating Wuji plus two nominal HO-Cap objects with deterministic convex proxies | ENGINEERING_EXTENSION | Stage 16-C.1 report bundle |
+| Stage-16 task/oracle/PPO | not specified | prohibited through C.1 | NOT_STARTED_SCOPE_BLOCKED | frozen C.1 scope |
 
 C.0 is not a paper-fidelity upgrade and is not evidence that the Stage-16
-task is controllable in PhysX. It can authorize only C.1 asset migration after
-all hard platform gates pass; it cannot authorize PPO. The current C.0 result
-is `STAGE16C0_ISAACLAB_PLATFORM_BLOCKED` because explicit NVIDIA EULA
-authorization is not recorded; C.1 remains unauthorized.
+task is controllable in PhysX. Its current result is
+`STAGE16C0_ISAACLAB_PLATFORM_VALIDATED_WITH_LIMITATIONS`; C.1 then validates
+asset migration only. C.1 preserves nominal dynamics whose physical provenance
+is unresolved and uses measured collision proxies. It cannot authorize PPO.

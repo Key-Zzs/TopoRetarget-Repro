@@ -38,9 +38,10 @@ the Stage-16B.1c closeout is rooted at
 `.local/reports/stage16b_adaptive_oracle_single_ppo/`.
 The complete contract is [WORLD_WRIST_FINGER_TRACKING.md](../rl/WORLD_WRIST_FINGER_TRACKING.md).
 
-Stage 16-C starts with C.0 platform qualification only. C.1 asset migration,
-C.2 `DirectRLEnv`, C.3 semantic parity, C.4 vector benchmarks, C.5 PhysX
-oracle, C.6/C.7 PPO, C.8 randomization, and C.9 comparison remain TODO.
+Stage 16-C.0 platform qualification and C.1 asset migration are complete with
+the limitations recorded below. C.2 `DirectRLEnv`, C.3 semantic parity, C.4
+task vector benchmarks, C.5 PhysX oracle, C.6/C.7 PPO, C.8 randomization, and
+C.9 comparison remain TODO.
 MuJoCo and PhysX need not be bitwise identical, but MuJoCo oracle evidence can
 never directly authorize an Isaac Lab policy run.
 
@@ -56,16 +57,34 @@ headless GPU-PhysX scene, an official task smoke, CUDA observations/actions,
 and independent step/reset evidence from 128 truly parallel environments.
 The optional viewer is a soft gate.
 
-C.0 cannot migrate Wuji or HO-Cap assets, implement a custom `DirectRLEnv`,
-define Stage-16 reward/action logic, run a PhysX oracle, or start PPO. C.1-C.9
-remain fail-closed until the C.0 evidence bundle is validated. The reusable
+C.0 itself cannot migrate Wuji or HO-Cap assets, implement a custom `DirectRLEnv`,
+define Stage-16 reward/action logic, run a PhysX oracle, or start PPO. The reusable
 bootstrap never accepts an EULA; the verifier can set the official
 `OMNI_KIT_ACCEPT_EULA=YES` value only when explicit authorization is recorded
 and `--accept-eula` is supplied for that run.
 
-The current result is `STAGE16C0_ISAACLAB_PLATFORM_BLOCKED` with blocker
-`ISAACLAB_EULA_ACCEPTANCE_REQUIRED`. No runtime import, C.1 migration, PhysX
-oracle, or PPO is inferred from the completed static audit.
+The current result is `STAGE16C0_ISAACLAB_PLATFORM_VALIDATED_WITH_LIMITATIONS`.
+The user explicitly authorized process-scoped EULA acceptance; every hard
+runtime gate passed, while interactive viewer evidence remains unavailable.
+
+## Stage 16-C.1 asset migration contract
+
+C.1 imports the exact Wuji Hand2 Beta1 right-hand release source and preserves
+a floating `r_wrist`, 20 revolute joints, 16 tracked links, and source limits.
+High-poly upstream collision cooking exceeded the bounded runtime budget, so
+the accepted strategy uses deterministic support-direction convex proxies
+(21 bodies, at most 61 vertices each) while preserving upstream visual USD.
+HO-Cap 170105 and 170650 preserve the original OBJ visual meshes and use one
+uniform deterministic convex-hull proxy each (51/47 vertices). Both retain the
+frozen nominal 0.05 kg mass, mesh-derived inertia, zero gravity, no ground, and
+no support; physical provenance remains unresolved.
+
+Real GPU PhysX smokes validate 20/20 joint response, 16/16 tracked-link
+resolution, runtime limits within `1.2e-7 rad`, free-object stability, bounded
+hand-object contact, CUDA tensors, 128 unique environment origins, and zero
+subset-reset position error. C.1 does not implement reward, termination,
+`DirectRLEnv`, oracle, or PPO. Headless numerical evidence is hard; interactive
+visual review remains a soft limitation on this no-display host.
 
 Stage 13 (additional dataset adapters), Stage 14 (robot plugin matrix), and Stage 15 (complete baseline matrix) are deliberately `DEFERRED`. This branch implements only the TopoRetarget reference-tracking PPO protocol from Appendix A.5.
 

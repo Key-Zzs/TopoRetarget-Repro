@@ -1,8 +1,8 @@
 # Stage 16-C.0 Isaac Lab environment setup
 
-Stage 16-C.0 qualifies an isolated GPU simulation platform. It does **not**
-migrate Wuji Hand2 Beta1 or HO-Cap objects, implement a Stage-16 `DirectRLEnv`,
-run a PhysX oracle, or start PPO.
+Stage 16-C.0 qualifies an isolated GPU simulation platform. Stage 16-C.1 uses
+that platform for asset migration only. Neither stage implements a Stage-16
+`DirectRLEnv`, runs a PhysX oracle, or starts PPO.
 
 ## Frozen stack
 
@@ -121,9 +121,15 @@ conda run -n toporetarget-isaaclab \
   --phase full --steps 1000
 ```
 
-With the committed configuration this command stops before importing Isaac Sim
-and records `ISAACLAB_EULA_ACCEPTANCE_REQUIRED`. It is a deliberate fail-closed
-qualification command, not an instruction to accept the agreement.
+After explicit user authorization, add `--accept-eula`. The completed run
+passed all hard gates and records
+`STAGE16C0_ISAACLAB_PLATFORM_VALIDATED_WITH_LIMITATIONS`:
+
+```bash
+conda run -n toporetarget-isaaclab \
+  python scripts/verify_stage16_isaaclab_platform.py \
+  --phase full --steps 1000 --accept-eula
+```
 
 Optional 512-environment platform smoke:
 
@@ -148,13 +154,11 @@ Reports are written only below
 
 The first Isaac Sim startup may display the NVIDIA Omniverse License Agreement.
 The reusable bootstrap never answers this prompt or sets an acceptance
-environment variable. The committed platform config records no user
-authorization. Runtime qualification therefore stops before first import and
-reports `ISAACLAB_EULA_ACCEPTANCE_REQUIRED`. Only after a future explicit user
-authorization is recorded in the platform config may `--accept-eula` set the
-official `OMNI_KIT_ACCEPT_EULA=YES` value for that verifier process. An
-unaccepted agreement is reported as
-`ISAACLAB_EULA_ACCEPTANCE_REQUIRED`; it is never represented as a runtime pass.
+environment variable. The committed platform config records the user's
+explicit authorization for this task. `--accept-eula` sets the official
+`OMNI_KIT_ACCEPT_EULA=YES` value only for that verifier/import process; it does
+not grant privacy or telemetry consent. Without an authorization record, the
+verifier still fails closed as `ISAACLAB_EULA_ACCEPTANCE_REQUIRED`.
 
 ## Completion boundary
 
@@ -163,3 +167,6 @@ official task reset/step, CUDA tensors, GPU PhysX without CPU fallback, headless
 execution, and a truly parallel 128-environment smoke. Viewer failure is a soft
 limitation; every other listed runtime gate is hard. Only a validated C.0 may
 authorize Stage 16-C.1 asset migration.
+
+Stage 16-C.1 commands, provenance, collision fallback, and runtime gates are
+documented in [ISAACLAB_ASSET_MIGRATION.md](ISAACLAB_ASSET_MIGRATION.md).

@@ -40,3 +40,10 @@ All external dataset/model paths are explicit. The two current references and OB
 under ignored `.local/stage16_reference_tracking_ppo/`; raw NAS data is never copied into the
 repository. Generated scenes, runs, checkpoints, PNG/MP4, and logs remain ignored under
 `.local/`.
+
+The isolated Isaac Lab environment and its process-scoped EULA boundary are
+documented separately in
+[`ISAACLAB_ENVIRONMENT_SETUP.md`](ISAACLAB_ENVIRONMENT_SETUP.md). Stage 16-C.1
+asset import and smoke commands are in
+[`ISAACLAB_ASSET_MIGRATION.md`](ISAACLAB_ASSET_MIGRATION.md); they do not add
+Isaac dependencies to the base `toporetarget-rl` environment.

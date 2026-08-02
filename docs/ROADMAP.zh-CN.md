@@ -73,9 +73,10 @@ B.2 MuJoCo single-clip PPO 为 `NOT_STARTED_GATE_BLOCKED`（0 样本、无 check
 仍为 TODO / not started；B.4/B.5
 保持 TODO。它不等于真实机械臂控制、不用于 sim-to-real，也不能同论文 HO-Cap-32 结果直接比较。
 
-Stage 16-C 路线为：C.0 Isaac Lab platform qualification（因
-`ISAACLAB_EULA_ACCEPTANCE_REQUIRED` 阻塞）；C.1 Wuji 与物体
-资产迁移、C.2 `DirectRLEnv`、C.3 单环境语义对齐、C.4 GPU vectorization、C.5 PhysX Oracle、
+Stage 16-C 路线为：C.0 Isaac Lab platform qualification 已在全部硬 gate 上通过，
+状态为 `STAGE16C0_ISAACLAB_PLATFORM_VALIDATED_WITH_LIMITATIONS`；C.1 Wuji 与物体
+资产迁移已完成真实 PhysX/CUDA、接触及 1/128-env 验证。C.2 `DirectRLEnv`、
+C.3 单环境语义对齐、C.4 GPU vectorization、C.5 PhysX Oracle、
 C.6 single-clip GPU PPO、C.7 two-clip GPU PPO、C.8 dynamics randomization、C.9
 geometry/MuJoCo/Isaac/PPO comparison 均为 TODO。MuJoCo 不删除，继续负责 correctness、
 deterministic regression、contact diagnostics、action replay 与 visualization；Isaac Lab 负责计划中的
@@ -85,9 +86,9 @@ MuJoCo Oracle 不能直接授权 Isaac Lab PPO。当前尚未实现任何 Isaac 
 Stage 16-C.0 将独立平台栈冻结为 Python 3.11.15、Isaac Sim 5.1.0、Isaac Lab v2.3.2
 （精确 commit `37ddf626871758333d6ed89cf64ad702aef127d0`）与 Torch 2.7.0 cu128。
 其资格范围仅包括 host/install/import、有限步官方 GPU-PhysX、headless、viewer 与 128 环境证据。
-C.1-C.9 保持 TODO，C.0 本身不能授权 PPO。当前 C.0 结果为
-`STAGE16C0_ISAACLAB_PLATFORM_BLOCKED`：没有记录明确的 NVIDIA EULA 授权，
-因此不采集运行时证据，C.1 也未获授权。
+C.2-C.9 保持 TODO，C.0/C.1 本身都不能授权 PPO。C.1 使用浮动基座 Wuji
+Hand2 Beta1、两个冻结 HO-Cap free rigid object、确定性凸包代理，并验证 CUDA tensor、
+128 个唯一环境原点与子集复位。无 DISPLAY 的交互 visual review 是软限制。
 
 Wuji 三轨迹实现现已由通用 `workflow run-grab-suite` 提供；是否完成只由实验
 根目录下运行生成的 `final_status.json` 决定。

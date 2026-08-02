@@ -93,8 +93,8 @@ audit_contracts:
     notes: "MuJoCo B.1c is partial and closed; PPO never started. Isaac Lab/PhysX must be qualified independently. This extension is not a real arm, sim-to-real, paper-controller, or HO-Cap-32 claim."
   stage16c_isaaclab_gpu_backend:
     label: ENGINEERING_EXTENSION
-    stage16c0_status: STAGE16C0_ISAACLAB_PLATFORM_BLOCKED
-    blocker: ISAACLAB_EULA_ACCEPTANCE_REQUIRED
+    stage16c0_status: STAGE16C0_ISAACLAB_PLATFORM_VALIDATED_WITH_LIMITATIONS
+    blocker: null
     classification: ENGINEERING_INFRASTRUCTURE
     python: 3.11.15
     isaac_sim: 5.1.0
@@ -102,11 +102,12 @@ audit_contracts:
     isaac_lab_commit: 37ddf626871758333d6ed89cf64ad702aef127d0
     torch: 2.7.0
     torch_cuda_runtime: cu128
-    official_platform_smoke_only: true
+    official_platform_smoke_only: false
     required_vector_envs: 128
     viewer_soft_gate: true
-    custom_wuji_asset_migrated: false
-    hocap_object_migrated: false
+    custom_wuji_asset_migrated: true
+    hocap_object_migrated: true
+    stage16c1_status: STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED_WITH_VISUAL_LIMITATION
     custom_direct_rl_env_implemented: false
     physx_oracle_run: false
     ppo_started: false

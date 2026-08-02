@@ -443,5 +443,10 @@ Stage-16 actions/rewards, a PhysX oracle, or PPO. A validated C.0 can authorize
 only C.1 asset migration. Independent semantic parity and PhysX
 controllability gates are still required before policy training.
 
-The current C.0 status is `STAGE16C0_ISAACLAB_PLATFORM_BLOCKED` with
-`ISAACLAB_EULA_ACCEPTANCE_REQUIRED`; no runtime platform result is claimed.
+The current C.0 status is
+`STAGE16C0_ISAACLAB_PLATFORM_VALIDATED_WITH_LIMITATIONS`: every hard runtime
+gate passed after explicit process-scoped EULA authorization; interactive
+viewer evidence is unavailable. C.1 is independently validated as an
+`ENGINEERING_EXTENSION` for asset topology, nominal dynamics, collision,
+contact, CUDA tensors, and 1/128-env spawning. Neither result is paper-exact or
+authorizes a PhysX oracle, PPO, real dynamics, or sim-to-real claim.

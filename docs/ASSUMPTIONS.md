@@ -337,8 +337,9 @@ PAPER_PROTOCOL_REPRODUCTION_WITH_ASSUMPTIONS rather than author-exact results.
   GPU-parallel training uses an independently qualified Isaac Lab/PhysX lane;
   bitwise MuJoCo/PhysX equality is not assumed, and semantic parity plus a new
   PhysX oracle are required.
-- No Wuji asset, HO-Cap object, custom `DirectRLEnv`, PhysX oracle, or Isaac Lab
-  PPO is implemented by Stage 16-C.0 platform qualification.
+- Stage 16-C.0 implements no custom asset or task. Stage 16-C.1 separately
+  migrates Wuji and the two HO-Cap objects, but still implements no custom
+  `DirectRLEnv`, PhysX oracle, or Isaac Lab PPO.
 
 ## Stage 16-C.0 Isaac Lab platform assumptions
 
@@ -356,7 +357,21 @@ PAPER_PROTOCOL_REPRODUCTION_WITH_ASSUMPTIONS rather than author-exact results.
   `num_envs=128` is not accepted as parallel-execution evidence.
 - Interactive viewer availability is a soft host limitation. Headless GPU
   execution, CUDA tensors, and 128-environment evidence are hard gates.
-- NVIDIA EULA acceptance is outside the reusable bootstrap. The verifier may
-  set `OMNI_KIT_ACCEPT_EULA=YES` only for an explicitly authorized run, and
-  records that decision in the report. No such authorization is recorded for
-  the current qualification, so runtime is blocked before import.
+- NVIDIA EULA acceptance is outside the reusable bootstrap. The verifier sets
+  `OMNI_KIT_ACCEPT_EULA=YES` only for the explicitly authorized runtime process
+  and records the decision. This does not include privacy or telemetry consent.
+
+## Stage 16-C.1 Isaac Lab asset assumptions
+
+- Wuji visual geometry and articulation topology come from the frozen upstream
+  release. Deterministic support-direction convex proxies replace high-poly
+  collision meshes because bounded GPU cooking did not finish; this is an
+  engineering collision approximation, not author-exact geometry.
+- HO-Cap OBJ meshes remain the visual source of truth. Their single convex-hull
+  proxies have measured support-gap deviations and are not watertight repairs.
+- Object mass, inertia, COM, friction, zero gravity, no-ground and no-support
+  values are frozen cross-backend engineering assumptions. Their physical
+  provenance is unresolved and blocks real-dynamics and sim-to-real claims.
+- 128-env platform spawning proves asset instancing, CUDA state tensors,
+  distinct origins and subset-reset isolation. It does not prove Stage-16 task
+  semantics, controllability, or PPO learnability.

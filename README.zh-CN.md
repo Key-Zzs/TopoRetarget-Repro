@@ -44,9 +44,9 @@ Isaac Lab 路径；MuJoCo 证据不能授权 PhysX 资产、Oracle 或 PPO。
 
 Stage 16-C.0 冻结 Python 3.11.15、Isaac Sim 5.1.0、Isaac Lab `v2.3.2`
 （commit `37ddf626871758333d6ed89cf64ad702aef127d0`）与 Torch 2.7.0 cu128。
-由于尚未记录 NVIDIA EULA 授权，当前状态为
-`STAGE16C0_ISAACLAB_PLATFORM_BLOCKED`。静态审计仍可复现，运行时资格会在
-Isaac import 前停止：
+在用户明确给出进程级 EULA 授权后，真实 GPU 资格结果为
+`STAGE16C0_ISAACLAB_PLATFORM_VALIDATED_WITH_LIMITATIONS`：全部硬 gate 通过；
+缺少交互显示与上游依赖 metadata 冲突作为软限制保留。
 
 NVIDIA 当前已将 Isaac Sim 5.1 标记为 unsupported；这里的 5.1/v2.3.2 组合是冻结的
 复现目标，不代表厂商仍提供持续支持。
@@ -54,12 +54,18 @@ NVIDIA 当前已将 Isaac Sim 5.1 标记为 unsupported；这里的 5.1/v2.3.2 �
 ```bash
 bash scripts/bootstrap_stage16_isaaclab_env.sh --dry-run
 conda run -n toporetarget-isaaclab python scripts/verify_stage16_isaaclab_platform.py --phase static
-conda run -n toporetarget-isaaclab python scripts/verify_stage16_isaaclab_platform.py --phase full --steps 1000
+conda run -n toporetarget-isaaclab python scripts/verify_stage16_isaaclab_platform.py --phase full --steps 1000 --accept-eula
+conda run -n toporetarget-isaaclab python scripts/rl/isaaclab/validate_stage16c1_assets.py
+conda run -n toporetarget-isaaclab python scripts/rl/isaaclab/import_wuji_hand2.py --upstream-root /home/deepcybo/workspace/dex/wuji-description --accept-eula
+conda run -n toporetarget-isaaclab python scripts/rl/isaaclab/import_hocap_objects.py --accept-eula
 ```
 
-最后一条命令只记录 `ISAACLAB_EULA_ACCEPTANCE_REQUIRED`，不会接受协议。
-Headless 与 viewer smoke 命令见[环境配置说明](docs/rl/ISAACLAB_ENVIRONMENT_SETUP.md)。
-Wuji/HO-Cap 资产迁移、自定义 Isaac Lab 任务、PhysX Oracle 与 PPO 均未开始。
+`--accept-eula` 仅在用户明确授权后可用，并且只在启动的运行时进程中设置
+`OMNI_KIT_ACCEPT_EULA=YES`；它不代表隐私或 telemetry 同意。Stage 16-C.1 已验证
+浮动基座 Wuji articulation、两个 free HO-Cap rigid object、1/128-env CUDA smoke
+与有界接触响应。生成的 USD 和报告仍位于被忽略的 `.local/`。自定义
+`DirectRLEnv`、PhysX Oracle 与 PPO 尚未开始。详见
+[资产迁移契约](docs/rl/ISAACLAB_ASSET_MIGRATION.md)。
 
 ## 数据集支持
 

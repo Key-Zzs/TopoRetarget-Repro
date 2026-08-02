@@ -59,8 +59,8 @@ R0 is MJCF playback/PD, R1 is PPO tracking, and CP remains later.
 | 16-B.3 | MuJoCo two-clip PPO | Balanced two-clip 26D policy | Requires both single-clip gates | TODO / not started |
 | 16-B.4 | Full domain randomization | World-wrist DR suite | Gated by a qualified two-clip nominal policy | TODO |
 | 16-B.5 | Geometry/zero/PPO comparison | Comparable trajectory/contact audit | Gated by a qualified PPO rollout | TODO |
-| 16-C.0 | Isaac Lab platform qualification | Host, isolated install, Isaac Sim/Lab, GPU PhysX, headless and 128-env vector smoke | Platform-only evidence; no custom assets/task/PPO | BLOCKED: `ISAACLAB_EULA_ACCEPTANCE_REQUIRED` |
-| 16-C.1 | Wuji and object asset migration | Wuji Hand2 Beta1 and HO-Cap object migration | Authorized only by C.0 | TODO |
+| 16-C.0 | Isaac Lab platform qualification | Host, isolated install, Isaac Sim/Lab, GPU PhysX, headless and 128-env vector smoke | Platform-only evidence; no custom task/PPO | COMPLETE WITH LIMITATIONS: all hard gates pass; no display |
+| 16-C.1 | Wuji and object asset migration | Wuji Hand2 Beta1 plus HO-Cap 170105/170650 | Floating articulation, rigid dynamics, contact and 1/128-env CUDA evidence | COMPLETE WITH VISUAL LIMITATION |
 | 16-C.2 | Isaac Lab `DirectRLEnv` | Stage-16 task shell | Asset migration complete | TODO |
 | 16-C.3 | Single-environment semantic parity | Action/observation/reward/termination parity | DirectRLEnv exists | TODO |
 | 16-C.4 | GPU vectorization benchmark | Stage-16 task throughput | Semantic parity passes | TODO |
@@ -83,11 +83,12 @@ Stage 16-C.0 freezes the independent platform stack to Python 3.11.15, Isaac
 Sim 5.1.0, Isaac Lab v2.3.2 at exact commit
 `37ddf626871758333d6ed89cf64ad702aef127d0`, and Torch 2.7.0 cu128. Its
 qualification is limited to host/install/import, finite official GPU-PhysX,
-headless, viewer, and 128-environment evidence. C.1-C.9 remain TODO and no PPO
-is authorized by C.0 alone. The current C.0 result is
-`STAGE16C0_ISAACLAB_PLATFORM_BLOCKED`: no explicit NVIDIA EULA authorization
-is recorded, so runtime evidence is deliberately not collected and C.1 is not
-authorized.
+headless, viewer, and 128-environment evidence. Its current result is
+`STAGE16C0_ISAACLAB_PLATFORM_VALIDATED_WITH_LIMITATIONS`; all hard gates pass,
+while viewer review is unavailable without a display. C.1 independently
+validates the floating Wuji Hand2 Beta1 articulation, both frozen HO-Cap
+objects, bounded contact, CUDA tensors, and 128-env subset reset. C.2-C.9
+remain TODO and neither C.0 nor C.1 authorizes PPO.
 
 The Wuji three-clip implementation is available through the generic
 `workflow run-grab-suite` command; its completion status is determined only by

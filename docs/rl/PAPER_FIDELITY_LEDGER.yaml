@@ -48,9 +48,10 @@ isaaclab_platform_extension:
   official_task_smoke_only: true
   required_vector_envs: 128
   viewer_soft_gate: true
-  current_status: STAGE16C0_ISAACLAB_PLATFORM_BLOCKED
-  blocker: ISAACLAB_EULA_ACCEPTANCE_REQUIRED
-  custom_assets_migrated: false
+  current_status: STAGE16C0_ISAACLAB_PLATFORM_VALIDATED_WITH_LIMITATIONS
+  blocker: null
+  custom_assets_migrated: true
+  stage16c1_status: STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED_WITH_VISUAL_LIMITATION
   custom_direct_rl_env_implemented: false
   physx_oracle_run: false
   ppo_started: false
