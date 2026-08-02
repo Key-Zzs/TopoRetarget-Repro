@@ -249,9 +249,7 @@ def test_runtime_phase_fails_closed_before_isaac_import_without_eula_authorizati
     assert transition["attempt"] == 1
     assert transition["remaining_major_transitions"] == 15
     handoff = (tmp_path / "handoff.md").read_text()
-    assert handoff.startswith(
-        "# Stage 16-B.1c MuJoCo Closeout and Stage 16-C.0 Isaac Lab Platform Handoff"
-    )
+    assert handoff.startswith("# Stage 16-C.0 Isaac Lab Runtime Qualification Handoff")
     assert "## 20. Recommended Next Action" in handoff
     assert (tmp_path / "git_commits.json").is_file()
     assert (tmp_path / "tests.json").is_file()

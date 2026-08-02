@@ -16,10 +16,12 @@ import math
 import os
 import platform
 import re
+import resource
 import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -153,6 +155,47 @@ def _gpu_snapshot() -> dict[str, Any]:
         "memory_total_mib": int(fields[3]) if len(fields) >= 4 else None,
         "performance_state": fields[4] if len(fields) >= 5 else None,
     }
+
+
+def _resource_probe_start() -> dict[str, Any]:
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    return {
+        "wall_time": time.monotonic(),
+        "process_cpu_time_s": time.process_time(),
+        "process_peak_rss_mib": usage.ru_maxrss / 1024.0,
+        "gpu_samples": [_gpu_snapshot()],
+    }
+
+
+def _resource_probe_sample(probe: dict[str, Any]) -> None:
+    probe["gpu_samples"].append(_gpu_snapshot())
+
+
+def _resource_probe_finish(probe: dict[str, Any]) -> dict[str, Any]:
+    wall_time = max(time.monotonic() - float(probe["wall_time"]), 1.0e-9)
+    cpu_time = max(time.process_time() - float(probe["process_cpu_time_s"]), 0.0)
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    gpu_samples = probe["gpu_samples"]
+    memory_samples = [
+        item["memory_used_mib"] for item in gpu_samples if item.get("memory_used_mib") is not None
+    ]
+    utilization_samples = [
+        item["utilization_percent"]
+        for item in gpu_samples
+        if item.get("utilization_percent") is not None
+    ]
+    return {
+        "process_cpu_time_s": cpu_time,
+        "process_cpu_core_percent": 100.0 * cpu_time / wall_time,
+        "process_peak_rss_mib": max(float(probe["process_peak_rss_mib"]), usage.ru_maxrss / 1024.0),
+        "gpu_memory_peak_mib": max(memory_samples) if memory_samples else None,
+        "gpu_utilization_peak_percent": (max(utilization_samples) if utilization_samples else None),
+        "gpu_sample_count": len(gpu_samples),
+    }
+
+
+def _sample_interval(steps: int) -> int:
+    return max(steps // 10, 1)
 
 
 def _git_value(root: Path, *arguments: str) -> str | None:
@@ -520,10 +563,16 @@ def _runtime_imports(*, headless: bool, report_paths: tuple[Path, ...] = ()) -> 
         import isaaclab
         import isaaclab_tasks
         import isaacsim
+        import omni.kit.app
         import torch
 
+        kit_app = omni.kit.app.get_app()
         result = {
             "result": "PASS",
+            "isaac_sim_actual_version": _package_version("isaacsim"),
+            "isaac_lab_actual_version": _package_version("isaaclab"),
+            "kit_version": kit_app.get_kit_version(),
+            "kit_build_version": kit_app.get_build_version(),
             "isaacsim_module": str(Path(isaacsim.__file__).resolve()),
             "isaaclab_module": str(Path(isaaclab.__file__).resolve()),
             "isaaclab_tasks_module": str(Path(isaaclab_tasks.__file__).resolve()),
@@ -570,11 +619,15 @@ def _empty_scene(
         simulation_context.reset()
         torch.cuda.reset_peak_memory_stats()
         gpu_before = _gpu_snapshot()
+        resources = _resource_probe_start()
         tensor = torch.zeros((1,), device="cuda:0")
-        for _ in range(steps):
+        for step in range(steps):
             simulation_context.step(render=not headless)
+            if (step + 1) % _sample_interval(steps) == 0:
+                _resource_probe_sample(resources)
         torch.cuda.synchronize()
         gpu_after = _gpu_snapshot()
+        resource_usage = _resource_probe_finish(resources)
         duration = time.monotonic() - started
         simulation_device = str(simulation_context.device)
         result = {
@@ -590,6 +643,7 @@ def _empty_scene(
             "torch_peak_reserved_bytes": torch.cuda.max_memory_reserved(),
             "gpu_before": gpu_before,
             "gpu_after": gpu_after,
+            "resource_usage": resource_usage,
             "wall_time_s": duration,
             "physics_steps_per_s": steps / duration,
         }
@@ -652,10 +706,14 @@ def _primitive_scene(
         tensor = torch.zeros((1,), device="cuda:0")
         torch.cuda.reset_peak_memory_stats()
         gpu_before = _gpu_snapshot()
-        for _ in range(steps):
+        resources = _resource_probe_start()
+        for step in range(steps):
             simulation_context.step(render=not headless)
+            if (step + 1) % _sample_interval(steps) == 0:
+                _resource_probe_sample(resources)
         torch.cuda.synchronize()
         gpu_after = _gpu_snapshot()
+        resource_usage = _resource_probe_finish(resources)
         duration = time.monotonic() - started
         simulation_device = str(simulation_context.device)
         result = {
@@ -681,6 +739,7 @@ def _primitive_scene(
             "torch_peak_reserved_bytes": torch.cuda.max_memory_reserved(),
             "gpu_before": gpu_before,
             "gpu_after": gpu_after,
+            "resource_usage": resource_usage,
             "wall_time_s": duration,
             "physics_steps_per_s": steps / duration,
         }
@@ -715,7 +774,9 @@ def _official_vector_smoke(
 
         env_cfg = parse_env_cfg(task_id, device="cuda:0", num_envs=num_envs)
         env = gym.make(task_id, cfg=env_cfg)
+        reset_started = time.monotonic()
         observations, _ = env.reset()
+        reset_time_s = time.monotonic() - reset_started
         first_observation = _first_tensor(observations)
         if first_observation is None:
             raise RuntimeError("official task returned no tensor observation")
@@ -727,7 +788,8 @@ def _official_vector_smoke(
         action_shape = tuple(env.action_space.shape)
         torch.cuda.reset_peak_memory_stats()
         gpu_before = _gpu_snapshot()
-        for _ in range(steps):
+        resources = _resource_probe_start()
+        for step in range(steps):
             actions = 2.0 * torch.rand(action_shape, device="cuda:0") - 1.0
             if num_envs > 1 and actions.shape[0] == num_envs:
                 independent_action_rows |= bool(
@@ -739,11 +801,14 @@ def _official_vector_smoke(
             reset_counts += done.to(dtype=torch.int64)
             done_count = int(done.sum().item())
             partial_reset_events += int(0 < done_count < num_envs)
+            if (step + 1) % _sample_interval(steps) == 0:
+                _resource_probe_sample(resources)
         final_observation = _first_tensor(observations)
         if final_observation is None:
             raise RuntimeError("official task returned no final tensor observation")
         torch.cuda.synchronize()
         gpu_after = _gpu_snapshot()
+        resource_usage = _resource_probe_finish(resources)
         duration = time.monotonic() - started
         origin_rows = torch.unique(origins, dim=0).shape[0]
         result = {
@@ -760,6 +825,9 @@ def _official_vector_smoke(
             "observation_device": str(first_observation.device),
             "observation_shape": list(first_observation.shape),
             "action_shape": list(action_shape),
+            "done_shape": list(done.shape),
+            "done_device": str(done.device),
+            "done_dtype": str(done.dtype),
             "env_origins_shape": list(origins.shape),
             "unique_env_origins": int(origin_rows),
             "done_env_count": int(done_total.sum().item()),
@@ -767,6 +835,7 @@ def _official_vector_smoke(
             "reset_count_min": int(reset_counts.min().item()),
             "reset_count_max": int(reset_counts.max().item()),
             "partial_reset_events": partial_reset_events,
+            "initial_reset_time_s": reset_time_s,
             "per_env_action_independence": num_envs == 1 or independent_action_rows,
             "per_env_reset_independence": num_envs == 1 or partial_reset_events > 0,
             "finite_observation": bool(torch.isfinite(final_observation).all().item()),
@@ -774,6 +843,7 @@ def _official_vector_smoke(
             "torch_peak_reserved_bytes": torch.cuda.max_memory_reserved(),
             "gpu_before": gpu_before,
             "gpu_after": gpu_after,
+            "resource_usage": resource_usage,
             "wall_time_s": duration,
             "physics_steps_per_s": num_envs * steps / duration,
             "control_steps_per_s": steps / duration,
@@ -805,13 +875,20 @@ def _write_runtime_logs(output_root: Path, runtime: dict[str, Any]) -> None:
     log_root = output_root / "isaac_sim_logs"
     log_root.mkdir(parents=True, exist_ok=True)
     child_processes = runtime.get("child_processes", {})
+    combined: list[str] = []
     for phase, process in child_processes.items():
         if not isinstance(process, dict):
             continue
         for stream in ("stdout", "stderr"):
-            (log_root / f"{phase}.{stream}.log").write_text(
-                str(process.get(stream, "")) + "\n", encoding="utf-8"
+            source_log = Path(str(process.get(f"{stream}_log", "")))
+            content = (
+                source_log.read_text(encoding="utf-8")
+                if source_log.is_file()
+                else str(process.get(stream, ""))
             )
+            (log_root / f"{phase}.{stream}.log").write_text(content + "\n", encoding="utf-8")
+            combined.extend((f"===== {phase} {stream} =====", content, ""))
+    (output_root / "isaac_sim_runtime.log").write_text("\n".join(combined), encoding="utf-8")
 
 
 def _write_closeout_artifacts(
@@ -870,7 +947,7 @@ def _write_closeout_artifacts(
     remote_head = _git_value(REPO_ROOT, "rev-parse", "origin/feature/reference-tracking-isaaclab")
     commit_log = _run(["git", "log", "--oneline", "origin/main..HEAD"], timeout=60.0)
     handoff = [
-        "# Stage 16-B.1c MuJoCo Closeout and Stage 16-C.0 Isaac Lab Platform Handoff",
+        "# Stage 16-C.0 Isaac Lab Runtime Qualification Handoff",
         "",
         "## 1. Final Status",
         "",
@@ -947,7 +1024,8 @@ def _write_closeout_artifacts(
         ),
         (
             "    conda run -n toporetarget-isaaclab python "
-            "scripts/verify_stage16_isaaclab_platform.py --phase full --steps 1000"
+            "scripts/verify_stage16_isaaclab_platform.py --phase full --steps 1000 "
+            "--accept-eula"
         ),
         "",
         "## 9. Isaac Sim Runtime Validation",
@@ -985,11 +1063,11 @@ def _write_closeout_artifacts(
         "",
         "## 15. Tests",
         "",
-        "See `tests.json`; runtime-specific smoke remains NOT_RUN when the EULA gate is closed.",
+        "See `tests.json`; runtime-specific smokes are real GPU executions when C.0 is validated.",
         "",
         "## 16. README and Roadmap",
         "",
-        "English/Chinese README and roadmaps record C.0 blocked and C.1-C.9 TODO.",
+        "English/Chinese README and roadmaps must record the actual C.0 result.",
         "",
         "## 17. Local and Remote Commits",
         "",
@@ -1002,15 +1080,15 @@ def _write_closeout_artifacts(
         "## 19. Remaining Limitations",
         "",
         (
-            "Wuji/object migration, custom DirectRLEnv, PhysX oracle, Isaac PPO, "
-            "and MuJoCo/PhysX semantic alignment remain undone."
+            "C.0 does not itself implement Wuji/object migration, custom DirectRLEnv, "
+            "PhysX oracle, Isaac PPO, or MuJoCo/PhysX semantic alignment."
         ),
         "",
         "## 20. Recommended Next Action",
         "",
         (
-            "Obtain explicit EULA authorization and rerun C.0; only a validated "
-            "result can authorize C.1."
+            "If C.0 is validated, continue only with the separately bounded C.1 asset "
+            "migration; otherwise repair the smallest recorded C.0 blocker."
         ),
     ]
     (output_root / "handoff.md").write_text("\n".join(handoff) + "\n", encoding="utf-8")
@@ -1093,6 +1171,7 @@ def _run_full_children(
 
     def run_child(phase: str, *, num_envs: int | None = None) -> tuple[dict[str, Any], Path]:
         phase_root = child_root / (f"{phase}-{num_envs}" if num_envs is not None else phase)
+        phase_root.mkdir(parents=True, exist_ok=True)
         command = [
             sys.executable,
             str(Path(__file__).resolve()),
@@ -1113,6 +1192,9 @@ def _run_full_children(
             command.append("--accept-eula")
         process = _run(command, timeout=600.0)
         for stream in ("stdout", "stderr"):
+            log_path = phase_root / f"child_process.{stream}.log"
+            log_path.write_text(str(process[stream]) + "\n", encoding="utf-8")
+            process[f"{stream}_log"] = str(log_path.resolve())
             if len(process[stream]) > 8000:
                 process[stream] = "...<truncated>...\n" + process[stream][-8000:]
         return process, phase_root
@@ -1129,10 +1211,23 @@ def _run_full_children(
             if isinstance(payload, dict):
                 payload["child_process_returncode"] = process["returncode"]
                 payload["clean_process_exit"] = process["returncode"] == 0
+                payload["child_process_duration_s"] = process["duration_s"]
+                payload["stdout_log"] = process["stdout_log"]
+                payload["stderr_log"] = process["stderr_log"]
+                diagnostics = "\n".join(
+                    str(process.get(stream, "")) for stream in ("stdout", "stderr")
+                ).splitlines()
+                payload["warnings"] = [line for line in diagnostics if "warning" in line.lower()][
+                    -50:
+                ]
+                payload["errors"] = [line for line in diagnostics if "error" in line.lower()][-50:]
                 for run in payload.get("runs", []):
                     if isinstance(run, dict):
                         run["child_process_returncode"] = process["returncode"]
                         run["clean_process_exit"] = process["returncode"] == 0
+                        run["child_process_duration_s"] = process["duration_s"]
+                        run["stdout_log"] = process["stdout_log"]
+                        run["stderr_log"] = process["stderr_log"]
             return payload
         return {
             "result": "FAIL",
@@ -1214,7 +1309,7 @@ def main() -> int:
     if args.phase == "static":
         evidence["verify_script"] = True
         status = classify_stage16c0_status(evidence, viewer_available=False)
-        summary = {
+        summary: dict[str, Any] = {
             "phase": "static",
             "status": status.value,
             "evidence": evidence,
@@ -1257,7 +1352,7 @@ def main() -> int:
             encoding="utf-8",
         )
         recovery_path = output_root / "recovery_transitions.jsonl"
-        existing_transitions: list[dict[str, Any]] = []
+        existing_transitions: list[Mapping[str, Any]] = []
         if recovery_path.is_file():
             for line in recovery_path.read_text(encoding="utf-8").splitlines():
                 payload = json.loads(line)

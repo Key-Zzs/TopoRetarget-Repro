@@ -13,6 +13,13 @@ def classify_c1_status(gates: dict[str, bool]) -> str:
     return "STAGE16C1_ISAACLAB_ASSET_MIGRATION_BLOCKED"
 
 
+def classify_c2_entry(c1_status: str, *, entry_authorized: bool) -> str:
+    """Authorize only C.2 entry; never imply that C.2 or later work ran."""
+    if c1_status == "STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED" and entry_authorized:
+        return "STAGE16C2_DIRECT_RL_ENV_AUTHORIZED"
+    return "STAGE16C2_DIRECT_RL_ENV_BLOCKED"
+
+
 def validate_manifest_schema(manifest: dict[str, Any]) -> None:
     required = {
         "source_repo",

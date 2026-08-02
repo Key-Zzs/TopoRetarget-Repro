@@ -78,6 +78,11 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Read-only wuji-description checkout root; recorded in the generated report only",
     )
+    parser.add_argument(
+        "--requested-upstream-root",
+        type=Path,
+        help="Optional originally requested checkout path for provenance diagnostics only",
+    )
     return parser.parse_args()
 
 
@@ -154,6 +159,7 @@ def main() -> None:
             mesh.CreateFaceVertexCountsAttr([3] * len(faces))
             mesh.CreateFaceVertexIndicesAttr(faces.reshape(-1).tolist())
             mesh.CreateSubdivisionSchemeAttr(UsdGeom.Tokens.none)
+            UsdGeom.Imageable(mesh.GetPrim()).CreateVisibilityAttr(UsdGeom.Tokens.invisible)
             UsdPhysics.CollisionAPI.Apply(mesh.GetPrim()).CreateCollisionEnabledAttr(True)
             UsdPhysics.MeshCollisionAPI.Apply(mesh.GetPrim()).CreateApproximationAttr("convexHull")
             proxy_inventory[body_name] = {
@@ -273,6 +279,40 @@ def main() -> None:
                 ),
                 "external_checkout_modified": bool(
                     _git_value(args.upstream_root, "status", "--porcelain")
+                ),
+                "requested_checkout_path": (
+                    str(args.requested_upstream_root.resolve())
+                    if args.requested_upstream_root is not None
+                    else None
+                ),
+                "requested_checkout_exists": (
+                    args.requested_upstream_root.exists()
+                    if args.requested_upstream_root is not None
+                    else None
+                ),
+                "frozen_usd_directory_diff": _git_value(
+                    args.upstream_root,
+                    "diff",
+                    "--stat",
+                    cfg.wuji.source_commit,
+                    "--",
+                    "hand2/hand2_beta1/body/usd/right",
+                ),
+                "frozen_usd_directory_byte_identical": (
+                    subprocess.run(
+                        [
+                            "git",
+                            "-C",
+                            str(args.upstream_root),
+                            "diff",
+                            "--quiet",
+                            cfg.wuji.source_commit,
+                            "--",
+                            "hand2/hand2_beta1/body/usd/right",
+                        ],
+                        check=False,
+                    ).returncode
+                    == 0
                 ),
             },
         )

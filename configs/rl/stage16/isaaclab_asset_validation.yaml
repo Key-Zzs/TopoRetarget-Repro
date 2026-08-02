@@ -10,6 +10,7 @@ scope:
   allow_direct_rl_env: false
   allow_physx_oracle: false
   allow_ppo: false
+  authorize_c2_entry_when_c1_validated: true
 wuji:
   id: wuji_hand2_beta1_rh
   source_repo: https://github.com/wuji-technology/wuji-description.git

@@ -15,6 +15,7 @@ from toporetarget.rl.environments.isaaclab_backend.asset_contracts import (
 )
 from toporetarget.rl.environments.isaaclab_backend.asset_validation import (
     classify_c1_status,
+    classify_c2_entry,
     validate_manifest_schema,
 )
 from toporetarget.rl.environments.isaaclab_backend.hocap_object_import import (
@@ -38,6 +39,7 @@ def test_asset_config_freezes_exact_scope_mapping_and_dynamics() -> None:
         "allow_direct_rl_env": False,
         "allow_physx_oracle": False,
         "allow_ppo": False,
+        "authorize_c2_entry_when_c1_validated": True,
     }
     assert cfg.wuji.source_commit == "2b57d2621caed4e65207bb767ba25fc8eaec0881"
     assert cfg.wuji.fixed_base is False
@@ -126,6 +128,17 @@ def test_manifest_schema_and_fail_closed_status() -> None:
     assert classify_c1_status({"source": True, "runtime": True}).endswith("VALIDATED")
     assert classify_c1_status({"source": True, "runtime": False}).endswith("PARTIAL")
     assert classify_c1_status({"source": False, "runtime": False}).endswith("BLOCKED")
+
+
+def test_c2_entry_is_authorized_only_after_validated_c1() -> None:
+    validated = "STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED"
+    assert classify_c2_entry(validated, entry_authorized=True) == (
+        "STAGE16C2_DIRECT_RL_ENV_AUTHORIZED"
+    )
+    assert classify_c2_entry(validated, entry_authorized=False).endswith("BLOCKED")
+    assert classify_c2_entry(
+        "STAGE16C1_ISAACLAB_ASSET_MIGRATION_PARTIAL", entry_authorized=True
+    ).endswith("BLOCKED")
 
 
 def test_recovery_budgets_are_bounded() -> None:
