@@ -512,7 +512,7 @@ def _launch_app(*, headless: bool) -> tuple[Any, Any]:
     return launcher, launcher.app
 
 
-def _runtime_imports(*, headless: bool) -> dict[str, Any]:
+def _runtime_imports(*, headless: bool, report_paths: tuple[Path, ...] = ()) -> dict[str, Any]:
     started = time.monotonic()
     launcher = app = None
     try:
@@ -522,7 +522,7 @@ def _runtime_imports(*, headless: bool) -> dict[str, Any]:
         import isaacsim
         import torch
 
-        return {
+        result = {
             "result": "PASS",
             "isaacsim_module": str(Path(isaacsim.__file__).resolve()),
             "isaaclab_module": str(Path(isaaclab.__file__).resolve()),
@@ -536,13 +536,27 @@ def _runtime_imports(*, headless: bool) -> dict[str, Any]:
             ),
             "duration_s": time.monotonic() - started,
         }
+        for report_path in report_paths:
+            _write_json(report_path, result)
+        return result
     finally:
         if app is not None:
-            app.close()
+            app.close(wait_for_replicator=False)
         del launcher
 
 
-def _empty_scene(*, steps: int, headless: bool) -> dict[str, Any]:
+def _clear_simulation_context(simulation_context: Any) -> None:
+    """Release Isaac Lab callbacks/singleton before SimulationApp closes its stage."""
+
+    if simulation_context is None:
+        return
+    simulation_context.clear_all_callbacks()
+    simulation_context.clear_instance()
+
+
+def _empty_scene(
+    *, steps: int, headless: bool, report_paths: tuple[Path, ...] = ()
+) -> dict[str, Any]:
     started = time.monotonic()
     launcher = app = simulation_context = None
     try:
@@ -563,7 +577,7 @@ def _empty_scene(*, steps: int, headless: bool) -> dict[str, Any]:
         gpu_after = _gpu_snapshot()
         duration = time.monotonic() - started
         simulation_device = str(simulation_context.device)
-        return {
+        result = {
             "result": "PASS",
             "headless": headless,
             "steps": steps,
@@ -579,10 +593,14 @@ def _empty_scene(*, steps: int, headless: bool) -> dict[str, Any]:
             "wall_time_s": duration,
             "physics_steps_per_s": steps / duration,
         }
+        for report_path in report_paths:
+            _write_json(report_path, result)
+        return result
     finally:
-        del simulation_context
+        _clear_simulation_context(simulation_context)
         if app is not None:
-            app.close()
+            app.close(wait_for_replicator=False)
+        del simulation_context
         del launcher
 
 
@@ -599,7 +617,13 @@ def _first_tensor(value: Any) -> Any:
     return None
 
 
-def _primitive_scene(*, steps: int, headless: bool, reference_script: Path) -> dict[str, Any]:
+def _primitive_scene(
+    *,
+    steps: int,
+    headless: bool,
+    reference_script: Path,
+    report_paths: tuple[Path, ...] = (),
+) -> dict[str, Any]:
     """Run a finite, local-only adaptation of the official spawn-prims tutorial."""
     started = time.monotonic()
     launcher = app = simulation_context = None
@@ -634,7 +658,7 @@ def _primitive_scene(*, steps: int, headless: bool, reference_script: Path) -> d
         gpu_after = _gpu_snapshot()
         duration = time.monotonic() - started
         simulation_device = str(simulation_context.device)
-        return {
+        result = {
             "result": "PASS",
             "official_reference_script": str(reference_script.resolve()),
             "official_reference_sha256": _sha256(reference_script),
@@ -660,10 +684,14 @@ def _primitive_scene(*, steps: int, headless: bool, reference_script: Path) -> d
             "wall_time_s": duration,
             "physics_steps_per_s": steps / duration,
         }
+        for report_path in report_paths:
+            _write_json(report_path, result)
+        return result
     finally:
-        del simulation_context
+        _clear_simulation_context(simulation_context)
         if app is not None:
-            app.close()
+            app.close(wait_for_replicator=False)
+        del simulation_context
         del launcher
 
 
@@ -674,6 +702,7 @@ def _official_vector_smoke(
     steps: int,
     headless: bool,
     reference_script: Path,
+    report_paths: tuple[Path, ...] = (),
 ) -> dict[str, Any]:
     started = time.monotonic()
     launcher = app = env = None
@@ -717,7 +746,7 @@ def _official_vector_smoke(
         gpu_after = _gpu_snapshot()
         duration = time.monotonic() - started
         origin_rows = torch.unique(origins, dim=0).shape[0]
-        return {
+        result = {
             "result": "PASS",
             "official_reference_script": str(reference_script.resolve()),
             "official_reference_sha256": _sha256(reference_script),
@@ -751,6 +780,10 @@ def _official_vector_smoke(
             "parallel_envs_proven": bool(origin_rows == num_envs),
             "no_cpu_fallback_evidence": str(env.unwrapped.device) == "cuda:0",
         }
+        payload = {"task_id": task_id, "primitive_spawn": None, "runs": [result]}
+        for report_path in report_paths:
+            _write_json(report_path, payload)
+        return result
     finally:
         if env is not None:
             env.close()
@@ -1055,7 +1088,8 @@ def _run_full_children(
     output_root: Path,
     steps: int,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
-    child_root = output_root / "child_phases"
+    run_id = f"{time.strftime('%Y%m%dT%H%M%S')}-{os.getpid()}"
+    child_root = output_root / "child_phases" / run_id
 
     def run_child(phase: str, *, num_envs: int | None = None) -> tuple[dict[str, Any], Path]:
         phase_root = child_root / (f"{phase}-{num_envs}" if num_envs is not None else phase)
@@ -1077,7 +1111,7 @@ def _run_full_children(
             command.extend(("--num-envs", str(num_envs)))
         if args.accept_eula:
             command.append("--accept-eula")
-        process = _run(command, timeout=1800.0)
+        process = _run(command, timeout=600.0)
         for stream in ("stdout", "stderr"):
             if len(process[stream]) > 8000:
                 process[stream] = "...<truncated>...\n" + process[stream][-8000:]
@@ -1091,7 +1125,15 @@ def _run_full_children(
 
     def load_or_failure(path: Path, phase: str, process: dict[str, Any]) -> Any:
         if path.is_file():
-            return _read_json(path)
+            payload = _read_json(path)
+            if isinstance(payload, dict):
+                payload["child_process_returncode"] = process["returncode"]
+                payload["clean_process_exit"] = process["returncode"] == 0
+                for run in payload.get("runs", []):
+                    if isinstance(run, dict):
+                        run["child_process_returncode"] = process["returncode"]
+                        run["clean_process_exit"] = process["returncode"] == 0
+            return payload
         return {
             "result": "FAIL",
             "phase": phase,
@@ -1280,7 +1322,13 @@ def main() -> int:
     else:
         if args.phase == "imports":
             try:
-                runtime_results["imports"] = _runtime_imports(headless=True)
+                runtime_results["imports"] = _runtime_imports(
+                    headless=True,
+                    report_paths=(
+                        output_root / "isaac_lab_import.json",
+                        output_root / "isaac_sim_import.json",
+                    ),
+                )
             except BaseException as exc:
                 runtime_results["imports"] = _runtime_failure("imports", exc)
             _write_json(output_root / "isaac_lab_import.json", runtime_results["imports"])
@@ -1288,7 +1336,15 @@ def main() -> int:
 
         if args.phase == "empty-scene":
             try:
-                runtime_results["empty_scene"] = _empty_scene(steps=steps, headless=True)
+                runtime_results["empty_scene"] = _empty_scene(
+                    steps=steps,
+                    headless=True,
+                    report_paths=(
+                        output_root / "isaac_sim_empty_scene.json",
+                        output_root / "headless_validation.json",
+                        output_root / "gpu_physx_evidence.json",
+                    ),
+                )
             except BaseException as exc:
                 runtime_results["empty_scene"] = _runtime_failure("empty-scene", exc)
             _write_json(output_root / "isaac_sim_empty_scene.json", runtime_results["empty_scene"])
@@ -1302,6 +1358,7 @@ def main() -> int:
                     headless=True,
                     reference_script=external_root
                     / str(config.raw["smoke"]["official_primitive_script"]),
+                    report_paths=(output_root / "isaac_lab_primitive_smoke.json",),
                 )
             except BaseException as exc:
                 runtime_results["primitive_spawn"] = _runtime_failure("primitive", exc)
@@ -1326,6 +1383,10 @@ def main() -> int:
                     headless=True,
                     reference_script=external_root
                     / str(config.raw["smoke"]["official_random_agent_script"]),
+                    report_paths=(
+                        output_root / "isaac_lab_official_smoke.json",
+                        output_root / "vector_env_benchmark.json",
+                    ),
                 )
             except BaseException as exc:
                 result = _runtime_failure(f"vector-{count}", exc)
@@ -1334,7 +1395,11 @@ def main() -> int:
 
         if args.phase == "viewer":
             try:
-                viewer = _empty_scene(steps=steps, headless=False)
+                viewer = _empty_scene(
+                    steps=steps,
+                    headless=False,
+                    report_paths=(output_root / "viewer_validation.json",),
+                )
             except BaseException as exc:
                 viewer = _runtime_failure("viewer", exc)
         else:
@@ -1351,11 +1416,23 @@ def main() -> int:
         _write_json(output_root / "vector_env_benchmark.json", payload)
     _write_json(output_root / "viewer_validation.json", viewer)
 
-    imports_pass = runtime_results.get("imports", {}).get("result") == "PASS"
-    empty_pass = runtime_results.get("empty_scene", {}).get("result") == "PASS"
-    primitive_pass = runtime_results.get("primitive_spawn", {}).get("result") == "PASS"
+    imports_pass = (
+        runtime_results.get("imports", {}).get("result") == "PASS"
+        and runtime_results.get("imports", {}).get("clean_process_exit", True) is True
+    )
+    empty_pass = (
+        runtime_results.get("empty_scene", {}).get("result") == "PASS"
+        and runtime_results.get("empty_scene", {}).get("clean_process_exit", True) is True
+    )
+    primitive_pass = (
+        runtime_results.get("primitive_spawn", {}).get("result") == "PASS"
+        and runtime_results.get("primitive_spawn", {}).get("clean_process_exit", True) is True
+    )
     vector_1 = any(
-        result.get("num_envs") == 1 and result.get("result") == "PASS" for result in vector_results
+        result.get("num_envs") == 1
+        and result.get("result") == "PASS"
+        and result.get("clean_process_exit", True) is True
+        for result in vector_results
     )
     vector_128 = any(
         result.get("num_envs") == 128
@@ -1363,6 +1440,7 @@ def main() -> int:
         and result.get("parallel_envs_proven") is True
         and result.get("per_env_action_independence") is True
         and result.get("per_env_reset_independence") is True
+        and result.get("clean_process_exit", True) is True
         for result in vector_results
     )
     evidence.update(

@@ -1,13 +1,11 @@
 schema_version: 1
 stage: 16-C.0
-status: qualification_blocked_eula
+status: qualification_validated_with_limitations
 
 scope:
   platform_only: true
-  allow_stage16_c1: false
+  allow_stage16_c1: true
   prohibited:
-    - wuji_asset_migration
-    - hocap_object_migration
     - custom_direct_rl_env
     - custom_stage16_reward
     - custom_stage16_action
@@ -94,5 +92,7 @@ licenses:
   isaac_lab: BSD-3-Clause
   isaac_sim: NVIDIA Omniverse License Agreement
   acceptance_policy: require_explicit_user_authorization
-  authorization_recorded: false
-  authorization_scope: no user authorization is recorded for this qualification
+  authorization_recorded: true
+  authorization_scope: >-
+    user explicitly authorized OMNI_KIT_ACCEPT_EULA=YES for Isaac Sim runtime
+    processes in this task; no privacy or telemetry consent was granted

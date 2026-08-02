@@ -59,9 +59,11 @@ def test_platform_config_freezes_official_stable_stack_and_c0_scope() -> None:
     assert config.cuda_runtime == "cu128"
     assert config.smoke_steps == 1000
     assert config.vector_env_counts == (1, 128, 512)
-    assert config.raw["scope"]["allow_stage16_c1"] is False
+    assert config.raw["status"] == "qualification_validated_with_limitations"
+    assert config.raw["scope"]["allow_stage16_c1"] is True
     assert "ppo_training" in config.raw["scope"]["prohibited"]
-    assert config.raw["licenses"]["authorization_recorded"] is False
+    assert config.raw["licenses"]["authorization_recorded"] is True
+    assert "no privacy or telemetry consent" in config.raw["licenses"]["authorization_scope"]
     assert config.raw["recovery"]["installation_method_switches_used"] == 0
     assert config.raw["recovery"]["retries_used_before_runtime"] == 2
     assert config.raw["smoke"]["official_primitive_script"].endswith("spawn_prims.py")
@@ -215,10 +217,17 @@ def test_base_import_does_not_load_isaac_or_torch() -> None:
 def test_runtime_phase_fails_closed_before_isaac_import_without_eula_authorization(
     tmp_path: Path,
 ) -> None:
+    config_payload = yaml.safe_load(CONFIG.read_text())
+    config_payload["licenses"]["authorization_recorded"] = False
+    config_payload["licenses"]["authorization_scope"] = "test fixture: authorization absent"
+    config_path = tmp_path / "unauthorized-platform.yaml"
+    config_path.write_text(yaml.safe_dump(config_payload), encoding="utf-8")
     result = subprocess.run(
         [
             sys.executable,
             "scripts/verify_stage16_isaaclab_platform.py",
+            "--config",
+            str(config_path),
             "--phase",
             "full",
             "--output-root",

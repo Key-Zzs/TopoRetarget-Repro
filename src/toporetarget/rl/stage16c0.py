@@ -252,12 +252,14 @@ class Stage16C0PlatformConfig:
         if not self.official_task_id.startswith("Isaac-"):
             raise ValueError("smoke.official_task_id must identify an official Isaac Lab task")
         scope = _mapping(self.raw, "scope")
-        if scope.get("allow_stage16_c1") is not False:
-            raise ValueError("Stage16-C.1 must remain fail-closed during C0")
+        status = str(self.raw.get("status", ""))
+        c1_allowed = scope.get("allow_stage16_c1")
+        if status == "qualification_blocked_eula" and c1_allowed is not False:
+            raise ValueError("blocked C0 cannot authorize Stage16-C.1")
+        if status == "qualification_validated_with_limitations" and c1_allowed is not True:
+            raise ValueError("validated C0 must explicitly authorize Stage16-C.1")
         forbidden = set(scope.get("prohibited", []))
         required_forbidden = {
-            "wuji_asset_migration",
-            "hocap_object_migration",
             "custom_direct_rl_env",
             "physx_oracle",
             "ppo_training",
