@@ -149,6 +149,20 @@ def main() -> int:
     }
     write_json(output_root / "frozen_inputs.json", frozen_inputs)
     write_json(
+        output_root / "preflight/platform_revalidation_attempt.json",
+        {
+            "status": "NOT_RUN_CONFIGURATION_INCOMPATIBLE",
+            "command": (
+                "verify_stage16_isaaclab_platform.py --phase full --steps 100 --accept-eula"
+            ),
+            "result": "the frozen C.0 verifier rejects --steps below 1000",
+            "resolution": (
+                "C.0 code and thresholds were not weakened; its existing full qualification "
+                "remains the authoritative platform evidence."
+            ),
+        },
+    )
+    write_json(
         output_root / "reference_step_contract.json",
         {
             "status": "VALIDATED",
