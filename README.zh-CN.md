@@ -63,8 +63,11 @@ conda run -n toporetarget-isaaclab python scripts/rl/isaaclab/import_hocap_objec
 `--accept-eula` 仅在用户明确授权后可用，并且只在启动的运行时进程中设置
 `OMNI_KIT_ACCEPT_EULA=YES`；它不代表隐私或 telemetry 同意。Stage 16-C.1 已验证
 浮动基座 Wuji articulation、两个 free HO-Cap rigid object、1/128-env CUDA smoke
-与有界接触响应。生成的 USD 和报告仍位于被忽略的 `.local/`。自定义
-`DirectRLEnv`、PhysX Oracle 与 PPO 尚未开始。详见
+、具名 PhysX 接触对证据与有界接触响应。其精确状态为
+`STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED`；真实 RTX 离屏渲染单独审查，
+不改变硬 gate 枚举。生成的 USD 和报告仍位于被忽略的 `.local/`。C.2 入口状态为
+`STAGE16C2_DIRECT_RL_ENV_AUTHORIZED`，但自定义 `DirectRLEnv`、PhysX Oracle、
+PPO 样本与 checkpoint 均尚未创建。详见
 [资产迁移契约](docs/rl/ISAACLAB_ASSET_MIGRATION.md)。
 
 ## 数据集支持

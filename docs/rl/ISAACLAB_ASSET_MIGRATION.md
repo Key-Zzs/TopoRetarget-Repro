@@ -62,6 +62,8 @@ conda run -n toporetarget-isaaclab \
 
 Repeat the last command for `hocap_170650`; use `--num-envs 1` for individual
 joint response and `--contact --steps 100` for the bounded contact smoke.
+Real offscreen RTX review uses `render_stage16c1_assets.py`; it is a visual
+audit and is not a substitute for the runtime/contact gates.
 
 ## Acceptance
 
@@ -72,7 +74,9 @@ motion without object pose control. Both 128-env runs use unique environment
 origins, CUDA tensors with `[128,20]` joint and `[128,13]` object state shapes,
 and a declared even-environment reset with `0.0 m` final reset error.
 
-The host has no active display. Headless numerical validation is complete, but
-interactive viewer/screenshot review is recorded as a soft visual limitation.
-This does not weaken any asset, dynamics, contact, CUDA, or vectorization hard
-gate, and it does not authorize Stage 16-C.2 or later work.
+The exact C.1 hard-gate status is
+`STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED`. Visual availability and review
+are recorded separately and cannot change that enum. This authorizes only the
+entry decision `STAGE16C2_DIRECT_RL_ENV_AUTHORIZED`; C.2 implementation,
+semantic parity, the PhysX oracle, PPO, samples, and checkpoints remain
+unstarted and require separate execution.

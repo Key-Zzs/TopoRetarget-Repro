@@ -107,7 +107,8 @@ audit_contracts:
     viewer_soft_gate: true
     custom_wuji_asset_migrated: true
     hocap_object_migrated: true
-    stage16c1_status: STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED_WITH_VISUAL_LIMITATION
+    stage16c1_status: STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED
+    stage16c2_entry_status: STAGE16C2_DIRECT_RL_ENV_AUTHORIZED
     custom_direct_rl_env_implemented: false
     physx_oracle_run: false
     ppo_started: false

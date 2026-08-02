@@ -68,9 +68,13 @@ conda run -n toporetarget-isaaclab python scripts/rl/isaaclab/import_hocap_objec
 `OMNI_KIT_ACCEPT_EULA=YES` only in the launched runtime process; it does not
 grant privacy or telemetry consent. Stage 16-C.1 now validates the floating
 Wuji articulation and both free HO-Cap rigid objects, including 1/128-env CUDA
-smokes and bounded contact response. Generated USDs and reports remain ignored
-under `.local/`. A custom `DirectRLEnv`, PhysX oracle, and PPO are still not
-started. See [the asset migration contract](docs/rl/ISAACLAB_ASSET_MIGRATION.md).
+smokes, named PhysX contact-pair evidence, and bounded contact response. Its
+exact status is `STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED`; real offscreen
+RTX rendering is reviewed separately and does not alter the hard-gate enum.
+Generated USDs and reports remain ignored under `.local/`. C.2 entry is
+`STAGE16C2_DIRECT_RL_ENV_AUTHORIZED`, but no custom `DirectRLEnv`, PhysX oracle,
+PPO sample, or checkpoint was created. See
+[the asset migration contract](docs/rl/ISAACLAB_ASSET_MIGRATION.md).
 
 ## Dataset support
 

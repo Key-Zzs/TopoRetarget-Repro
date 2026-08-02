@@ -51,7 +51,8 @@ isaaclab_platform_extension:
   current_status: STAGE16C0_ISAACLAB_PLATFORM_VALIDATED_WITH_LIMITATIONS
   blocker: null
   custom_assets_migrated: true
-  stage16c1_status: STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED_WITH_VISUAL_LIMITATION
+  stage16c1_status: STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED
+  stage16c2_entry_status: STAGE16C2_DIRECT_RL_ENV_AUTHORIZED
   custom_direct_rl_env_implemented: false
   physx_oracle_run: false
   ppo_started: false
