@@ -65,9 +65,14 @@ conda run -n toporetarget-isaaclab python scripts/rl/isaaclab/import_hocap_objec
 浮动基座 Wuji articulation、两个 free HO-Cap rigid object、1/128-env CUDA smoke
 、具名 PhysX 接触对证据与有界接触响应。其精确状态为
 `STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED`；真实 RTX 离屏渲染单独审查，
-不改变硬 gate 枚举。生成的 USD 和报告仍位于被忽略的 `.local/`。C.2 入口状态为
-`STAGE16C2_DIRECT_RL_ENV_AUTHORIZED`，但自定义 `DirectRLEnv`、PhysX Oracle、
-PPO 样本与 checkpoint 均尚未创建。详见
+不改变硬 gate 枚举。生成的 USD 和报告仍位于被忽略的 `.local/`。C.2 现为
+`STAGE16C2_DIRECT_RL_ENV_VALIDATED`：真实 GPU `DirectRLEnv` 已完成 1-env、
+交替 clip 和 128-env/1000-step 的有限值 smoke，且 rollout 中没有 object state
+write 或 wrist teleport。C.3 明确为
+`STAGE16C3_SEMANTIC_QUALIFICATION_PARTIAL`：dynamic wrist tracking 未达到
+2 cm/10 度诊断界限，且尚未接入 all-hand contact-pair/impulse 证据。因此 C.4
+vector qualification 与 C.5 PhysX Oracle 被 gate 阻断；C.6 PPO 未获授权，0 样本、
+0 checkpoint。详见 [DirectRLEnv 契约](docs/rl/ISAACLAB_DIRECT_RL_ENV.md) 和
 [资产迁移契约](docs/rl/ISAACLAB_ASSET_MIGRATION.md)。
 
 ## 数据集支持

@@ -375,3 +375,18 @@ PAPER_PROTOCOL_REPRODUCTION_WITH_ASSUMPTIONS rather than author-exact results.
 - 128-env platform spawning proves asset instancing, CUDA state tensors,
   distinct origins and subset-reset isolation. It does not prove Stage-16 task
   semantics, controllability, or PPO learnability.
+
+## Stage 16-C.2/C.3 DirectRLEnv assumptions
+
+- The C.2 action uses a 3-D local wrist translation residual (0.01 m), a local
+  SO(3) logarithmic wrist residual (5 degrees), and the frozen canonical 20-D
+  finger order (10 percent of each range). Joint-order conversion is explicit.
+- The global finite-wrench wrist controller uses 250 N/m, damping ratio 1.0,
+  2 Nm/rad, damping ratio 0.5, 25 N and 1.5 Nm limits, and unit reference-twist
+  feed-forward. These are engineering values, not paper or hardware control.
+- C.2 writes object/wrist root state only during reset. The separate C.3
+  kinematic-object diagnostic is explicitly non-formal and records its own
+  state writes; it cannot demonstrate free-object contact controllability.
+- C.3 is `PARTIAL`, not a contact or oracle success: no all-hand contact-pair
+  or impulse evidence is wired and the diagnostic wrist error exceeds 2 cm/10
+  degrees. C.4/C.5 must remain unrun and C.6 PPO is unauthorized.

@@ -71,9 +71,15 @@ Wuji articulation and both free HO-Cap rigid objects, including 1/128-env CUDA
 smokes, named PhysX contact-pair evidence, and bounded contact response. Its
 exact status is `STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED`; real offscreen
 RTX rendering is reviewed separately and does not alter the hard-gate enum.
-Generated USDs and reports remain ignored under `.local/`. C.2 entry is
-`STAGE16C2_DIRECT_RL_ENV_AUTHORIZED`, but no custom `DirectRLEnv`, PhysX oracle,
-PPO sample, or checkpoint was created. See
+Generated USDs and reports remain ignored under `.local/`. C.2 is now
+`STAGE16C2_DIRECT_RL_ENV_VALIDATED`: a real GPU `DirectRLEnv` passes 1-env,
+alternating-clip, and 128-env/1000-step finite smokes with no object rollout
+state write or wrist teleport. C.3 is deliberately
+`STAGE16C3_SEMANTIC_QUALIFICATION_PARTIAL`: dynamic wrist tracking misses its
+2 cm/10 degree diagnostic bound and all-hand contact-pair/impulse proof is not
+wired. Therefore C.4 vector qualification and C.5 PhysX oracle are blocked;
+C.6 PPO is not authorized and no samples/checkpoints exist. See the
+[DirectRLEnv contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md) and
 [the asset migration contract](docs/rl/ISAACLAB_ASSET_MIGRATION.md).
 
 ## Dataset support

@@ -170,3 +170,8 @@ authorize Stage 16-C.1 asset migration.
 
 Stage 16-C.1 commands, provenance, collision fallback, and runtime gates are
 documented in [ISAACLAB_ASSET_MIGRATION.md](ISAACLAB_ASSET_MIGRATION.md).
+
+The same frozen runtime subsequently executes C.2 real-GPU direct-environment
+smokes. Its C.3 semantic gate is partial, so this environment remains suitable
+for task debugging only; it does not authorize a vector benchmark, PhysX oracle,
+or PPO run.

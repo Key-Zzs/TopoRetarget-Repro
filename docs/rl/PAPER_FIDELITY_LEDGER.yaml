@@ -52,8 +52,13 @@ isaaclab_platform_extension:
   blocker: null
   custom_assets_migrated: true
   stage16c1_status: STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED
-  stage16c2_entry_status: STAGE16C2_DIRECT_RL_ENV_AUTHORIZED
-  custom_direct_rl_env_implemented: false
+  stage16c2_status: STAGE16C2_DIRECT_RL_ENV_VALIDATED
+  custom_direct_rl_env_implemented: true
+  stage16c3_status: STAGE16C3_SEMANTIC_QUALIFICATION_PARTIAL
+  stage16c3_blocker: C3_CONTACT_DRIVEN_RESPONSE_EVIDENCE_NOT_YET_IMPLEMENTED
+  stage16c4_status: NOT_RUN_GATE_BLOCKED_BY_C3
+  stage16c5_status: NOT_RUN_GATE_BLOCKED_BY_C3
+  stage16c6_ppo_authorized: false
   physx_oracle_run: false
   ppo_started: false
   mujoco_oracle_authorizes_physx: false

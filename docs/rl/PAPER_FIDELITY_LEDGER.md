@@ -60,6 +60,16 @@ is claimed.
 | Stage-16 assets | not specified | C.1 floating Wuji plus two nominal HO-Cap objects with deterministic convex proxies | ENGINEERING_EXTENSION | Stage 16-C.1 report bundle |
 | Stage-16 task/oracle/PPO | not specified | prohibited through C.1 | NOT_STARTED_SCOPE_BLOCKED | frozen C.1 scope |
 
+## Stage 16-C.2/C.3 DirectRLEnv ledger
+
+| Item | Paper value | Implemented mapping | Classification | Evidence |
+| --- | --- | --- | --- | --- |
+| 26-D action | not specified | 3 local translation, 3 local SO(3) log, 20 canonical fingers | ENGINEERING_EXTENSION | `isaaclab_world_wrist_env.yaml` |
+| finite wrist wrench | not specified | global 250 N/m, 2 Nm/rad with frozen limits | ENGINEERING_ASSUMPTION | `isaaclab_world_wrist_control.yaml` |
+| C.2 task shell | not specified | real GPU `DirectRLEnv`, 1/128-env finite smokes | ENGINEERING_EXTENSION | C.2 local report bundle |
+| C.3 semantic qualification | not specified | partial: wrist bound fails and contact impulse proof absent | ENGINEERING_DIAGNOSTIC | C.3 local report bundle |
+| C.4/C.5/C.6 | not specified | not run / not authorized after C.3 partial | NOT_STARTED_GATE_BLOCKED | C.3 gate decision |
+
 C.0 is not a paper-fidelity upgrade and is not evidence that the Stage-16
 task is controllable in PhysX. Its current result is
 `STAGE16C0_ISAACLAB_PLATFORM_VALIDATED_WITH_LIMITATIONS`; C.1 then validates

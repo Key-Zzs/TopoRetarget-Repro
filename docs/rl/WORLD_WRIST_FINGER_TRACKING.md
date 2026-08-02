@@ -199,10 +199,12 @@ requalify its own oracle and cannot inherit this MuJoCo gate.
 
 ## Isaac Lab handoff boundary
 
-Stage 16-C.0 adds only an isolated Isaac Sim/Lab platform qualification, and
-C.1 separately validates Wuji/HO-Cap asset migration. Neither consumes the
-MuJoCo action trace, reward, termination, or oracle as a PhysX success result.
-Semantic parity, a custom task, and a new PhysX oracle remain separate C.2-C.5
-gates before any C.6 PPO authorization. MuJoCo stays the CPU
+Stage 16-C.0 adds an isolated Isaac Sim/Lab platform qualification, and C.1
+separately validates Wuji/HO-Cap asset migration. C.2 then validates the custom
+26-D `DirectRLEnv` on real GPU with no rollout object pose write or wrist
+teleport. It does not consume a MuJoCo action trace, reward, termination, or
+oracle as PhysX success. C.3 is partial because dynamic wrist tracking exceeds
+its 2 cm/10 degree diagnostic bound and direct all-hand contact proof is absent;
+C.4/C.5 are gate-blocked and C.6 PPO is not authorized. MuJoCo stays the CPU
 correctness, deterministic-regression, contact-diagnostic, action-replay, and
 interactive-visualization backend.

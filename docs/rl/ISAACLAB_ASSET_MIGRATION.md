@@ -76,7 +76,7 @@ and a declared even-environment reset with `0.0 m` final reset error.
 
 The exact C.1 hard-gate status is
 `STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED`. Visual availability and review
-are recorded separately and cannot change that enum. This authorizes only the
-entry decision `STAGE16C2_DIRECT_RL_ENV_AUTHORIZED`; C.2 implementation,
-semantic parity, the PhysX oracle, PPO, samples, and checkpoints remain
-unstarted and require separate execution.
+are recorded separately and cannot change that enum. The authorized C.2 task
+now exists and passes real 1/128-env finite smoke evidence, but C.3 semantic
+qualification is partial (wrist diagnostic bound and direct contact proof
+fail). The PhysX oracle and PPO therefore remain unrun and unauthorized.

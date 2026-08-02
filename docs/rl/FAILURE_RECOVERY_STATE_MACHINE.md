@@ -66,3 +66,27 @@ major transitions. The URDF converter and high-poly collision strategies
 exceeded bounded extension/cooking time, so recovery switched to the exact
 upstream USD plus deterministic low-vertex convex proxies. Reports retain each
 failed strategy; no failed run is relabeled as a pass.
+
+## Stage 16-C.2--C.5 gate recovery
+
+```mermaid
+stateDiagram-v2
+    [*] --> C2_VALIDATED
+    C2_VALIDATED --> C3_RUNNING
+    C3_RUNNING --> C3_VALIDATED: wrist and contact gates pass
+    C3_RUNNING --> C3_PARTIAL: bound or contact proof fails
+    C3_VALIDATED --> C4_RUNNING
+    C4_RUNNING --> C4_VALIDATED
+    C4_VALIDATED --> C5_RUNNING
+    C5_RUNNING --> C5_VALIDATED
+    C5_VALIDATED --> C6_AUTHORIZED
+    C3_PARTIAL --> C4_BLOCKED
+    C4_BLOCKED --> C5_BLOCKED
+    C5_BLOCKED --> C6_NOT_AUTHORIZED
+```
+
+C.2 is validated. C.3 is partial because the dynamic-wrist diagnostic exceeds
+2 cm/10 degrees and contact-pair/impulse evidence is absent. The correct
+recovery is to add an observable, batched contact diagnostic and repair the
+demonstrated wrist tracking cause without changing frozen inputs or silently
+changing the controller. Do not run C.4/C.5 or PPO while this state is active.

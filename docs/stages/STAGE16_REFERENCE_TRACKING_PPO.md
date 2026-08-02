@@ -39,9 +39,11 @@ the Stage-16B.1c closeout is rooted at
 The complete contract is [WORLD_WRIST_FINGER_TRACKING.md](../rl/WORLD_WRIST_FINGER_TRACKING.md).
 
 Stage 16-C.0 platform qualification and C.1 asset migration are complete with
-the limitations recorded below. C.2 `DirectRLEnv`, C.3 semantic parity, C.4
-task vector benchmarks, C.5 PhysX oracle, C.6/C.7 PPO, C.8 randomization, and
-C.9 comparison remain TODO.
+the limitations recorded below. C.2 `DirectRLEnv` is validated on real GPU
+smokes. C.3 is partial: the dynamic-wrist diagnostic violates the 2 cm/10 degree
+bound and a direct all-hand contact-pair/impulse proof is absent. C.4 task-vector
+benchmarks and C.5 PhysX oracle are therefore not run; C.6/C.7 PPO remain
+unauthorized with zero samples and checkpoints. C.8/C.9 remain TODO.
 MuJoCo and PhysX need not be bitwise identical, but MuJoCo oracle evidence can
 never directly authorize an Isaac Lab policy run.
 
