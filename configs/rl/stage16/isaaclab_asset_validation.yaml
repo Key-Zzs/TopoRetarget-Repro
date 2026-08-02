@@ -1,0 +1,89 @@
+schema_version: toporetarget.stage16c1.asset_migration.v1
+stage: 16-C.1
+c0_required_statuses:
+  - STAGE16C0_ISAACLAB_PLATFORM_VALIDATED
+  - STAGE16C0_ISAACLAB_PLATFORM_VALIDATED_WITH_LIMITATIONS
+output_root: .local/generated_assets/isaaclab
+report_root: .local/reports/stage16c1_asset_migration
+scope:
+  allow_c2: false
+  allow_direct_rl_env: false
+  allow_physx_oracle: false
+  allow_ppo: false
+wuji:
+  id: wuji_hand2_beta1_rh
+  source_repo: https://github.com/wuji-technology/wuji-description.git
+  source_ref: release/v2026.7.23
+  source_commit: 2b57d2621caed4e65207bb767ba25fc8eaec0881
+  source_file: third_party/robot_hands/wuji_hand2_beta1/urdf/right.urdf
+  source_sha256: 1ae70be3f5e64532203e599eaa98d2af368d0214be9c949a358b7abaa8b6265a
+  official_usd_source: wujihand2.usd
+  official_usd_sha256: 261fbdf7a1c6c95f9d7c529356618d4cb39af98940014be139018c4d213e3ba7
+  license: MIT
+  root_link: r_wrist
+  fixed_base: false
+  units: {length: meter, angle: radian}
+  collision_strategy: deterministic_support_hull_proxies_with_floating_root_overlay_v1
+  self_collision: false
+  drive: {type: implicit_position, stiffness: 4.0, damping: 0.2}
+  joint_order: [r_thumb_cmc_flex, r_thumb_cmc_abd, r_thumb_mcp, r_thumb_ip, r_index_finger_mcp_flex, r_index_finger_mcp_abd, r_index_finger_pip, r_index_finger_dip, r_middle_finger_mcp_flex, r_middle_finger_mcp_abd, r_middle_finger_pip, r_middle_finger_dip, r_ring_finger_mcp_flex, r_ring_finger_mcp_abd, r_ring_finger_pip, r_ring_finger_dip, r_pinky_mcp_flex, r_pinky_mcp_abd, r_pinky_pip, r_pinky_dip]
+  tracked_links: [r_wrist, r_thumb_proximal, r_thumb_middle, r_thumb_distal, r_index_finger_proximal, r_index_finger_middle, r_index_finger_distal, r_middle_finger_proximal, r_middle_finger_middle, r_middle_finger_distal, r_ring_finger_proximal, r_ring_finger_middle, r_ring_finger_distal, r_pinky_proximal, r_pinky_middle, r_pinky_distal]
+  semantic_mapping:
+    r_thumb_cmc_flex: thumb_cmc
+    r_thumb_cmc_abd: thumb_cmc
+    r_thumb_mcp: thumb_mcp
+    r_thumb_ip: thumb_ip
+    r_index_finger_mcp_flex: index_mcp
+    r_index_finger_mcp_abd: index_mcp
+    r_index_finger_pip: index_pip
+    r_index_finger_dip: index_dip
+    r_middle_finger_mcp_flex: middle_mcp
+    r_middle_finger_mcp_abd: middle_mcp
+    r_middle_finger_pip: middle_pip
+    r_middle_finger_dip: middle_dip
+    r_ring_finger_mcp_flex: ring_mcp
+    r_ring_finger_mcp_abd: ring_mcp
+    r_ring_finger_pip: ring_pip
+    r_ring_finger_dip: ring_dip
+    r_pinky_mcp_flex: pinky_mcp
+    r_pinky_mcp_abd: pinky_mcp
+    r_pinky_pip: pinky_pip
+    r_pinky_dip: pinky_dip
+objects:
+  - id: hocap_170105
+    source_file: .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170105.obj
+    source_sha256: 1c22de7f70212403e3315c3a5d23bd5d94c80fc33b608470720fefa9865ba1a3
+    collision_strategy: convex_hull_v1
+    collision_parameters: {max_convex_hulls: 32, hull_vertex_limit: 64, voxel_resolution: 100000, shrink_wrap: true}
+    scale: [1.0, 1.0, 1.0]
+    translation: [0.0, 0.0, 0.0]
+    rotation_wxyz: [1.0, 0.0, 0.0, 0.0]
+    mass_kg: 0.05
+    principal_inertia_kgm2: [6.452710992881792e-05, 5.881947545155538e-05, 1.354854876135244e-05]
+    center_of_mass_m: [1.550961447789125e-05, 0.00024130468555908467, -2.0719968952943027e-05]
+    friction: [1.0, 0.005, 0.0001]
+    gravity_enabled: false
+    ground_enabled: false
+    support: none
+    physical_classification: ENGINEERING_NOMINAL_PHYSICAL_PROVENANCE_UNRESOLVED
+  - id: hocap_170650
+    source_file: .local/stage16_reference_tracking_ppo/world_wrist_objects/hocap_170650.obj
+    source_sha256: cbad7f660835c9586dca788f44c6137ce92f3b34a26b8c8aa5eaf404bbd8d18b
+    collision_strategy: convex_hull_v1
+    collision_parameters: {max_convex_hulls: 32, hull_vertex_limit: 64, voxel_resolution: 100000, shrink_wrap: true}
+    scale: [1.0, 1.0, 1.0]
+    translation: [0.0, 0.0, 0.0]
+    rotation_wxyz: [1.0, 0.0, 0.0, 0.0]
+    mass_kg: 0.05
+    principal_inertia_kgm2: [0.0001861072978471855, 0.00017616100271847774, 4.712484269367599e-05]
+    center_of_mass_m: [2.9300205922662416e-06, 2.2645788838467997e-05, -2.1181006814038906e-06]
+    friction: [1.0, 0.005, 0.0001]
+    gravity_enabled: false
+    ground_enabled: false
+    support: none
+    physical_classification: ENGINEERING_NOMINAL_PHYSICAL_PROVENANCE_UNRESOLVED
+recovery:
+  repairs_per_class: 3
+  reruns_per_phase: 5
+  import_strategy_switches: 2
+  major_transitions: 20

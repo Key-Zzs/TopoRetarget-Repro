@@ -1,0 +1,6 @@
+schema_version: toporetarget.stage16c1.wuji.v1
+recipe: configs/rl/stage16/isaaclab_asset_validation.yaml#wuji
+generated_usd: .local/generated_assets/isaaclab/wuji_hand2_beta1/configuration/wujihand2_physics.usd
+collision_strategy: deterministic_support_hull_proxies_with_floating_root_overlay_v1
+runtime: {device: cuda:0, gravity: [0.0, 0.0, 0.0], fixed_base: false}
+validation: {steps: 1000, expected_actuated_joints: 20, expected_tracked_links: 16}
