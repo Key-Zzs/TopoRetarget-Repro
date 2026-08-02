@@ -1,0 +1,10 @@
+schema_version: toporetarget.stage16c2.wrist_control.v1
+controller: IsaacCartesianWristImpedanceController
+translation_stiffness_npm: 250.0
+translation_damping_ratio: 1.0
+rotation_stiffness_nmprad: 2.0
+rotation_damping_ratio: 0.5
+force_limit_n: 25.0
+torque_limit_nm: 1.5
+reference_twist_feedforward_gain: 1.0
+finger_drive: {stiffness: 4.0, damping: 0.2, effort_limit: 0.6, velocity_limit: 12.0}

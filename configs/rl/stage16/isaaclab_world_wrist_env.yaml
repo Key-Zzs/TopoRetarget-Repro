@@ -1,0 +1,28 @@
+schema_version: toporetarget.stage16c2.direct_env.v1
+environment: IsaacWorldWristFingerDirectRLEnv
+reference_bank:
+  clips: [hocap_170105, hocap_170650]
+  frames: 41
+  control_hz: 20
+scene:
+  physics_dt_hz: 120
+  decimation: 6
+  gravity: [0.0, 0.0, 0.0]
+  ground: false
+  support: none
+  object_mass_kg: 0.05
+action:
+  dimension: 26
+  translation_m: 0.01
+  rotation_deg: 5.0
+  finger_joint_range_fraction: 0.10
+observation:
+  id: world_wrist_finger_observation_v1
+  dimension: 764
+  offsets: [0, 1, 3, 5]
+termination:
+  object_position_m: 0.05
+  object_axis_point_m: 0.05
+  object_orientation_deg: 45.0
+  wrist_position_m: 0.20
+  wrist_orientation_deg: 90.0
