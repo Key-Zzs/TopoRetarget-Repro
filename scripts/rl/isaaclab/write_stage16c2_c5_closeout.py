@@ -57,19 +57,25 @@ def write_json(path: Path, value: Any) -> None:
 def copy_archive(destination: Path) -> list[str]:
     destination.mkdir(parents=True, exist_ok=False)
     sources = [
-        C0_ROOT / "final_summary.json",
-        C1_ROOT / "final_summary.json",
-        C1_ROOT / "wuji_asset_manifest.json",
-        C1_ROOT / "hocap_170105_asset_manifest.json",
-        C1_ROOT / "hocap_170650_asset_manifest.json",
-        REFERENCE_ROOT / "hocap_170105.world_wrist.stage16.npz",
-        REFERENCE_ROOT / "hocap_170650.world_wrist.stage16.npz",
+        (C0_ROOT / "final_summary.json", "c0_final_summary.json"),
+        (C1_ROOT / "final_summary.json", "c1_final_summary.json"),
+        (C1_ROOT / "wuji_asset_manifest.json", "wuji_asset_manifest.json"),
+        (C1_ROOT / "hocap_170105_asset_manifest.json", "hocap_170105_asset_manifest.json"),
+        (C1_ROOT / "hocap_170650_asset_manifest.json", "hocap_170650_asset_manifest.json"),
+        (
+            REFERENCE_ROOT / "hocap_170105.world_wrist.stage16.npz",
+            "hocap_170105.world_wrist.stage16.npz",
+        ),
+        (
+            REFERENCE_ROOT / "hocap_170650.world_wrist.stage16.npz",
+            "hocap_170650.world_wrist.stage16.npz",
+        ),
     ]
     copied = []
-    for source in sources:
+    for source, archive_name in sources:
         if not source.is_file():
             raise FileNotFoundError(source)
-        target = destination / source.name
+        target = destination / archive_name
         shutil.copy2(source, target)
         copied.append(str(target.relative_to(REPO_ROOT)))
     return copied
