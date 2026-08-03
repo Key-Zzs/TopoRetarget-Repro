@@ -14,8 +14,10 @@ from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils import configclass
 
+from .articulation_dynamics import computed_torque_profile
 from .d6_wrist_asset import D6_WRIST_PROFILES
 from .explicit_virtual_wrist import EXPLICIT_VIRTUAL_WRIST_JOINT_ORDER
+from .tvlqr_wrist import BoundedMPCWristProfileV1, BoundedTVLQRWristProfileV1
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 _ASSET_ROOT = REPO_ROOT / ".local/generated_assets/isaaclab"
@@ -155,6 +157,11 @@ class IsaacWorldWristFingerDirectRLEnvCfg(DirectRLEnvCfg):
     contact_telemetry = "off"
     collect_wrist_diagnostics = False
     wrist_controller_mode = "wrist_impedance_v1"
+    computed_torque_profile = "CT-low"
+    computed_torque_ablation = "full"
+    preview_wrist_profile = "bounded_tvlqr_wrist_v1"
+    mpc_wrist_profile = "bounded_mpc_wrist_v1"
+    identified_tvlqr_model_path: str | None = None
     # Path B fallback selected only after the authored D6 wrapper is proven
     # unavailable through Isaac Lab's live GPU tensor articulation interface.
     # The profiles are global engineering-wrist bounds, never clip-specific.
@@ -247,4 +254,111 @@ def configure_explicit_virtual_wrist(
     }
 
 
-__all__ = ["IsaacWorldWristFingerDirectRLEnvCfg", "configure_explicit_virtual_wrist"]
+def configure_full_articulation_computed_torque_wrist(
+    cfg: IsaacWorldWristFingerDirectRLEnvCfg, *, profile_identifier: str
+) -> None:
+    """Select finite direct-effort wrist control with zero implicit wrist PD."""
+
+    profile = computed_torque_profile(profile_identifier)
+    if not _EXPLICIT_VIRTUAL_WRIST_USD.is_file():
+        raise FileNotFoundError(
+            f"C3_EXPLICIT_VIRTUAL_WRIST_ASSET_MISSING: {_EXPLICIT_VIRTUAL_WRIST_USD}"
+        )
+    cfg.wrist_controller_mode = "full_articulation_computed_torque_v1"
+    cfg.computed_torque_profile = profile.identifier
+    cfg.robot.spawn.usd_path = str(_EXPLICIT_VIRTUAL_WRIST_USD)
+    cfg.robot.spawn.articulation_props.fix_root_link = True
+    cfg.robot.actuators = {
+        "virtual_translation_effort": ImplicitActuatorCfg(
+            joint_names_expr=list(EXPLICIT_VIRTUAL_WRIST_JOINT_ORDER[:3]),
+            stiffness=0.0,
+            damping=0.0,
+            effort_limit_sim=profile.effort_limit[0],
+            velocity_limit_sim=2.0,
+        ),
+        "virtual_rotation_effort": ImplicitActuatorCfg(
+            joint_names_expr=list(EXPLICIT_VIRTUAL_WRIST_JOINT_ORDER[3:]),
+            stiffness=0.0,
+            damping=0.0,
+            effort_limit_sim=profile.effort_limit[3],
+            velocity_limit_sim=6.0,
+        ),
+        "fingers": ImplicitActuatorCfg(
+            joint_names_expr=list(_JOINT_ORDER),
+            stiffness=4.0,
+            damping=0.2,
+            effort_limit_sim=0.6,
+            velocity_limit_sim=12.0,
+        ),
+    }
+
+
+def configure_bounded_tvlqr_wrist(
+    cfg: IsaacWorldWristFingerDirectRLEnvCfg,
+    *,
+    profile_identifier: str = "bounded_tvlqr_wrist_v1",
+) -> None:
+    """Select the bounded direct-effort TVLQR fallback with no wrist PD drive."""
+
+    profile = BoundedTVLQRWristProfileV1()
+    if profile_identifier != profile.identifier:
+        raise ValueError(
+            f"unknown bounded TVLQR profile {profile_identifier!r}; expected {profile.identifier!r}"
+        )
+    if not _EXPLICIT_VIRTUAL_WRIST_USD.is_file():
+        raise FileNotFoundError(
+            f"C3_EXPLICIT_VIRTUAL_WRIST_ASSET_MISSING: {_EXPLICIT_VIRTUAL_WRIST_USD}"
+        )
+    cfg.wrist_controller_mode = "bounded_tvlqr_wrist_v1"
+    cfg.preview_wrist_profile = profile.identifier
+    cfg.robot.spawn.usd_path = str(_EXPLICIT_VIRTUAL_WRIST_USD)
+    cfg.robot.spawn.articulation_props.fix_root_link = True
+    cfg.robot.actuators = {
+        "virtual_translation_effort": ImplicitActuatorCfg(
+            joint_names_expr=list(EXPLICIT_VIRTUAL_WRIST_JOINT_ORDER[:3]),
+            stiffness=0.0,
+            damping=0.0,
+            effort_limit_sim=profile.effort_limit,
+            velocity_limit_sim=2.0,
+        ),
+        "virtual_rotation_effort": ImplicitActuatorCfg(
+            joint_names_expr=list(EXPLICIT_VIRTUAL_WRIST_JOINT_ORDER[3:]),
+            stiffness=0.0,
+            damping=0.0,
+            effort_limit_sim=profile.effort_limit,
+            velocity_limit_sim=6.0,
+        ),
+        "fingers": ImplicitActuatorCfg(
+            joint_names_expr=list(_JOINT_ORDER),
+            stiffness=4.0,
+            damping=0.2,
+            effort_limit_sim=0.6,
+            velocity_limit_sim=12.0,
+        ),
+    }
+
+
+def configure_bounded_mpc_wrist(
+    cfg: IsaacWorldWristFingerDirectRLEnvCfg,
+    *,
+    profile_identifier: str = "bounded_mpc_wrist_v1",
+) -> None:
+    """Select the identified-model, box-constrained direct-effort MPC fallback."""
+
+    profile = BoundedMPCWristProfileV1()
+    if profile_identifier != profile.identifier:
+        raise ValueError(
+            f"unknown bounded MPC profile {profile_identifier!r}; expected {profile.identifier!r}"
+        )
+    configure_bounded_tvlqr_wrist(cfg)
+    cfg.wrist_controller_mode = "bounded_mpc_wrist_v1"
+    cfg.mpc_wrist_profile = profile.identifier
+
+
+__all__ = [
+    "IsaacWorldWristFingerDirectRLEnvCfg",
+    "configure_explicit_virtual_wrist",
+    "configure_full_articulation_computed_torque_wrist",
+    "configure_bounded_tvlqr_wrist",
+    "configure_bounded_mpc_wrist",
+]

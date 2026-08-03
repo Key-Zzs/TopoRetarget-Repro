@@ -10,21 +10,30 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 import isaaclab.sim as sim_utils
+import numpy as np
 import torch
 from isaaclab.assets import Articulation, RigidObject
 from isaaclab.envs import DirectRLEnv
 from isaaclab.sensors import ContactSensorCfg
 
 from .action_adapter import Stage16ActionAdapter
+from .articulation_dynamics import (
+    FullArticulationComputedTorqueWristControllerV1,
+    computed_torque_profile,
+    generalized_mass_matrix,
+    inferred_generalized_bias,
+)
 from .d6_wrist_asset import D6_WRIST_PROFILES
 from .explicit_virtual_wrist import (
     EXPLICIT_VIRTUAL_WRIST_JOINT_ORDER,
     se3_target_to_explicit_3p3r,
     serial_xyz_singularity_margin_deg,
 )
+from .explicit_wrist_reference import ExplicitWristJointReferenceV2
 from .inverse_wrench_controller import (
     DampedSVDInverseWrenchController,
     EffectiveWrenchMap,
@@ -35,6 +44,12 @@ from .reward_terms import Stage16WorldWristRewardProfileV1, world_wrist_reward_t
 from .scene_frame import Stage16CSceneFrameContractV1, global_to_scene, scene_to_global
 from .tensor_math import apply_local_residual, relative_rotation_log_local
 from .termination_terms import TERMINATION_REASONS, Stage16TerminationProfileV1, stage16_termination
+from .tvlqr_wrist import (
+    BoundedMPCWristControllerV1,
+    BoundedMPCWristProfileV1,
+    BoundedTVLQRWristControllerV1,
+    BoundedTVLQRWristProfileV1,
+)
 from .world_wrist_direct_env_cfg import IsaacWorldWristFingerDirectRLEnvCfg
 from .wrist_controller import (
     ArticulatedHandCompositeInertiaEstimator,
@@ -98,9 +113,12 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
                     f"object={object_name} bodies={sensor.body_names}"
                 )
         self._validate_contact_telemetry_mode()
-        self._explicit_virtual_wrist_enabled = (
-            cfg.wrist_controller_mode == "finite_virtual_6d_wrist_actuator_v1"
-        )
+        self._explicit_virtual_wrist_enabled = cfg.wrist_controller_mode in {
+            "finite_virtual_6d_wrist_actuator_v1",
+            "full_articulation_computed_torque_v1",
+            "bounded_tvlqr_wrist_v1",
+            "bounded_mpc_wrist_v1",
+        }
         expected_joint_names = set(self.reference_bank.joint_order)
         if self._explicit_virtual_wrist_enabled:
             expected_joint_names.update(EXPLICIT_VIRTUAL_WRIST_JOINT_ORDER)
@@ -203,7 +221,7 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
                     ),
                 ),
             )
-        elif self._explicit_virtual_wrist_enabled:
+        elif cfg.wrist_controller_mode == "finite_virtual_6d_wrist_actuator_v1":
             self._explicit_virtual_wrist_profile = next(
                 (
                     profile
@@ -216,6 +234,54 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
                 raise RuntimeError(
                     f"C3_EXPLICIT_WRIST_PROFILE_FAILURE: {cfg.finite_virtual_wrist_profile!r}"
                 )
+        self._computed_torque_wrist_controller: (
+            FullArticulationComputedTorqueWristControllerV1 | None
+        ) = None
+        if cfg.wrist_controller_mode == "full_articulation_computed_torque_v1":
+            profile = computed_torque_profile(cfg.computed_torque_profile)
+            self._computed_torque_wrist_controller = (
+                FullArticulationComputedTorqueWristControllerV1(profile, device=self.device)
+            )
+        self._tvlqr_wrist_controller: BoundedTVLQRWristControllerV1 | None = None
+        if cfg.wrist_controller_mode == "bounded_tvlqr_wrist_v1":
+            profile = BoundedTVLQRWristProfileV1()
+            if cfg.preview_wrist_profile != profile.identifier:
+                raise RuntimeError(f"C3_TVLQR_PROFILE_FAILURE: {cfg.preview_wrist_profile!r}")
+            self._tvlqr_wrist_controller = BoundedTVLQRWristControllerV1(
+                profile, device=self.device
+            )
+        self._mpc_wrist_controller: BoundedMPCWristControllerV1 | None = None
+        if cfg.wrist_controller_mode == "bounded_mpc_wrist_v1":
+            profile = BoundedMPCWristProfileV1()
+            if cfg.mpc_wrist_profile != profile.identifier:
+                raise RuntimeError(f"C3_MPC_PROFILE_FAILURE: {cfg.mpc_wrist_profile!r}")
+            self._mpc_wrist_controller = BoundedMPCWristControllerV1(profile, device=self.device)
+        self._identified_tvlqr_a: torch.Tensor | None = None
+        self._identified_tvlqr_b: torch.Tensor | None = None
+        self._identified_tvlqr_model_source: str | None = None
+        if cfg.identified_tvlqr_model_path is not None:
+            model_path = Path(cfg.identified_tvlqr_model_path)
+            if not model_path.is_file():
+                raise FileNotFoundError(f"C3_TVLQR_IDENTIFIED_MODEL_MISSING: {model_path}")
+            with np.load(model_path) as payload:
+                a = torch.as_tensor(payload["A"], dtype=torch.float32, device=self.device)
+                b = torch.as_tensor(payload["B"], dtype=torch.float32, device=self.device)
+            model_prefix = (len(self.reference_bank.clip_ids), self.reference_bank.frame_count)
+            expected_a = (*model_prefix, 12, 12)
+            expected_b = (*model_prefix, 12, 6)
+            if tuple(a.shape) != expected_a or tuple(b.shape) != expected_b:
+                raise RuntimeError(
+                    "C3_TVLQR_IDENTIFIED_MODEL_SHAPE_FAILURE: "
+                    f"A={tuple(a.shape)} B={tuple(b.shape)} expected={expected_a}/{expected_b}"
+                )
+            if not bool(torch.isfinite(a).all() and torch.isfinite(b).all()):
+                raise RuntimeError("C3_TVLQR_IDENTIFIED_MODEL_NONFINITE")
+            self._identified_tvlqr_a = a
+            self._identified_tvlqr_b = b
+            self._identified_tvlqr_model_source = str(model_path)
+        self._explicit_joint_reference = ExplicitWristJointReferenceV2.from_reference_bank(
+            self.reference_bank
+        )
         self._wrist_interpolator = PhysicsSubstepWristTargetInterpolator(
             decimation=cfg.decimation, control_dt_s=self.step_dt
         )
@@ -243,6 +309,12 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         )
         self._explicit_wrist_singularity_margin_deg = torch.full(
             (self.num_envs,), 90.0, dtype=torch.float32, device=self.device
+        )
+        self._computed_torque_latest: dict[str, torch.Tensor] | None = None
+        self._tvlqr_latest: dict[str, torch.Tensor] | None = None
+        self._mpc_latest: dict[str, torch.Tensor | str] | None = None
+        self._computed_torque_bias_estimate = torch.zeros(
+            (self.num_envs, len(self._robot.joint_names)), dtype=torch.float32, device=self.device
         )
         self._wrist_target_position = torch.zeros(
             (self.num_envs, 3), dtype=torch.float32, device=self.device
@@ -310,7 +382,13 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
 
         hand_prefix = (
             "Robot/Hand"
-            if cfg.wrist_controller_mode == "finite_virtual_6d_wrist_actuator_v1"
+            if cfg.wrist_controller_mode
+            in {
+                "finite_virtual_6d_wrist_actuator_v1",
+                "full_articulation_computed_torque_v1",
+                "bounded_tvlqr_wrist_v1",
+                "bounded_mpc_wrist_v1",
+            }
             else "Robot"
         )
         filter_prim_paths = [
@@ -498,6 +576,17 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             self._identified_map_selected_reference_frame.copy_(
                 wrench["map_selected_reference_frame"]
             )
+        elif self.cfg.wrist_controller_mode == "full_articulation_computed_torque_v1":
+            composite = None
+            wrench = self._apply_full_articulation_computed_torque(
+                target_scene_position, target_quaternion
+            )
+        elif self.cfg.wrist_controller_mode == "bounded_tvlqr_wrist_v1":
+            composite = None
+            wrench = self._apply_bounded_tvlqr_wrist(target_scene_position, target_quaternion)
+        elif self.cfg.wrist_controller_mode == "bounded_mpc_wrist_v1":
+            composite = None
+            wrench = self._apply_bounded_mpc_wrist(target_scene_position, target_quaternion)
         elif self._explicit_virtual_wrist_enabled:
             composite = None
             wrench = self._apply_explicit_virtual_wrist_target(
@@ -618,6 +707,279 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             "torque_world": zeros.clone(),
             "force_saturated": force_saturated,
             "torque_saturated": torque_saturated,
+        }
+
+    def _apply_full_articulation_computed_torque(
+        self, target_position_scene: torch.Tensor, target_quaternion: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
+        """Apply full 26-DoF inverse-dynamics wrist effort; never write wrist q/qd."""
+
+        controller = self._computed_torque_wrist_controller
+        if controller is None or len(self._virtual_wrist_joint_ids) != 6:
+            raise RuntimeError("C3_COMPUTED_TORQUE_UNINITIALIZED")
+        # Match the Cartesian interpolator's current-key-to-next-key segment;
+        # ``_target_reference_index`` is the end key, not this interval's start.
+        sample = self._explicit_joint_reference.sample(
+            self._clip_index,
+            self._reference_index,
+            substep=self._physics_substep,
+            decimation=self.cfg.decimation,
+        )
+        # Preserve the frozen 26-D policy residual semantics.  We convert only
+        # the already-composed SE(3) target; qd/qdd remain the frozen reference
+        # derivatives rather than an action-dependent retiming.
+        residual_joint_target = se3_target_to_explicit_3p3r(
+            target_position_scene,
+            target_quaternion,
+            previous_joint_position=sample.q_wrist,
+        )
+        singularity_margin = serial_xyz_singularity_margin_deg(residual_joint_target)
+        if bool((singularity_margin <= 5.0).any()):
+            raise RuntimeError("C3_EXPLICIT_WRIST_XYZ_SINGULARITY_MARGIN_FAILURE")
+        wrist_limits = self._robot.data.joint_pos_limits[0, self._virtual_wrist_joint_ids]
+        if bool(
+            (
+                (residual_joint_target < wrist_limits[:, 0])
+                | (residual_joint_target > wrist_limits[:, 1])
+            ).any()
+        ):
+            raise RuntimeError("C3_EXPLICIT_WRIST_TARGET_OUTSIDE_AUTHORED_LIMITS")
+        mass = generalized_mass_matrix(self._robot)
+        bias = self._computed_torque_bias_estimate
+        finger_qdd_isaac = self.action_adapter.canonical_to_isaac(sample.qdd_finger)
+        result = controller.compute(
+            mass_matrix=mass,
+            generalized_bias=bias,
+            wrist_joint_ids=self._virtual_wrist_joint_ids,
+            finger_joint_ids=self._finger_target_joint_ids,
+            q_wrist=self._robot.data.joint_pos[:, self._virtual_wrist_joint_ids],
+            qd_wrist=self._robot.data.joint_vel[:, self._virtual_wrist_joint_ids],
+            q_wrist_ref=residual_joint_target,
+            qd_wrist_ref=sample.qd_wrist,
+            qdd_wrist_ref=sample.qdd_wrist,
+            qdd_finger_ref=finger_qdd_isaac,
+        )
+        if self.cfg.computed_torque_ablation == "full":
+            effort_command = result.effort_command
+        elif self.cfg.computed_torque_ablation == "zero_effort":
+            effort_command = torch.zeros_like(result.effort_command)
+        elif self.cfg.computed_torque_ablation == "feedforward_only":
+            effort_command = result.feedforward + result.coupling + result.bias
+        elif self.cfg.computed_torque_ablation == "feedback_only":
+            effort_command = result.feedback
+        elif self.cfg.computed_torque_ablation == "coupling_off":
+            effort_command = result.effort_command - result.coupling
+        else:
+            raise RuntimeError(
+                f"C3_COMPUTED_TORQUE_ABLATION_INVALID: {self.cfg.computed_torque_ablation!r}"
+            )
+        effort_applied = torch.clamp(
+            effort_command, min=-controller.effort_limit, max=controller.effort_limit
+        )
+        saturation = effort_command.abs() > controller.effort_limit
+        self._robot.set_joint_effort_target(effort_applied, joint_ids=self._virtual_wrist_joint_ids)
+        self._explicit_wrist_joint_target.copy_(residual_joint_target)
+        self._explicit_wrist_joint_velocity_target.copy_(sample.qd_wrist)
+        self._previous_explicit_wrist_joint_target.copy_(residual_joint_target)
+        self._explicit_wrist_singularity_margin_deg.copy_(singularity_margin)
+        self._computed_torque_latest = {
+            "effort_command": effort_command,
+            "effort_applied": effort_applied,
+            "feedforward": result.feedforward,
+            "coupling": result.coupling,
+            "bias": result.bias,
+            "feedback": result.feedback,
+            "saturation": saturation,
+            "mass_matrix": mass,
+        }
+        zeros = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
+        return {
+            "force_world": zeros,
+            "torque_world": zeros.clone(),
+            "force_saturated": saturation[:, :3].any(dim=-1),
+            "torque_saturated": saturation[:, 3:].any(dim=-1),
+        }
+
+    def _apply_bounded_tvlqr_wrist(
+        self, target_position_scene: torch.Tensor, target_quaternion: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
+        """Apply the fixed horizon/direct-effort Path B preview controller."""
+
+        controller = self._tvlqr_wrist_controller
+        if controller is None or len(self._virtual_wrist_joint_ids) != 6:
+            raise RuntimeError("C3_TVLQR_UNINITIALIZED")
+        # Keep Path B on the same current-key-to-next-key frozen interval.
+        sample = self._explicit_joint_reference.sample(
+            self._clip_index,
+            self._reference_index,
+            substep=self._physics_substep,
+            decimation=self.cfg.decimation,
+        )
+        q_reference = se3_target_to_explicit_3p3r(
+            target_position_scene,
+            target_quaternion,
+            previous_joint_position=sample.q_wrist,
+        )
+        singularity_margin = serial_xyz_singularity_margin_deg(q_reference)
+        if bool((singularity_margin <= 5.0).any()):
+            raise RuntimeError("C3_EXPLICIT_WRIST_XYZ_SINGULARITY_MARGIN_FAILURE")
+        wrist_limits = self._robot.data.joint_pos_limits[0, self._virtual_wrist_joint_ids]
+        if bool(((q_reference < wrist_limits[:, 0]) | (q_reference > wrist_limits[:, 1])).any()):
+            raise RuntimeError("C3_EXPLICIT_WRIST_TARGET_OUTSIDE_AUTHORED_LIMITS")
+        mass = generalized_mass_matrix(self._robot)
+        wrist_ids = torch.tensor(self._virtual_wrist_joint_ids, device=self.device)
+        finger_ids = torch.tensor(self._finger_target_joint_ids, device=self.device)
+        mass_wrist = mass.index_select(1, wrist_ids).index_select(2, wrist_ids)
+        coupling = mass.index_select(1, wrist_ids).index_select(2, finger_ids)
+        qdd_finger = self.action_adapter.canonical_to_isaac(sample.qdd_finger)
+        feedforward = (
+            torch.bmm(mass_wrist, sample.qdd_wrist.unsqueeze(-1)).squeeze(-1)
+            + torch.bmm(coupling, qdd_finger.unsqueeze(-1)).squeeze(-1)
+            + self._computed_torque_bias_estimate[:, self._virtual_wrist_joint_ids]
+        )
+        result = controller.compute(
+            mass_wrist=mass_wrist,
+            feedforward=feedforward,
+            q_wrist=self._robot.data.joint_pos[:, self._virtual_wrist_joint_ids],
+            qd_wrist=self._robot.data.joint_vel[:, self._virtual_wrist_joint_ids],
+            q_wrist_ref=q_reference,
+            qd_wrist_ref=sample.qd_wrist,
+            dt_s=self.physics_dt,
+            dynamics_a=(
+                None
+                if self._identified_tvlqr_a is None
+                else self._identified_tvlqr_a[self._clip_index, self._reference_index]
+            ),
+            dynamics_b=(
+                None
+                if self._identified_tvlqr_b is None
+                else self._identified_tvlqr_b[self._clip_index, self._reference_index]
+            ),
+        )
+        self._robot.set_joint_effort_target(
+            result["applied"], joint_ids=self._virtual_wrist_joint_ids
+        )
+        self._explicit_wrist_joint_target.copy_(q_reference)
+        self._explicit_wrist_joint_velocity_target.copy_(sample.qd_wrist)
+        self._previous_explicit_wrist_joint_target.copy_(q_reference)
+        self._explicit_wrist_singularity_margin_deg.copy_(singularity_margin)
+        self._tvlqr_latest = {
+            **result,
+            "feedforward": feedforward,
+            "coupling": coupling,
+            "mass_wrist": mass_wrist,
+        }
+        zeros = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
+        return {
+            "force_world": zeros,
+            "torque_world": zeros.clone(),
+            "force_saturated": result["saturation"][:, :3].any(dim=-1),
+            "torque_saturated": result["saturation"][:, 3:].any(dim=-1),
+        }
+
+    def _apply_bounded_mpc_wrist(
+        self, target_position_scene: torch.Tensor, target_quaternion: torch.Tensor
+    ) -> dict[str, torch.Tensor]:
+        """Run the final fixed finite-horizon box-constrained MPC fallback."""
+
+        controller = self._mpc_wrist_controller
+        if (
+            controller is None
+            or self._identified_tvlqr_a is None
+            or self._identified_tvlqr_b is None
+        ):
+            raise RuntimeError("C3_MPC_IDENTIFIED_MODEL_REQUIRED")
+        sample = self._explicit_joint_reference.sample(
+            self._clip_index,
+            self._reference_index,
+            substep=self._physics_substep,
+            decimation=self.cfg.decimation,
+        )
+        q_reference = se3_target_to_explicit_3p3r(
+            target_position_scene,
+            target_quaternion,
+            previous_joint_position=sample.q_wrist,
+        )
+        singularity_margin = serial_xyz_singularity_margin_deg(q_reference)
+        if bool((singularity_margin <= 5.0).any()):
+            raise RuntimeError("C3_EXPLICIT_WRIST_XYZ_SINGULARITY_MARGIN_FAILURE")
+        wrist_limits = self._robot.data.joint_pos_limits[0, self._virtual_wrist_joint_ids]
+        if bool(((q_reference < wrist_limits[:, 0]) | (q_reference > wrist_limits[:, 1])).any()):
+            raise RuntimeError("C3_EXPLICIT_WRIST_TARGET_OUTSIDE_AUTHORED_LIMITS")
+        mass = generalized_mass_matrix(self._robot)
+        wrist_ids = torch.tensor(self._virtual_wrist_joint_ids, device=self.device)
+        finger_ids = torch.tensor(self._finger_target_joint_ids, device=self.device)
+        mass_wrist = mass.index_select(1, wrist_ids).index_select(2, wrist_ids)
+        coupling = mass.index_select(1, wrist_ids).index_select(2, finger_ids)
+        finger_qdd = self.action_adapter.canonical_to_isaac(sample.qdd_finger)
+        feedforward = (
+            torch.bmm(mass_wrist, sample.qdd_wrist.unsqueeze(-1)).squeeze(-1)
+            + torch.bmm(coupling, finger_qdd.unsqueeze(-1)).squeeze(-1)
+            + self._computed_torque_bias_estimate[:, self._virtual_wrist_joint_ids]
+        )
+        result = controller.compute(
+            dynamics_a=self._identified_tvlqr_a[self._clip_index, self._reference_index],
+            dynamics_b=self._identified_tvlqr_b[self._clip_index, self._reference_index],
+            feedforward=feedforward,
+            q_wrist=self._robot.data.joint_pos[:, self._virtual_wrist_joint_ids],
+            qd_wrist=self._robot.data.joint_vel[:, self._virtual_wrist_joint_ids],
+            q_wrist_ref=q_reference,
+            qd_wrist_ref=sample.qd_wrist,
+            model_source="gpu_finite_difference_identification",
+        )
+        applied = result["applied"]
+        saturation = result["saturation"]
+        if (
+            not isinstance(applied, torch.Tensor)
+            or not isinstance(saturation, torch.Tensor)
+            or not bool(torch.isfinite(applied).all())
+        ):
+            raise RuntimeError("C3_MPC_RESULT_INVALID")
+        self._robot.set_joint_effort_target(applied, joint_ids=self._virtual_wrist_joint_ids)
+        self._explicit_wrist_joint_target.copy_(q_reference)
+        self._explicit_wrist_joint_velocity_target.copy_(sample.qd_wrist)
+        self._previous_explicit_wrist_joint_target.copy_(q_reference)
+        self._explicit_wrist_singularity_margin_deg.copy_(singularity_margin)
+        self._mpc_latest = {**result, "feedforward": feedforward, "coupling": coupling}
+        zeros = torch.zeros((self.num_envs, 3), dtype=torch.float32, device=self.device)
+        return {
+            "force_world": zeros,
+            "torque_world": zeros.clone(),
+            "force_saturated": saturation[:, :3].any(dim=-1),
+            "torque_saturated": saturation[:, 3:].any(dim=-1),
+        }
+
+    def calibrate_computed_torque_bias(self) -> dict[str, float]:
+        """Estimate the A2 bias on one reset-only zero-wrist-effort PhysX substep.
+
+        The calibration is deliberately explicit: it is invoked by a qualified
+        runner before reference time advances, never silently during a rollout.
+        """
+
+        if (
+            self._computed_torque_wrist_controller is None
+            and self._tvlqr_wrist_controller is None
+            and self._mpc_wrist_controller is None
+        ):
+            raise RuntimeError("C3_DIRECT_EFFORT_WRIST_UNINITIALIZED")
+        zero_effort = torch.zeros((self.num_envs, 6), dtype=torch.float32, device=self.device)
+        self._robot.set_joint_effort_target(zero_effort, joint_ids=self._virtual_wrist_joint_ids)
+        self.scene.write_data_to_sim()
+        self.sim.step(render=False)
+        self.scene.update(self.physics_dt)
+        mass = generalized_mass_matrix(self._robot)
+        estimated = inferred_generalized_bias(
+            mass_matrix=mass,
+            applied_effort=self._robot.data.applied_torque,
+            joint_acceleration=self._robot.data.joint_acc,
+        )
+        if not bool(torch.isfinite(estimated).all()):
+            raise RuntimeError("BIAS_FORCE_INVALID")
+        self._computed_torque_bias_estimate.copy_(estimated)
+        wrist_bias = estimated[:, self._virtual_wrist_joint_ids]
+        return {
+            "max_abs": float(wrist_bias.abs().amax().detach().cpu()),
+            "finite": float(torch.isfinite(wrist_bias).all().detach().cpu()),
         }
 
     def _composite_inertia(self):
@@ -1286,7 +1648,7 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             ),
             "finite_virtual_6d_wrist_actuator": (
                 None
-                if not self._explicit_virtual_wrist_enabled
+                if self.cfg.wrist_controller_mode != "finite_virtual_6d_wrist_actuator_v1"
                 else {
                     "identifier": "finite_virtual_6d_wrist_actuator_v1",
                     "articulation_model": "explicit_serial_3p3r",
@@ -1311,6 +1673,59 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
                     "external_wrench_fallback": False,
                     "real_arm": False,
                     "state_writes_during_step": 0,
+                }
+            ),
+            "full_articulation_computed_torque": (
+                None
+                if self._computed_torque_wrist_controller is None
+                else {
+                    "identifier": "full_articulation_computed_torque_v1",
+                    "profile": self._computed_torque_wrist_controller.profile.identifier,
+                    "wrist_drive_stiffness": 0.0,
+                    "wrist_drive_damping": 0.0,
+                    "effort_api": "Articulation.set_joint_effort_target",
+                    "mass_matrix": "root_physx_view.get_generalized_mass_matrices",
+                    "bias": "reset_only_zero_wrist_effort_minus_M_qdd",
+                    "wrist_root_state_writes_during_step": 0,
+                    "object_rollout_state_writes": 0,
+                    "external_cartesian_wrench": False,
+                }
+            ),
+            "bounded_tvlqr_wrist": (
+                None
+                if self._tvlqr_wrist_controller is None
+                else {
+                    "identifier": self._tvlqr_wrist_controller.profile.identifier,
+                    "horizon": self._tvlqr_wrist_controller.profile.horizon,
+                    "effort_limit": self._tvlqr_wrist_controller.profile.effort_limit,
+                    "model": (
+                        "gpu_finite_difference_identification"
+                        if self._identified_tvlqr_model_source is not None
+                        else "live_physx_mass_local_double_integrator"
+                    ),
+                    "identified_model_path": self._identified_tvlqr_model_source,
+                    "effort_api": "Articulation.set_joint_effort_target",
+                    "wrist_drive_stiffness": 0.0,
+                    "wrist_drive_damping": 0.0,
+                    "external_cartesian_wrench": False,
+                    "wrist_root_state_writes_during_step": 0,
+                    "object_rollout_state_writes": 0,
+                }
+            ),
+            "bounded_mpc_wrist": (
+                None
+                if self._mpc_wrist_controller is None
+                else {
+                    "identifier": self._mpc_wrist_controller.profile.identifier,
+                    "horizon": self._mpc_wrist_controller.profile.horizon,
+                    "effort_limit": self._mpc_wrist_controller.profile.effort_limit,
+                    "identified_model_path": self._identified_tvlqr_model_source,
+                    "effort_api": "Articulation.set_joint_effort_target",
+                    "wrist_drive_stiffness": 0.0,
+                    "wrist_drive_damping": 0.0,
+                    "external_cartesian_wrench": False,
+                    "wrist_root_state_writes_during_step": 0,
+                    "object_rollout_state_writes": 0,
                 }
             ),
         }
