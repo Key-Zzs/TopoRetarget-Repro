@@ -27,24 +27,33 @@ canonical-URDF FK targets, with the frozen stored link field preserved. Path A
 is exhausted before dynamic qualification: five reference-target response maps
 exceed its frozen condition-number maximum of 4000. The generated six-axis
 `PhysicsJoint` D6 wrapper imports, but live GPU tensor inspection exposes zero
-D6 joints, so the explicitly permitted finite virtual 3P+3R fallback is used.
+D6 joints, so the explicitly permitted serial 3P+3R articulation fallback is
+used. It contains three orthogonal prismatic joints, three revolute joints,
+and the frozen Wuji hand, for 26 total tensor DoFs. The anchor and five tiny
+intermediate links are an abstract engineering wrist, not a real arm. Policy
+rotation remains a rotation-vector/quaternion residual; only the final SE(3)
+target is converted to serial XYZ joint coordinates. The observed pitch
+singularity margin stays above 78 degrees.
 
 The fixed C.3 wrist gate is at most 2 cm / 10 degrees maximum error, 1 cm / 5
-degrees RMSE, and 5% force/torque saturation. All three frozen finite virtual
-profiles fail both 41-key clips: conservative reaches 3.91 cm/29.45 degrees
-and 4.63 cm/21.04 degrees; nominal 3.23 cm/38.34 degrees and 4.54 cm/37.10
-degrees; high authority 4.10 cm/53.63 degrees and 6.81 cm/54.38 degrees.
-The finite disturbance remains physical and finite, while removing virtual
-authority worsens the combined position RMSE from 0.03623 m to 0.47282 m.
+degrees RMSE, and 5% force/torque/velocity saturation. All three globally
+shared profiles fail both 41-key clips. The strongest bounded profile reaches
+1.13 cm/17.59 degrees and 1.09 cm/19.57 degrees maximum error, 0.64/0.55 cm
+position RMSE, 7.29/7.55 degrees rotation RMSE, and 21.25%/18.75% torque
+saturation. FK localization is clean (at most 0.04 degrees rotation mismatch
+and about 1e-7 m translation mismatch), proving that the remaining error is
+joint-drive tracking rather than a serial-rotation convention error. The
+finite disturbance remains physical and finite, while removing authority
+strongly worsens tracking.
 
 The result is `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`. No profile is active.
-The nominal candidate separately passes a C.2 runtime-contract regression at
-1/128 environments for 1000 steps each, preserving 26-D actions, 764-D
-observations, reset behavior, and no rollout wrist/object state write; it does
-not select a C.3 profile. C3-1--C3-5, contact-momentum causality, C.4, C.5,
-and PPO are fail-closed/not run. The non-contact wrist gate uses live PhysX
-evolution and bounded force/torque at `r_wrist`, with no rollout wrist
-pose/velocity or object state write; immutable task-object termination is
+The strongest candidate separately passes bounded C.2 runtime smokes at 1/128
+environments, preserving all 26 action bases, 764-D observations, a 64-of-128
+subset reset, and no rollout wrist/object state write; it does not select a
+C.3 profile. C3-1--C3-5, contact-momentum causality, C.4, C.5, and PPO are
+fail-closed/not run. The non-contact wrist gate uses live PhysX evolution and
+bounded articulation drives, with no rollout wrist pose/velocity or object
+state write; immutable task-object termination is
 intentionally not evaluated in that gate.
 
 Machine-local evidence is under `.local/reports/stage16c3r2_c5/`.

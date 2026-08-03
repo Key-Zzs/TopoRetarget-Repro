@@ -69,16 +69,17 @@ observation/reward contract.
 The recovery then consumed its only Path A implementation. Its five failing
 reference-target map samples exceed the frozen condition-number maximum of
 4000, so it starts zero of two allowed complete dynamic Path A runs. The
-finite D6 wrapper exposes zero D6 tensor joints in the live GPU contract;
-therefore the permitted finite virtual 3P+3R force/torque actuator was
-qualified. Conservative, nominal, and high-authority bounded profiles all
-fail both clips. The final status is
+generic D6 wrapper exposes zero D6 tensor joints in the live GPU contract;
+therefore the permitted explicit serial 3P+3R articulation was qualified. It
+has six GPU tensor joints, a fixed virtual anchor, no Cartesian-wrench
+fallback, and no real arm. Conservative, nominal, and high-authority bounded
+profiles all fail both clips. The final status is
 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; C3-1 through C3-5,
 contact-momentum causality, C.4, and C.5 are
 `NOT_RUN_GATE_BLOCKED_BY_C3_WRIST_ARCHITECTURE`, and C.6 is not authorized.
-The nominal virtual-wrist candidate independently passes its C.2 runtime
-contract regression for 1/128 environments and 1000 steps each; this validates
-the preserved 26-D/764-D/reset/no-write contract only, not C.3 tracking or
-profile selection.
+The high-authority candidate independently passes bounded C.2 runtime smokes
+for 1/128 environments, including all 26 action bases and a 64-of-128 subset
+reset; this validates the preserved 26-D/764-D/reset/no-write contract only,
+not C.3 tracking or profile selection.
 See `ISAACLAB_CONTACT_CAUSALITY.md`, `ISAACLAB_WRIST_DYNAMICS.md`, and the
 ignored C3R2 report bundle.

@@ -90,8 +90,9 @@ derived canonical-URDF FK targets while retaining the frozen stored link field,
 and C.3R2 readout passes. The one Path A implementation is precondition-blocked
 by five frozen-map condition numbers above 4000; it consumes zero complete
 dynamic runs. One D6 architecture switch is then consumed. The live D6 tensor
-contract reports zero D6 joints, permitting the finite virtual 3P+3R fallback.
-All three frozen profile runs fail both clips, so
+contract reports zero D6 joints, permitting the explicit serial 3P+3R
+articulation fallback. It exposes six GPU tensor joints and no real arm. All
+three global profile runs fail both clips, so
 `Stage16C3R2C5RecoveryStateMachine` closes at
 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`. C.3 modes 1--5, contact causality,
 C.4, C.5, and PPO are not run/not authorized. The recovery record is

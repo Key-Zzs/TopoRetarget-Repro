@@ -111,12 +111,12 @@ audit_contracts:
     stage16c2_status: STAGE16C2_DIRECT_RL_ENV_VALIDATED
     custom_direct_rl_env_implemented: true
     stage16c3_status: STAGE16C3_SEMANTIC_QUALIFICATION_BLOCKED
-    stage16c3_blocker: PATH_A_CONDITION_GATE_AND_FINITE_VIRTUAL_WRIST_PROFILE_FAILURE
+    stage16c3_blocker: EXPLICIT_SERIAL_3P3R_TRACKING_AND_SATURATION_GATE_FAILURE
     stage16c3_reference_frame_status: C3_REFERENCE_OR_FRAME_CONTRACT_VALIDATED
     stage16c3_contact_readout_status: C3_CONTACT_READOUT_VALIDATED
     stage16c3_active_wrist_profile: null
-    stage16c2_d6_profile_regression_status: STAGE16C2_D6_PROFILE_REGRESSION_VALIDATED
-    stage16c2_d6_profile_regression_scope: nominal_candidate_runtime_contract_only
+    stage16c2_d6_profile_regression_status: STAGE16C2_EXPLICIT_3P3R_WRIST_VALIDATED
+    stage16c2_d6_profile_regression_scope: bounded_1_128_env_action_basis_subset_reset_contract
     stage16c4_status: STAGE16C4_NOT_RUN_GATE_BLOCKED
     stage16c5_status: STAGE16C5_NOT_RUN_GATE_BLOCKED
     stage16c6_ppo_authorized: false

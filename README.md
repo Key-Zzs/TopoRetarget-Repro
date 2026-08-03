@@ -87,14 +87,17 @@ stored link field remains immutable and is retained for its existing
 observation/reward role. Path A's one permitted identified inverse-wrench
 implementation was precondition-blocked: five sampled reference-target maps
 exceeded the frozen condition-number limit of 4000, so it used zero of its two
-complete dynamic runs. The authored D6 wrapper exposes zero D6 tensor joints
-on GPU, which permits the finite virtual 3P+3R fallback. Its frozen
-conservative, nominal, and high-authority profiles all fail both clips.
-The nominal virtual-wrist candidate nevertheless passes its C.2 runtime
-contract regression at 1-env and 128-env for 1000 steps each: 26-D action,
-764-D observation, reference bank, reset behavior, and no rollout
-wrist/object state write are preserved. This does not select a C.3 profile or
-override the wrist tracking gate.
+complete dynamic runs. The authored generic D6 wrapper exposes zero D6 tensor
+joints on GPU, which permits the explicit serial 3P+3R articulation fallback.
+It exposes six real GPU tensor joints ahead of the 20 frozen finger joints; it
+is an abstract engineering wrist with a fixed virtual anchor, not a real arm.
+All three globally shared profiles fail both clips. The strongest bounded
+profile reaches 1.13/1.09 cm maximum position error but 17.59/19.57 degrees
+maximum rotation error, 7.29/7.55 degrees rotation RMSE, and 21.25%/18.75%
+torque saturation. Its C.2 runtime-contract smoke nevertheless passes at 1
+and 128 environments: 26-D action basis, 764-D observation, subset reset, and
+no rollout wrist/object state write are preserved. This does not select a C.3
+profile or override the wrist tracking gate.
 Stage 16-C.3R2--C.5 is therefore
 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; C.3 modes 1--5, contact-momentum
 causality, C.4/C.5, and PPO are not run/not authorized. See the

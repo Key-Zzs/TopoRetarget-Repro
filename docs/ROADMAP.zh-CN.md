@@ -78,13 +78,14 @@ Stage 16-C 路线为：C.0 Isaac Lab platform qualification 已在全部硬 gate
 资产迁移已完成真实 PhysX/CUDA、具名接触对及 1/128-env 验证，精确状态为
 `STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED`。C.2 入口已授权为
 `STAGE16C2_DIRECT_RL_ENV_VALIDATED`，真实 GPU 的 1-env、交替 clip 与
-128-env/1000-step smoke 均通过；nominal finite-virtual wrist candidate 的 C.2
-runtime-contract 1-env 与 128-env/1000-step regression 也均通过
-（`STAGE16C2_D6_PROFILE_REGRESSION_VALIDATED`），但它不选择 active C.3 profile。C.3
+128-env/1000-step smoke 均通过；显式 3P+3R high-authority candidate 的 bounded C.2
+runtime-contract 1-env/128-env smoke、26 维 action basis 与 64-of-128 subset reset 均通过
+（`STAGE16C2_EXPLICIT_3P3R_WRIST_VALIDATED`），但它不选择 active C.3 profile。C.3
 的 stage-level 最终状态为 `STAGE16C3_SEMANTIC_QUALIFICATION_BLOCKED`，阻塞原因为
 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`：C3-0 derived-FK replay 与 object-centric
 contact readout 各自通过，但唯一 Path A map 超过冻结的 condition-number gate，且三个
-finite virtual 3P+3R profile 均在两条 clip 上失败。因此 C.4 GPU vectorization 和 C.5
+显式串联 3P+3R profile 均在两条 clip 上失败。该 fallback 暴露 6 个 GPU tensor joint，
+但没有添加真实机械臂。因此 C.4 GPU vectorization 和 C.5
 PhysX Oracle 均不得运行（分别为 `STAGE16C4_NOT_RUN_GATE_BLOCKED` 与
 `STAGE16C5_NOT_RUN_GATE_BLOCKED`），C.6 single-clip GPU PPO 未获授权
 （`STAGE16C6_SINGLE_CLIP_GPU_PPO_NOT_AUTHORIZED`；0 样本、0 checkpoint）。

@@ -77,12 +77,15 @@ replay 现已通过 `C3_REFERENCE_OR_FRAME_CONTRACT_VALIDATED`：诊断目标由
 finger configuration 的 canonical-URDF FK 导出；原始 stored link field 保持 immutable，
 并继续承担既有 observation/reward 角色。Path A 唯一允许的 identified inverse-wrench
 implementation 被前置条件阻断：5 个 sampled reference-target map 超过冻结的
-condition-number 上限 4000，故 2 次完整 dynamic run 均未消耗。生成的 D6 wrapper 在 GPU 上
-暴露 0 个 D6 tensor joint，因此允许使用有限 virtual 3P+3R fallback；其冻结的
-conservative、nominal 和 high-authority profile 均在两条 clip 上失败。Stage 16-C.3R2--C.5
-nominal virtual-wrist candidate 仍完成 C.2 runtime-contract regression：1-env 与 128-env 各
-1000 step 均保持 26-D action、764-D observation、reference bank、reset 行为以及 rollout 中
-不写 wrist/object state。这不选择 C.3 profile，也不改变 wrist tracking gate 的失败结论。Stage 16-C.3R2--C.5
+condition-number 上限 4000，故 2 次完整 dynamic run 均未消耗。生成的 generic D6 wrapper 在
+GPU 上暴露 0 个 D6 tensor joint，因此允许使用显式串联 3P+3R articulation fallback。该
+fallback 在 20 个冻结手指关节之前暴露 6 个真实 GPU tensor joint；它是带固定虚拟 anchor
+的抽象工程腕，不是真实机械臂。三档全局共享 profile 均在两条 clip 上失败；最强的有限档
+位置最大误差为 1.13/1.09 cm，但旋转最大误差为 17.59/19.57 度、旋转 RMSE 为
+7.29/7.55 度、力矩饱和率为 21.25%/18.75%。该档仍通过 1-env/128-env C.2
+runtime-contract smoke：保持 26-D action basis、764-D observation、subset reset 以及 rollout
+中不写 wrist/object state。这不选择 C.3 profile，也不改变 wrist tracking gate 的失败结论。
+Stage 16-C.3R2--C.5
 的最终状态为 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`；C.3 modes 1--5、
 contact-momentum causality、C.4/C.5 均不得运行，PPO 未获授权。详见
 [DirectRLEnv 契约](docs/rl/ISAACLAB_DIRECT_RL_ENV.md)、

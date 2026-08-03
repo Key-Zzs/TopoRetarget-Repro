@@ -457,8 +457,9 @@ The C.3R2 closeout remains an `ENGINEERING_DIAGNOSTIC`, not a paper-method or
 control claim. C3-0 validates derived canonical-URDF FK targets while retaining
 the immutable stored-link field, and the object-centric contact sensor validates
 readout only. Path A is stopped by its frozen condition-number gate. Live GPU
-inspection then permits the finite virtual 3P+3R wrist fallback because the
-authored D6 wrapper exposes no D6 tensor joints. All three frozen virtual
-profiles fail both clips, producing
+inspection then permits the explicit serial 3P+3R articulation fallback
+because the authored generic D6 wrapper exposes no D6 tensor joints. The
+fallback exposes six GPU tensor joints and is an abstract engineering wrist,
+not a real arm. All three global profiles fail both clips, producing
 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`. No contact causality, C.4 benchmark,
 C.5 oracle, or PPO result is claimed.

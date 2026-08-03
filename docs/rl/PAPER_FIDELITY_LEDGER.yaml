@@ -59,7 +59,7 @@ isaaclab_platform_extension:
   stage16c3_reference_frame_status: C3_REFERENCE_OR_FRAME_CONTRACT_VALIDATED
   stage16c3_contact_readout_status: C3_CONTACT_READOUT_VALIDATED
   stage16c3_active_wrist_profile: null
-  stage16c2_d6_profile_regression_status: STAGE16C2_D6_PROFILE_REGRESSION_VALIDATED
+  stage16c2_d6_profile_regression_status: STAGE16C2_EXPLICIT_3P3R_WRIST_VALIDATED
   stage16c2_d6_profile_regression_scope: nominal_candidate_runtime_contract_only
   stage16c4_status: STAGE16C4_NOT_RUN_GATE_BLOCKED
   stage16c5_status: STAGE16C5_NOT_RUN_GATE_BLOCKED

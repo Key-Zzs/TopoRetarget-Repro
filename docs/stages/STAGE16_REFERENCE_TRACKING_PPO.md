@@ -45,9 +45,12 @@ smokes. C3-0 reference/frame replay is now
 targets, and C.3R2 contact readout is
 `C3_CONTACT_READOUT_VALIDATED`. The single permitted Path A inverse-wrench
 implementation is precondition-blocked by five condition numbers above 4000.
-Its finite D6 wrapper has zero live GPU tensor joints, so the permitted finite
-virtual 3P+3R fallback was run in all three frozen profiles; every profile
-fails both clips. The result is `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`.
+Its generic D6 wrapper has zero live GPU tensor joints, so the permitted
+explicit serial 3P+3R articulation fallback was run in all three global
+profiles. The wrapper exposes six GPU tensor joints and no real arm. Every
+profile fails both clips; the strongest profile still reaches 17.59/19.57
+degrees maximum rotation error and 21.25%/18.75% torque saturation. The result
+is `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`.
 C3-1 through C3-5, contact causality, C.4 task-vector benchmarks, and C.5
 PhysX oracle are not run; C.6/C.7 PPO remain unauthorized with zero samples
 and checkpoints. C.8/C.9 remain TODO.

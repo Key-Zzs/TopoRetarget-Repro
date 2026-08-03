@@ -389,7 +389,7 @@ PAPER_PROTOCOL_REPRODUCTION_WITH_ASSUMPTIONS rather than author-exact results.
   state writes; it cannot demonstrate free-object contact controllability.
 - C3-0 derived-FK replay and C.3R2 object-centric contact readout are validated
   engineering diagnostics; neither is paper-exact contact causality. Path A
-  is condition-gated, and the permitted finite virtual 3P+3R fallback fails
-  both clips in all three frozen profiles. C.3 is therefore
+  is condition-gated, and the permitted explicit serial 3P+3R fallback fails
+  both clips in all three globally shared profiles. C.3 is therefore
   `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; C.4/C.5 remain unrun and C.6 PPO
   is unauthorized.

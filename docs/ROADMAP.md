@@ -92,7 +92,8 @@ C.2 is `STAGE16C2_DIRECT_RL_ENV_VALIDATED` with real 1/128-env GPU evidence.
 C.3 is `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`: C3-0 derived-FK replay and
 object-centric contact readout validate their respective contracts, but the
 single Path A map exceeds the frozen condition-number gate and all three
-finite virtual 3P+3R profiles fail both clips. C.4/C.5 are not run and C.6
+explicit serial 3P+3R profiles fail both clips. The fallback exposes six GPU
+tensor joints but adds no real arm. C.4/C.5 are not run and C.6
 PPO remains unauthorized. Neither
 C.0/C.1/C.2 nor historical MuJoCo evidence authorizes a PhysX oracle or PPO.
 
