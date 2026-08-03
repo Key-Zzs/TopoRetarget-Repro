@@ -58,13 +58,20 @@ D6_WRIST_PROFILES = (
     ),
     FiniteD6WristProfile(
         identifier="high_authority_bounded",
-        translation_stiffness_npm=1200.0,
-        translation_damping_ns_per_m=140.0,
-        translation_effort_limit_n=70.0,
+        # Reference-envelope qualification: m=5.6207 kg and a_max=4.102
+        # m/s^2 imply about 23.1 N feed-forward demand.  These gains retain
+        # a finite 500 N ceiling while approaching critical damping for the
+        # explicit serial translation chain.
+        translation_stiffness_npm=10000.0,
+        translation_damping_ns_per_m=500.0,
+        translation_effort_limit_n=500.0,
         translation_velocity_limit_mps=2.0,
-        rotation_stiffness_nm_per_rad=9.0,
-        rotation_damping_nm_s_per_rad=0.90,
-        rotation_effort_limit_nm=7.0,
+        # I_max=0.14401 kg m^2 and alpha_max=20.818 rad/s^2 imply about
+        # 3.0 Nm.  The finite 500 Nm cap covers serial-coordinate coupling and
+        # bounded substep transients without using a kinematic drive.
+        rotation_stiffness_nm_per_rad=3000.0,
+        rotation_damping_nm_s_per_rad=45.0,
+        rotation_effort_limit_nm=500.0,
         rotation_velocity_limit_radps=6.0,
     ),
 )

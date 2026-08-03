@@ -7,6 +7,7 @@ import argparse
 import json
 import math
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,16 @@ def parse_args() -> argparse.Namespace:
         default=(
             REPO_ROOT / ".local/reports/stage16c3r2_c5/c3/path_b_finite_virtual_noncontact.json"
         ),
+    )
+    parser.add_argument(
+        "--worker-mode",
+        choices=("tracking", "disturbance", "authority_removed"),
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--worker-profile",
+        choices=("conservative", "nominal", "high_authority_bounded"),
+        help=argparse.SUPPRESS,
     )
     return parser.parse_args()
 
@@ -110,6 +121,40 @@ def _raw_control_interval(env: Any, torch: Any, action: Any) -> None:
 def _run_zero_action_clip(env: Any, torch: Any, *, clip_index: int) -> dict[str, Any]:
     """Measure all 41 frozen keys with dynamic PhysX wrist substeps only."""
 
+    from toporetarget.rl.environments.isaaclab_backend.explicit_virtual_wrist import (
+        explicit_3p3r_rotation_matrix,
+    )
+    from toporetarget.rl.environments.isaaclab_backend.reference_bank import (
+        quaternion_to_matrix_wxyz,
+    )
+
+    def joint_diagnostics() -> dict[str, float]:
+        state = env._state()
+        current = env._robot.data.joint_pos[:, env._virtual_wrist_joint_ids]
+        target = env._explicit_wrist_joint_target
+        actual_rotation = quaternion_to_matrix_wxyz(state["wrist_quaternion_wxyz"])
+        joint_rotation = explicit_3p3r_rotation_matrix(current)
+        relative_trace = torch.diagonal(
+            actual_rotation.transpose(-1, -2) @ joint_rotation, dim1=-2, dim2=-1
+        ).sum(dim=-1)
+        kinematic_angle = torch.acos(((relative_trace - 1.0) * 0.5).clamp(-1.0, 1.0))
+        return {
+            "translation_joint_target_error_m": _scalar(
+                torch.linalg.vector_norm(target[:, :3] - current[:, :3], dim=-1).amax()
+            ),
+            "rotation_joint_target_error_deg": _scalar(
+                torch.linalg.vector_norm(target[:, 3:] - current[:, 3:], dim=-1).amax()
+            )
+            * 180.0
+            / math.pi,
+            "translation_fk_mismatch_m": _scalar(
+                torch.linalg.vector_norm(
+                    state["wrist_position_scene"] - current[:, :3], dim=-1
+                ).amax()
+            ),
+            "rotation_fk_mismatch_deg": _scalar(kinematic_angle.amax()) * 180.0 / math.pi,
+        }
+
     _reset_for_clip(env, torch, clip_index)
     action = torch.zeros((env.num_envs, 26), device=env.device)
     initial = _wrist_sample(env, torch)
@@ -125,6 +170,7 @@ def _run_zero_action_clip(env: Any, torch: Any, *, clip_index: int) -> dict[str,
     }
     finite = initial["finite"]
     state_evolved = False
+    diagnostic_maxima = joint_diagnostics()
     for _ in range(_STEPS - 1):
         _raw_control_interval(env, torch, action)
         sample = _wrist_sample(env, torch)
@@ -140,6 +186,10 @@ def _run_zero_action_clip(env: Any, torch: Any, *, clip_index: int) -> dict[str,
         maxima["control_step_delta_m"] = max(maxima["control_step_delta_m"], step_delta)
         state_evolved = state_evolved or step_delta > 1.0e-8
         previous_wrist = current_wrist.clone()
+        diagnostics = joint_diagnostics()
+        diagnostic_maxima = {
+            key: max(diagnostic_maxima[key], value) for key, value in diagnostics.items()
+        }
     total_physics_substeps = int(env._wrist_substeps.max().item())
     return {
         "clip": env.reference_bank.clip_ids[clip_index],
@@ -159,8 +209,13 @@ def _run_zero_action_clip(env: Any, torch: Any, *, clip_index: int) -> dict[str,
                 env._torque_saturation_substeps.max().to(torch.float32)
                 / env._wrist_substeps.max().clamp_min(1).to(torch.float32)
             ),
+            "velocity_ratio": _scalar(
+                env._velocity_saturation_substeps.max().to(torch.float32)
+                / env._wrist_substeps.max().clamp_min(1).to(torch.float32)
+            ),
             "physics_substeps": total_physics_substeps,
         },
+        "diagnostic_maxima": diagnostic_maxima,
         "rmse": {key: math.sqrt(value / _STEPS) for key, value in squared.items()},
     }
 
@@ -199,6 +254,7 @@ def _tracking_pass(report: dict[str, Any]) -> bool:
         and maxima["control_step_delta_m"] <= _TELEPORT_CONTROL_STEP_DELTA_MAX_M
         and report["saturation"]["force_ratio"] <= _SATURATION_MAX
         and report["saturation"]["torque_ratio"] <= _SATURATION_MAX
+        and report["saturation"]["velocity_ratio"] <= _SATURATION_MAX
     )
 
 
@@ -219,10 +275,124 @@ def _reference_envelope(env: Any, torch: Any) -> dict[str, float]:
     }
 
 
-def main() -> int:
-    args = parse_args()
-    if not args.accept_eula:
-        raise SystemExit("explicit --accept-eula is required for this licensed runtime process")
+def _worker_command(args: argparse.Namespace, *, mode: str, profile: str, output: Path) -> None:
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "--accept-eula",
+        "--worker-mode",
+        mode,
+        "--worker-profile",
+        profile,
+        "--output",
+        str(output),
+    ]
+    completed = subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        env={**os.environ, "OMNI_KIT_ACCEPT_EULA": "YES"},
+        check=False,
+    )
+    if completed.returncode != 0 or not output.is_file():
+        raise RuntimeError(
+            f"C3_EXPLICIT_WRIST_WORKER_FAILURE: mode={mode} profile={profile} "
+            f"returncode={completed.returncode}"
+        )
+
+
+def _orchestrate(args: argparse.Namespace) -> int:
+    from toporetarget.rl.environments.isaaclab_backend.d6_wrist_asset import D6_WRIST_PROFILES
+
+    worker_root = args.output.parent / f".{args.output.stem}_workers"
+    worker_root.mkdir(parents=True, exist_ok=True)
+    profile_reports: dict[str, dict[str, Any]] = {}
+    reference_envelope: dict[str, float] | None = None
+    selected_profile: str | None = None
+    for candidate in D6_WRIST_PROFILES:
+        profile = candidate.identifier
+        output = worker_root / f"tracking_{profile}.json"
+        _worker_command(args, mode="tracking", profile=profile, output=output)
+        worker = json.loads(output.read_text(encoding="utf-8"))
+        reference_envelope = worker["reference_envelope"]
+        profile_reports[profile] = worker["profile_report"]
+        if worker["profile_report"]["tracking_gate_pass"]:
+            selected_profile = profile
+            break
+    assert reference_envelope is not None
+    ablation_profile = selected_profile or "nominal"
+    disturbance_output = worker_root / f"disturbance_{ablation_profile}.json"
+    _worker_command(args, mode="disturbance", profile=ablation_profile, output=disturbance_output)
+    disturbance_worker = json.loads(disturbance_output.read_text(encoding="utf-8"))
+    authority_removed_output = worker_root / f"authority_removed_{ablation_profile}.json"
+    _worker_command(
+        args,
+        mode="authority_removed",
+        profile=ablation_profile,
+        output=authority_removed_output,
+    )
+    authority_worker = json.loads(authority_removed_output.read_text(encoding="utf-8"))
+    disturbance = disturbance_worker["finite_disturbance"]
+    authority_removed = authority_worker["two_clip_results"]
+    enabled_contract = disturbance_worker["contract"]
+    authority_removed_contract = authority_worker["contract"]
+    disturbance_ok = disturbance["finite"] and disturbance["wrist_control_step_delta_m"] > 1e-8
+    ablation_enabled = profile_reports[ablation_profile]["two_clip_results"]
+    enabled_position_rmse = sum(report["rmse"]["position_m"] for report in ablation_enabled)
+    disabled_position_rmse = sum(report["rmse"]["position_m"] for report in authority_removed)
+    authority_degrades = disabled_position_rmse > enabled_position_rmse + 1e-5
+    no_state_write = all(
+        contract["wrist_root_state_writes_during_step"] == 0
+        and contract["object_rollout_state_writes"] == 0
+        for contract in (enabled_contract, authority_removed_contract)
+    )
+    passed = (
+        selected_profile is not None and disturbance_ok and authority_degrades and no_state_write
+    )
+    result = {
+        "status": (
+            "C3_FINITE_6DOF_WRIST_ACTUATION_VALIDATED"
+            if passed
+            else "C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED"
+        ),
+        "mode": "finite_virtual_6d_wrist_actuator_v1",
+        "articulation_model": "explicit_serial_3p3r",
+        "real_arm": False,
+        "profile_candidates": [profile.identifier for profile in D6_WRIST_PROFILES],
+        "profile_selection": "first_two_clip_passing_global_profile_in_frozen_order",
+        "selected_profile": selected_profile,
+        "ablation_profile": ablation_profile,
+        "frames": _STEPS,
+        "object_scope": "both task objects inactive and non-contact during wrist gate",
+        "contact_sensor_update": "lazy_and_unread_for_noncontact_wrist_gate",
+        "process_isolation": "one_fresh_isaac_process_per_profile_or_ablation",
+        "acceptance": {
+            "position_max_m": _POSITION_MAX_M,
+            "rotation_max_deg": _ROTATION_MAX_DEG,
+            "position_rmse_m": _POSITION_RMSE_M,
+            "rotation_rmse_deg": _ROTATION_RMSE_DEG,
+            "force_torque_velocity_saturation_ratio_max": _SATURATION_MAX,
+            "control_step_teleport_max_m": _TELEPORT_CONTROL_STEP_DELTA_MAX_M,
+        },
+        "reference_envelope": reference_envelope,
+        "profile_reports": profile_reports,
+        "finite_disturbance": disturbance,
+        "authority_removed": authority_removed,
+        "authority_removal_degrades_tracking": authority_degrades,
+        "authority_enabled_position_rmse_sum_m": enabled_position_rmse,
+        "authority_removed_position_rmse_sum_m": disabled_position_rmse,
+        "no_rollout_pose_velocity_or_object_writes": no_state_write,
+        "contract": enabled_contract,
+        "authority_removed_contract": authority_removed_contract,
+    }
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(json.dumps(result, sort_keys=True), flush=True)
+    return 0 if passed else 1
+
+
+def _worker_main(args: argparse.Namespace) -> int:
+    if args.worker_profile is None or args.worker_mode is None:
+        raise RuntimeError("worker profile and mode are required together")
     os.environ["OMNI_KIT_ACCEPT_EULA"] = "YES"
     from isaaclab.app import AppLauncher
 
@@ -234,121 +404,98 @@ def main() -> int:
         from toporetarget.rl.environments.isaaclab_backend.d6_wrist_asset import (
             D6_WRIST_PROFILES,
         )
-        from toporetarget.rl.environments.isaaclab_backend.finite_virtual_wrist_actuator import (
-            FiniteVirtual6DWristActuator,
-        )
         from toporetarget.rl.environments.isaaclab_backend.world_wrist_direct_env import (
             IsaacWorldWristFingerDirectRLEnv,
         )
         from toporetarget.rl.environments.isaaclab_backend.world_wrist_direct_env_cfg import (
             IsaacWorldWristFingerDirectRLEnvCfg,
+            configure_explicit_virtual_wrist,
         )
 
+        candidate = next(
+            profile for profile in D6_WRIST_PROFILES if profile.identifier == args.worker_profile
+        )
         cfg = IsaacWorldWristFingerDirectRLEnvCfg()
         cfg.scene.num_envs = 1
+        cfg.scene.lazy_sensor_update = True
         cfg.balanced_clip_assignment = False
         cfg.contact_telemetry = "off"
-        cfg.wrist_controller_mode = "finite_virtual_6d_wrist_actuator_v1"
-        cfg.finite_virtual_wrist_profile = "nominal"
-        cfg.finite_virtual_wrist_authority_enabled = True
+        configure_explicit_virtual_wrist(
+            cfg,
+            profile_identifier=candidate.identifier,
+            authority_enabled=args.worker_mode != "authority_removed",
+        )
         env = IsaacWorldWristFingerDirectRLEnv(cfg)
         env.reset(seed=20260803)
-        reference_envelope = _reference_envelope(env, torch)
-        profile_reports: dict[str, dict[str, Any]] = {}
-        selected_profile: str | None = None
-        for candidate in D6_WRIST_PROFILES:
-            profile = candidate.identifier
-            cfg.finite_virtual_wrist_profile = profile
-            env.finite_virtual_wrist_actuator = (
-                FiniteVirtual6DWristActuator.from_profile_identifier(profile)
-            )
-            enabled = [_run_zero_action_clip(env, torch, clip_index=index) for index in range(2)]
-            tracking_ok = all(_tracking_pass(report) for report in enabled)
-            profile_reports[profile] = {
-                "profile": profile,
-                "velocity_envelope_covered": (
-                    candidate.translation_velocity_limit_mps
-                    >= reference_envelope["linear_velocity_max_mps"]
-                    and candidate.rotation_velocity_limit_radps
-                    >= reference_envelope["angular_velocity_max_radps"]
-                ),
-                "tracking_gate_pass": tracking_ok,
-                "two_clip_results": enabled,
+        if args.worker_mode == "tracking":
+            reference_envelope = _reference_envelope(env, torch)
+            clips = [_run_zero_action_clip(env, torch, clip_index=index) for index in range(2)]
+            tracking_ok = all(_tracking_pass(report) for report in clips)
+            result = {
+                "worker_mode": args.worker_mode,
+                "profile": candidate.identifier,
+                "reference_envelope": reference_envelope,
+                "profile_report": {
+                    "profile": candidate.identifier,
+                    "velocity_envelope_covered": (
+                        candidate.translation_velocity_limit_mps
+                        >= reference_envelope["linear_velocity_max_mps"]
+                        and candidate.rotation_velocity_limit_radps
+                        >= reference_envelope["angular_velocity_max_radps"]
+                    ),
+                    "tracking_gate_pass": tracking_ok,
+                    "two_clip_results": clips,
+                },
+                "contract": env.contract_report(),
             }
-            if tracking_ok:
-                selected_profile = profile
-                break
-        ablation_profile = selected_profile or "nominal"
-        cfg.finite_virtual_wrist_profile = ablation_profile
-        env.finite_virtual_wrist_actuator = FiniteVirtual6DWristActuator.from_profile_identifier(
-            ablation_profile
-        )
-        disturbance = _run_finite_disturbance(env, torch)
-        cfg.finite_virtual_wrist_authority_enabled = False
-        authority_removed = [
-            _run_zero_action_clip(env, torch, clip_index=index) for index in range(2)
-        ]
-        contract = env.contract_report()
-        disturbance_ok = (
-            disturbance["finite"] and disturbance["wrist_control_step_delta_m"] > 1.0e-8
-        )
-        ablation_enabled = profile_reports[ablation_profile]["two_clip_results"]
-        enabled_position_rmse = sum(report["rmse"]["position_m"] for report in ablation_enabled)
-        disabled_position_rmse = sum(report["rmse"]["position_m"] for report in authority_removed)
-        authority_degrades = disabled_position_rmse > enabled_position_rmse + 1.0e-5
-        no_state_write = (
-            contract["wrist_root_state_writes_during_step"] == 0
-            and contract["object_rollout_state_writes"] == 0
-        )
-        passed = (
-            selected_profile is not None
-            and disturbance_ok
-            and authority_degrades
-            and no_state_write
-        )
-        result = {
-            "status": (
-                "C3_FINITE_6DOF_WRIST_ACTUATION_VALIDATED"
-                if passed
-                else "C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED"
-            ),
-            "mode": "finite_virtual_6d_wrist_actuator_v1",
-            "profile_candidates": [profile.identifier for profile in D6_WRIST_PROFILES],
-            "profile_selection": "first_two_clip_passing_global_profile_in_frozen_order",
-            "selected_profile": selected_profile,
-            "ablation_profile": ablation_profile,
-            "frames": _STEPS,
-            "object_scope": "both task objects inactive and non-contact during wrist gate",
-            "acceptance": {
-                "position_max_m": _POSITION_MAX_M,
-                "rotation_max_deg": _ROTATION_MAX_DEG,
-                "position_rmse_m": _POSITION_RMSE_M,
-                "rotation_rmse_deg": _ROTATION_RMSE_DEG,
-                "saturation_ratio_max": _SATURATION_MAX,
-                "control_step_teleport_max_m": _TELEPORT_CONTROL_STEP_DELTA_MAX_M,
-            },
-            "reference_envelope": reference_envelope,
-            "profile_reports": profile_reports,
-            "finite_disturbance": disturbance,
-            "authority_removed": authority_removed,
-            "authority_removal_degrades_tracking": authority_degrades,
-            "authority_enabled_position_rmse_sum_m": enabled_position_rmse,
-            "authority_removed_position_rmse_sum_m": disabled_position_rmse,
-            "no_rollout_pose_velocity_or_object_writes": no_state_write,
-            "contract": contract,
-        }
+        elif args.worker_mode == "disturbance":
+            result = {
+                "worker_mode": args.worker_mode,
+                "profile": candidate.identifier,
+                "finite_disturbance": _run_finite_disturbance(env, torch),
+                "contract": env.contract_report(),
+            }
+        else:
+            result = {
+                "worker_mode": args.worker_mode,
+                "profile": candidate.identifier,
+                "two_clip_results": [
+                    _run_zero_action_clip(env, torch, clip_index=index) for index in range(2)
+                ],
+                "contract": env.contract_report(),
+            }
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(
             json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
-        print(json.dumps(result, sort_keys=True))
-        return 0 if passed else 1
+        print(
+            json.dumps(
+                {
+                    "event": "explicit_wrist_worker_complete",
+                    "mode": args.worker_mode,
+                    "profile": candidate.identifier,
+                    "output": str(args.output),
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+        return 0
     finally:
         if env is not None:
             env.close()
             env.sim.clear_all_callbacks()
             env.sim.clear_instance()
         app.close(wait_for_replicator=False)
+
+
+def main() -> int:
+    args = parse_args()
+    if not args.accept_eula:
+        raise SystemExit("explicit --accept-eula is required for this licensed runtime process")
+    if args.worker_mode is None:
+        return _orchestrate(args)
+    return _worker_main(args)
 
 
 if __name__ == "__main__":

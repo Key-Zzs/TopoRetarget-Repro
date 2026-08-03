@@ -72,6 +72,8 @@ def _profile_summary(path_b: dict[str, Any]) -> list[dict[str, Any]]:
                         "rotation_rmse_deg": clip["rmse"]["rotation_deg"],
                         "force_saturation_ratio": clip["saturation"]["force_ratio"],
                         "torque_saturation_ratio": clip["saturation"]["torque_ratio"],
+                        "velocity_saturation_ratio": clip["saturation"]["velocity_ratio"],
+                        "diagnostic_maxima": clip.get("diagnostic_maxima", {}),
                     }
                     for clip in report["two_clip_results"]
                 ],
@@ -125,7 +127,7 @@ def _state_machine(path_a: dict[str, Any], path_b: dict[str, Any]) -> dict[str, 
     )
     state.transition(
         RecoveryStage.WRIST_QUALIFICATION,
-        reason="GPU tensor contract unavailable; permitted finite virtual fallback used",
+        reason="generic D6 unavailable; permitted explicit serial 3P+3R fallback used",
     )
     for _ in path_b["profile_candidates"]:
         state.record_wrist_profile_run()
@@ -144,8 +146,8 @@ def _markdown(summary: dict[str, Any], profiles: list[dict[str, Any]]) -> str:
             "the frozen stored link field was preserved. The single allowed Path A inverse-wrench "
             "implementation was precondition-blocked by the frozen condition-number gate, so it "
             "consumed zero of two complete dynamic qualification runs. The generated finite D6 "
-            "wrapper exposed zero D6 tensor joints on GPU, authorizing the finite virtual 3P+3R "
-            "fallback. Every frozen fallback profile failed both clips; no active wrist profile "
+            "wrapper exposed zero D6 tensor joints on GPU, authorizing the explicit serial 3P+3R "
+            "fallback. Every global fallback profile failed both clips; no active wrist profile "
             "exists."
         ),
         "",
@@ -176,7 +178,7 @@ def _markdown(summary: dict[str, Any], profiles: list[dict[str, Any]]) -> str:
             "",
             (
                 "The qualification used live PhysX state evolution and bounded force/torque "
-                "application at `r_wrist`; it performed no rollout wrist pose/velocity or "
+                "3P+3R articulation joint drives; it performed no rollout wrist pose/velocity or "
                 "object-state write. This is a non-contact wrist gate, so formal immutable "
                 "task-object termination was "
                 "intentionally not evaluated."
@@ -332,13 +334,14 @@ def _handoff(summary: dict[str, Any]) -> str:
         "",
         (
             "The generated `PhysicsJoint` D6 wrapper imported but exposed zero GPU D6 tensor "
-            "joints (`D6_GPU_TENSOR_CONTROL_UNAVAILABLE`). The only permitted fallback was the "
-            "finite virtual 3P+3R actuator; no fourth profile or architecture is allowed."
+            "joints (`D6_GPU_TENSOR_CONTROL_UNAVAILABLE`). The permitted fallback is the explicit "
+            "serial 3P+3R articulation with six GPU tensor joints, a fixed virtual anchor, and no "
+            "real arm."
         ),
         "",
         "## 9. Finite 6DoF Wrist Actuator",
         "",
-        "All three frozen profiles failed both clips; no active profile exists.",
+        "All three globally shared profiles failed both clips; no active profile exists.",
         "",
         *profile_rows,
         "",
@@ -362,7 +365,7 @@ def _handoff(summary: dict[str, Any]) -> str:
         "",
         (
             "`STAGE16C4_NOT_RUN_GATE_BLOCKED`: no selected wrist profile exists, so no C.4 "
-            "task-throughput or resource-use result is claimed. The nominal candidate's C.2 "
+            "task-throughput or resource-use result is claimed. The high-authority candidate's C.2 "
             "runtime-contract smoke is retained separately and does not authorize C.4."
         ),
         "",
@@ -392,7 +395,7 @@ def _handoff(summary: dict[str, Any]) -> str:
         "",
         (
             "`tests.json` records ruff check, ruff format check, mypy, the full test suite "
-            "(415 passed, 27 skipped, 1 warning), and paper-fidelity validation; every exit "
+            "(423 passed, 27 skipped, 1 warning), and paper-fidelity validation; every exit "
             "status is zero."
         ),
         "",
@@ -419,8 +422,8 @@ def _handoff(summary: dict[str, Any]) -> str:
         "## 21. Recommended Next Action",
         "",
         (
-            "A new C.3 recovery would require separate authorization for a different fixed "
-            "actuator protocol; this closeout forbids a fourth architecture or profile tuning."
+            "The smallest unresolved scope is a bounded explicit-joint tracking controller that "
+            "can meet the frozen rotation and saturation gates without pose writes or a real arm."
         ),
         "",
         f"Status source: `{summary['artifacts']['path_b_noncontact']}`.",
@@ -437,14 +440,14 @@ def main() -> int:
         "c3_0": c3_dir / "c3_0_fully_kinematic_reconciled.json",
         "path_a": output_dir / "free_root" / "wrench_map.json",
         "d6": output_dir / "d6_tensor_contract.json",
-        "path_b": c3_dir / "path_b_finite_virtual_noncontact.json",
+        "path_b": c3_dir / "path_b_explicit_3p3r_noncontact.json",
         "contact": contact_dir / "c3_contact_readout_summary.json",
-        "c2_d6_1env": output_dir / "c2_d6_profile_regression_1env.json",
-        "c2_d6_128env": output_dir / "c2_d6_profile_regression_128env.json",
+        "c2_d6_1env": output_dir / "explicit_virtual_wrist_direct_env_smoke_1env.json",
+        "c2_d6_128env": output_dir / "explicit_virtual_wrist_direct_env_smoke_128env.json",
         "frozen": output_dir / "frozen_baseline.json",
         "hashes": output_dir / "preflight" / "input_hash_verify.json",
         "wrapper_manifest": REPO_ROOT
-        / ".local/generated_assets/isaaclab/wuji_hand2_beta1_d6_wrist/manifest.json",
+        / ".local/generated_assets/isaaclab/wuji_hand2_beta1_explicit_virtual_wrist/manifest.json",
     }
     absent = [str(path) for path in source_paths.values() if not path.is_file()]
     if absent:
@@ -454,14 +457,14 @@ def main() -> int:
     if sources["contact"]["status"] != "C3_CONTACT_READOUT_VALIDATED":
         raise RuntimeError("CONTACT_READOUT_NOT_VALIDATED")
     if (
-        sources["c2_d6_1env"]["status"] != "STAGE16C2_D6_PROFILE_REGRESSION_VALIDATED"
-        or sources["c2_d6_128env"]["status"] != "STAGE16C2_D6_PROFILE_REGRESSION_VALIDATED"
+        sources["c2_d6_1env"]["status"] != "STAGE16C2_EXPLICIT_3P3R_WRIST_VALIDATED"
+        or sources["c2_d6_128env"]["status"] != "STAGE16C2_EXPLICIT_3P3R_WRIST_VALIDATED"
     ):
-        raise RuntimeError("C2_D6_PROFILE_REGRESSION_NOT_VALIDATED")
+        raise RuntimeError("C2_EXPLICIT_3P3R_REGRESSION_NOT_VALIDATED")
 
     profile_summary = _profile_summary(sources["path_b"])
     recovery = _state_machine(sources["path_a"], sources["path_b"])
-    failure_reason = "C3 wrist architecture failed all frozen Path B profiles on both clips"
+    failure_reason = "explicit 3P+3R wrist failed all three global Path B profiles"
     downstream_not_run = _not_run(
         status="NOT_RUN_GATE_BLOCKED_BY_C3_WRIST_ARCHITECTURE", reason=failure_reason
     )
@@ -532,12 +535,12 @@ def main() -> int:
             ],
         },
         "c2_regression": {
-            "status": "STAGE16C2_D6_PROFILE_REGRESSION_VALIDATED",
+            "status": "STAGE16C2_EXPLICIT_3P3R_WRIST_VALIDATED",
             "scope": (
-                "Nominal virtual-wrist candidate runtime-contract regression only; it does not "
+                "Explicit 3P+3R runtime-contract regression only; it does not "
                 "select an active C.3 tracking profile."
             ),
-            "profile": "nominal",
+            "profile": "high_authority_bounded",
             "one_env": artifacts["c2_d6_1env"],
             "vector_128": artifacts["c2_d6_128env"],
             "c3_profile_selected": None,
@@ -571,7 +574,7 @@ def main() -> int:
     }
     active_profile = {
         "status": "NO_ACTIVE_WRIST_PROFILE",
-        "reason": "No frozen finite virtual profile passed both clips.",
+        "reason": "No globally shared explicit 3P+3R profile passed both clips.",
         "selected_profile": None,
     }
     contact_causality = {

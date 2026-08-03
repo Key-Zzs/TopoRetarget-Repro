@@ -97,6 +97,7 @@ def main() -> int:
         )
         from toporetarget.rl.environments.isaaclab_backend.world_wrist_direct_env_cfg import (
             IsaacWorldWristFingerDirectRLEnvCfg,
+            configure_explicit_virtual_wrist,
         )
 
         cfg = IsaacWorldWristFingerDirectRLEnvCfg()
@@ -106,8 +107,11 @@ def main() -> int:
         cfg.reset_reference_index = args.reset_mode
         cfg.wrist_controller_mode = args.wrist_controller_mode
         if args.wrist_controller_mode == "finite_virtual_6d_wrist_actuator_v1":
-            cfg.finite_virtual_wrist_profile = args.finite_virtual_profile
-            cfg.finite_virtual_wrist_authority_enabled = True
+            configure_explicit_virtual_wrist(
+                cfg,
+                profile_identifier=args.finite_virtual_profile,
+                authority_enabled=True,
+            )
         env = IsaacWorldWristFingerDirectRLEnv(cfg)
         observation, _ = env.reset(seed=20260802)
         policy = observation["policy"]
@@ -151,15 +155,70 @@ def main() -> int:
                     (reasons == code).sum().item()
                 )
         elapsed = time.monotonic() - started
+        zero_action = torch.zeros((args.num_envs, 26), device=env.device)
+        env._pre_physics_step(zero_action)
+        baseline_position = env._wrist_target_position[0].clone()
+        baseline_quaternion = env._wrist_target_quaternion[0].clone()
+        baseline_fingers = env._joint_target_isaac[0].clone()
+        action_basis_pass = True
+        for action_index in range(26):
+            basis = zero_action.clone()
+            basis[0, action_index] = 0.5
+            env._pre_physics_step(basis)
+            position_changed = not torch.allclose(
+                env._wrist_target_position[0], baseline_position, atol=1.0e-7, rtol=0.0
+            )
+            quaternion_changed = not torch.allclose(
+                env._wrist_target_quaternion[0], baseline_quaternion, atol=1.0e-7, rtol=0.0
+            )
+            finger_delta = (env._joint_target_isaac[0] - baseline_fingers).abs() > 1.0e-7
+            if action_index < 3:
+                axis_pass = (
+                    position_changed and not quaternion_changed and not bool(finger_delta.any())
+                )
+            elif action_index < 6:
+                axis_pass = (
+                    quaternion_changed and not position_changed and not bool(finger_delta.any())
+                )
+            else:
+                isaac_index = int(env.action_adapter.isaac_from_canonical[action_index - 6].item())
+                axis_pass = (
+                    not position_changed
+                    and not quaternion_changed
+                    and bool(finger_delta[isaac_index])
+                    and int(finger_delta.sum().item()) == 1
+                )
+            action_basis_pass = action_basis_pass and axis_pass
+        subset_reset_pass = True
+        subset_reset_count = 0
+        if args.num_envs > 1:
+            subset = torch.arange(0, args.num_envs, 2, device=env.device)
+            untouched = torch.arange(1, args.num_envs, 2, device=env.device)
+            before_joint = env._robot.data.joint_pos[untouched].clone()
+            before_first_object = env._object_170105.data.root_state_w[untouched].clone()
+            before_second_object = env._object_170650.data.root_state_w[untouched].clone()
+            env._reset_idx(subset)
+            subset_reset_count = int(subset.numel())
+            subset_reset_pass = bool(
+                torch.equal(env._robot.data.joint_pos[untouched], before_joint)
+                and torch.equal(
+                    env._object_170105.data.root_state_w[untouched], before_first_object
+                )
+                and torch.equal(
+                    env._object_170650.data.root_state_w[untouched], before_second_object
+                )
+            )
         contract = env.contract_report()
         passed = (
             finite
+            and action_basis_pass
+            and subset_reset_pass
             and contract["object_rollout_state_writes"] == 0
             and contract["wrist_root_state_writes_during_step"] == 0
         )
         if passed:
             status = (
-                "STAGE16C2_D6_PROFILE_REGRESSION_VALIDATED"
+                "STAGE16C2_EXPLICIT_3P3R_WRIST_VALIDATED"
                 if args.wrist_controller_mode == "finite_virtual_6d_wrist_actuator_v1"
                 else "STAGE16C2_DIRECT_RL_ENV_VALIDATED"
             )
@@ -189,6 +248,11 @@ def main() -> int:
             "finite": finite,
             "resets": reset_count,
             "unique_action_rows": unique_action_rows,
+            "action_basis_26_pass": action_basis_pass,
+            "subset_reset": {
+                "reset_env_count": subset_reset_count,
+                "untouched_envs_bitwise_stable": subset_reset_pass,
+            },
             "primary_reason_counts": primary_reason_counts,
             "clip_step_counts": clip_step_counts,
             "elapsed_s": elapsed,
@@ -207,7 +271,7 @@ def main() -> int:
             if result["status"]
             in {
                 "STAGE16C2_DIRECT_RL_ENV_VALIDATED",
-                "STAGE16C2_D6_PROFILE_REGRESSION_VALIDATED",
+                "STAGE16C2_EXPLICIT_3P3R_WRIST_VALIDATED",
             }
             else 1
         )

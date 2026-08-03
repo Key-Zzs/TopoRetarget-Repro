@@ -18,13 +18,18 @@ joint:
   euler_residual: forbidden
 virtual_fallback:
   implementation: finite_virtual_6d_wrist_actuator_v1
+  articulation_model: explicit_serial_3p3r
+  engineering_model: abstract_6dof_wrist_not_real_arm
   joint_order:
     [virtual_prismatic_x, virtual_prismatic_y, virtual_prismatic_z,
      virtual_revolute_x, virtual_revolute_y, virtual_revolute_z]
-  target_conversion: SE3_target_to_prismatic_and_shortest_rotation_log
-  rotation_coordinate: shortest_rotation_log_rad_bounded_below_pi
-  rotation_limit_deg: 100.0
-  singularity_margin_deg: 80.0
+  target_conversion: SE3_target_to_serial_xyz_inverse_kinematics
+  policy_rotation_residual: rotation_vector_then_quaternion_not_euler
+  rotation_coordinate: serial_xyz_Rx_Ry_Rz
+  rotation_limit_deg: 179.0
+  minimum_allowed_singularity_margin_deg: 5.0
+  observed_reference_singularity_margin_deg_min: 78.0
+  real_arm: false
 profiles:
   conservative:
     translation_stiffness_npm: 400.0
@@ -45,11 +50,11 @@ profiles:
     rotation_effort_limit_nm: 5.0
     rotation_velocity_limit_radps: 5.0
   high_authority_bounded:
-    translation_stiffness_npm: 1200.0
-    translation_damping_ns_per_m: 140.0
-    translation_effort_limit_n: 70.0
+    translation_stiffness_npm: 10000.0
+    translation_damping_ns_per_m: 500.0
+    translation_effort_limit_n: 500.0
     translation_velocity_limit_mps: 2.0
-    rotation_stiffness_nm_per_rad: 9.0
-    rotation_damping_nm_s_per_rad: 0.90
-    rotation_effort_limit_nm: 7.0
+    rotation_stiffness_nm_per_rad: 3000.0
+    rotation_damping_nm_s_per_rad: 45.0
+    rotation_effort_limit_nm: 500.0
     rotation_velocity_limit_radps: 6.0

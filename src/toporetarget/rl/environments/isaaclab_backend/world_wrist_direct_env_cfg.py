@@ -14,9 +14,17 @@ from isaaclab.envs import DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils import configclass
 
+from .d6_wrist_asset import D6_WRIST_PROFILES
+from .explicit_virtual_wrist import EXPLICIT_VIRTUAL_WRIST_JOINT_ORDER
+
 REPO_ROOT = Path(__file__).resolve().parents[5]
 _ASSET_ROOT = REPO_ROOT / ".local/generated_assets/isaaclab"
 _REFERENCE_ROOT = REPO_ROOT / ".local/stage16_reference_tracking_ppo/world_wrist_references"
+_EXPLICIT_VIRTUAL_WRIST_USD = (
+    _ASSET_ROOT
+    / "wuji_hand2_beta1_explicit_virtual_wrist"
+    / "wujihand2_explicit_virtual_wrist.usda"
+)
 
 _JOINT_ORDER = (
     "r_thumb_cmc_flex",
@@ -185,4 +193,58 @@ class IsaacWorldWristFingerDirectRLEnvCfg(DirectRLEnvCfg):
     headless_debug = False
 
 
-__all__ = ["IsaacWorldWristFingerDirectRLEnvCfg"]
+def configure_explicit_virtual_wrist(
+    cfg: IsaacWorldWristFingerDirectRLEnvCfg,
+    *,
+    profile_identifier: str,
+    authority_enabled: bool = True,
+) -> None:
+    """Select the explicit engineering 3P+3R wrist, never a real arm."""
+
+    profile = next(
+        (
+            candidate
+            for candidate in D6_WRIST_PROFILES
+            if candidate.identifier == profile_identifier
+        ),
+        None,
+    )
+    if profile is None:
+        valid = ", ".join(candidate.identifier for candidate in D6_WRIST_PROFILES)
+        raise ValueError(f"unknown explicit wrist profile {profile_identifier!r}; expected {valid}")
+    if not _EXPLICIT_VIRTUAL_WRIST_USD.is_file():
+        raise FileNotFoundError(
+            f"C3_EXPLICIT_VIRTUAL_WRIST_ASSET_MISSING: {_EXPLICIT_VIRTUAL_WRIST_USD}"
+        )
+    cfg.wrist_controller_mode = "finite_virtual_6d_wrist_actuator_v1"
+    cfg.finite_virtual_wrist_profile = profile.identifier
+    cfg.finite_virtual_wrist_authority_enabled = authority_enabled
+    cfg.robot.spawn.usd_path = str(_EXPLICIT_VIRTUAL_WRIST_USD)
+    cfg.robot.spawn.articulation_props.fix_root_link = True
+    gain_scale = 1.0 if authority_enabled else 0.0
+    cfg.robot.actuators = {
+        "virtual_translation": ImplicitActuatorCfg(
+            joint_names_expr=list(EXPLICIT_VIRTUAL_WRIST_JOINT_ORDER[:3]),
+            stiffness=gain_scale * profile.translation_stiffness_npm,
+            damping=gain_scale * profile.translation_damping_ns_per_m,
+            effort_limit_sim=gain_scale * profile.translation_effort_limit_n,
+            velocity_limit_sim=profile.translation_velocity_limit_mps,
+        ),
+        "virtual_rotation": ImplicitActuatorCfg(
+            joint_names_expr=list(EXPLICIT_VIRTUAL_WRIST_JOINT_ORDER[3:]),
+            stiffness=gain_scale * profile.rotation_stiffness_nm_per_rad,
+            damping=gain_scale * profile.rotation_damping_nm_s_per_rad,
+            effort_limit_sim=gain_scale * profile.rotation_effort_limit_nm,
+            velocity_limit_sim=profile.rotation_velocity_limit_radps,
+        ),
+        "fingers": ImplicitActuatorCfg(
+            joint_names_expr=list(_JOINT_ORDER),
+            stiffness=4.0,
+            damping=0.2,
+            effort_limit_sim=0.6,
+            velocity_limit_sim=12.0,
+        ),
+    }
+
+
+__all__ = ["IsaacWorldWristFingerDirectRLEnvCfg", "configure_explicit_virtual_wrist"]
