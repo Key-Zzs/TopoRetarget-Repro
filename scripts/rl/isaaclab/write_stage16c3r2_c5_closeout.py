@@ -336,7 +336,8 @@ def _handoff(summary: dict[str, Any]) -> str:
             "The generated `PhysicsJoint` D6 wrapper imported but exposed zero GPU D6 tensor "
             "joints (`D6_GPU_TENSOR_CONTROL_UNAVAILABLE`). The permitted fallback is the explicit "
             "serial 3P+3R articulation with six GPU tensor joints, a fixed virtual anchor, and no "
-            "real arm."
+            "real arm. Independent 1-env and 128-env GPU micro-gates pass all six commanded axes, "
+            "the exact 26-DoF inventory, fixed-anchor stability, and zero rollout state writes."
         ),
         "",
         "## 9. Finite 6DoF Wrist Actuator",
@@ -444,6 +445,8 @@ def main() -> int:
         "contact": contact_dir / "c3_contact_readout_summary.json",
         "c2_d6_1env": output_dir / "explicit_virtual_wrist_direct_env_smoke_1env.json",
         "c2_d6_128env": output_dir / "explicit_virtual_wrist_direct_env_smoke_128env.json",
+        "explicit_micro_1env": output_dir / "explicit_virtual_wrist_micro_1env.json",
+        "explicit_micro_128env": output_dir / "explicit_virtual_wrist_micro_128env.json",
         "frozen": output_dir / "frozen_baseline.json",
         "hashes": output_dir / "preflight" / "input_hash_verify.json",
         "wrapper_manifest": REPO_ROOT
@@ -461,6 +464,17 @@ def main() -> int:
         or sources["c2_d6_128env"]["status"] != "STAGE16C2_EXPLICIT_3P3R_WRIST_VALIDATED"
     ):
         raise RuntimeError("C2_EXPLICIT_3P3R_REGRESSION_NOT_VALIDATED")
+    for name in ("explicit_micro_1env", "explicit_micro_128env"):
+        micro = sources[name]
+        if (
+            micro["status"] != "C3_EXPLICIT_VIRTUAL_WRIST_GPU_TENSOR_VALIDATED"
+            or not micro["exact_26dof_inventory"]
+            or micro["real_arm_present"]
+            or micro["rollout_root_state_writes"] != 0
+            or micro["rollout_object_state_writes"] != 0
+            or not all(result["axis_gate_pass"] for result in micro["axis_results"])
+        ):
+            raise RuntimeError(f"C3_EXPLICIT_3P3R_MICRO_CONTRACT_FAILURE: {name}")
 
     profile_summary = _profile_summary(sources["path_b"])
     recovery = _state_machine(sources["path_a"], sources["path_b"])
@@ -479,6 +493,8 @@ def main() -> int:
         "d6_wrapper_manifest": str(source_paths["wrapper_manifest"].relative_to(REPO_ROOT)),
         "c2_d6_1env": str(source_paths["c2_d6_1env"].relative_to(REPO_ROOT)),
         "c2_d6_128env": str(source_paths["c2_d6_128env"].relative_to(REPO_ROOT)),
+        "explicit_micro_1env": str(source_paths["explicit_micro_1env"].relative_to(REPO_ROOT)),
+        "explicit_micro_128env": str(source_paths["explicit_micro_128env"].relative_to(REPO_ROOT)),
         "failure_transitions": str(
             (output_dir / "c3_failure_transitions.jsonl").relative_to(REPO_ROOT)
         ),
@@ -526,6 +542,15 @@ def main() -> int:
             "d6_wrapper": "D6_GPU_TENSOR_CONTROL_UNAVAILABLE",
             "virtual_fallback_permitted": sources["d6"]["fallback_permitted"],
             "path_b_status": sources["path_b"]["status"],
+            "explicit_3p3r_tensor_contract": {
+                "status": "C3_EXPLICIT_VIRTUAL_WRIST_GPU_TENSOR_VALIDATED",
+                "one_env": artifacts["explicit_micro_1env"],
+                "vector_128": artifacts["explicit_micro_128env"],
+                "joint_count": 26,
+                "virtual_joint_count": 6,
+                "axis_gates_passed_per_run": 6,
+                "real_arm": False,
+            },
             "profile_selection": sources["path_b"]["profile_selection"],
             "selected_profile": None,
             "profile_results": profile_summary,
@@ -727,6 +752,9 @@ def main() -> int:
         "wrist_architecture_decision.json": decision,
         "d6_wrist_manifest.json": sources["wrapper_manifest"],
         "d6_wrist_qualification.json": d6_wrist_qualification,
+        "explicit_virtual_wrist_tensor_contract.json": summary["wrist_architecture"][
+            "explicit_3p3r_tensor_contract"
+        ],
         "active_wrist_profile.json": active_profile,
         "c2_regression.json": summary["c2_regression"],
         "c2_d6_profile_regression.json": summary["c2_regression"],
