@@ -40,14 +40,17 @@ The complete contract is [WORLD_WRIST_FINGER_TRACKING.md](../rl/WORLD_WRIST_FING
 
 Stage 16-C.0 platform qualification and C.1 asset migration are complete with
 the limitations recorded below. C.2 `DirectRLEnv` is validated on real GPU
-smokes. C.3 is now `STAGE16C3_WRIST_AND_CONTACT_QUALIFICATION_BLOCKED`: the
-signed six-axis PhysX basis is correct, but the final shared 41-step wrist run
-is 3.35 cm/23.00 degrees against the 2 cm/10 degree gate. A higher-authority
-100 N/6 Nm check is worse (8.53 cm, 83.3% force saturation). The 21-body
-contact inventory resolves, but there is no valid all-hand runtime trace, so
-contact causality is not claimed. C.4 task-vector benchmarks and C.5 PhysX
-oracle are not run; C.6/C.7 PPO remain unauthorized with zero samples and
-checkpoints. C.8/C.9 remain TODO.
+smokes. C3-0 reference/frame replay is now
+`C3_REFERENCE_OR_FRAME_CONTRACT_VALIDATED` using derived canonical-URDF FK
+targets, and C.3R2 contact readout is
+`C3_CONTACT_READOUT_VALIDATED`. The single permitted Path A inverse-wrench
+implementation is precondition-blocked by five condition numbers above 4000.
+Its finite D6 wrapper has zero live GPU tensor joints, so the permitted finite
+virtual 3P+3R fallback was run in all three frozen profiles; every profile
+fails both clips. The result is `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`.
+C3-1 through C3-5, contact causality, C.4 task-vector benchmarks, and C.5
+PhysX oracle are not run; C.6/C.7 PPO remain unauthorized with zero samples
+and checkpoints. C.8/C.9 remain TODO.
 MuJoCo and PhysX need not be bitwise identical, but MuJoCo oracle evidence can
 never directly authorize an Isaac Lab policy run.
 

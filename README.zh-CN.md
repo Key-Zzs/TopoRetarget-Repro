@@ -72,13 +72,18 @@ write 或 wrist teleport。C.3R2 使用两个 object-centric、各带 21 个 fil
 ContactSensor view 替换不安全的 21-view contact path。真实 child-process probe 已对
 1000-step no-contact fixture、两个 HO-Cap object 的单指 preload fixture、random 1-env
 及 random 128-env aggregate run 验证有限的 `[env, 1, 21, 3]` CUDA matrix：
-`C3_CONTACT_READOUT_VALIDATED`。这不主张 task contact causality。随后 C3-0 fully
-kinematic replay 得到 `C3_REFERENCE_OR_FRAME_CONTRACT_FAILURE`：`hocap_170105` frame 9
-的 `r_pinky_distal` tracked-link 重建误差为 0.180689 mm，超过预先声明的 0.100 mm
-tolerance；wrist、finger、object 和 axis 检查均通过。冻结 gate 要求先解决该问题，不能进入
-Path A/Path B。C.3 semantic qualification、C.4/C.5 与 C.6 PPO 均未运行，PPO 样本和
-checkpoint 均为零。详见
-[DirectRLEnv 契约](docs/rl/ISAACLAB_DIRECT_RL_ENV.md) 和
+`C3_CONTACT_READOUT_VALIDATED`。这不主张 task contact causality。C3-0 fully kinematic
+replay 现已通过 `C3_REFERENCE_OR_FRAME_CONTRACT_VALIDATED`：诊断目标由冻结 wrist pose 与
+finger configuration 的 canonical-URDF FK 导出；原始 stored link field 保持 immutable，
+并继续承担既有 observation/reward 角色。Path A 唯一允许的 identified inverse-wrench
+implementation 被前置条件阻断：5 个 sampled reference-target map 超过冻结的
+condition-number 上限 4000，故 2 次完整 dynamic run 均未消耗。生成的 D6 wrapper 在 GPU 上
+暴露 0 个 D6 tensor joint，因此允许使用有限 virtual 3P+3R fallback；其冻结的
+conservative、nominal 和 high-authority profile 均在两条 clip 上失败。Stage 16-C.3R2--C.5
+的最终状态为 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`；C.3 modes 1--5、
+contact-momentum causality、C.4/C.5 均不得运行，PPO 未获授权。详见
+[DirectRLEnv 契约](docs/rl/ISAACLAB_DIRECT_RL_ENV.md)、
+[wrist 收口](docs/rl/ISAACLAB_WRIST_DYNAMICS.md) 和
 [资产迁移契约](docs/rl/ISAACLAB_ASSET_MIGRATION.md)。
 
 ## 数据集支持

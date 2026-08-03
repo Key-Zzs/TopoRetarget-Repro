@@ -85,10 +85,14 @@ stateDiagram-v2
     C5_BLOCKED --> C6_NOT_AUTHORIZED
 ```
 
-C.2 is validated. C.3 is `STAGE16C3_WRIST_AND_CONTACT_QUALIFICATION_BLOCKED`:
-A0 signed wrench convention passes, A1 F0/F1/F2 response identification is
-diagnostic, and A2 fails the dynamic wrist gate (3.35 cm/23.00 degrees versus
-2 cm/10 degrees). The all-hand collection attempt has no valid trace, so
-contact causality is `NOT_PROVEN`. Do not run C.4/C.5 or PPO while this state
-is active. The recovery record is
-`.local/reports/stage16c3_repair_c5_oracle/c3_failure_transitions.json`.
+C.2 is validated. C3-0 passes `C3_REFERENCE_OR_FRAME_CONTRACT_VALIDATED` with
+derived canonical-URDF FK targets while retaining the frozen stored link field,
+and C.3R2 readout passes. The one Path A implementation is precondition-blocked
+by five frozen-map condition numbers above 4000; it consumes zero complete
+dynamic runs. One D6 architecture switch is then consumed. The live D6 tensor
+contract reports zero D6 joints, permitting the finite virtual 3P+3R fallback.
+All three frozen profile runs fail both clips, so
+`Stage16C3R2C5RecoveryStateMachine` closes at
+`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`. C.3 modes 1--5, contact causality,
+C.4, C.5, and PPO are not run/not authorized. The recovery record is
+`.local/reports/stage16c3r2_c5/c3_failure_transitions.jsonl`.

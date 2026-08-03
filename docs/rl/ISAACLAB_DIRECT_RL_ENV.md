@@ -60,13 +60,21 @@ conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
 
 C.3 remains blocked, but not because of contact readout. C.3R2 completes
 `C3_CONTACT_READOUT_VALIDATED` with real 1/128-env CUDA PhysX child-process
-evidence. C3-0 fully kinematic replay then fails its predeclared 0.100 mm
-tracked-link tolerance: `hocap_170105`, frame 9, `r_pinky_distal` reaches
-0.180689 mm; all wrist, finger, object-pose, and axis-point reconstruction
-metrics pass. The status is `C3_REFERENCE_OR_FRAME_CONTRACT_FAILURE`.
+evidence. C3-0 then completes
+`C3_REFERENCE_OR_FRAME_CONTRACT_VALIDATED`: its diagnostic target is the
+canonical-URDF FK derived from frozen wrist pose plus frozen finger state. The
+stored link field remains unchanged and continues to serve its existing
+observation/reward contract.
 
-The Stage 16-C gate explicitly prohibits entering an actuator/controller path
-until this reference/frame mismatch is resolved. Therefore Path A and Path B
-are not started; semantic C3-1 through C3-5, C.4, C.5, and C.6 remain
-`NOT_RUN_GATE_BLOCKED_BY_C3`, with zero PPO samples and checkpoints. See
-`ISAACLAB_CONTACT_CAUSALITY.md` and the ignored C3R2 report bundle.
+The recovery then consumed its only Path A implementation. Its five failing
+reference-target map samples exceed the frozen condition-number maximum of
+4000, so it starts zero of two allowed complete dynamic Path A runs. The
+finite D6 wrapper exposes zero D6 tensor joints in the live GPU contract;
+therefore the permitted finite virtual 3P+3R force/torque actuator was
+qualified. Conservative, nominal, and high-authority bounded profiles all
+fail both clips. The final status is
+`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; C3-1 through C3-5,
+contact-momentum causality, C.4, and C.5 are
+`NOT_RUN_GATE_BLOCKED_BY_C3_WRIST_ARCHITECTURE`, and C.6 is not authorized.
+See `ISAACLAB_CONTACT_CAUSALITY.md`, `ISAACLAB_WRIST_DYNAMICS.md`, and the
+ignored C3R2 report bundle.

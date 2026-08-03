@@ -1,0 +1,16 @@
+schema_version: toporetarget.stage16c3r2_c5.recovery.v1
+identifier: Stage16C3R2C5RecoveryStateMachine
+budgets:
+  free_root_controller_implementations: 1
+  free_root_qualification_runs: 2
+  wrist_architecture_switches: 1
+  wrist_profile_runs: 3
+  contact_api_strategies: 3
+  c4_c5_when_c3_blocked: forbidden
+fail_closed:
+  - source_hash_drift
+  - reference_hash_drift
+  - generated_asset_corruption
+  - hidden_object_control
+  - execution_wrist_teleport
+  - unrelated_process_termination

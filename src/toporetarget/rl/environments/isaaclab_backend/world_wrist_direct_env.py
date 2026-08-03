@@ -19,6 +19,12 @@ from isaaclab.envs import DirectRLEnv
 from isaaclab.sensors import ContactSensorCfg
 
 from .action_adapter import Stage16ActionAdapter
+from .finite_virtual_wrist_actuator import FiniteVirtual6DWristActuator
+from .inverse_wrench_controller import (
+    DampedSVDInverseWrenchController,
+    EffectiveWrenchMap,
+    IdentifiedInverseWrenchProfileV1,
+)
 from .reference_bank import WorldWristReferenceBank, quaternion_to_matrix_wxyz
 from .reward_terms import Stage16WorldWristRewardProfileV1, world_wrist_reward_terms
 from .scene_frame import Stage16CSceneFrameContractV1, global_to_scene, scene_to_global
@@ -149,6 +155,35 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
                 torque_limit_nm=cfg.wrist_torque_limit_nm,
             )
         )
+        self.wrist_controller_inverse: DampedSVDInverseWrenchController | None = None
+        self.finite_virtual_wrist_actuator: FiniteVirtual6DWristActuator | None = None
+        if cfg.wrist_controller_mode == "identified_inverse_wrench_v1":
+            if cfg.identified_wrench_map_path is None:
+                raise RuntimeError("C3_PATH_A_MAP_REQUIRED: identified_wrench_map_path is required")
+            effective_map = EffectiveWrenchMap.from_json(
+                cfg.identified_wrench_map_path, device=self.device
+            )
+            self.wrist_controller_inverse = DampedSVDInverseWrenchController(
+                effective_map=effective_map,
+                regularization=cfg.identified_wrench_regularization,
+                profile=IdentifiedInverseWrenchProfileV1(
+                    translation_position_gain_s2=cfg.identified_wrench_translation_position_gain_s2,
+                    translation_damping_ratio=cfg.identified_wrench_translation_damping_ratio,
+                    rotation_position_gain_s2=cfg.identified_wrench_rotation_position_gain_s2,
+                    rotation_damping_ratio=cfg.identified_wrench_rotation_damping_ratio,
+                    force_limit_n=cfg.identified_wrench_force_limit_n,
+                    torque_limit_nm=cfg.identified_wrench_torque_limit_nm,
+                    condition_number_max=cfg.identified_wrench_condition_number_max,
+                    singular_value_relative_cutoff=(
+                        cfg.identified_wrench_singular_value_relative_cutoff
+                    ),
+                ),
+            )
+        elif cfg.wrist_controller_mode == "finite_virtual_6d_wrist_actuator_v1":
+            controller = FiniteVirtual6DWristActuator
+            self.finite_virtual_wrist_actuator = controller.from_profile_identifier(
+                cfg.finite_virtual_wrist_profile,
+            )
         self._wrist_interpolator = PhysicsSubstepWristTargetInterpolator(
             decimation=cfg.decimation, control_dt_s=self.step_dt
         )
@@ -207,6 +242,15 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         )
         self._diagnostic_object_state_write_count = torch.zeros_like(self._object_state_write_count)
         self._wrist_step_state_write_count = torch.zeros_like(self._object_state_write_count)
+        self._identified_map_condition_number = torch.zeros(
+            self.num_envs, dtype=torch.float32, device=self.device
+        )
+        self._identified_map_condition_gate_pass = torch.ones(
+            self.num_envs, dtype=torch.bool, device=self.device
+        )
+        self._identified_map_selected_reference_frame = torch.zeros(
+            self.num_envs, dtype=torch.long, device=self.device
+        )
         self._last_reward_terms: dict[str, torch.Tensor] = {}
 
     @staticmethod
@@ -379,6 +423,63 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
                 current_linear_velocity_world=self._robot.data.root_lin_vel_w,
                 current_angular_velocity_world=self._robot.data.root_ang_vel_w,
             )
+        elif self.cfg.wrist_controller_mode == "identified_inverse_wrench_v1":
+            if self.wrist_controller_inverse is None:
+                raise RuntimeError("C3_PATH_A_CONTROLLER_UNINITIALIZED")
+            composite = self._composite_inertia()
+            wrench = self.wrist_controller_inverse.compute(
+                clip_index=self._clip_index,
+                reference_index=self._target_reference_index,
+                target_position_world=self._wrist_target_position,
+                target_quaternion_wxyz=self._wrist_target_quaternion,
+                target_twist_world=self._wrist_target_twist,
+                target_acceleration_world=self._wrist_target_acceleration,
+                current_position_world=self._robot.data.root_pos_w,
+                current_quaternion_wxyz=self._robot.data.root_quat_w,
+                current_linear_velocity_world=self._robot.data.root_lin_vel_w,
+                current_angular_velocity_world=self._robot.data.root_ang_vel_w,
+            )
+            self._identified_map_condition_number.copy_(wrench["map_condition_number"])
+            self._identified_map_condition_gate_pass.copy_(wrench["map_condition_gate_pass"])
+            self._identified_map_selected_reference_frame.copy_(
+                wrench["map_selected_reference_frame"]
+            )
+        elif self.cfg.wrist_controller_mode == "finite_virtual_6d_wrist_actuator_v1":
+            if self.finite_virtual_wrist_actuator is None:
+                raise RuntimeError("C3_PATH_B_VIRTUAL_WRIST_UNINITIALIZED")
+            composite = self._composite_inertia()
+            wrist_position = self._robot.data.body_link_pos_w[:, self._wrist_body_id]
+            wrist_quaternion = self._robot.data.body_link_quat_w[:, self._wrist_body_id]
+            wrist_linear_velocity = self._robot.data.body_lin_vel_w[:, self._wrist_body_id]
+            wrist_angular_velocity = self._robot.data.body_ang_vel_w[:, self._wrist_body_id]
+            virtual_wrench = self.finite_virtual_wrist_actuator.compute(
+                target_position_world=self._wrist_target_position,
+                target_quaternion_wxyz=self._wrist_target_quaternion,
+                target_twist_world=self._wrist_target_twist,
+                current_position_world=wrist_position,
+                current_quaternion_wxyz=wrist_quaternion,
+                current_linear_velocity_world=wrist_linear_velocity,
+                current_angular_velocity_world=wrist_angular_velocity,
+                dt_s=self.physics_dt,
+            )
+            wrench = {
+                key: virtual_wrench[key]
+                for key in (
+                    "force_world",
+                    "torque_world",
+                    "force_saturated",
+                    "torque_saturated",
+                    "position_deflection_limited",
+                    "rotation_deflection_limited",
+                )
+            }
+            if not self.cfg.finite_virtual_wrist_authority_enabled:
+                # Explicit Path-B ablation only: retain target generation and
+                # physical stepping while removing all virtual wrist authority.
+                wrench["force_world"] = torch.zeros_like(wrench["force_world"])
+                wrench["torque_world"] = torch.zeros_like(wrench["torque_world"])
+                wrench["force_saturated"] = torch.zeros_like(wrench["force_saturated"])
+                wrench["torque_saturated"] = torch.zeros_like(wrench["torque_saturated"])
         else:
             raise RuntimeError(f"C3_WRIST_CONTROLLER_FAILURE: {self.cfg.wrist_controller_mode}")
         # ``instantaneous`` is reset by Isaac Lab after every write.  Replacing
@@ -540,6 +641,10 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
     ) -> dict[str, object]:
         control_step = pending["control_step"]
         reference_index = pending["reference_index"]
+        applied_force_world = pending["force_world"]
+        applied_torque_world = pending["torque_world"]
+        assert isinstance(applied_force_world, torch.Tensor)
+        assert isinstance(applied_torque_world, torch.Tensor)
         force = aggregate_force_on_object.detach()
         impulse_on_object = force * self.physics_dt
         delta_v = object_after[7:10] - object_before[7:10]
@@ -581,11 +686,8 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             "object_delta_omega_world_radps": delta_omega.detach().cpu().tolist(),
             "object_delta_momentum_world_ns": (object_mass_kg * delta_v).detach().cpu().tolist(),
             "object_pose_world": object_after[:7].detach().cpu().tolist(),
-            "applied_wrist_force_world_n": pending["force_world"][env_id].detach().cpu().tolist(),
-            "applied_wrist_torque_world_nm": pending["torque_world"][env_id]
-            .detach()
-            .cpu()
-            .tolist(),
+            "applied_wrist_force_world_n": applied_force_world[env_id].detach().cpu().tolist(),
+            "applied_wrist_torque_world_nm": applied_torque_world[env_id].detach().cpu().tolist(),
             "aggregation_level": "object-centric filtered aggregate",
         }
         if pair_force_on_object is not None:
@@ -907,6 +1009,11 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
                 / self._wrist_substeps.clamp_min(1).to(torch.float32)
             ),
             "wrist_substeps": self._wrist_substeps.clone(),
+            "identified_map_condition_number": self._identified_map_condition_number.clone(),
+            "identified_map_condition_gate_pass": self._identified_map_condition_gate_pass.clone(),
+            "identified_map_selected_reference_frame": (
+                self._identified_map_selected_reference_frame.clone()
+            ),
         }
         return termination["terminated"], termination["success"]
 
@@ -939,6 +1046,9 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         self._force_saturation_substeps[env_ids] = 0
         self._torque_saturation_substeps[env_ids] = 0
         self._wrist_substeps[env_ids] = 0
+        self._identified_map_condition_number[env_ids] = 0.0
+        self._identified_map_condition_gate_pass[env_ids] = True
+        self._identified_map_selected_reference_frame[env_ids] = 0
         self._success[env_ids] = False
         self._reason_codes[env_ids] = 0
         clips = self._clip_index[env_ids]
@@ -951,6 +1061,16 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         wrist_twist = self.reference_bank.wrist_twist_world_ref[clips, frames]
         wrist_state = torch.cat((wrist_position, wrist_quaternion, wrist_twist), dim=-1)
         self._robot.write_root_state_to_sim(wrist_state, env_ids=env_ids)
+        finite_virtual_actuator = getattr(self, "finite_virtual_wrist_actuator", None)
+        if finite_virtual_actuator is not None:
+            # Controller-only virtual-coordinate reset, paired with normal
+            # episode setup.  It does not modify the physical wrist state.
+            finite_virtual_actuator.reset(
+                position_world=wrist_position,
+                quaternion_wxyz=wrist_quaternion,
+                env_ids=env_ids,
+                num_envs=self.num_envs,
+            )
         q_canonical = self.reference_bank.q_finger_ref[clips, frames]
         qdot_canonical = self.reference_bank.qdot_finger_ref[clips, frames]
         self._robot.write_joint_state_to_sim(
@@ -1008,6 +1128,35 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             ),
             "root_quaternion_order": "wxyz",
             "root_linear_angular_velocity_frame": "world/world",
+            "identified_inverse_wrench": (
+                None
+                if self.wrist_controller_inverse is None
+                else {
+                    "profile": self.wrist_controller_inverse.profile.identifier,
+                    "map_path": self.wrist_controller_inverse.effective_map.source_path,
+                    "regularization": self.wrist_controller_inverse.regularization,
+                }
+            ),
+            "finite_virtual_6d_wrist_actuator": (
+                None
+                if self.finite_virtual_wrist_actuator is None
+                else {
+                    "identifier": "finite_virtual_6d_wrist_actuator_v1",
+                    "profile": self.finite_virtual_wrist_actuator.profile.identifier,
+                    "orientation_target": "quaternion_then_rotation_log",
+                    "virtual_joint_order": [
+                        "virtual_prismatic_x",
+                        "virtual_prismatic_y",
+                        "virtual_prismatic_z",
+                        "virtual_revolute_x",
+                        "virtual_revolute_y",
+                        "virtual_revolute_z",
+                    ],
+                    "rotation_singularity_margin_deg": 80.0,
+                    "authority_enabled": bool(self.cfg.finite_virtual_wrist_authority_enabled),
+                    "state_writes_during_step": 0,
+                }
+            ),
         }
 
 

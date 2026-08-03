@@ -1,10 +1,10 @@
 # Stage 16-C.5 PhysX oracle gate
 
 The C.5 oracle has **not run**. Its current status is
-`NOT_RUN_GATE_BLOCKED_BY_C3` because C.3 did not validate dynamic wrist
-tracking (final shared 41-step run: 3.35 cm/23.00 degrees versus 2 cm/10
-degrees) or a direct contact-driven response proof. The signed six-axis probe
-and F0/F1/F2 diagnosis are not oracle evidence.
+`NOT_RUN_GATE_BLOCKED_BY_C3_WRIST_ARCHITECTURE` because the C.3R2 Path A
+condition gate is exhausted and every frozen finite virtual wrist profile fails
+both clips. C3-0 reference/frame and contact readout validation do not
+authorize an oracle, and no direct contact-driven response proof exists.
 
 The future oracle must be a new PhysX experiment, not a conversion of any
 MuJoCo oracle result. It must keep the C.2 frozen references, action bounds,

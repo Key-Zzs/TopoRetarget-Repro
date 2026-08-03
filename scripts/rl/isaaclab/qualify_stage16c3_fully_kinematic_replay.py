@@ -87,7 +87,14 @@ def _write_frame(env: Any, torch: Any, *, clip_index: int, frame: int) -> None:
     env.scene.update(env.physics_dt)
 
 
-def _measure_frame(env: Any, torch: Any, *, clip_index: int, frame: int) -> dict[str, Any]:
+def _measure_frame(
+    env: Any,
+    torch: Any,
+    *,
+    clip_index: int,
+    frame: int,
+    kinematic_link_targets: Any,
+) -> dict[str, Any]:
     bank = env.reference_bank
     state = env._state()
     current_object = env._active_object_state()
@@ -97,7 +104,8 @@ def _measure_frame(env: Any, torch: Any, *, clip_index: int, frame: int) -> dict
     reference_object_quaternion = bank.object_pose_quaternion_world_ref_wxyz[clip_index, frame]
     reference_fingers = bank.q_finger_ref[clip_index, frame]
     reference_axis = bank.object_axis_points_world_ref[clip_index, frame]
-    reference_links = bank.tracked_link_positions_world_ref[clip_index, frame]
+    stored_reference_links = bank.tracked_link_positions_world_ref[clip_index, frame]
+    reference_links = kinematic_link_targets[clip_index, frame]
     wrist_position_error = torch.linalg.vector_norm(
         env._robot.data.root_pos_w[0] - reference_wrist_position
     )
@@ -118,10 +126,11 @@ def _measure_frame(env: Any, torch: Any, *, clip_index: int, frame: int) -> dict
     object_axis_error = torch.max(
         torch.linalg.vector_norm(state["object_axis_points_scene"][0] - reference_axis, dim=-1)
     )
-    tracked_link_errors = torch.linalg.vector_norm(
-        env._robot.data.body_pos_w[0, env._tracked_link_ids] - reference_links, dim=-1
-    )
+    runtime_links = env._robot.data.body_link_pos_w[0, env._tracked_link_ids]
+    tracked_link_errors = torch.linalg.vector_norm(runtime_links - reference_links, dim=-1)
+    stored_link_errors = torch.linalg.vector_norm(runtime_links - stored_reference_links, dim=-1)
     tracked_link_error, tracked_link_index = torch.max(tracked_link_errors, dim=0)
+    stored_link_error, stored_link_index = torch.max(stored_link_errors, dim=0)
     return {
         "wrist_position_m": _scalar(wrist_position_error),
         "wrist_rotation_rad": _scalar(wrist_rotation_error),
@@ -131,6 +140,10 @@ def _measure_frame(env: Any, torch: Any, *, clip_index: int, frame: int) -> dict
         "object_axis_m": _scalar(object_axis_error),
         "tracked_link_m": _scalar(tracked_link_error),
         "tracked_link_name": env.reference_bank.tracked_link_names[int(tracked_link_index.item())],
+        "stored_tracked_link_m": _scalar(stored_link_error),
+        "stored_tracked_link_name": env.reference_bank.tracked_link_names[
+            int(stored_link_index.item())
+        ],
     }
 
 
@@ -161,6 +174,20 @@ def main() -> int:
         cfg.contact_telemetry = "off"
         env = IsaacWorldWristFingerDirectRLEnv(cfg)
         env.reset(seed=20260803)
+        from toporetarget.rl.environments.isaaclab_backend.semantic_checks import (
+            derive_fully_kinematic_link_targets,
+        )
+
+        derived_targets = derive_fully_kinematic_link_targets(
+            cfg.reference_paths, repo_root=REPO_ROOT
+        )
+        kinematic_link_targets = torch.stack(
+            [
+                torch.as_tensor(derived_targets[clip_id].positions_world, device=env.device)
+                for clip_id in env.reference_bank.clip_ids
+            ],
+            dim=0,
+        )
         tolerances = {
             "wrist_position_m": 1.0e-5,
             "wrist_rotation_rad": 1.0e-4,
@@ -174,9 +201,16 @@ def main() -> int:
         for clip_index, clip_id in enumerate(env.reference_bank.clip_ids):
             maxima = {name: 0.0 for name in tolerances}
             worst_tracked_link: dict[str, object] | None = None
+            worst_stored_tracked_link: dict[str, object] | None = None
             for frame in range(args.frames):
                 _write_frame(env, torch, clip_index=clip_index, frame=frame)
-                measured = _measure_frame(env, torch, clip_index=clip_index, frame=frame)
+                measured = _measure_frame(
+                    env,
+                    torch,
+                    clip_index=clip_index,
+                    frame=frame,
+                    kinematic_link_targets=kinematic_link_targets,
+                )
                 for name, value in measured.items():
                     if name in maxima:
                         maxima[name] = max(maxima[name], value)
@@ -189,12 +223,22 @@ def main() -> int:
                         "link": measured["tracked_link_name"],
                         "error_m": measured["tracked_link_m"],
                     }
+                if (
+                    worst_stored_tracked_link is None
+                    or measured["stored_tracked_link_m"] > worst_stored_tracked_link["error_m"]
+                ):
+                    worst_stored_tracked_link = {
+                        "frame": frame,
+                        "link": measured["stored_tracked_link_name"],
+                        "error_m": measured["stored_tracked_link_m"],
+                    }
             clip_reports.append(
                 {
                     "clip": clip_id,
                     "frames": args.frames,
                     "maxima": maxima,
                     "worst_tracked_link": worst_tracked_link,
+                    "worst_stored_tracked_link": worst_stored_tracked_link,
                     "status": "PASS"
                     if all(maxima[name] <= tolerance for name, tolerance in tolerances.items())
                     else "FAIL",
@@ -207,6 +251,16 @@ def main() -> int:
             else "C3_REFERENCE_OR_FRAME_CONTRACT_FAILURE",
             "mode": "fully_kinematic_reference_replay",
             "scope": "C3-0 only; every wrist/finger/object state write is diagnostic replay setup",
+            "tracked_link_measurement": {
+                "gate_target": "deterministic FK from frozen wrist pose and q_finger_ref",
+                "runtime_field": "ArticulationData.body_link_pos_w (actor/link origin)",
+                "stored_field_contract": (
+                    "preserved for existing observation/reward; audit only in C3-0"
+                ),
+                "per_clip": [
+                    derived_targets[clip_id].manifest for clip_id in env.reference_bank.clip_ids
+                ],
+            },
             "tolerances": tolerances,
             "clips": clip_reports,
             "execution_state_writes": {

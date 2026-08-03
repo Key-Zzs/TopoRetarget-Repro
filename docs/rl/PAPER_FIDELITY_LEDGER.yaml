@@ -54,11 +54,15 @@ isaaclab_platform_extension:
   stage16c1_status: STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED
   stage16c2_status: STAGE16C2_DIRECT_RL_ENV_VALIDATED
   custom_direct_rl_env_implemented: true
-  stage16c3_status: STAGE16C3_SEMANTIC_QUALIFICATION_PARTIAL
-  stage16c3_blocker: C3_CONTACT_DRIVEN_RESPONSE_EVIDENCE_NOT_YET_IMPLEMENTED
-  stage16c4_status: NOT_RUN_GATE_BLOCKED_BY_C3
-  stage16c5_status: NOT_RUN_GATE_BLOCKED_BY_C3
+  stage16c3_status: C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED
+  stage16c3_blocker: PATH_A_CONDITION_GATE_AND_FINITE_VIRTUAL_WRIST_PROFILE_FAILURE
+  stage16c3_reference_frame_status: C3_REFERENCE_OR_FRAME_CONTRACT_VALIDATED
+  stage16c3_contact_readout_status: C3_CONTACT_READOUT_VALIDATED
+  stage16c3_active_wrist_profile: null
+  stage16c4_status: NOT_RUN_GATE_BLOCKED_BY_C3_WRIST_ARCHITECTURE
+  stage16c5_status: NOT_RUN_GATE_BLOCKED_BY_C3_WRIST_ARCHITECTURE
   stage16c6_ppo_authorized: false
   physx_oracle_run: false
   ppo_started: false
   mujoco_oracle_authorizes_physx: false
+  evidence: [.local/reports/stage16c3r2_c5/final_summary.json]

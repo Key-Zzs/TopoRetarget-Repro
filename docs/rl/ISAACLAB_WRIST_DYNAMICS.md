@@ -20,12 +20,28 @@ contract. It does not authorize C.4, C.5, PPO, or a physical-control claim.
   a coupled response. The F2 static body-frame matrix is retained in V3 for
   diagnosis, not accepted as trajectory control: it fails the 10-step run.
 
-## Fail-closed result
+## C.3R2--C.5 fail-closed result
 
-The C.3 wrist gate is at most 2 cm and 10 degrees. The final shared 41-step
-profile reaches 3.35 cm and 23.00 degrees. Raising authority to 100 N/6 Nm is
-worse (8.53 cm and 83.3% force saturation). C.3 wrist dynamics is therefore
-`FAIL`; no downstream benchmark, oracle, or PPO run is authorized.
+C3-0's fully kinematic frame/reference contract is validated using derived
+canonical-URDF FK targets, with the frozen stored link field preserved. Path A
+is exhausted before dynamic qualification: five reference-target response maps
+exceed its frozen condition-number maximum of 4000. The generated six-axis
+`PhysicsJoint` D6 wrapper imports, but live GPU tensor inspection exposes zero
+D6 joints, so the explicitly permitted finite virtual 3P+3R fallback is used.
 
-Machine-local evidence is under
-`.local/reports/stage16c3_repair_c5_oracle/wrist_*.json`.
+The fixed C.3 wrist gate is at most 2 cm / 10 degrees maximum error, 1 cm / 5
+degrees RMSE, and 5% force/torque saturation. All three frozen finite virtual
+profiles fail both 41-key clips: conservative reaches 3.91 cm/29.45 degrees
+and 4.63 cm/21.04 degrees; nominal 3.23 cm/38.34 degrees and 4.54 cm/37.10
+degrees; high authority 4.10 cm/53.63 degrees and 6.81 cm/54.38 degrees.
+The finite disturbance remains physical and finite, while removing virtual
+authority worsens the combined position RMSE from 0.03623 m to 0.47282 m.
+
+The result is `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`. No profile is active;
+there is no C.2 active-profile regression. C3-1--C3-5, contact-momentum
+causality, C.4, C.5, and PPO are fail-closed/not run. The non-contact wrist
+gate uses live PhysX evolution and bounded force/torque at `r_wrist`, with no
+rollout wrist pose/velocity or object state write; immutable task-object
+termination is intentionally not evaluated in that gate.
+
+Machine-local evidence is under `.local/reports/stage16c3r2_c5/`.

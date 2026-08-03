@@ -78,10 +78,12 @@ Stage 16-C 路线为：C.0 Isaac Lab platform qualification 已在全部硬 gate
 资产迁移已完成真实 PhysX/CUDA、具名接触对及 1/128-env 验证，精确状态为
 `STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED`。C.2 入口已授权为
 `STAGE16C2_DIRECT_RL_ENV_VALIDATED`，真实 GPU 的 1-env、交替 clip 与
-128-env/1000-step smoke 均通过；C.3 为 BLOCKED：带符号的六轴 probe 通过，但共享
-wrist dynamics 仍未达到 2 cm/10 度（最终 41-step 为 3.35 cm/23.00 度），且 all-hand contact
-causality 未验证。因此 C.4 GPU vectorization 和 C.5 PhysX Oracle 均不得运行，
-C.6 single-clip GPU PPO 未获授权（0 样本、0 checkpoint）。C.7 two-clip GPU PPO、
+128-env/1000-step smoke 均通过；C.3 的最终状态为
+`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`：C3-0 derived-FK replay 与 object-centric
+contact readout 各自通过，但唯一 Path A map 超过冻结的 condition-number gate，且三个
+finite virtual 3P+3R profile 均在两条 clip 上失败。因此 C.4 GPU vectorization 和 C.5
+PhysX Oracle 均不得运行，C.6 single-clip GPU PPO 未获授权（0 样本、0 checkpoint）。
+C.7 two-clip GPU PPO、
 C.8 dynamics randomization、C.9 geometry/MuJoCo/Isaac/PPO comparison 均为 TODO。
 MuJoCo 不删除，继续负责 correctness、
 deterministic regression、contact diagnostics、action replay 与 visualization；Isaac Lab 负责计划中的

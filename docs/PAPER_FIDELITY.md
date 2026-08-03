@@ -450,3 +450,15 @@ viewer evidence is unavailable. C.1 is independently validated as an
 `ENGINEERING_EXTENSION` for asset topology, nominal dynamics, collision,
 contact, CUDA tensors, and 1/128-env spawning. Neither result is paper-exact or
 authorizes a PhysX oracle, PPO, real dynamics, or sim-to-real claim.
+
+## Stage 16-C.3R2--C.5 wrist boundary
+
+The C.3R2 closeout remains an `ENGINEERING_DIAGNOSTIC`, not a paper-method or
+control claim. C3-0 validates derived canonical-URDF FK targets while retaining
+the immutable stored-link field, and the object-centric contact sensor validates
+readout only. Path A is stopped by its frozen condition-number gate. Live GPU
+inspection then permits the finite virtual 3P+3R wrist fallback because the
+authored D6 wrapper exposes no D6 tensor joints. All three frozen virtual
+profiles fail both clips, producing
+`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`. No contact causality, C.4 benchmark,
+C.5 oracle, or PPO result is claimed.

@@ -80,13 +80,21 @@ probes validate finite `[env, 1, 21, 3]` CUDA matrices for a 1000-step
 no-contact fixture, separate single-finger preload fixtures for both HO-Cap
 objects, random 1-env, and random 128-env aggregate runs:
 `C3_CONTACT_READOUT_VALIDATED`. This does not claim task contact causality.
-C3-0 fully kinematic replay then reports `C3_REFERENCE_OR_FRAME_CONTRACT_FAILURE`:
-`hocap_170105` frame 9 `r_pinky_distal` has 0.180689 mm tracked-link
-reconstruction error against a predeclared 0.100 mm tolerance, while wrist,
-finger, object, and axis checks pass. The frozen gate forbids entering Path
-A/Path B before this is resolved. C.3 semantic qualification, C.4/C.5, and
-C.6 PPO are therefore not run, with zero PPO samples/checkpoints. See the
-[DirectRLEnv contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md) and
+C3-0 fully kinematic replay now validates the reference/frame contract as
+`C3_REFERENCE_OR_FRAME_CONTRACT_VALIDATED`, using a diagnostic canonical-URDF
+FK target derived from the frozen wrist pose and finger configuration. The
+stored link field remains immutable and is retained for its existing
+observation/reward role. Path A's one permitted identified inverse-wrench
+implementation was precondition-blocked: five sampled reference-target maps
+exceeded the frozen condition-number limit of 4000, so it used zero of its two
+complete dynamic runs. The authored D6 wrapper exposes zero D6 tensor joints
+on GPU, which permits the finite virtual 3P+3R fallback. Its frozen
+conservative, nominal, and high-authority profiles all fail both clips.
+Stage 16-C.3R2--C.5 is therefore
+`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; C.3 modes 1--5, contact-momentum
+causality, C.4/C.5, and PPO are not run/not authorized. See the
+[DirectRLEnv contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md),
+[wrist closeout](docs/rl/ISAACLAB_WRIST_DYNAMICS.md), and
 [the asset migration contract](docs/rl/ISAACLAB_ASSET_MIGRATION.md).
 
 ## Dataset support

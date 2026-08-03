@@ -387,6 +387,9 @@ PAPER_PROTOCOL_REPRODUCTION_WITH_ASSUMPTIONS rather than author-exact results.
 - C.2 writes object/wrist root state only during reset. The separate C.3
   kinematic-object diagnostic is explicitly non-formal and records its own
   state writes; it cannot demonstrate free-object contact controllability.
-- C.3 is `PARTIAL`, not a contact or oracle success: no all-hand contact-pair
-  or impulse evidence is wired and the diagnostic wrist error exceeds 2 cm/10
-  degrees. C.4/C.5 must remain unrun and C.6 PPO is unauthorized.
+- C3-0 derived-FK replay and C.3R2 object-centric contact readout are validated
+  engineering diagnostics; neither is paper-exact contact causality. Path A
+  is condition-gated, and the permitted finite virtual 3P+3R fallback fails
+  both clips in all three frozen profiles. C.3 is therefore
+  `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; C.4/C.5 remain unrun and C.6 PPO
+  is unauthorized.
