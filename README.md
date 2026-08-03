@@ -74,14 +74,18 @@ RTX rendering is reviewed separately and does not alter the hard-gate enum.
 Generated USDs and reports remain ignored under `.local/`. C.2 is now
 `STAGE16C2_DIRECT_RL_ENV_VALIDATED`: a real GPU `DirectRLEnv` passes 1-env,
 alternating-clip, and 128-env/1000-step finite smokes with no object rollout
-state write or wrist teleport. C.3 is deliberately
-`STAGE16C3_WRIST_AND_CONTACT_QUALIFICATION_BLOCKED`: a signed world-frame
-6-D PhysX basis passes, but the final shared 41-step wrist profile reaches
-3.35 cm/23.00 degrees against the 2 cm/10 degree gate; the high-authority
-profile is worse and saturates. The 21-body contact inventory resolves, but
-its all-hand collection path has no valid runtime trace, so contact causality
-is not claimed. Therefore C.4/C.5 are not run and C.6 PPO is not authorized
-with zero samples/checkpoints. See the
+state write or wrist teleport. C.3R2 replaces the unsafe 21-view contact path
+with two object-centric, 21-filter ContactSensor views. Real child-process
+probes validate finite `[env, 1, 21, 3]` CUDA matrices for a 1000-step
+no-contact fixture, separate single-finger preload fixtures for both HO-Cap
+objects, random 1-env, and random 128-env aggregate runs:
+`C3_CONTACT_READOUT_VALIDATED`. This does not claim task contact causality.
+C3-0 fully kinematic replay then reports `C3_REFERENCE_OR_FRAME_CONTRACT_FAILURE`:
+`hocap_170105` frame 9 `r_pinky_distal` has 0.180689 mm tracked-link
+reconstruction error against a predeclared 0.100 mm tolerance, while wrist,
+finger, object, and axis checks pass. The frozen gate forbids entering Path
+A/Path B before this is resolved. C.3 semantic qualification, C.4/C.5, and
+C.6 PPO are therefore not run, with zero PPO samples/checkpoints. See the
 [DirectRLEnv contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md) and
 [the asset migration contract](docs/rl/ISAACLAB_ASSET_MIGRATION.md).
 

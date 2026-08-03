@@ -1300,8 +1300,12 @@ def main() -> int:
     external_root = args.external_root or (REPO_ROOT / config.external_root)
     output_root = args.output_root
     steps = args.steps or config.smoke_steps
-    if steps < config.smoke_steps:
-        raise SystemExit(f"--steps must be >= {config.smoke_steps}")
+    # A C.0 qualification remains frozen at the configured 1000 steps.  Later
+    # stages also need a bounded 100-step launch smoke; label it explicitly so
+    # it cannot refresh or upgrade the C.0 qualification evidence.
+    if steps < 100:
+        raise SystemExit("--steps must be >= 100 for a bounded runtime smoke")
+    short_smoke = steps < config.smoke_steps
     if args.num_envs < 1:
         raise SystemExit("--num-envs must be positive")
 
@@ -1559,6 +1563,11 @@ def main() -> int:
     summary = {
         "phase": args.phase,
         "status": status.value,
+        "qualification_scope": (
+            "SHORT_RUNTIME_SMOKE_NOT_C0_REQUALIFICATION" if short_smoke else "C0_QUALIFICATION"
+        ),
+        "configured_qualification_steps": config.smoke_steps,
+        "executed_steps": steps,
         "evidence": evidence,
         "runtime": runtime_results,
         "vector": vector_results,
@@ -1576,9 +1585,27 @@ def main() -> int:
     ):
         summary["status"] = "STAGE16C0_ISAACLAB_PLATFORM_PARTIAL"
         summary["non_finite_metric"] = True
+    if short_smoke:
+        runtime_pass = all(
+            (
+                imports_pass,
+                empty_pass,
+                primitive_pass,
+                vector_1,
+                vector_128,
+            )
+        )
+        summary["status"] = (
+            "STAGE16C0_SHORT_RUNTIME_SMOKE_PASS"
+            if runtime_pass
+            else "STAGE16C0_SHORT_RUNTIME_SMOKE_FAIL"
+        )
+        summary["c0_qualification_status_unchanged"] = True
     _write_json(output_root / "final_summary.json", summary)
     _write_closeout_artifacts(output_root, summary, config)
     print(json.dumps(summary, indent=2, sort_keys=True))
+    if short_smoke:
+        return 0 if summary["status"] == "STAGE16C0_SHORT_RUNTIME_SMOKE_PASS" else 1
     return 0 if status.value.endswith(("VALIDATED", "VALIDATED_WITH_LIMITATIONS")) else 1
 
 

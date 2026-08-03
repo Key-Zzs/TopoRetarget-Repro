@@ -29,6 +29,13 @@ and wrist root state are written only on reset; the runtime contract reports
 `wrist_root_state_writes_during_step=0`. The C.3 kinematic-object probe is a
 separate, explicitly non-formal diagnostic and reports its own state writes.
 
+C.3R2 contact telemetry is observational: two object-centric one-body views
+filter the same 21 collision-bearing hand bodies, rather than reading 21
+hand-centric views. `off`, `aggregate`, and `diagnostic` have no reward or
+control effect. The contact-enabled scene uses USD cloning (`clone_in_fabric`
+false) because Fabric-cloned ContactSensor views fail to resolve at 128 envs
+in this frozen Isaac Sim 5.1 runtime.
+
 ## C.2 result
 
 Real RTX 5080 / CUDA PhysX smoke reports under
@@ -51,14 +58,15 @@ conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
 
 ## Gate boundary
 
-C.3 is `STAGE16C3_WRIST_AND_CONTACT_QUALIFICATION_BLOCKED`, not a qualified
-PhysX semantic/contact result. A baseline-subtracted signed 6-D live PhysX
-probe passes, ruling out a simple world/local or sign inversion. F0/F1/F2
-effective-response probes show coupled articulated dynamics, but their static
-F2 matrix does not stabilize the trajectory. The best shared 10-step profile
-still reaches 3.35 cm/23.00 degrees; the 100 N/6 Nm profile reaches 8.53 cm
-and saturates 83.3% of substeps. The full 21-body sensor inventory is resolved,
-but no all-hand collection trace was produced, so contact causality is not
-claimed. C.4/C.5 are `NOT_RUN_GATE_BLOCKED_BY_C3`; C.6 PPO is not authorized,
-with zero samples and zero checkpoints. See `ISAACLAB_WRIST_DYNAMICS.md` and
-`ISAACLAB_CONTACT_CAUSALITY.md`.
+C.3 remains blocked, but not because of contact readout. C.3R2 completes
+`C3_CONTACT_READOUT_VALIDATED` with real 1/128-env CUDA PhysX child-process
+evidence. C3-0 fully kinematic replay then fails its predeclared 0.100 mm
+tracked-link tolerance: `hocap_170105`, frame 9, `r_pinky_distal` reaches
+0.180689 mm; all wrist, finger, object-pose, and axis-point reconstruction
+metrics pass. The status is `C3_REFERENCE_OR_FRAME_CONTRACT_FAILURE`.
+
+The Stage 16-C gate explicitly prohibits entering an actuator/controller path
+until this reference/frame mismatch is resolved. Therefore Path A and Path B
+are not started; semantic C3-1 through C3-5, C.4, C.5, and C.6 remain
+`NOT_RUN_GATE_BLOCKED_BY_C3`, with zero PPO samples and checkpoints. See
+`ISAACLAB_CONTACT_CAUSALITY.md` and the ignored C3R2 report bundle.

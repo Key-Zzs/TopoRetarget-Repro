@@ -68,12 +68,16 @@ conda run -n toporetarget-isaaclab python scripts/rl/isaaclab/import_hocap_objec
 不改变硬 gate 枚举。生成的 USD 和报告仍位于被忽略的 `.local/`。C.2 现为
 `STAGE16C2_DIRECT_RL_ENV_VALIDATED`：真实 GPU `DirectRLEnv` 已完成 1-env、
 交替 clip 和 128-env/1000-step 的有限值 smoke，且 rollout 中没有 object state
-write 或 wrist teleport。C.3 明确为
-`STAGE16C3_WRIST_AND_CONTACT_QUALIFICATION_BLOCKED`：带符号的 world-frame
-6-D PhysX basis 通过，但最终的共享 41-step wrist profile 为 3.35 cm/23.00 度，
-未达到 2 cm/10 度 gate；高 authority profile 更差且发生 saturation。21 个碰撞
-body 的 inventory 已解析，但 all-hand collection 没有有效 runtime trace，因此不主张
-contact causality。C.4/C.5 不运行，C.6 PPO 未获授权（0 样本、0 checkpoint）。详见
+write 或 wrist teleport。C.3R2 使用两个 object-centric、各带 21 个 filter 的
+ContactSensor view 替换不安全的 21-view contact path。真实 child-process probe 已对
+1000-step no-contact fixture、两个 HO-Cap object 的单指 preload fixture、random 1-env
+及 random 128-env aggregate run 验证有限的 `[env, 1, 21, 3]` CUDA matrix：
+`C3_CONTACT_READOUT_VALIDATED`。这不主张 task contact causality。随后 C3-0 fully
+kinematic replay 得到 `C3_REFERENCE_OR_FRAME_CONTRACT_FAILURE`：`hocap_170105` frame 9
+的 `r_pinky_distal` tracked-link 重建误差为 0.180689 mm，超过预先声明的 0.100 mm
+tolerance；wrist、finger、object 和 axis 检查均通过。冻结 gate 要求先解决该问题，不能进入
+Path A/Path B。C.3 semantic qualification、C.4/C.5 与 C.6 PPO 均未运行，PPO 样本和
+checkpoint 均为零。详见
 [DirectRLEnv 契约](docs/rl/ISAACLAB_DIRECT_RL_ENV.md) 和
 [资产迁移契约](docs/rl/ISAACLAB_ASSET_MIGRATION.md)。
 

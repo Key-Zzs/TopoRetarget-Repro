@@ -34,7 +34,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--v1-force-limit-n", type=float)
     parser.add_argument("--v1-torque-limit-nm", type=float)
     parser.add_argument("--collect-wrist-diagnostics", action="store_true")
-    parser.add_argument("--collect-contact-telemetry", action="store_true")
+    parser.add_argument(
+        "--contact-telemetry",
+        choices=("off", "aggregate", "diagnostic"),
+        default="off",
+        help="Object-centric contact telemetry mode; never affects reward or control.",
+    )
     parser.add_argument(
         "--output",
         type=Path,
@@ -187,7 +192,7 @@ def main() -> int:
         cfg.balanced_clip_assignment = False
         cfg.wrist_controller_mode = args.wrist_controller_mode
         cfg.collect_wrist_diagnostics = args.collect_wrist_diagnostics
-        cfg.collect_contact_telemetry = args.collect_contact_telemetry
+        cfg.contact_telemetry = args.contact_telemetry
         if args.force_limit_n is not None:
             cfg.wrist_force_limit_n = args.force_limit_n
         if args.torque_limit_nm is not None:
@@ -240,7 +245,7 @@ def main() -> int:
             for result in kinematic
         )
         free_finite = all(result["finite"] for result in free)
-        contact_trace_available = args.collect_contact_telemetry and bool(
+        contact_trace_available = args.contact_telemetry != "off" and bool(
             env.contact_substep_records
         )
         c3_status = (
@@ -301,7 +306,7 @@ def main() -> int:
                     "All-hand contact telemetry was written and awaits causal analysis."
                     if contact_trace_available
                     else (
-                        "Run with --collect-contact-telemetry for substep pair/force/"
+                        "Run with --contact-telemetry aggregate for object-net force/"
                         "impulse capture."
                     )
                 ),
@@ -355,7 +360,7 @@ def main() -> int:
                 encoding="utf-8",
             )
             result["wrist_controller"]["substep_diagnostics_path"] = str(wrist_path)
-        if args.collect_contact_telemetry:
+        if args.contact_telemetry != "off":
             contact_path = args.output.with_name(f"{args.output.stem}_contact_substeps.jsonl")
             contact_path.write_text(
                 "".join(

@@ -71,7 +71,10 @@ class IsaacWorldWristFingerDirectRLEnvCfg(DirectRLEnvCfg):
         num_envs=1,
         env_spacing=0.75,
         replicate_physics=True,
-        clone_in_fabric=True,
+        # Isaac Sim 5.1 ContactSensor views fail to resolve replicated bodies
+        # under Fabric at 128 envs.  USD cloning preserves the GPU PhysX
+        # profile and is the qualified contact-enabled execution profile.
+        clone_in_fabric=False,
         lazy_sensor_update=False,
     )
     robot: ArticulationCfg = ArticulationCfg(
@@ -139,7 +142,9 @@ class IsaacWorldWristFingerDirectRLEnvCfg(DirectRLEnvCfg):
     reset_reference_index = "frame0"
     inactive_object_scene_offset = (5.0, 5.0, -5.0)
     diagnostic_kinematic_object = False
-    collect_contact_telemetry = False
+    # Telemetry has no control/reward effect.  C.3R2 uses one object-centric
+    # cached contact view; it never recreates the unstable 21-view design.
+    contact_telemetry = "off"
     collect_wrist_diagnostics = False
     wrist_controller_mode = "wrist_impedance_v1"
     wrist_v1_translation_stiffness_npm = 800.0
@@ -155,6 +160,10 @@ class IsaacWorldWristFingerDirectRLEnvCfg(DirectRLEnvCfg):
     wrist_force_limit_n = 50.0
     wrist_torque_limit_nm = 4.0
     contact_max_data_per_body = 64
+    # Diagnostic consumers retain only the latest records.  The sensor force
+    # matrix stays GPU-resident; this prevents high-env C.1/C.4 probes from
+    # accumulating unbounded Python telemetry.
+    contact_record_capacity = 4096
     headless_debug = False
 
 

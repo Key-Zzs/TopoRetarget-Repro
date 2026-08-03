@@ -1,19 +1,50 @@
-# Isaac Lab contact-causality gate
+# Isaac Lab contact-readout and causality gates
 
-The C.3 scene config resolves one filtered `ContactSensor` for every one of the
-21 C.1 collision-bearing hand bodies. Each sensor targets exactly one hand body
-and filters only the two frozen HO-Cap objects; virtual tips are intentionally
-excluded because they have no collision mesh.
+Stage 16-C.3R2 replaces the unsafe design that constructed and read 21
+hand-side filtered views in the task process. The installed Isaac Lab 2.3.2
+`ContactSensorCfg` exposes `force_matrix_w` as
+`[environment, sensor body, filter shape, xyz]`, and its own source documents
+that filtered contacts require a single sensor primitive per environment.
 
-This is inventory and API-contract evidence, not contact causality. The
-all-hand runtime collection attempt exits without writing a trace when the 21
-filtered views are read. Contact point and friction buffers were disabled for
-that multi-sensor path, and no force/impulse trace was produced. Consequently:
+The runtime therefore has exactly two object-side views:
 
-- contact causality is `NOT_PROVEN`;
-- object motion is not used as a proxy for contact;
-- C.3 cannot pass even if the wrist gate were to pass;
-- C.4/C.5/PPO remain blocked.
+- `Object170105`: one object body filtered to all 21 C.1 collision-bearing
+  hand bodies;
+- `Object170650`: the same one-body/21-filter contract.
 
-The failure is recorded at
-`.local/reports/stage16c3_repair_c5_oracle/contact_capture_status.json`.
+This is not 21 Python sensor reads. `aggregate` retains object-net force,
+impulse, and pair presence. `diagnostic` additionally retains the raw filtered
+body-pair force matrix. Neither mode affects reward or control, and neither
+fabricates contact points, normals, tangential forces, or per-point force.
+Records use bounded latest-only transport (4096 samples), so high-environment
+diagnostics cannot accumulate unbounded Python telemetry.
+
+The contact-enabled profile uses USD cloning with GPU physics replication;
+Fabric cloning is disabled because the real Isaac Sim 5.1 contact view cannot
+resolve replicated bodies at 128 environments. This is an engineering runtime
+choice, not a physics, hardware, or sim-to-real claim.
+
+## C.3R2 readout result
+
+`scripts/rl/isaaclab/probe_stage16c3_contact_api.py` runs every probe in a
+separate child process and writes flushed stage events, stdout, stderr, exit
+code, and tensor shapes. The aggregate summary is
+`.local/reports/stage16c3r2_c5/contact/c3_contact_readout_summary.json`.
+
+The real RTX 5080 / CUDA PhysX result is
+`C3_CONTACT_READOUT_VALIDATED`:
+
+- a fenced raw-PhysX 1-env no-contact fixture read zero force matrices for
+  1000 physics steps;
+- 1-env single-finger preload fixtures yielded finite nonzero contact for both
+  HO-Cap objects and included the requested distal filter slot;
+- 1-env random action ran 1002 physics steps cleanly;
+- 128-env aggregate random action ran 1002 physics steps cleanly with finite
+  `[128, 1, 21, 3]` force matrices.
+
+The preload state writes are explicitly limited to C.1 fixture setup before
+the probe rollout; normal DirectRLEnv rollout still writes neither wrist root
+nor object state. This validates readout capability only. Task-level
+contact–momentum causality remains blocked until the C3-0 reference/frame gate
+and an active wrist actuator are validated. It must not be inferred from the
+preload fixtures.

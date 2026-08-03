@@ -8,6 +8,7 @@ from contact with the free rigid body.
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Sequence
 from typing import Any
 
@@ -71,21 +72,21 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
     def __init__(
         self, cfg: IsaacWorldWristFingerDirectRLEnvCfg, render_mode: str | None = None, **kwargs
     ):
-        self._install_full_hand_contact_sensors(cfg)
+        self._install_object_centric_contact_sensor(cfg)
         super().__init__(cfg, render_mode, **kwargs)
         self.scene_frame_contract = Stage16CSceneFrameContractV1()
         self.reference_bank = WorldWristReferenceBank(cfg.reference_paths, device=self.device)
-        self._hand_contact_sensors = {
-            body_name: self.scene[f"hand_object_contact_{body_name}"]
-            for body_name in HAND_COLLISION_BODY_NAMES
+        self._object_contact_sensors = {
+            "Object170105": self.scene["object_170105_hand_contact"],
+            "Object170650": self.scene["object_170650_hand_contact"],
         }
-        unresolved = {
-            body_name: sensor.body_names
-            for body_name, sensor in self._hand_contact_sensors.items()
-            if sensor.num_bodies != 1 or sensor.body_names != [body_name]
-        }
-        if unresolved:
-            raise RuntimeError(f"C3_CONTACT_SENSOR_COVERAGE_FAILURE: {unresolved}")
+        for object_name, sensor in self._object_contact_sensors.items():
+            if sensor.num_bodies != 1 or sensor.body_names != [object_name]:
+                raise RuntimeError(
+                    "C3_OBJECT_CENTRIC_CONTACT_SENSOR_COVERAGE_FAILURE: "
+                    f"object={object_name} bodies={sensor.body_names}"
+                )
+        self._validate_contact_telemetry_mode()
         self._joint_ids = [
             self._robot.joint_names.index(name) for name in self.reference_bank.joint_order
         ]
@@ -194,7 +195,10 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         self._torque_saturation_substeps = torch.zeros_like(self._force_saturation_substeps)
         self._wrist_substeps = torch.zeros_like(self._force_saturation_substeps)
         self._wrist_diagnostic_records: list[dict[str, object]] = []
-        self._contact_substep_records: list[dict[str, object]] = []
+        self._contact_substep_records: deque[dict[str, object]] = deque(
+            maxlen=cfg.contact_record_capacity
+        )
+        self._contact_substep_record_total = 0
         self._pending_contact_sample: dict[str, torch.Tensor | int] | None = None
         self._success = torch.zeros_like(self._force_saturated)
         self._reason_codes = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
@@ -206,33 +210,48 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         self._last_reward_terms: dict[str, torch.Tensor] = {}
 
     @staticmethod
-    def _install_full_hand_contact_sensors(cfg: IsaacWorldWristFingerDirectRLEnvCfg) -> None:
-        """Install one filtered sensor per collision-bearing hand body before scene creation."""
+    def _install_object_centric_contact_sensor(cfg: IsaacWorldWristFingerDirectRLEnvCfg) -> None:
+        """Install one object-side filtered view for all hand collision bodies.
 
-        for body_name in HAND_COLLISION_BODY_NAMES:
-            sensor_name = f"hand_object_contact_{body_name}"
+        Stage 16-C.3R1 found that reading 21 independent filtered sensor views
+        could terminate Isaac.  This one cached view preserves an object-net
+        contact force and pair presence without fabricating point data.
+        """
+
+        filter_prim_paths = [
+            f"{{ENV_REGEX_NS}}/Robot/{body_name}" for body_name in HAND_COLLISION_BODY_NAMES
+        ]
+        for object_name, sensor_name in (
+            ("Object170105", "object_170105_hand_contact"),
+            ("Object170650", "object_170650_hand_contact"),
+        ):
             if getattr(cfg.scene, sensor_name, None) is not None:
                 continue
+            # Isaac Lab's ContactSensorCfg explicitly supports filtered force
+            # matrices only when the sensor primitive resolves to one body per
+            # environment.  Thus these are two object-centric views, not the
+            # unstable 21 hand-centric views from C.3R1.
             setattr(
                 cfg.scene,
                 sensor_name,
                 ContactSensorCfg(
-                    prim_path=f"{{ENV_REGEX_NS}}/Robot/{body_name}",
+                    prim_path=f"{{ENV_REGEX_NS}}/{object_name}",
                     update_period=0.0,
                     history_length=1,
                     track_pose=True,
-                    # The filtered normal-force matrix is the causal signal.
-                    # Isaac Lab's variable-length point/friction buffers are
-                    # not stable for 21 simultaneous GPU filtered views.
                     track_contact_points=False,
                     track_friction_forces=False,
                     force_threshold=1.0e-4,
                     max_contact_data_count_per_prim=cfg.contact_max_data_per_body,
-                    filter_prim_paths_expr=[
-                        "{ENV_REGEX_NS}/Object170105",
-                        "{ENV_REGEX_NS}/Object170650",
-                    ],
+                    filter_prim_paths_expr=filter_prim_paths,
                 ),
+            )
+
+    def _validate_contact_telemetry_mode(self) -> None:
+        if self.cfg.contact_telemetry not in {"off", "aggregate", "diagnostic"}:
+            raise ValueError(
+                "contact_telemetry must be off, aggregate, or diagnostic; "
+                f"got {self.cfg.contact_telemetry!r}"
             )
 
     def _setup_scene(self) -> None:
@@ -449,111 +468,83 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         if pending is None:
             return
         self._pending_contact_sample = None
-        if not self.cfg.collect_contact_telemetry:
+        if self.cfg.contact_telemetry == "off":
             return
         object_before = pending["object_state_before"]
         assert isinstance(object_before, torch.Tensor)
         object_after = self._active_object_state().clone()
-        active_filter = self._clip_index
         object_names = ("Object170105", "Object170650")
         object_masses = torch.where(
             self._clip_index == 0,
-            self._object_170105.data.default_mass[:, 0],
-            self._object_170650.data.default_mass[:, 0],
+            self._object_170105.data.default_mass[:, 0].to(self.device),
+            self._object_170650.data.default_mass[:, 0].to(self.device),
         )
-        aggregate_force = torch.zeros((self.num_envs, 3), device=self.device)
-        aggregate_count = torch.zeros((self.num_envs,), dtype=torch.long, device=self.device)
-        body_records: list[dict[str, object]] = []
-        for body_name, sensor in self._hand_contact_sensors.items():
-            force_matrix = sensor.data.force_matrix_w
-            friction_matrix = sensor.data.friction_forces_w
-            contact_position = sensor.data.contact_pos_w
-            if force_matrix is None:
-                raise RuntimeError("C3_CONTACT_SENSOR_DATA_UNAVAILABLE")
-            for env_id in range(self.num_envs):
-                filter_id = int(active_filter[env_id].item())
-                force_on_hand = force_matrix[env_id, 0, filter_id]
-                friction_on_hand = (
-                    friction_matrix[env_id, 0, filter_id]
-                    if friction_matrix is not None
-                    else torch.zeros(3, device=self.device)
-                )
-                # ``ContactSensorData`` is the supported caching boundary.  Do
-                # not call ``RigidContactView.get_contact_data`` again here:
-                # its variable-length GPU buffers are already consumed by the
-                # sensor to form this filtered pair result.
-                count = int(
-                    torch.linalg.vector_norm(force_on_hand).item() > sensor.cfg.force_threshold
-                )
-                position = (
-                    contact_position[env_id, 0, filter_id]
-                    if contact_position is not None
-                    else torch.full((3,), float("nan"), device=self.device)
-                )
-                aggregate_force[env_id] += force_on_hand
-                aggregate_count[env_id] += count
-                body_records.append(
-                    self._contact_record(
-                        pending=pending,
-                        env_id=env_id,
-                        hand_body_name=body_name,
-                        object_name=object_names[filter_id],
-                        contact_count=count,
-                        force_on_hand=force_on_hand,
-                        friction_on_hand=friction_on_hand,
-                        position=position,
-                        penetration_depth_m=None,
-                        object_before=object_before[env_id],
-                        object_after=object_after[env_id],
-                        object_mass_kg=object_masses[env_id],
-                    )
-                )
-        self._contact_substep_records.extend(body_records)
+        first_force_matrix = self._object_contact_sensors["Object170105"].data.force_matrix_w
+        second_force_matrix = self._object_contact_sensors["Object170650"].data.force_matrix_w
+        if (
+            first_force_matrix is None
+            or second_force_matrix is None
+            or first_force_matrix.ndim != 4
+            or second_force_matrix.ndim != 4
+        ):
+            raise RuntimeError(
+                "C3_OBJECT_CENTRIC_CONTACT_DATA_UNAVAILABLE: "
+                "shapes="
+                f"{None if first_force_matrix is None else tuple(first_force_matrix.shape)},"
+                f"{None if second_force_matrix is None else tuple(second_force_matrix.shape)}"
+            )
+        # force_matrix is the raw force on the object sensor body from each
+        # filter body.  Sum it only for the object-net signal; do not split the
+        # resultant across fingers or construct point forces.
+        pair_force_on_object = torch.where(
+            (self._clip_index == 0)[:, None, None],
+            first_force_matrix[:, 0],
+            second_force_matrix[:, 0],
+        )
+        pair_presence = torch.linalg.vector_norm(pair_force_on_object, dim=-1) > (
+            self._object_contact_sensors["Object170105"].cfg.force_threshold
+        )
+        aggregate_force_on_object = pair_force_on_object.sum(dim=1)
         for env_id in range(self.num_envs):
-            filter_id = int(active_filter[env_id].item())
             self._contact_substep_records.append(
                 self._contact_record(
                     pending=pending,
                     env_id=env_id,
-                    hand_body_name="__all_hand_collision_bodies__",
-                    object_name=object_names[filter_id],
-                    contact_count=int(aggregate_count[env_id].item()),
-                    force_on_hand=aggregate_force[env_id],
-                    friction_on_hand=torch.zeros(3, device=self.device),
-                    position=torch.full((3,), float("nan"), device=self.device),
-                    penetration_depth_m=None,
+                    object_name=object_names[int(self._clip_index[env_id].item())],
+                    pair_presence=pair_presence[env_id],
+                    aggregate_force_on_object=aggregate_force_on_object[env_id],
+                    pair_force_on_object=(
+                        pair_force_on_object[env_id]
+                        if self.cfg.contact_telemetry == "diagnostic"
+                        else None
+                    ),
                     object_before=object_before[env_id],
                     object_after=object_after[env_id],
                     object_mass_kg=object_masses[env_id],
                 )
             )
+            self._contact_substep_record_total += 1
 
     def _contact_record(
         self,
         *,
         pending: dict[str, torch.Tensor | int],
         env_id: int,
-        hand_body_name: str,
         object_name: str,
-        contact_count: int,
-        force_on_hand: torch.Tensor,
-        friction_on_hand: torch.Tensor,
-        position: torch.Tensor,
-        penetration_depth_m: float | None,
+        pair_presence: torch.Tensor,
+        aggregate_force_on_object: torch.Tensor,
+        pair_force_on_object: torch.Tensor | None,
         object_before: torch.Tensor,
         object_after: torch.Tensor,
         object_mass_kg: torch.Tensor,
     ) -> dict[str, object]:
         control_step = pending["control_step"]
         reference_index = pending["reference_index"]
-        force = force_on_hand.detach()
-        impulse_on_object = -force * self.physics_dt
+        force = aggregate_force_on_object.detach()
+        impulse_on_object = force * self.physics_dt
         delta_v = object_after[7:10] - object_before[7:10]
         delta_omega = object_after[10:13] - object_before[10:13]
-        contact_position = position.detach().cpu().tolist()
-        if not bool(torch.isfinite(position).all()):
-            contact_position = None
-        return {
+        record: dict[str, object] = {
             "env_id": env_id,
             "control_step": int(control_step[env_id].item())
             if isinstance(control_step, torch.Tensor)
@@ -562,24 +553,20 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             "reference_index": int(reference_index[env_id].item())
             if isinstance(reference_index, torch.Tensor)
             else -1,
-            "hand_body_name": hand_body_name,
-            "hand_body_index": self._robot.body_names.index(hand_body_name)
-            if hand_body_name in self._robot.body_names
-            else None,
             "object_body_name": object_name,
-            "contact_pair": [hand_body_name, object_name],
-            "contact_count": contact_count,
-            "contact_position_world_m": contact_position,
-            "penetration_depth_m": penetration_depth_m,
-            "contact_detection": "filtered normal-force norm exceeds sensor force_threshold",
-            "force_frame": "world; force_on_hand_from_object",
-            "normal_force_world_on_hand_n": force.cpu().tolist(),
-            "tangential_force_world_on_hand_n": friction_on_hand.detach().cpu().tolist(),
-            "total_force_world_on_object_n": (-force).cpu().tolist(),
+            "contact_count": int(pair_presence.sum().item()),
+            "present_hand_body_names": [
+                name
+                for name, present in zip(
+                    HAND_COLLISION_BODY_NAMES, pair_presence.tolist(), strict=True
+                )
+                if present
+            ],
+            "contact_detection": "object-side filtered force-matrix norm exceeds sensor threshold",
+            "force_frame": "world; aggregate force on object from filtered hand bodies",
+            "net_contact_force_world_on_object_n": force.cpu().tolist(),
             "impulse_world_on_object_ns": impulse_on_object.cpu().tolist(),
-            "raw_point_fields": (
-                "not duplicated; ContactSensor caches the variable-length PhysX buffers"
-            ),
+            "raw_point_fields": "UNAVAILABLE; no point force is inferred from aggregate telemetry",
             "object_linear_velocity_before_world_mps": object_before[7:10].detach().cpu().tolist(),
             "object_linear_velocity_after_world_mps": object_after[7:10].detach().cpu().tolist(),
             "object_angular_velocity_before_world_radps": object_before[10:13]
@@ -599,8 +586,13 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             .detach()
             .cpu()
             .tolist(),
-            "aggregation_level": "body-pair filtered normal-force aggregate",
+            "aggregation_level": "object-centric filtered aggregate",
         }
+        if pair_force_on_object is not None:
+            record["pair_force_world_on_object_n"] = pair_force_on_object.detach().cpu().tolist()
+            record["filter_body_order"] = list(HAND_COLLISION_BODY_NAMES)
+            record["aggregation_level"] = "object-centric body-pair force matrix"
+        return record
 
     def hand_collision_inventory(self) -> dict[str, object]:
         """Return the live sensor/body coverage contract without proxy-count assumptions."""
@@ -608,46 +600,52 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         return {
             "collision_bodies_configured": list(HAND_COLLISION_BODY_NAMES),
             "runtime_robot_body_count": len(self._robot.body_names),
-            "sensor_coverage_complete": set(self._hand_contact_sensors)
-            == set(HAND_COLLISION_BODY_NAMES),
-            "sensors": [
-                {
-                    "body_name": body_name,
-                    "body_index": self._robot.body_names.index(body_name),
-                    "sensor_body_names": sensor.body_names,
-                    "sensor_body_count": sensor.num_bodies,
-                    "filter_count": sensor.contact_physx_view.filter_count,
-                    "filter_prim_paths": list(sensor.cfg.filter_prim_paths_expr),
-                }
-                for body_name, sensor in self._hand_contact_sensors.items()
-            ],
+            "sensor_coverage_complete": all(
+                sensor.contact_physx_view.filter_count == len(HAND_COLLISION_BODY_NAMES)
+                for sensor in self._object_contact_sensors.values()
+            ),
+            "sensor_count": len(self._object_contact_sensors),
+            "object_sensor_bodies": {
+                object_name: list(sensor.body_names)
+                for object_name, sensor in self._object_contact_sensors.items()
+            },
+            "filter_count_per_sensor": {
+                object_name: sensor.contact_physx_view.filter_count
+                for object_name, sensor in self._object_contact_sensors.items()
+            },
+            "filter_prim_paths": list(
+                self._object_contact_sensors["Object170105"].cfg.filter_prim_paths_expr
+            ),
         }
 
     def contact_sensor_contract(self) -> dict[str, object]:
-        sensor = next(iter(self._hand_contact_sensors.values()))
         return {
-            "api": "isaaclab.sensors.ContactSensorCfg plus RigidContactView.get_contact_data",
-            "update_period_s": sensor.cfg.update_period,
-            "force_frame": "world; force_matrix_w is force on filtered hand body",
-            "force_matrix_shape": list(sensor.data.force_matrix_w.shape),
-            "friction_force_shape": (
-                list(sensor.data.friction_forces_w.shape)
-                if sensor.data.friction_forces_w is not None
-                else None
-            ),
-            "contact_position_shape": (
-                list(sensor.data.contact_pos_w.shape)
-                if sensor.data.contact_pos_w is not None
-                else None
-            ),
-            "optional_point_and_tangent_fields": (
-                "UNAVAILABLE: disabled for multi-sensor GPU stability"
-            ),
-            "body_sensor_count": len(self._hand_contact_sensors),
-            "max_contact_data_per_body": sensor.cfg.max_contact_data_count_per_prim,
+            "api": "isaaclab.sensors.ContactSensorCfg one-object-per-view force_matrix_w",
+            "update_period_s": self._object_contact_sensors["Object170105"].cfg.update_period,
+            "force_frame": "world; force_matrix_w is force on object sensor body",
+            "force_matrix_shapes": {
+                object_name: list(sensor.data.force_matrix_w.shape)
+                for object_name, sensor in self._object_contact_sensors.items()
+            },
+            "telemetry_mode": self.cfg.contact_telemetry,
+            "optional_point_and_tangent_fields": "UNAVAILABLE; no fake point force",
+            "body_sensor_count": len(self._object_contact_sensors),
+            "max_contact_data_per_body": self._object_contact_sensors[
+                "Object170105"
+            ].cfg.max_contact_data_count_per_prim,
             "pair_filtering": (
-                "each single hand collision body filtered only to Object170105/Object170650"
+                "each HOCap object uses one object-side sensor filtered to all "
+                "21 hand collision bodies"
             ),
+            "record_transport": {
+                "policy": "bounded_latest_only",
+                "capacity": self.cfg.contact_record_capacity,
+                "total_samples": self._contact_substep_record_total,
+                "retained_samples": len(self._contact_substep_records),
+                "dropped_samples": max(
+                    0, self._contact_substep_record_total - len(self._contact_substep_records)
+                ),
+            },
         }
 
     @property
