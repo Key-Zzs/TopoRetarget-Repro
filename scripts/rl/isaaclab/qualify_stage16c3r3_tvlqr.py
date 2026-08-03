@@ -9,6 +9,8 @@ import math
 import os
 import subprocess
 import sys
+import traceback
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -96,10 +98,18 @@ def _sample(env: Any, torch: Any) -> tuple[float, float, bool]:
     )
 
 
-def _interval(env: Any, action: Any) -> None:
+def _interval(env: Any, action: Any, *, observe_substep: Callable[[dict[str, Any]], None]) -> None:
     env._pre_physics_step(action)
     for _ in range(env.cfg.decimation):
         env._apply_action()
+        latest = (
+            env._tvlqr_latest
+            if env.cfg.wrist_controller_mode == "bounded_tvlqr_wrist_v1"
+            else env._mpc_latest
+        )
+        if latest is None:
+            raise RuntimeError("C3_PREVIEW_CONTROLLER_NO_SUBSTEP_EVIDENCE")
+        observe_substep(latest)
         env.scene.write_data_to_sim()
         env.sim.step(render=False)
         env.scene.update(env.physics_dt)
@@ -113,25 +123,26 @@ def _clip_report(env: Any, torch: Any, clip_index: int) -> dict[str, Any]:
     pos_sq, rot_sq = pos * pos, rot * rot
     pos_max, rot_max = pos, rot
     term_max = {key: 0.0 for key in ("feedforward", "feedback", "command", "applied")}
-    gain_max = 0.0
+    solver_metric_max: dict[str, float] = {}
     saturation_count = torch.zeros(6, dtype=torch.long, device=env.device)
+
+    def observe_substep(latest: dict[str, Any]) -> None:
+        for key in term_max:
+            term_max[key] = max(term_max[key], _scalar(latest[key].abs().amax()))
+        for key in ("gain", "unconstrained_control"):
+            value = latest.get(key)
+            if isinstance(value, torch.Tensor):
+                solver_metric_max[key] = max(
+                    solver_metric_max.get(key, 0.0), _scalar(value.abs().amax())
+                )
+        saturation_count.add_(latest["saturation"].any(dim=0).to(torch.long))
+
     for _ in range(_STEPS - 1):
-        _interval(env, action)
+        _interval(env, action, observe_substep=observe_substep)
         pos, rot, finite_now = _sample(env, torch)
         finite = finite and finite_now
         pos_max, rot_max = max(pos_max, pos), max(rot_max, rot)
         pos_sq, rot_sq = pos_sq + pos * pos, rot_sq + rot * rot
-        latest = (
-            env._tvlqr_latest
-            if env.cfg.wrist_controller_mode == "bounded_tvlqr_wrist_v1"
-            else env._mpc_latest
-        )
-        if latest is None:
-            raise RuntimeError("C3_PREVIEW_CONTROLLER_NO_SUBSTEP_EVIDENCE")
-        for key in term_max:
-            term_max[key] = max(term_max[key], _scalar(latest[key].abs().amax()))
-        gain_max = max(gain_max, _scalar(latest["gain"].abs().amax()))
-        saturation_count += latest["saturation"].any(dim=0).to(torch.long)
     saturation = saturation_count.to(torch.float32) / float((_STEPS - 1) * env.cfg.decimation)
     report = {
         "clip": env.reference_bank.clip_ids[clip_index],
@@ -144,7 +155,7 @@ def _clip_report(env: Any, torch: Any, clip_index: int) -> dict[str, Any]:
         "per_joint_saturation_ratio": saturation.detach().cpu().tolist(),
         "aggregate_torque_saturation_ratio": _scalar(saturation.max()),
         "terms_max_abs": term_max,
-        "gain_max_abs": gain_max,
+        "solver_metric_max_abs": solver_metric_max,
         "bias_calibration": bias_calibration,
         "actual_effort_source": "ArticulationData.applied_torque",
         "wrist_root_state_writes_during_step": int(env._wrist_step_state_write_count.sum().item()),
@@ -195,6 +206,8 @@ def _worker(args: argparse.Namespace) -> int:
         env.reset(seed=20260804)
         clips = [_clip_report(env, torch, index) for index in range(2)]
         result = {
+            "status": f"C3_{args.controller.upper()}_WRIST_TRACKING_"
+            + ("PASS" if all(clip["pass"] for clip in clips) else "FAIL"),
             "controller": controller_identifier,
             "identified_model_path": str(args.model_path),
             "gate": _GATE,
@@ -207,6 +220,25 @@ def _worker(args: argparse.Namespace) -> int:
             json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
         return 0
+    except BaseException as exc:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        failure = {
+            "controller": "bounded_tvlqr_wrist_v1"
+            if args.controller == "tvlqr"
+            else "bounded_mpc_wrist_v1",
+            "identified_model_path": str(args.model_path),
+            "pass": False,
+            "status": "C3_PREVIEW_WORKER_EXCEPTION",
+            "exception_type": type(exc).__name__,
+            "exception": str(exc),
+            "traceback": traceback.format_exc(),
+            "clips": [],
+            "gate": _GATE,
+        }
+        args.output.write_text(
+            json.dumps(failure, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        return 2
     finally:
         if env is not None:
             env.close()
@@ -221,6 +253,8 @@ def main() -> int:
         return _worker(args)
     if not args.accept_eula:
         raise SystemExit("--accept-eula is required")
+    if args.output.exists():
+        raise FileExistsError(f"C3_PREVIEW_REFUSES_OVERWRITE: {args.output}")
     command = [
         sys.executable,
         str(Path(__file__).resolve()),
@@ -239,20 +273,17 @@ def main() -> int:
         env={**os.environ, "OMNI_KIT_ACCEPT_EULA": "YES"},
         check=False,
     )
-    if completed.returncode != 0 or not args.output.is_file():
-        if args.controller != "mpc":
-            raise RuntimeError("C3_TVLQR_WORKER_FAILURE")
+    if not args.output.is_file():
         failure = {
-            "controller": "bounded_mpc_wrist_v1",
+            "controller": "bounded_tvlqr_wrist_v1"
+            if args.controller == "tvlqr"
+            else "bounded_mpc_wrist_v1",
             "identified_model_path": str(args.model_path),
             "pass": False,
-            "status": "C3_MPC_WORKER_TERMINATED",
+            "status": "C3_PREVIEW_WORKER_NO_REPORT",
             "failure": {
                 "worker_returncode": completed.returncode,
-                "reason": (
-                    "The isolated PhysX worker terminated after the first bounded MPC interval "
-                    "without emitting JSON; C3 requires a safe numerical/physical stop."
-                ),
+                "reason": "The isolated worker exited without writing its required JSON report.",
             },
             "gate": _GATE,
             "clips": [],
@@ -262,9 +293,12 @@ def main() -> int:
         args.output.write_text(
             json.dumps(failure, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
-        print("C3_MPC_WORKER_TERMINATED")
-        return 0
+        print("C3_PREVIEW_WORKER_NO_REPORT")
+        return completed.returncode or 2
     result = json.loads(args.output.read_text(encoding="utf-8"))
+    if result.get("status") == "C3_PREVIEW_WORKER_EXCEPTION":
+        print(f"C3_PREVIEW_WORKER_EXCEPTION {result['exception_type']}: {result['exception']}")
+        return completed.returncode or 2
     status_prefix = "C3_TVLQR" if args.controller == "tvlqr" else "C3_MPC"
     print(f"{status_prefix}_WRIST_TRACKING_" + ("PASS" if result["pass"] else "FAIL"))
     return 0

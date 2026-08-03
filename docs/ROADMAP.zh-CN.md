@@ -83,9 +83,11 @@ runtime-contract 1-env/128-env smoke、26 维 action basis 与 64-of-128 subset 
 （`STAGE16C2_EXPLICIT_3P3R_WRIST_VALIDATED`），但它不选择 active C.3 profile。C.3
 的 stage-level 最终状态为 `STAGE16C3_SEMANTIC_QUALIFICATION_BLOCKED`，阻塞原因为
 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`：C3-0 derived-FK replay 与 object-centric
-contact readout 各自通过，但唯一 Path A map 超过冻结的 condition-number gate，且三个
-显式串联 3P+3R profile 均在两条 clip 上失败。该 fallback 暴露 6 个 GPU tensor joint，
-但没有添加真实机械臂。因此 C.4 GPU vectorization 和 C.5
+contact readout 各自通过，但显式串联 3P+3R 架构未通过完整 joint-dynamics 决策树。
+两档 computed-torque 均失败；修复 MPC reporter 误报退出、120 Hz boundary、live bias、
+solver spectral stability 与 substep-affine model 后，独立 1/6-step holdout 和两条
+41-frame MPC gate 仍失败。该 fallback 暴露 6 个 GPU tensor joint，但没有添加真实机械臂，
+也没有 active controller。因此 C.4 GPU vectorization 和 C.5
 PhysX Oracle 均不得运行（分别为 `STAGE16C4_NOT_RUN_GATE_BLOCKED` 与
 `STAGE16C5_NOT_RUN_GATE_BLOCKED`），C.6 single-clip GPU PPO 未获授权
 （`STAGE16C6_SINGLE_CLIP_GPU_PPO_NOT_AUTHORIZED`；0 样本、0 checkpoint）。

@@ -214,7 +214,7 @@ def test_substep_wrist_targets_preserve_keys_and_shortest_arc() -> None:
         position_k1=end_position,
         quaternion_k1_wxyz=end_quaternion,
         twist_k1_world=end_twist,
-        substep=5,
+        substep=6,
     )
     assert torch.allclose(first.position_world, start_position)
     assert torch.allclose(last.position_world, end_position)

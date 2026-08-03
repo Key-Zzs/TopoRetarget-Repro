@@ -17,26 +17,43 @@ reference、26-D action 与 C.2 observation contract；不授权 C.4、C.5、PPO
 - F0（无 finger drive）、F1（zero target）、F2（reference target）确认 response 是耦合的。
   F2 static body-frame matrix 只保留在 V3 作诊断，未接受为 trajectory control。
 
-## C.3R2--C.5 fail-closed 结果
+## C.3R3/R4 joint-dynamics 收口
 
-C3-0 的 fully kinematic frame/reference contract 现通过 derived canonical-URDF FK
-target 验证，frozen stored link field 保持不变。Path A 在 dynamic qualification 前耗尽：
-5 个 reference-target response map 超过冻结的 condition-number 上限 4000。六轴
-`PhysicsJoint` D6 wrapper 可以导入，但 live GPU tensor inspection 暴露 0 个 D6 joint，
-因此使用明确允许的 finite virtual 3P+3R fallback。
+C3-0 的 fully kinematic frame/reference contract 仍通过 derived canonical-URDF FK target
+验证，frozen stored link field 保持不变。六轴 `PhysicsJoint` D6 wrapper 可以导入，但 live
+GPU tensor 中没有 D6 joint，因此使用明确允许的串联 3P+3R articulation：3 个正交移动
+关节、3 个旋转关节和冻结 Wuji hand，共 26 个 articulation DoF。固定 anchor 与小型中间
+link 是抽象工程腕，不是真实机械臂。
 
-固定 C.3 wrist gate 为 maximum 2 cm / 10 度、RMSE 1 cm / 5 度，以及 5% force/torque
-saturation。三种冻结 finite virtual profile 均在两条 41-key clip 失败：conservative 为
-3.91 cm/29.45 度和 4.63 cm/21.04 度；nominal 为 3.23 cm/38.34 度和 4.54 cm/37.10 度；
-high authority 为 4.10 cm/53.63 度和 6.81 cm/54.38 度。有限 disturbance 保持 physical 和
-finite，移除 virtual authority 后合并 position RMSE 从 0.03623 m 恶化到 0.47282 m。
+C3R4 修正了 physics boundary 错误，但没有修改冻结 key 或 20 Hz 时间轴。每个 interval 的
+6 次 pre-step controller call 现在采样 0/6 至 5/6；第六个 1/120 s physics step 后的 6/6
+boundary 才精确等于 key k+1。Reset 用解析 joint reference 初始化显式腕部 qdot。运行时使用
+完整 26x26 PhysX generalized mass matrix，保留 wrist-finger coupling block，并在每个
+substep 读取 live Coriolis/centrifugal 与 gravity compensation。Gravity 为零，但不假设 bias
+为零。
 
-最终结果为 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`，且没有 active profile。nominal
-candidate 独立通过 C.2 runtime-contract regression：1/128 environment 各 1000 step，保持
-26-D action、764-D observation、reset 行为和 rollout 中不写 wrist/object state；这不选择
-C.3 profile。C3-1--C3-5、contact-momentum causality、C.4、C.5 和 PPO 均 fail-closed/not
-run。non-contact wrist gate 使用 live PhysX evolution 及 `r_wrist` 上的有界 force/torque；
-rollout 不写 wrist pose/velocity 或 object state，因此该 gate 不计算 immutable task-object
-termination。
+此前 bounded MPC 的“worker terminated”结论是误报：reporter 在 MPC 结果上读取
+`latest["gain"]`，首个 interval 完成后触发 `KeyError`。修复异常持久化和 controller-specific
+字段后，两条 worker 均完成全部 41 frame。使用 `CUDA_LAUNCH_BLOCKING=1` 的 6-substep
+trace 记录了有限的 A/B、Hessian、unconstrained/projected/applied effort，以及
+`apply_action`、scene write、sim step、scene update 的每个边界；Isaac Kit log 中没有 CUDA
+或 PhysX 执行错误。
 
-本机证据位于 `.local/reports/stage16c3r2_c5/`。
+原 V1 identification 的高 fit R2 不能外推：独立 holdout 的 one-step / six-substep
+normalized RMSE 为 0.06954/0.77685。M_ww 原始条件数为 686--1318，unit-scaled 后为
+180--317，Hessian 最大为 10051。冻结的 projected-gradient step 在每个审计节点都违反
+spectral stability bound，因此实现按 Hessian 最大特征值倒数限制 step，同时保持 cost、
+horizon、iteration count 与 effort limit 不变。unit-scaled、逐 substep affine V2 model 的
+fit R2 为 0.999959，但独立 absolute holdout 的 one/six-step RMSE 仍为
+0.09453/0.62331，两项预先声明的诊断 gate 都失败。
+
+两档 full-articulation computed-torque 均在两条 clip 上失败。最终 V2 MPC 也失败：
+`hocap_170105` 的位置最大误差为 1.961 m、旋转 RMSE 为 119.13 度、最大单关节饱和率为
+44.58%；`hocap_170650` 对应为 0.777 m、114.21 度、6.25%。所有 run 都保持 finite、完成
+41/41 frame，且 rollout wrist/object state write 为零，但均未通过 maximum 2 cm / 10 度、
+RMSE 1 cm / 5 度和 5% saturation gate。
+
+最终状态为 `C3_EXPLICIT_WRIST_FINITE_EFFORT_TRACKING_EXHAUSTED` 与
+`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`；没有 active controller。contact causality 与
+完整 C.3 不恢复，C.4/C.5 继续 gate-blocked，PPO 未获授权。本机 C3R4 证据位于
+`.local/reports/stage16c3r4_mpc_holdout_c4/`。

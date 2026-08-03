@@ -66,14 +66,14 @@ canonical-URDF FK derived from frozen wrist pose plus frozen finger state. The
 stored link field remains unchanged and continues to serve its existing
 observation/reward contract.
 
-The recovery then consumed its only Path A implementation. Its five failing
-reference-target map samples exceed the frozen condition-number maximum of
-4000, so it starts zero of two allowed complete dynamic Path A runs. The
-generic D6 wrapper exposes zero D6 tensor joints in the live GPU contract;
+The generic D6 wrapper exposes zero D6 tensor joints in the live GPU contract;
 therefore the permitted explicit serial 3P+3R articulation was qualified. It
 has six GPU tensor joints, a fixed virtual anchor, no Cartesian-wrench
-fallback, and no real arm. Conservative, nominal, and high-authority bounded
-profiles all fail both clips. The final status is
+fallback, and no real arm. Its PD profiles fail both clips. C3R3/R4 also run
+both full-articulation computed-torque profiles and the single bounded preview
+architecture. The corrected substep-affine model fails independent 1/6-step
+holdout and both fixed 41-frame MPC gates, so no controller is active. The
+final status is
 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; C3-1 through C3-5,
 contact-momentum causality, C.4, and C.5 are
 `NOT_RUN_GATE_BLOCKED_BY_C3_WRIST_ARCHITECTURE`, and C.6 is not authorized.

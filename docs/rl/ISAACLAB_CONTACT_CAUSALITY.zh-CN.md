@@ -37,6 +37,6 @@ flush 后的阶段事件、stdout、stderr、exit code 和 tensor shape。汇总
 
 preload 的 state write 被明确限制为 probe rollout 之前的 C.1 fixture setup；普通 DirectRLEnv rollout
 仍不会写入 wrist root 或 object state。这只验证读取能力。C3-0 reference/frame gate 现已通过，
-但 Path A 耗尽后全部三个冻结 finite virtual wrist profile 均在两条 clip 上失败。最终结果为
+但后续 C3R3/R4 的 computed-torque 与 bounded-preview 路径均未通过冻结 wrist gate。最终结果为
 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`；任务级 contact–momentum causality 仍为 not run，
 不能从 preload fixture 推断。

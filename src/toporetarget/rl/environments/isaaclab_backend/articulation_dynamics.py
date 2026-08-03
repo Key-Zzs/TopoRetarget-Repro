@@ -26,6 +26,32 @@ def generalized_mass_matrix(robot: Any) -> torch.Tensor:
     return matrix
 
 
+def generalized_bias_compensation(robot: Any) -> torch.Tensor:
+    """Return the live PhysX h(q, qdot) compensation tensor.
+
+    Isaac Sim 5.1 exposes compensation forces directly on the articulation
+    tensor view.  Both terms are forces required to counteract the named
+    dynamics, so their sum has the sign used by ``tau = M qdd + h``.
+    """
+
+    view = robot.root_physx_view
+    coriolis = view.get_coriolis_and_centrifugal_compensation_forces()
+    gravity = view.get_gravity_compensation_forces()
+    expected = (robot.num_instances, robot.num_joints)
+    if not isinstance(coriolis, torch.Tensor) or not isinstance(gravity, torch.Tensor):
+        raise RuntimeError("BIAS_FORCE_INVALID: PhysX did not return torch tensors")
+    if tuple(coriolis.shape) != expected or tuple(gravity.shape) != expected:
+        raise RuntimeError(
+            "BIAS_FORCE_INVALID: "
+            f"coriolis={tuple(coriolis.shape)} gravity={tuple(gravity.shape)} "
+            f"expected={expected}"
+        )
+    result = coriolis + gravity
+    if not bool(torch.isfinite(result).all()):
+        raise RuntimeError("BIAS_FORCE_INVALID: non-finite live compensation")
+    return result
+
+
 def inferred_generalized_bias(
     *, mass_matrix: torch.Tensor, applied_effort: torch.Tensor, joint_acceleration: torch.Tensor
 ) -> torch.Tensor:
@@ -164,6 +190,7 @@ __all__ = [
     "FullArticulationComputedTorqueProfileV1",
     "FullArticulationComputedTorqueWristControllerV1",
     "computed_torque_profile",
+    "generalized_bias_compensation",
     "generalized_mass_matrix",
     "inferred_generalized_bias",
     "mass_matrix_diagnostics",

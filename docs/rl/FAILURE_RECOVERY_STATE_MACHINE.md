@@ -87,13 +87,12 @@ stateDiagram-v2
 
 C.2 is validated. C3-0 passes `C3_REFERENCE_OR_FRAME_CONTRACT_VALIDATED` with
 derived canonical-URDF FK targets while retaining the frozen stored link field,
-and C.3R2 readout passes. The one Path A implementation is precondition-blocked
-by five frozen-map condition numbers above 4000; it consumes zero complete
-dynamic runs. One D6 architecture switch is then consumed. The live D6 tensor
-contract reports zero D6 joints, permitting the explicit serial 3P+3R
-articulation fallback. It exposes six GPU tensor joints and no real arm. All
-three global profile runs fail both clips, so
-`Stage16C3R2C5RecoveryStateMachine` closes at
+and C.3R2 readout passes. The live D6 tensor contract reports zero D6 joints,
+permitting the explicit serial 3P+3R articulation fallback. It exposes six GPU
+tensor joints and no real arm. C3R3/R4 then exhaust both full-articulation
+computed-torque profiles and the single bounded-preview architecture. The
+independent 1/6-step dynamics holdout and both 41-frame MPC gates fail, so the
+recovery closes at
 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`. C.3 modes 1--5, contact causality,
 C.4, C.5, and PPO are not run/not authorized. The recovery record is
-`.local/reports/stage16c3r2_c5/c3_failure_transitions.jsonl`.
+`.local/reports/stage16c3r4_mpc_holdout_c4/final_summary.json`.

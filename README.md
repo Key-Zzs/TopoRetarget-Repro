@@ -98,9 +98,17 @@ torque saturation. Its C.2 runtime-contract smoke nevertheless passes at 1
 and 128 environments: 26-D action basis, 764-D observation, subset reset, and
 no rollout wrist/object state write are preserved. This does not select a C.3
 profile or override the wrist tracking gate.
-Stage 16-C.3R2--C.5 is therefore
-`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; C.3 modes 1--5, contact-momentum
-causality, C.4/C.5, and PPO are not run/not authorized. See the
+Stage 16-C.3R3/R4 then exercised the fixed joint-dynamics decision tree. Both
+full-articulation computed-torque profiles fail both clips. The apparent MPC
+worker termination was a reporter `KeyError`, not a CUDA/PhysX exit; after that
+repair, corrected 120 Hz boundary sampling, live bias compensation, a
+spectrally bounded solver step, and substep-affine identification, the
+independent model holdout still fails and the final MPC reaches 1.961/0.777 m
+maximum position error, 119.13/114.21 degrees rotation RMSE, and
+44.58%/6.25% maximum per-joint saturation. The structural result remains
+`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; no controller is active, C.3 modes
+1--5/contact-momentum causality and C.4/C.5 were not run, and PPO is not
+authorized. See the
 [DirectRLEnv contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md),
 [wrist closeout](docs/rl/ISAACLAB_WRIST_DYNAMICS.md), and
 [the asset migration contract](docs/rl/ISAACLAB_ASSET_MIGRATION.md).

@@ -10,6 +10,7 @@ import torch
 from toporetarget.rl.environments.isaaclab_backend.articulation_dynamics import (
     FullArticulationComputedTorqueProfileV1,
     FullArticulationComputedTorqueWristControllerV1,
+    generalized_bias_compensation,
     inferred_generalized_bias,
     mass_matrix_diagnostics,
 )
@@ -51,8 +52,12 @@ def _bank() -> SimpleNamespace:
 def test_joint_reference_preserves_keys_and_has_analytic_substep_derivatives() -> None:
     reference = ExplicitWristJointReferenceV2.from_reference_bank(_bank())
     start = reference.sample(torch.tensor([0]), torch.tensor([0]), substep=0, decimation=6)
-    end = reference.sample(torch.tensor([0]), torch.tensor([0]), substep=5, decimation=6)
+    final_control_start = reference.sample(
+        torch.tensor([0]), torch.tensor([0]), substep=5, decimation=6
+    )
+    end = reference.sample(torch.tensor([0]), torch.tensor([0]), substep=6, decimation=6)
     assert torch.allclose(start.q_wrist, reference.q_wrist_ref[:, 0])
+    assert not torch.allclose(final_control_start.q_wrist, reference.q_wrist_ref[:, 1])
     assert torch.allclose(end.q_wrist, reference.q_wrist_ref[:, 1])
     assert torch.isfinite(start.qd_wrist).all()
     assert torch.isfinite(end.qdd_finger).all()
@@ -97,6 +102,15 @@ def test_bias_estimate_and_mass_diagnostics_are_finite_and_complete() -> None:
     assert diagnostics["symmetric_max_abs"] == 0.0
 
 
+def test_live_bias_uses_physx_compensation_terms_with_inverse_dynamics_sign() -> None:
+    view = SimpleNamespace(
+        get_coriolis_and_centrifugal_compensation_forces=lambda: torch.full((2, 26), 0.25),
+        get_gravity_compensation_forces=lambda: torch.full((2, 26), -0.05),
+    )
+    robot = SimpleNamespace(root_physx_view=view, num_instances=2, num_joints=26)
+    assert torch.allclose(generalized_bias_compensation(robot), torch.full((2, 26), 0.2))
+
+
 def test_bounded_tvlqr_uses_live_mass_and_strict_effort_box() -> None:
     controller = BoundedTVLQRWristControllerV1(
         BoundedTVLQRWristProfileV1(effort_limit=0.1), device="cpu"
@@ -133,3 +147,73 @@ def test_bounded_mpc_respects_the_same_effort_box() -> None:
     assert isinstance(result["applied"], torch.Tensor)
     assert torch.all(result["applied"].abs() <= 0.1)
     assert bool(result["saturation"].any())
+    assert torch.all(result["projected_gradient_stability_product"] <= 1.0 + 1.0e-6)
+
+
+def test_bounded_mpc_saturation_describes_the_projected_command_boundary() -> None:
+    controller = BoundedMPCWristControllerV1(
+        BoundedMPCWristProfileV1(effort_limit=0.1, projected_gradient_iterations=0),
+        device="cpu",
+    )
+    dynamics_b = torch.cat((torch.zeros((6, 6)), torch.eye(6))).reshape(1, 12, 6)
+    result = controller.compute(
+        dynamics_a=torch.eye(12).reshape(1, 12, 12),
+        dynamics_b=dynamics_b,
+        feedforward=torch.zeros((1, 6)),
+        q_wrist=torch.full((1, 6), 10.0),
+        qd_wrist=torch.full((1, 6), 10.0),
+        q_wrist_ref=torch.zeros((1, 6)),
+        qd_wrist_ref=torch.zeros((1, 6)),
+        model_source="test",
+    )
+    assert bool(result["saturation"].all())
+    assert torch.allclose(result["applied"].abs(), torch.full((1, 6), 0.1))
+
+
+def test_bounded_mpc_caps_unstable_profile_step_without_changing_cost_or_box() -> None:
+    controller = BoundedMPCWristControllerV1(
+        BoundedMPCWristProfileV1(
+            effort_limit=0.1,
+            projected_gradient_iterations=2,
+            projected_gradient_step=10.0,
+        ),
+        device="cpu",
+    )
+    result = controller.compute(
+        dynamics_a=torch.eye(12).reshape(1, 12, 12),
+        dynamics_b=torch.cat((torch.zeros((6, 6)), 10.0 * torch.eye(6))).reshape(1, 12, 6),
+        feedforward=torch.zeros((1, 6)),
+        q_wrist=torch.ones((1, 6)),
+        qd_wrist=torch.ones((1, 6)),
+        q_wrist_ref=torch.zeros((1, 6)),
+        qd_wrist_ref=torch.zeros((1, 6)),
+        model_source="test",
+    )
+    assert torch.all(result["projected_gradient_step"] < 10.0)
+    assert torch.all(result["projected_gradient_stability_product"] <= 1.0 + 1.0e-6)
+    assert torch.all(result["applied"].abs() <= 0.1)
+
+
+def test_bounded_mpc_accepts_time_varying_affine_nominal_model() -> None:
+    profile = BoundedMPCWristProfileV1(horizon=3, effort_limit=0.5, projected_gradient_iterations=2)
+    controller = BoundedMPCWristControllerV1(profile, device="cpu")
+    a = torch.eye(12).reshape(1, 1, 12, 12).expand(1, 3, -1, -1).clone()
+    b_node = torch.cat((torch.zeros((6, 6)), torch.eye(6))).reshape(1, 12, 6)
+    b = b_node[:, None].expand(1, 3, -1, -1).clone()
+    affine = torch.full((1, 3, 12), 0.01)
+    nominal = torch.full((1, 3, 6), 0.1)
+    result = controller.compute(
+        dynamics_a=a,
+        dynamics_b=b,
+        dynamics_affine=affine,
+        nominal_effort_sequence=nominal,
+        feedforward=None,
+        q_wrist=torch.zeros((1, 6)),
+        qd_wrist=torch.zeros((1, 6)),
+        q_wrist_ref=torch.zeros((1, 6)),
+        qd_wrist_ref=torch.zeros((1, 6)),
+        model_source="test_v2",
+    )
+    assert result["lifted_affine"].shape == (1, 36)
+    assert result["nominal_effort_sequence"].shape == (1, 3, 6)
+    assert torch.all(result["applied"].abs() <= 0.5)

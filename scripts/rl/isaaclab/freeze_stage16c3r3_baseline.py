@@ -55,11 +55,14 @@ def _write(path: Path, value: object) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--verify", type=Path)
+    parser.add_argument("--verify-output", type=Path)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    if args.verify_output is not None and args.verify is None:
+        raise ValueError("--verify-output requires --verify")
     if args.verify is not None:
         manifest = json.loads(args.verify.read_text(encoding="utf-8"))
         observed = {path: _hash(REPO_ROOT / path) for path in manifest["hashes"]}
@@ -73,7 +76,13 @@ def main() -> int:
             if changed
             else "STAGE16C3R3_INPUT_HASHES_MATCH",
             "changed": changed,
+            "verified_manifest": str(args.verify),
+            "hash_count": len(observed),
         }
+        if args.verify_output is not None:
+            if args.verify_output.exists():
+                raise FileExistsError(f"STAGE16C3R3_VERIFY_REFUSES_OVERWRITE: {args.verify_output}")
+            _write(args.verify_output, result)
         print(json.dumps(result, sort_keys=True))
         return 2 if changed else 0
     missing = [path for path in _INPUTS if not (REPO_ROOT / path).is_file()]
@@ -91,7 +100,7 @@ def main() -> int:
         "created_at_utc": datetime.now(UTC).isoformat(),
         "branch": _run("git", "branch", "--show-current").strip(),
         "head": _run("git", "rev-parse", "HEAD").strip(),
-        "hash_drift_status": "STAGE16C3R3_INPUT_HASH_DRIFT",
+        "hash_drift_status": "STAGE16C3R3_INPUT_HASHES_FROZEN_NOT_YET_REVERIFIED",
         "hashes": hashes,
         "archive": str(archive),
     }

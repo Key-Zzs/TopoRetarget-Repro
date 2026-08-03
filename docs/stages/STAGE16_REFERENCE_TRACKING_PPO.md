@@ -43,14 +43,15 @@ the limitations recorded below. C.2 `DirectRLEnv` is validated on real GPU
 smokes. C3-0 reference/frame replay is now
 `C3_REFERENCE_OR_FRAME_CONTRACT_VALIDATED` using derived canonical-URDF FK
 targets, and C.3R2 contact readout is
-`C3_CONTACT_READOUT_VALIDATED`. The single permitted Path A inverse-wrench
-implementation is precondition-blocked by five condition numbers above 4000.
-Its generic D6 wrapper has zero live GPU tensor joints, so the permitted
-explicit serial 3P+3R articulation fallback was run in all three global
-profiles. The wrapper exposes six GPU tensor joints and no real arm. Every
-profile fails both clips; the strongest profile still reaches 17.59/19.57
-degrees maximum rotation error and 21.25%/18.75% torque saturation. The result
-is `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`.
+`C3_CONTACT_READOUT_VALIDATED`. The generic D6 wrapper has zero live GPU tensor
+joints, so the permitted explicit serial 3P+3R articulation fallback exposes
+six GPU tensor joints and no real arm. Its PD baseline and both subsequently
+qualified full-articulation computed-torque profiles fail. C3R4 proves that an
+apparent MPC worker termination was a reporter `KeyError`; the worker completes
+both clips after repair. Correct 120 Hz boundaries, live bias, a spectrally
+bounded solver step, and a substep-affine model still fail independent 1/6-step
+holdout and both 41-frame gates. The result is
+`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`, with no active controller.
 C3-1 through C3-5, contact causality, C.4 task-vector benchmarks, and C.5
 PhysX oracle are not run; C.6/C.7 PPO remain unauthorized with zero samples
 and checkpoints. C.8/C.9 remain TODO.

@@ -2,16 +2,17 @@
 
 ```
 冻结 C2/C3 输入
-  -> A0 带符号的 live wrench probe
-  -> A1 F0/F1/F2 identification
-  -> A2 shared-profile qualification
+  -> C3-0 reference/FK
+  -> object-centric contact readout
+  -> full-articulation computed torque
+  -> bounded preview (TVLQR/MPC)
   -> wrist gate 通过？ -- 否 --> C3 BLOCKED -> C4/C5 NOT RUN -> PPO NOT AUTHORIZED
                        是
-                         -> 收集 all-hand force/impulse trace
-                         -> causality gate 通过？ -- 否 --> C3 BLOCKED
-                                                  是 --> C3 qualified
+                         -> contact-momentum causality
+                         -> 完整 C3 -> C4 -> C5
 ```
 
-当前运行停在 A2：`A0=PASS`、`A1=DIAGNOSED`、`A2=FAIL`，且 all-hand collection
-没有有效 trace。不得按结果挑选 profile、修改冻结 reference、在 rollout 中 object state
-write，或绕过 gate 启动下游阶段。
+当前运行在 bounded preview 后 fail-closed：两档 computed-torque、独立 1/6-step
+local-model holdout 与两条 41-frame MPC gate 均失败。MPC worker 的早期“退出”已确认是
+reporter `KeyError` 误报，不是 CUDA/PhysX 退出。不得按结果挑选 profile、修改冻结
+reference、在 rollout 中写 object/wrist state，或绕过 gate 启动 C4/C5/PPO。

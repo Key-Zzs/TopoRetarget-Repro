@@ -91,10 +91,13 @@ objects, named PhysX contact pairs, CUDA tensors, and 128-env subset reset.
 C.2 is `STAGE16C2_DIRECT_RL_ENV_VALIDATED` with real 1/128-env GPU evidence.
 C.3 is `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`: C3-0 derived-FK replay and
 object-centric contact readout validate their respective contracts, but the
-single Path A map exceeds the frozen condition-number gate and all three
-explicit serial 3P+3R profiles fail both clips. The fallback exposes six GPU
-tensor joints but adds no real arm. C.4/C.5 are not run and C.6
-PPO remains unauthorized. Neither
+explicit serial 3P+3R architecture fails the complete joint-dynamics decision
+tree. Both computed-torque profiles fail. After repairing a false MPC reporter
+termination, 120 Hz boundary sampling, live bias, solver spectral stability,
+and a substep-affine model, the independent 1/6-step holdout and both 41-frame
+MPC gates still fail. The fallback exposes six GPU tensor joints but adds no
+real arm. No controller is active; C.4/C.5 are not run and C.6 PPO remains
+unauthorized. Neither
 C.0/C.1/C.2 nor historical MuJoCo evidence authorizes a PhysX oracle or PPO.
 
 The Wuji three-clip implementation is available through the generic

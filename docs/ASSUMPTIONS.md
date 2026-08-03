@@ -388,8 +388,9 @@ PAPER_PROTOCOL_REPRODUCTION_WITH_ASSUMPTIONS rather than author-exact results.
   kinematic-object diagnostic is explicitly non-formal and records its own
   state writes; it cannot demonstrate free-object contact controllability.
 - C3-0 derived-FK replay and C.3R2 object-centric contact readout are validated
-  engineering diagnostics; neither is paper-exact contact causality. Path A
-  is condition-gated, and the permitted explicit serial 3P+3R fallback fails
-  both clips in all three globally shared profiles. C.3 is therefore
+  engineering diagnostics; neither is paper-exact contact causality. The
+  permitted explicit serial 3P+3R fallback fails both full-articulation
+  computed-torque profiles and the single bounded-preview architecture on both
+  clips; independent local-model holdout also fails. C.3 is therefore
   `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; C.4/C.5 remain unrun and C.6 PPO
   is unauthorized.

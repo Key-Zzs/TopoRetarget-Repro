@@ -87,7 +87,7 @@ class ExplicitWristJointReferenceV2:
     q_finger_ref: torch.Tensor
     qd_finger_ref: torch.Tensor
     wrist_rotation_ref: torch.Tensor
-    interpolation: str = "cubic_hermite_analytic_qdd_v1"
+    interpolation: str = "cubic_hermite_physics_boundary_analytic_qdd_v2"
 
     @classmethod
     def from_reference_bank(cls, bank: Any) -> ExplicitWristJointReferenceV2:
@@ -120,13 +120,11 @@ class ExplicitWristJointReferenceV2:
     def sample(
         self, clip_index: torch.Tensor, key_index: torch.Tensor, *, substep: int, decimation: int
     ) -> ExplicitWristJointReferenceSample:
-        if not 0 <= substep < decimation:
-            raise ValueError("substep outside decimation")
+        if not 0 <= substep <= decimation:
+            raise ValueError("physics boundary outside [0, decimation]")
         index0 = key_index.clamp(0, self.frame_count - 2)
         index1 = index0 + 1
-        alpha = torch.full_like(
-            index0, float(substep) / float(max(decimation - 1, 1)), dtype=torch.float32
-        )
+        alpha = torch.full_like(index0, float(substep) / float(decimation), dtype=torch.float32)
 
         def gather(values: torch.Tensor, index: torch.Tensor) -> torch.Tensor:
             return values[clip_index, index]

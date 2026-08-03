@@ -45,7 +45,7 @@ The real RTX 5080 / CUDA PhysX result is
 The preload state writes are explicitly limited to C.1 fixture setup before
 the probe rollout; normal DirectRLEnv rollout still writes neither wrist root
 nor object state. This validates readout capability only. C3-0's
-reference/frame gate now passes, but all three frozen finite virtual wrist
-profiles fail both clips after Path A is exhausted. The final result is
+reference/frame gate now passes, but the later C3R3/R4 computed-torque and
+bounded-preview paths both fail the frozen wrist gate. The final result is
 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; task-level contact–momentum
 causality remains not run and must not be inferred from the preload fixtures.

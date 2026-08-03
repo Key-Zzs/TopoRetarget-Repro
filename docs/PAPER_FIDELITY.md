@@ -451,15 +451,16 @@ viewer evidence is unavailable. C.1 is independently validated as an
 contact, CUDA tensors, and 1/128-env spawning. Neither result is paper-exact or
 authorizes a PhysX oracle, PPO, real dynamics, or sim-to-real claim.
 
-## Stage 16-C.3R2--C.5 wrist boundary
+## Stage 16-C.3R4--C.5 wrist boundary
 
-The C.3R2 closeout remains an `ENGINEERING_DIAGNOSTIC`, not a paper-method or
+The C.3R4 closeout remains an `ENGINEERING_DIAGNOSTIC`, not a paper-method or
 control claim. C3-0 validates derived canonical-URDF FK targets while retaining
 the immutable stored-link field, and the object-centric contact sensor validates
-readout only. Path A is stopped by its frozen condition-number gate. Live GPU
-inspection then permits the explicit serial 3P+3R articulation fallback
+readout only. Live GPU inspection permits the explicit serial 3P+3R articulation
 because the authored generic D6 wrapper exposes no D6 tensor joints. The
 fallback exposes six GPU tensor joints and is an abstract engineering wrist,
-not a real arm. All three global profiles fail both clips, producing
-`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`. No contact causality, C.4 benchmark,
-C.5 oracle, or PPO result is claimed.
+not a real arm. Both full-articulation computed-torque profiles and the single
+bounded preview architecture fail both clips. A high local-model fit R2 is not
+treated as validation because independent 1/6-step holdout and 41-frame tracking
+fail. This produces `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; no contact
+causality, C.4 benchmark, C.5 oracle, or PPO result is claimed.

@@ -111,10 +111,11 @@ def clip_vector_norm(value: torch.Tensor, limit: float) -> tuple[torch.Tensor, t
 class PhysicsSubstepWristTargetInterpolator:
     """Preserve 20 Hz keys while supplying a continuous 120 Hz wrist target.
 
-    The target sequence includes both interval endpoints: substep zero is
-    exactly key ``k`` and the final substep is exactly key ``k+1``.  Translation
-    uses cubic Hermite interpolation and orientation always uses shortest-arc
-    SLERP; no future key beyond ``k+1`` is read.
+    Physics-step calls use the six start boundaries ``0/6`` through ``5/6``;
+    boundary ``6/6`` is the post-step endpoint and exactly key ``k+1``.  This
+    preserves the 20 Hz timing without commanding the endpoint one physics step
+    early.  Translation uses cubic Hermite interpolation and orientation uses
+    shortest-arc SLERP; no future key beyond ``k+1`` is read.
     """
 
     def __init__(self, *, decimation: int, control_dt_s: float) -> None:
@@ -128,11 +129,9 @@ class PhysicsSubstepWristTargetInterpolator:
     def alpha(
         self, substep: int, *, batch: int, device: torch.device, dtype: torch.dtype
     ) -> torch.Tensor:
-        if not 0 <= substep < self.decimation:
-            raise ValueError(f"substep {substep} outside [0, {self.decimation})")
-        return torch.full(
-            (batch,), substep / float(self.decimation - 1), device=device, dtype=dtype
-        )
+        if not 0 <= substep <= self.decimation:
+            raise ValueError(f"boundary {substep} outside [0, {self.decimation}]")
+        return torch.full((batch,), substep / float(self.decimation), device=device, dtype=dtype)
 
     def sample(
         self,

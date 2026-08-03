@@ -85,9 +85,14 @@ fallback 在 20 个冻结手指关节之前暴露 6 个真实 GPU tensor joint�
 7.29/7.55 度、力矩饱和率为 21.25%/18.75%。该档仍通过 1-env/128-env C.2
 runtime-contract smoke：保持 26-D action basis、764-D observation、subset reset 以及 rollout
 中不写 wrist/object state。这不选择 C.3 profile，也不改变 wrist tracking gate 的失败结论。
-Stage 16-C.3R2--C.5
-的最终状态为 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`；C.3 modes 1--5、
-contact-momentum causality、C.4/C.5 均不得运行，PPO 未获授权。详见
+Stage 16-C.3R3/R4 随后执行了冻结的 joint-dynamics 决策树：两档
+full-articulation computed-torque 均在两条 clip 上失败。此前所谓 MPC worker 退出实际是
+reporter 读取 `gain` 引发的 `KeyError`，不是 CUDA/PhysX 退出；修正 reporter、120 Hz
+physics boundary、live bias、solver spectral step 和 substep-affine identification 后，独立
+holdout 仍失败，最终 MPC 的位置最大误差为 1.961/0.777 m、旋转 RMSE 为
+119.13/114.21 度、最大单关节饱和率为 44.58%/6.25%。结构性状态仍为
+`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`；没有 active controller，C.3 modes 1--5、
+contact-momentum causality、C.4/C.5 均未运行，PPO 未获授权。详见
 [DirectRLEnv 契约](docs/rl/ISAACLAB_DIRECT_RL_ENV.md)、
 [wrist 收口](docs/rl/ISAACLAB_WRIST_DYNAMICS.md) 和
 [资产迁移契约](docs/rl/ISAACLAB_ASSET_MIGRATION.md)。

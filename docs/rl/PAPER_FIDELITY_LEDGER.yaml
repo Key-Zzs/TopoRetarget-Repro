@@ -55,7 +55,7 @@ isaaclab_platform_extension:
   stage16c2_status: STAGE16C2_DIRECT_RL_ENV_VALIDATED
   custom_direct_rl_env_implemented: true
   stage16c3_status: STAGE16C3_SEMANTIC_QUALIFICATION_BLOCKED
-  stage16c3_blocker: PATH_A_CONDITION_GATE_AND_FINITE_VIRTUAL_WRIST_PROFILE_FAILURE
+  stage16c3_blocker: EXPLICIT_SERIAL_3P3R_COMPUTED_TORQUE_AND_PREVIEW_TRACKING_EXHAUSTED
   stage16c3_reference_frame_status: C3_REFERENCE_OR_FRAME_CONTRACT_VALIDATED
   stage16c3_contact_readout_status: C3_CONTACT_READOUT_VALIDATED
   stage16c3_active_wrist_profile: null
@@ -68,4 +68,4 @@ isaaclab_platform_extension:
   physx_oracle_run: false
   ppo_started: false
   mujoco_oracle_authorizes_physx: false
-  evidence: [.local/reports/stage16c3r2_c5/final_summary.json]
+  evidence: [.local/reports/stage16c3r4_mpc_holdout_c4/final_summary.json]

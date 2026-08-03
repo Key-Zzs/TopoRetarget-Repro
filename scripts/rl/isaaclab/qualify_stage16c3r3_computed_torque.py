@@ -10,6 +10,7 @@ import math
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -95,10 +96,14 @@ def _sample(env: Any, torch: Any) -> tuple[float, float, bool]:
     )
 
 
-def _interval(env: Any, torch: Any, action: Any) -> None:
+def _interval(env: Any, action: Any, *, observe_substep: Callable[[dict[str, Any]], None]) -> None:
     env._pre_physics_step(action)
     for _ in range(env.cfg.decimation):
         env._apply_action()
+        latest = env._computed_torque_latest
+        if latest is None:
+            raise RuntimeError("C3_COMPUTED_TORQUE_NO_SUBSTEP_EVIDENCE")
+        observe_substep(latest)
         env.scene.write_data_to_sim()
         env.sim.step(render=False)
         env.scene.update(env.physics_dt)
@@ -123,18 +128,18 @@ def _clip_report(env: Any, torch: Any, clip_index: int) -> dict[str, Any]:
         )
     }
     saturation_count = torch.zeros(6, dtype=torch.long, device=env.device)
+
+    def observe_substep(latest: dict[str, Any]) -> None:
+        for key in term_max:
+            term_max[key] = max(term_max[key], _scalar(latest[key].abs().amax()))
+        saturation_count.add_(latest["saturation"].any(dim=0).to(torch.long))
+
     for _ in range(_STEPS - 1):
-        _interval(env, torch, action)
+        _interval(env, action, observe_substep=observe_substep)
         pos, rot, finite_now = _sample(env, torch)
         finite = finite and finite_now
         pos_max, rot_max = max(pos_max, pos), max(rot_max, rot)
         pos_sq, rot_sq = pos_sq + pos * pos, rot_sq + rot * rot
-        latest = env._computed_torque_latest
-        if latest is None:
-            raise RuntimeError("C3_COMPUTED_TORQUE_NO_SUBSTEP_EVIDENCE")
-        for key in term_max:
-            term_max[key] = max(term_max[key], _scalar(latest[key].abs().amax()))
-        saturation_count += latest["saturation"].any(dim=0).to(torch.long)
     saturation = saturation_count.to(torch.float32) / float((_STEPS - 1) * env.cfg.decimation)
     report = {
         "clip": env.reference_bank.clip_ids[clip_index],
@@ -239,8 +244,12 @@ def _orchestrate(args: argparse.Namespace) -> int:
         FULL_ARTICULATION_COMPUTED_TORQUE_PROFILES,
     )
 
-    worker_root = args.output.parent / ".computed_torque_workers"
-    worker_root.mkdir(parents=True, exist_ok=True)
+    worker_root = args.output.parent / f".{args.output.stem}_workers"
+    if args.output.exists() or worker_root.exists():
+        raise FileExistsError(
+            f"C3_COMPUTED_TORQUE_REFUSES_OVERWRITE: output={args.output} workers={worker_root}"
+        )
+    worker_root.mkdir(parents=True)
     candidates: list[dict[str, Any]] = []
     selected: str | None = None
     for profile in FULL_ARTICULATION_COMPUTED_TORQUE_PROFILES:
