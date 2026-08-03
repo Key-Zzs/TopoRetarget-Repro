@@ -31,10 +31,12 @@ saturation。三种冻结 finite virtual profile 均在两条 41-key clip 失败
 high authority 为 4.10 cm/53.63 度和 6.81 cm/54.38 度。有限 disturbance 保持 physical 和
 finite，移除 virtual authority 后合并 position RMSE 从 0.03623 m 恶化到 0.47282 m。
 
-最终结果为 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`。没有 active profile，故无 C.2
-active-profile regression。C3-1--C3-5、contact-momentum causality、C.4、C.5 和 PPO 均
-fail-closed/not run。non-contact wrist gate 使用 live PhysX evolution 及 `r_wrist` 上的有界
-force/torque；rollout 不写 wrist pose/velocity 或 object state，因此该 gate 不计算 immutable
-task-object termination。
+最终结果为 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`，且没有 active profile。nominal
+candidate 独立通过 C.2 runtime-contract regression：1/128 environment 各 1000 step，保持
+26-D action、764-D observation、reset 行为和 rollout 中不写 wrist/object state；这不选择
+C.3 profile。C3-1--C3-5、contact-momentum causality、C.4、C.5 和 PPO 均 fail-closed/not
+run。non-contact wrist gate 使用 live PhysX evolution 及 `r_wrist` 上的有界 force/torque；
+rollout 不写 wrist pose/velocity 或 object state，因此该 gate 不计算 immutable task-object
+termination。
 
 本机证据位于 `.local/reports/stage16c3r2_c5/`。

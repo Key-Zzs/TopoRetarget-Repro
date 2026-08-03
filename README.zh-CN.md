@@ -80,6 +80,9 @@ implementation 被前置条件阻断：5 个 sampled reference-target map 超过
 condition-number 上限 4000，故 2 次完整 dynamic run 均未消耗。生成的 D6 wrapper 在 GPU 上
 暴露 0 个 D6 tensor joint，因此允许使用有限 virtual 3P+3R fallback；其冻结的
 conservative、nominal 和 high-authority profile 均在两条 clip 上失败。Stage 16-C.3R2--C.5
+nominal virtual-wrist candidate 仍完成 C.2 runtime-contract regression：1-env 与 128-env 各
+1000 step 均保持 26-D action、764-D observation、reference bank、reset 行为以及 rollout 中
+不写 wrist/object state。这不选择 C.3 profile，也不改变 wrist tracking gate 的失败结论。Stage 16-C.3R2--C.5
 的最终状态为 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`；C.3 modes 1--5、
 contact-momentum causality、C.4/C.5 均不得运行，PPO 未获授权。详见
 [DirectRLEnv 契约](docs/rl/ISAACLAB_DIRECT_RL_ENV.md)、

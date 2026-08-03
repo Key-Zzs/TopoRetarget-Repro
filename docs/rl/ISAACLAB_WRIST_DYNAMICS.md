@@ -37,11 +37,14 @@ degrees; high authority 4.10 cm/53.63 degrees and 6.81 cm/54.38 degrees.
 The finite disturbance remains physical and finite, while removing virtual
 authority worsens the combined position RMSE from 0.03623 m to 0.47282 m.
 
-The result is `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`. No profile is active;
-there is no C.2 active-profile regression. C3-1--C3-5, contact-momentum
-causality, C.4, C.5, and PPO are fail-closed/not run. The non-contact wrist
-gate uses live PhysX evolution and bounded force/torque at `r_wrist`, with no
-rollout wrist pose/velocity or object state write; immutable task-object
-termination is intentionally not evaluated in that gate.
+The result is `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`. No profile is active.
+The nominal candidate separately passes a C.2 runtime-contract regression at
+1/128 environments for 1000 steps each, preserving 26-D actions, 764-D
+observations, reset behavior, and no rollout wrist/object state write; it does
+not select a C.3 profile. C3-1--C3-5, contact-momentum causality, C.4, C.5,
+and PPO are fail-closed/not run. The non-contact wrist gate uses live PhysX
+evolution and bounded force/torque at `r_wrist`, with no rollout wrist
+pose/velocity or object state write; immutable task-object termination is
+intentionally not evaluated in that gate.
 
 Machine-local evidence is under `.local/reports/stage16c3r2_c5/`.

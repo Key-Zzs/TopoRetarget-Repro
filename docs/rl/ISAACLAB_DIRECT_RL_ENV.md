@@ -76,5 +76,9 @@ fail both clips. The final status is
 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; C3-1 through C3-5,
 contact-momentum causality, C.4, and C.5 are
 `NOT_RUN_GATE_BLOCKED_BY_C3_WRIST_ARCHITECTURE`, and C.6 is not authorized.
+The nominal virtual-wrist candidate independently passes its C.2 runtime
+contract regression for 1/128 environments and 1000 steps each; this validates
+the preserved 26-D/764-D/reset/no-write contract only, not C.3 tracking or
+profile selection.
 See `ISAACLAB_CONTACT_CAUSALITY.md`, `ISAACLAB_WRIST_DYNAMICS.md`, and the
 ignored C3R2 report bundle.

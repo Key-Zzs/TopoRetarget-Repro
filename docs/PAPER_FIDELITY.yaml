@@ -110,14 +110,17 @@ audit_contracts:
     stage16c1_status: STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED
     stage16c2_status: STAGE16C2_DIRECT_RL_ENV_VALIDATED
     custom_direct_rl_env_implemented: true
-    stage16c3_status: C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED
+    stage16c3_status: STAGE16C3_SEMANTIC_QUALIFICATION_BLOCKED
     stage16c3_blocker: PATH_A_CONDITION_GATE_AND_FINITE_VIRTUAL_WRIST_PROFILE_FAILURE
     stage16c3_reference_frame_status: C3_REFERENCE_OR_FRAME_CONTRACT_VALIDATED
     stage16c3_contact_readout_status: C3_CONTACT_READOUT_VALIDATED
     stage16c3_active_wrist_profile: null
-    stage16c4_status: NOT_RUN_GATE_BLOCKED_BY_C3_WRIST_ARCHITECTURE
-    stage16c5_status: NOT_RUN_GATE_BLOCKED_BY_C3_WRIST_ARCHITECTURE
+    stage16c2_d6_profile_regression_status: STAGE16C2_D6_PROFILE_REGRESSION_VALIDATED
+    stage16c2_d6_profile_regression_scope: nominal_candidate_runtime_contract_only
+    stage16c4_status: STAGE16C4_NOT_RUN_GATE_BLOCKED
+    stage16c5_status: STAGE16C5_NOT_RUN_GATE_BLOCKED
     stage16c6_ppo_authorized: false
+    stage16c6_status: STAGE16C6_SINGLE_CLIP_GPU_PPO_NOT_AUTHORIZED
     physx_oracle_run: false
     ppo_started: false
     mujoco_oracle_authorizes_physx: false

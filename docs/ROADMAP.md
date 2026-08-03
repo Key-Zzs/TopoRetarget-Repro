@@ -62,9 +62,9 @@ R0 is MJCF playback/PD, R1 is PPO tracking, and CP remains later.
 | 16-C.0 | Isaac Lab platform qualification | Host, isolated install, Isaac Sim/Lab, GPU PhysX, headless and 128-env vector smoke | Platform-only evidence; no custom task/PPO | COMPLETE WITH LIMITATIONS: all hard gates pass; no display |
 | 16-C.1 | Wuji and object asset migration | Wuji Hand2 Beta1 plus HO-Cap 170105/170650 | Floating articulation, rigid dynamics, contact and 1/128-env CUDA evidence | COMPLETE / `STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED` |
 | 16-C.2 | Isaac Lab `DirectRLEnv` | Stage-16 task shell | Asset migration complete | COMPLETE / `STAGE16C2_DIRECT_RL_ENV_VALIDATED` |
-| 16-C.3 | Single-environment semantic parity | Action/observation/reward/termination parity | DirectRLEnv exists | BLOCKED / `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`: C3-0 frame contract and contact readout pass, but Path A is condition-gated and all three finite virtual 3P+3R profiles fail both clips |
-| 16-C.4 | GPU vectorization benchmark | Stage-16 task throughput | Semantic parity passes | NOT RUN / `NOT_RUN_GATE_BLOCKED_BY_C3_WRIST_ARCHITECTURE` |
-| 16-C.5 | PhysX oracle | Independent PhysX controllability gate | PhysX task qualified | NOT RUN / `NOT_RUN_GATE_BLOCKED_BY_C3_WRIST_ARCHITECTURE` |
+| 16-C.3 | Single-environment semantic parity | Action/observation/reward/termination parity | DirectRLEnv exists | BLOCKED / `STAGE16C3_SEMANTIC_QUALIFICATION_BLOCKED`: C3-0 frame contract and contact readout pass, but Path A is condition-gated and all three finite virtual 3P+3R profiles fail both clips |
+| 16-C.4 | GPU vectorization benchmark | Stage-16 task throughput | Semantic parity passes | NOT RUN / `STAGE16C4_NOT_RUN_GATE_BLOCKED` |
+| 16-C.5 | PhysX oracle | Independent PhysX controllability gate | PhysX task qualified | NOT RUN / `STAGE16C5_NOT_RUN_GATE_BLOCKED` |
 | 16-C.6 | Single-clip GPU PPO | Per-clip PPO in Isaac Lab | PhysX oracle passes both clips | NOT AUTHORIZED; 0 samples, 0 checkpoints |
 | 16-C.7 | Two-clip GPU PPO | Shared policy | Both single-clip policies pass | TODO |
 | 16-C.8 | Dynamics randomization | Bounded PhysX DR | Nominal policy qualified | TODO |

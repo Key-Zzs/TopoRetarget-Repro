@@ -426,3 +426,59 @@ def test_recovery_state_machine_blocks_c4_and_c5_after_wrist_architecture_failur
     assert state.as_dict()["budgets"]["free_root_qualification_runs"] == 0
     with pytest.raises(RuntimeError, match="C3R2_C5_RECOVERY_CLOSED"):
         state.transition(RecoveryStage.C4_BENCHMARK, reason="must not run")
+
+
+def test_recovery_state_machine_enforces_all_declared_recovery_budgets() -> None:
+    state = Stage16C3R2C5RecoveryStateMachine()
+    for _ in range(3):
+        state.record_failure_class_repair("contact_api")
+    with pytest.raises(RuntimeError, match="FAILURE_CLASS_REPAIR_BUDGET_EXHAUSTED"):
+        state.record_failure_class_repair("contact_api")
+    for _ in range(5):
+        state.record_phase_rerun("contact_readout")
+    with pytest.raises(RuntimeError, match="PHASE_RERUN_BUDGET_EXHAUSTED"):
+        state.record_phase_rerun("contact_readout")
+    state.record_free_root_controller_implementation()
+    with pytest.raises(RuntimeError, match="FREE_ROOT_CONTROLLER_IMPLEMENTATION_BUDGET_EXHAUSTED"):
+        state.record_free_root_controller_implementation()
+    for _ in range(2):
+        state.record_free_root_run()
+    with pytest.raises(RuntimeError, match="FREE_ROOT_QUALIFICATION_BUDGET_EXHAUSTED"):
+        state.record_free_root_run()
+    state.record_wrist_architecture_switch()
+    with pytest.raises(RuntimeError, match="WRIST_ARCHITECTURE_SWITCH_BUDGET_EXHAUSTED"):
+        state.record_wrist_architecture_switch()
+    for _ in range(3):
+        state.record_wrist_profile_run()
+    with pytest.raises(RuntimeError, match="WRIST_PROFILE_BUDGET_EXHAUSTED"):
+        state.record_wrist_profile_run()
+    for _ in range(3):
+        state.record_contact_api_strategy()
+    with pytest.raises(RuntimeError, match="CONTACT_API_STRATEGY_BUDGET_EXHAUSTED"):
+        state.record_contact_api_strategy()
+    state.record_cem_upgrade()
+    with pytest.raises(RuntimeError, match="CEM_UPGRADE_BUDGET_EXHAUSTED"):
+        state.record_cem_upgrade()
+    state.record_replication_switch()
+    with pytest.raises(RuntimeError, match="REPLICATION_SWITCH_BUDGET_EXHAUSTED"):
+        state.record_replication_switch()
+    for _ in range(36):
+        state.transition(RecoveryStage.CONTACT_API_ISOLATION, reason="bounded test")
+    with pytest.raises(RuntimeError, match="MAJOR_TRANSITION_BUDGET_EXHAUSTED"):
+        state.transition(RecoveryStage.CONTACT_API_ISOLATION, reason="must fail closed")
+    budgets = state.as_dict()["budgets"]
+    assert budgets["failure_class_repairs"] == {"contact_api": 3}
+    assert budgets["phase_reruns"] == {"contact_readout": 5}
+    assert budgets["major_transitions"] == 36
+
+
+def test_recovery_state_machine_requires_validated_upstream_gates_for_c4_and_c5() -> None:
+    state = Stage16C3R2C5RecoveryStateMachine()
+    with pytest.raises(RuntimeError, match="C3_VALIDATION_REQUIRED_FOR_C4"):
+        state.transition(RecoveryStage.C4_BENCHMARK, reason="must fail closed")
+    state.validate_c3()
+    state.transition(RecoveryStage.C4_BENCHMARK, reason="C3 passed in this synthetic contract test")
+    with pytest.raises(RuntimeError, match="C4_VALIDATION_REQUIRED_FOR_C5"):
+        state.transition(RecoveryStage.C5_STATE_REPLICATION, reason="must fail closed")
+    state.validate_c4()
+    state.transition(RecoveryStage.C5_STATE_REPLICATION, reason="C4 passed in this synthetic test")

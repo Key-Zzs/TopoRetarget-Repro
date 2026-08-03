@@ -27,6 +27,22 @@ def parse_args() -> argparse.Namespace:
         "--clip-mode", choices=("one", "alternating", "balanced"), default="balanced"
     )
     parser.add_argument("--reset-mode", choices=("frame0", "uniform"), default="frame0")
+    parser.add_argument(
+        "--wrist-controller-mode",
+        choices=(
+            "wrist_impedance_v1",
+            "computed_wrench_v2",
+            "effective_dynamics_v3",
+            "identified_inverse_wrench_v1",
+            "finite_virtual_6d_wrist_actuator_v1",
+        ),
+        default="wrist_impedance_v1",
+    )
+    parser.add_argument(
+        "--finite-virtual-profile",
+        choices=("conservative", "nominal", "high_authority_bounded"),
+        default="nominal",
+    )
     parser.add_argument("--accept-eula", action="store_true")
     parser.add_argument(
         "--output",
@@ -88,6 +104,10 @@ def main() -> int:
         cfg.balanced_clip_assignment = args.clip_mode == "balanced"
         cfg.alternate_clip_on_reset = args.clip_mode == "alternating"
         cfg.reset_reference_index = args.reset_mode
+        cfg.wrist_controller_mode = args.wrist_controller_mode
+        if args.wrist_controller_mode == "finite_virtual_6d_wrist_actuator_v1":
+            cfg.finite_virtual_wrist_profile = args.finite_virtual_profile
+            cfg.finite_virtual_wrist_authority_enabled = True
         env = IsaacWorldWristFingerDirectRLEnv(cfg)
         observation, _ = env.reset(seed=20260802)
         policy = observation["policy"]
@@ -132,16 +152,36 @@ def main() -> int:
                 )
         elapsed = time.monotonic() - started
         contract = env.contract_report()
-        result = {
-            "status": "STAGE16C2_DIRECT_RL_ENV_VALIDATED"
-            if finite
+        passed = (
+            finite
             and contract["object_rollout_state_writes"] == 0
             and contract["wrist_root_state_writes_during_step"] == 0
-            else "STAGE16C2_DIRECT_RL_ENV_PARTIAL",
+        )
+        if passed:
+            status = (
+                "STAGE16C2_D6_PROFILE_REGRESSION_VALIDATED"
+                if args.wrist_controller_mode == "finite_virtual_6d_wrist_actuator_v1"
+                else "STAGE16C2_DIRECT_RL_ENV_VALIDATED"
+            )
+        else:
+            status = "STAGE16C2_DIRECT_RL_ENV_PARTIAL"
+        result = {
+            "status": status,
             "num_envs": args.num_envs,
             "steps": args.steps,
             "clip_mode": args.clip_mode,
             "reset_mode": args.reset_mode,
+            "wrist_controller_mode": args.wrist_controller_mode,
+            "finite_virtual_profile": (
+                args.finite_virtual_profile
+                if args.wrist_controller_mode == "finite_virtual_6d_wrist_actuator_v1"
+                else None
+            ),
+            "qualification_scope": (
+                "C.2 runtime contract only; does not select or validate a C.3 wrist profile."
+                if args.wrist_controller_mode == "finite_virtual_6d_wrist_actuator_v1"
+                else "C.2 DirectRLEnv runtime contract"
+            ),
             "action_shape": [args.num_envs, 26],
             "observation_shape": list(policy.shape),
             "observation_device": str(policy.device),
@@ -162,7 +202,15 @@ def main() -> int:
             json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
         print(json.dumps(result, sort_keys=True))
-        return 0 if result["status"] == "STAGE16C2_DIRECT_RL_ENV_VALIDATED" else 1
+        return (
+            0
+            if result["status"]
+            in {
+                "STAGE16C2_DIRECT_RL_ENV_VALIDATED",
+                "STAGE16C2_D6_PROFILE_REGRESSION_VALIDATED",
+            }
+            else 1
+        )
     except BaseException:
         traceback.print_exc()
         raise

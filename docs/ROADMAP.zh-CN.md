@@ -78,17 +78,23 @@ Stage 16-C 路线为：C.0 Isaac Lab platform qualification 已在全部硬 gate
 资产迁移已完成真实 PhysX/CUDA、具名接触对及 1/128-env 验证，精确状态为
 `STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED`。C.2 入口已授权为
 `STAGE16C2_DIRECT_RL_ENV_VALIDATED`，真实 GPU 的 1-env、交替 clip 与
-128-env/1000-step smoke 均通过；C.3 的最终状态为
+128-env/1000-step smoke 均通过；nominal finite-virtual wrist candidate 的 C.2
+runtime-contract 1-env 与 128-env/1000-step regression 也均通过
+（`STAGE16C2_D6_PROFILE_REGRESSION_VALIDATED`），但它不选择 active C.3 profile。C.3
+的 stage-level 最终状态为 `STAGE16C3_SEMANTIC_QUALIFICATION_BLOCKED`，阻塞原因为
 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`：C3-0 derived-FK replay 与 object-centric
 contact readout 各自通过，但唯一 Path A map 超过冻结的 condition-number gate，且三个
 finite virtual 3P+3R profile 均在两条 clip 上失败。因此 C.4 GPU vectorization 和 C.5
-PhysX Oracle 均不得运行，C.6 single-clip GPU PPO 未获授权（0 样本、0 checkpoint）。
+PhysX Oracle 均不得运行（分别为 `STAGE16C4_NOT_RUN_GATE_BLOCKED` 与
+`STAGE16C5_NOT_RUN_GATE_BLOCKED`），C.6 single-clip GPU PPO 未获授权
+（`STAGE16C6_SINGLE_CLIP_GPU_PPO_NOT_AUTHORIZED`；0 样本、0 checkpoint）。
 C.7 two-clip GPU PPO、
 C.8 dynamics randomization、C.9 geometry/MuJoCo/Isaac/PPO comparison 均为 TODO。
 MuJoCo 不删除，继续负责 correctness、
 deterministic regression、contact diagnostics、action replay 与 visualization；Isaac Lab 负责计划中的
 GPU 并行训练。MuJoCo 与 PhysX 不要求 bitwise 一致，但必须重新完成语义对齐和 PhysX Oracle，
-MuJoCo Oracle 不能直接授权 Isaac Lab PPO。当前尚未实现任何 Isaac Lab 自定义任务。
+MuJoCo Oracle 不能直接授权 Isaac Lab PPO。当前已有 Isaac Lab 自定义 DirectRLEnv，但尚未完成
+C.3 semantic qualification，也没有开始 PPO。
 
 Stage 16-C.0 将独立平台栈冻结为 Python 3.11.15、Isaac Sim 5.1.0、Isaac Lab v2.3.2
 （精确 commit `37ddf626871758333d6ed89cf64ad702aef127d0`）与 Torch 2.7.0 cu128。

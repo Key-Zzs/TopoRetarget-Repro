@@ -90,6 +90,11 @@ exceeded the frozen condition-number limit of 4000, so it used zero of its two
 complete dynamic runs. The authored D6 wrapper exposes zero D6 tensor joints
 on GPU, which permits the finite virtual 3P+3R fallback. Its frozen
 conservative, nominal, and high-authority profiles all fail both clips.
+The nominal virtual-wrist candidate nevertheless passes its C.2 runtime
+contract regression at 1-env and 128-env for 1000 steps each: 26-D action,
+764-D observation, reference bank, reset behavior, and no rollout
+wrist/object state write are preserved. This does not select a C.3 profile or
+override the wrist tracking gate.
 Stage 16-C.3R2--C.5 is therefore
 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; C.3 modes 1--5, contact-momentum
 causality, C.4/C.5, and PPO are not run/not authorized. See the
