@@ -92,10 +92,13 @@ gain、effort bound、26-D action、764-D observation 与 gate 均不变。共�
 没有添加真实机械臂。C.4 的 128/512/1024/2048/4096 aggregate-contact benchmark 全部
 clean/finite 退出，状态为 `STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`；4096 环境在共享 GPU
 负载下达到 700.35 samples/s，本进程显存峰值 3731 MiB、contact warning 为零，选择 4096
-环境 x rollout 16 = 65536 samples/update。C.5A 已验证 candidate state contract 及 1/32/96/144
-candidate 的 CUDA O0 隔离，但规定的 natural no-clone 20x8 baseline 超过 hard cap，精确状态为
-`STAGE16C5A_BLOCKED_PHYSX_REPLICATION_BASELINE_NONDETERMINISM`；O1、history replay、resource
-benchmark、C5B 与 C.6/PPO 全部停止，且不放宽 tolerance。C.6
+环境 x rollout 16 = 65536 samples/update。C.5A-R1 已验证冻结输入、candidate state contract、
+1/32/96/144 candidate 的 CUDA O0 隔离、修复后的 reset/DirectRLEnv stepping、单环境精确复现、
+环境原点归一化、跨进程控制与只读 contact telemetry；但规定的同进程 33 环境 natural no-clone
+baseline 仍在接触后分叉并超过 hard cap，精确状态为
+`STAGE16C5A_PHYSICS_CONTRACT_CHANGE_REQUIRED`，原因为
+`TRUE_FROZEN_PHYSX_BASELINE_NONDETERMINISM`；O1、history replay、resource benchmark、C5B、C5C
+与 C.6/PPO 全部停止，且不放宽 tolerance。C.6
 single-clip GPU PPO 仍未获授权
 （`STAGE16C6_SINGLE_CLIP_GPU_PPO_NOT_AUTHORIZED`；0 样本、0 checkpoint）。
 C.7 two-clip GPU PPO、
@@ -104,14 +107,15 @@ MuJoCo 不删除，继续负责 correctness、
 deterministic regression、contact diagnostics、action replay 与 visualization；Isaac Lab 负责计划中的
 GPU 并行训练。MuJoCo 与 PhysX 不要求 bitwise 一致，但必须重新完成语义对齐和 PhysX Oracle，
 MuJoCo Oracle 不能直接授权 Isaac Lab PPO。当前 Isaac Lab 自定义 DirectRLEnv 的 C.3 semantic
-qualification 与 C.4 正式 benchmark 均已通过；C.5A 只完成 O0 与 fail-closed baseline
-诊断，C5B/Oracle 与 PPO 均未开始。
+qualification 与 C.4 正式 benchmark 均已通过；C.5A-R1 完成了 harness 与物理归因收口，
+但 C5B/Oracle 与 PPO 均未获授权、未开始。
 
 Stage 16-C.0 将独立平台栈冻结为 Python 3.11.15、Isaac Sim 5.1.0、Isaac Lab v2.3.2
 （精确 commit `37ddf626871758333d6ed89cf64ad702aef127d0`）与 Torch 2.7.0 cu128。
 其资格范围仅包括 host/install/import、有限步官方 GPU-PhysX、headless、viewer 与 128 环境证据。
-C.2 已验证，C.3 已通过授权 retiming 后的完整重验；C.5A 已因 natural baseline hard-cap
-失败而 fail-close，C5B 与 C.0/C.1/C.2/C.3 本身都不能授权 PPO。C.1 使用浮动基座 Wuji
+C.2 已验证，C.3 已通过授权 retiming 后的完整重验；C.5A-R1 已确认其同进程 33 环境
+natural baseline 的接触后分叉属于冻结 PhysX contract 阻塞，C5B 与 C.0/C.1/C.2/C.3
+本身都不能授权 PPO。C.1 使用浮动基座 Wuji
 Hand2 Beta1、两个冻结 HO-Cap free rigid object、确定性凸包代理，并验证 CUDA tensor、
 128 个唯一环境原点与子集复位。无 DISPLAY 的交互 visual review 是软限制。
 

@@ -399,8 +399,10 @@ PAPER_PROTOCOL_REPRODUCTION_WITH_ASSUMPTIONS rather than author-exact results.
   both clips pass wrist/finger/link tracking and task-level aggregate contact
   causality. The current C.3 state is
   `STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED`. Aggregate angular causality is
-  approximate because no contact point is available. C.5A validates only its
-  candidate-state contract and O0 isolation; the natural no-clone baseline
-  exceeds hard caps, producing
-  `STAGE16C5A_BLOCKED_PHYSX_REPLICATION_BASELINE_NONDETERMINISM`. O1/C5B and
-  C.6 PPO remain unauthorized, and tolerances are not softened.
+  approximate because no contact point is available. C.5A-R1 validates its
+  candidate-state contract and O0 isolation, repairs the harness, and passes
+  single-env, origin, cross-process, and telemetry controls. The same-process
+  33-env natural baseline still exceeds hard caps after contact, producing
+  `STAGE16C5A_PHYSICS_CONTRACT_CHANGE_REQUIRED` with reason
+  `TRUE_FROZEN_PHYSX_BASELINE_NONDETERMINISM`. O1/C5B/C5C and C.6 PPO remain
+  unauthorized, and tolerances are not softened.

@@ -97,11 +97,14 @@ candidate IDs to frame zero and advances normal 20 Hz control actions; it never
 writes object state in the middle of a replay. It is not eligible in this
 closeout because the natural baseline failed before O1.
 
-The run used one bounded repair: the 1-candidate O0 peer check had no peer, but
-the original script compared it as though it did. The repaired rerun validates
-the no-peer condition without masking the original artifact. The subsequent
-`PHYSX_REPLICATION_BASELINE_NONDETERMINISM` transition terminates O1, fallback,
-and benchmark work; it is not a recoverable tolerance-tuning transition.
+R1 repaired the reset boundary and raw DirectRLEnv step ordering after the
+1-candidate O0 no-peer bookkeeping repair. It then passed the independent
+single-env, origin-normalization, cross-process, and telemetry controls. The
+remaining same-process 33-env post-contact split is classified as
+`TRUE_FROZEN_PHYSX_BASELINE_NONDETERMINISM`, producing
+`STAGE16C5A_PHYSICS_CONTRACT_CHANGE_REQUIRED`. It terminates O1, fallback,
+benchmark, C5B, C5C, and PPO work; it is not a recoverable tolerance-tuning
+transition.
 
 The ordered transitions are machine-readable in the ignored
-`.local/reports/stage16c5a_state_replication/failure_transitions.jsonl`.
+`.local/reports/stage16c5a_repair_c5c_oracle/c5_failure_transitions.jsonl`.

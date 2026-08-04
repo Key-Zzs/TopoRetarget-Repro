@@ -124,12 +124,15 @@ finite aggregate-contact GPU execution at 128/512/1024/2048/4096 environments
 as `STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`; 4096 environments sustain 700.35
 samples/s under shared GPU load, with 3731 MiB process-VRAM peak, zero contact
 warnings, and selection 4096 environments x rollout 16 = 65536 samples/update.
-C.5A now has an auditable bounded state-replication closeout: its candidate
-state contract and CUDA O0 pools (1/32/96/144 candidates) pass, but the required
-20-trial natural no-clone baseline across both clips and four phases exceeds
-frozen hard caps. Its exact fail-closed status is
-`STAGE16C5A_BLOCKED_PHYSX_REPLICATION_BASELINE_NONDETERMINISM`; O1 tensor clone,
-history replay, C5B, and PPO were not run, and no tolerance was loosened. See the
+C.5A-R1 now has an auditable bounded state-replication closeout. Frozen inputs,
+the repaired reset/DirectRLEnv stepping harness, exact single-environment
+replication, origin normalization, cross-process controls, and read-only contact
+telemetry all pass. In the required same-process 33-environment natural
+no-clone baseline, peer environments still split after contact and the frozen
+hard caps fail. Its exact final status is
+`STAGE16C5A_PHYSICS_CONTRACT_CHANGE_REQUIRED` with reason
+`TRUE_FROZEN_PHYSX_BASELINE_NONDETERMINISM`; O1 tensor clone, history replay,
+C5B, C5C, and PPO were not run, and no tolerance was loosened. See the
 [DirectRLEnv contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md),
 [state-replication closeout](docs/rl/ISAACLAB_STATE_REPLICATION.md),
 [wrist closeout](docs/rl/ISAACLAB_WRIST_DYNAMICS.md), and

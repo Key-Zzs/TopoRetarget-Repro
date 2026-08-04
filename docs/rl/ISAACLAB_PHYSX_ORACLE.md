@@ -2,11 +2,14 @@
 
 C.3/C.4 are validated, but the Oracle evaluator is **not authorized**. Its
 immediate prerequisite, Stage 16-C.5A state replication, is
-`STAGE16C5A_BLOCKED_PHYSX_REPLICATION_BASELINE_NONDETERMINISM`: the natural
-no-clone 20x8 baseline violates frozen hard caps before O1 snapshot/restore
-qualification. C5A's CUDA candidate-state contract and O0 allocation/isolation
-at 1/32/96/144 candidates are valid, but do not prove state replication,
-candidate rollout independence, controllability, or evaluator throughput.
+`STAGE16C5A_PHYSICS_CONTRACT_CHANGE_REQUIRED`: C.5A-R1 repairs and verifies the
+baseline harness, but the same-process 33-environment natural no-clone 20x8
+baseline still diverges after contact and violates frozen hard caps. Exact
+single-env replay, origin normalization, cross-process controls, and read-only
+contact telemetry exclude the harness explanations tested. C5A's CUDA
+candidate-state contract and O0 allocation/isolation at 1/32/96/144 candidates
+are valid, but do not prove state replication, candidate rollout independence,
+controllability, or evaluator throughput.
 
 No C5B Oracle episode, CEM, formal 20-episode evaluation, policy training, PPO
 sample, or checkpoint has run. The future evaluator must be a separately

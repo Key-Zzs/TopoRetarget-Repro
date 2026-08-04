@@ -65,11 +65,15 @@ writes pass. The current result is
 next mandatory gate. Its formal 128/512/1024/2048/4096 aggregate-contact runs
 all exit clean and finite as `STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`; the
 selected geometry is 4096 environments x rollout 16 with four shards. C.5A then
-passes its candidate-state contract and CUDA O0 pool isolation at 1/32/96/144,
-but the mandatory natural no-clone 20x8 baseline violates hard caps. It is
-therefore `STAGE16C5A_BLOCKED_PHYSX_REPLICATION_BASELINE_NONDETERMINISM`: no O1,
-history replay, C5B Oracle, CEM, PPO, samples, or checkpoints run, and no
-tolerance is softened. C.6/C.7 remain unauthorized; C.8/C.9 remain TODO.
+passes its candidate-state contract and CUDA O0 pool isolation at 1/32/96/144.
+C.5A-R1 then validates frozen inputs, repaired reset/DirectRLEnv stepping,
+exact single-environment replication, origin normalization, cross-process
+controls, and read-only contact telemetry. The same-process 33-environment
+natural no-clone baseline still violates hard caps after contact. It is
+therefore `STAGE16C5A_PHYSICS_CONTRACT_CHANGE_REQUIRED` with reason
+`TRUE_FROZEN_PHYSX_BASELINE_NONDETERMINISM`: no O1, history replay, C5B Oracle,
+C5C, CEM, PPO, samples, or checkpoints run, and no tolerance is softened.
+C.6/C.7 remain unauthorized; C.8/C.9 remain TODO.
 MuJoCo and PhysX need not be bitwise identical, but MuJoCo oracle evidence can
 never directly authorize an Isaac Lab policy run.
 

@@ -131,10 +131,11 @@ audit_contracts:
     stage16c4_highest_count_samples_per_s: 700.3515840410429
     stage16c4_highest_count_process_vram_peak_mib: 3731
     stage16c4_throughput_scope: shared_gpu_load_infrastructure_evidence
-    stage16c5a_status: STAGE16C5A_BLOCKED_PHYSX_REPLICATION_BASELINE_NONDETERMINISM
-    stage16c5a_scope: candidate_state_contract_and_O0_only
+    stage16c5a_status: STAGE16C5A_PHYSICS_CONTRACT_CHANGE_REQUIRED
+    stage16c5a_reason: TRUE_FROZEN_PHYSX_BASELINE_NONDETERMINISM
+    stage16c5a_scope: r1_harness_repair_and_physics_contract_diagnosis_only
     stage16c5a_o0_validated_counts: [1, 32, 96, 144]
-    stage16c5a_o1_status: NOT_RUN_DUE_TO_PHYSX_REPLICATION_BASELINE_NONDETERMINISM
+    stage16c5a_o1_status: NOT_AUTHORIZED_DUE_TO_PHYSICS_CONTRACT_CHANGE_REQUIRED
     stage16c5b_authorized: false
     stage16c6_ppo_authorized: false
     stage16c6_status: STAGE16C6_SINGLE_CLIP_GPU_PPO_NOT_AUTHORIZED
@@ -147,7 +148,7 @@ audit_contracts:
       - .local/reports/stage16c3r5_reference_retiming_c4/c3_full_qualification_scale8_final.json
       - .local/reports/stage16c3r5_reference_retiming_c4/contact_causality_scale8.json
       - .local/reports/stage16c3r5_reference_retiming_c4/c4_gpu_vector_benchmark_scale8.json
-      - .local/reports/stage16c5a_state_replication/final_summary.json
+      - .local/reports/stage16c5a_repair_c5c_oracle/final_summary.json
   stage7_1_warm_start_audit:
     profile: src/toporetarget/workflows/warm_start_audit.py
     formal_stage7_objective_unchanged: true

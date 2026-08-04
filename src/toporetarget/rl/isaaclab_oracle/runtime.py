@@ -10,10 +10,15 @@ import torch
 
 from .action_history import CandidateActionHistoryV1
 from .candidate_state import capture_candidate_state
-from .history_replay import raw_control_step
+from .history_replay import raw_control_step, synchronize_reset_boundary
 
 
-def make_stage16c5_env(*, num_envs: int, seed: int = 20260804) -> Any:
+def make_stage16c5_env(
+    *,
+    num_envs: int,
+    seed: int = 20260804,
+    contact_telemetry: str = "aggregate",
+) -> Any:
     """Instantiate the frozen retimed C.3/C.4 DirectRLEnv after AppLauncher."""
 
     from toporetarget.rl.environments.isaaclab_backend.world_wrist_direct_env import (
@@ -28,7 +33,9 @@ def make_stage16c5_env(*, num_envs: int, seed: int = 20260804) -> Any:
     cfg = IsaacWorldWristFingerDirectRLEnvCfg()
     cfg.scene.num_envs = num_envs
     cfg.scene.lazy_sensor_update = True
-    cfg.contact_telemetry = "aggregate"
+    if contact_telemetry not in {"off", "aggregate", "diagnostic"}:
+        raise ValueError("contact telemetry must be off, aggregate, or diagnostic")
+    cfg.contact_telemetry = contact_telemetry
     cfg.collect_wrist_diagnostics = False
     cfg.balanced_clip_assignment = True
     cfg.alternate_clip_on_reset = False
@@ -38,6 +45,54 @@ def make_stage16c5_env(*, num_envs: int, seed: int = 20260804) -> Any:
     env = IsaacWorldWristFingerDirectRLEnv(cfg)
     env.reset(seed=seed)
     return env
+
+
+def reset_frozen_clip_frame_zero(
+    env: Any,
+    *,
+    clip_index: int,
+    env_ids: Sequence[int] | torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Reset selected environments to one frozen clip and synchronize PhysX.
+
+    The helper is intentionally qualification-only.  It retains the C.3/C.4
+    frame-zero and no-randomization contract while applying the same reset
+    synchronization as ``DirectRLEnv.reset``.  It is safe for an all-env
+    natural-baseline reset or a candidate-only history-replay reset.
+    """
+
+    if clip_index not in (0, 1):
+        raise ValueError("C.5A frozen bank contains only clip indices 0 and 1")
+    ids = (
+        torch.arange(env.num_envs, dtype=torch.long, device=env.device)
+        if env_ids is None
+        else torch.as_tensor(env_ids, dtype=torch.long, device=env.device)
+    )
+    if ids.ndim != 1 or ids.numel() == 0:
+        raise ValueError("reset env IDs must be a nonempty vector")
+    if bool((ids < 0).any()) or bool((ids >= env.num_envs).any()):
+        raise ValueError("reset env ID outside live environment")
+    original_balanced = env.cfg.balanced_clip_assignment
+    original_alternate = env.cfg.alternate_clip_on_reset
+    original_reference_reset = env.cfg.reset_reference_index
+    try:
+        env.cfg.balanced_clip_assignment = False
+        env.cfg.alternate_clip_on_reset = False
+        env.cfg.reset_reference_index = "frame0"
+        env._clip_index[ids] = int(clip_index)
+        env._reset_idx(ids)
+    finally:
+        env.cfg.balanced_clip_assignment = original_balanced
+        env.cfg.alternate_clip_on_reset = original_alternate
+        env.cfg.reset_reference_index = original_reference_reset
+    synchronize_reset_boundary(env)
+    actual_clip = env._clip_index.index_select(0, ids)
+    actual_frame = env._reference_index.index_select(0, ids)
+    if not bool(torch.eq(actual_clip, clip_index).all()) or not bool(
+        torch.eq(actual_frame, 0).all()
+    ):
+        raise RuntimeError("C5A_FROZEN_RESET_CONTRACT_FAILURE")
+    return ids
 
 
 def state_view(env: Any, env_ids: Sequence[int] | torch.Tensor) -> dict[str, torch.Tensor]:
@@ -147,5 +202,6 @@ __all__ = [
     "force_norm",
     "make_stage16c5_env",
     "raw_control_step",
+    "reset_frozen_clip_frame_zero",
     "state_view",
 ]

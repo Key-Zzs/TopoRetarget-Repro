@@ -84,16 +84,9 @@ def _frame_table() -> dict[str, object]:
 
 
 def _set_clip_frame_zero(env: Any, clip_index: int) -> None:
-    import torch
+    from toporetarget.rl.isaaclab_oracle.runtime import reset_frozen_clip_frame_zero
 
-    ids = torch.arange(env.num_envs, dtype=torch.long, device=env.device)
-    original = env.cfg.balanced_clip_assignment
-    env.cfg.balanced_clip_assignment = False
-    try:
-        env._clip_index[ids] = clip_index
-        env._reset_idx(ids)
-    finally:
-        env.cfg.balanced_clip_assignment = original
+    reset_frozen_clip_frame_zero(env, clip_index=clip_index)
 
 
 def _metrics(env: Any) -> dict[str, list[float]]:
@@ -102,6 +95,8 @@ def _metrics(env: Any) -> dict[str, list[float]]:
     from toporetarget.rl.isaaclab_oracle.metrics import state_differences
     from toporetarget.rl.isaaclab_oracle.runtime import state_view
 
+    if str(env.device).startswith("cuda"):
+        torch.cuda.synchronize(env.device)
     view = state_view(env, torch.arange(env.num_envs, device=env.device))
     first = {
         name: value[:1].expand_as(value[1:])
@@ -154,7 +149,12 @@ def main() -> int:
                     _set_clip_frame_zero(env, clip_index)
                     zero = torch.zeros((env.num_envs, 26), device=env.device)
                     for _step in range(frame + 1):
-                        raw_control_step(env, zero)
+                        terminated, timed_out = raw_control_step(env, zero)
+                        if bool((terminated | timed_out).any()) and _step < frame:
+                            raise RuntimeError(
+                                "C5A_NATURAL_BASELINE_EARLY_TERMINATION: "
+                                f"clip={row['clip']} phase={phase} step={_step}"
+                            )
                     trial = _metrics(env)
                     for name, values in trial.items():
                         samples.setdefault(name, []).extend(values)
