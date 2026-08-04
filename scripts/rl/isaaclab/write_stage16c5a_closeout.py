@@ -76,6 +76,10 @@ def main() -> int:
     frozen = _read(root / "frozen_inputs.json")
     current_contract_path = root / "revalidated/candidate_state_contract.json"
     contract = _read(current_contract_path)
+    current_audit_path = root / "revalidated/candidate_state_field_audit.json"
+    contract_audit = _read(current_audit_path)
+    if contract_audit.get("status") != "STAGE16C5A_CANDIDATE_STATE_CONTRACT_VALIDATED":
+        raise RuntimeError("STAGE16C5A_CLOSEOUT_CURRENT_CONTRACT_NOT_VALIDATED")
     noise = _read(root / "replication_noise_floor.json")
     frames = _read(root / "replication_test_frames.json")
     expected_noise = "PHYSX_REPLICATION_BASELINE_NONDETERMINISM"
@@ -269,8 +273,10 @@ def main() -> int:
         "status": "STAGE16C5A_BLOCKED_PHYSX_REPLICATION_BASELINE_NONDETERMINISM",
         "inputs": frozen,
         "candidate_state_contract": {
-            "status": contract.get("status"),
+            "status": contract_audit["status"],
+            "version": contract["version"],
             "evidence": str(current_contract_path.relative_to(root)),
+            "field_audit": str(current_audit_path.relative_to(root)),
         },
         "O0": {size: report["status"] for size, report in o0.items()},
         "O1": "NOT_RUN_DUE_TO_PHYSX_REPLICATION_BASELINE_NONDETERMINISM",
