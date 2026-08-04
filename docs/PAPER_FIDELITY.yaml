@@ -110,22 +110,39 @@ audit_contracts:
     stage16c1_status: STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED
     stage16c2_status: STAGE16C2_DIRECT_RL_ENV_VALIDATED
     custom_direct_rl_env_implemented: true
-    stage16c3_status: STAGE16C3_SEMANTIC_QUALIFICATION_BLOCKED
-    stage16c3_blocker: EXPLICIT_SERIAL_3P3R_COMPUTED_TORQUE_AND_PREVIEW_TRACKING_EXHAUSTED
+    stage16c3_status: STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED
+    stage16c3_blocker: null
+    stage16c3_historical_original_timing_blocker: EXPLICIT_SERIAL_3P3R_COMPUTED_TORQUE_AND_PREVIEW_TRACKING_EXHAUSTED
+    stage16c3_reference_time_scale: 8
+    stage16c3_source_frames: 41
+    stage16c3_runtime_frames: 321
     stage16c3_reference_frame_status: C3_REFERENCE_OR_FRAME_CONTRACT_VALIDATED
     stage16c3_contact_readout_status: C3_CONTACT_READOUT_VALIDATED
-    stage16c3_active_wrist_profile: null
+    stage16c3_active_wrist_controller: finite_virtual_6d_wrist_actuator_v1
+    stage16c3_active_wrist_profile: high_authority_bounded
     stage16c2_d6_profile_regression_status: STAGE16C2_EXPLICIT_3P3R_WRIST_VALIDATED
     stage16c2_d6_profile_regression_scope: bounded_1_128_env_action_basis_subset_reset_contract
-    stage16c4_status: STAGE16C4_NOT_RUN_GATE_BLOCKED
-    stage16c5_status: STAGE16C5_NOT_RUN_GATE_BLOCKED
+    stage16c4_status: STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED
+    stage16c4_validated_counts: [128, 512, 1024, 2048, 4096]
+    stage16c4_selected_num_envs: 4096
+    stage16c4_rollout_length: 16
+    stage16c4_shards: 4
+    stage16c4_samples_per_update: 65536
+    stage16c4_highest_count_samples_per_s: 700.3515840410429
+    stage16c4_highest_count_process_vram_peak_mib: 3731
+    stage16c4_throughput_scope: shared_gpu_load_infrastructure_evidence
+    stage16c5_status: STAGE16C5_NOT_RUN_OUTSIDE_ACTIVE_C3_C4_GOAL
     stage16c6_ppo_authorized: false
     stage16c6_status: STAGE16C6_SINGLE_CLIP_GPU_PPO_NOT_AUTHORIZED
     physx_oracle_run: false
     ppo_started: false
     mujoco_oracle_authorizes_physx: false
     paper_result_claimed: false
-    evidence: [.local/reports/stage16c3r4_mpc_holdout_c4/final_summary.json]
+    evidence:
+      - .local/reports/stage16c3r4_mpc_holdout_c4/final_summary.json
+      - .local/reports/stage16c3r5_reference_retiming_c4/c3_full_qualification_scale8_final.json
+      - .local/reports/stage16c3r5_reference_retiming_c4/contact_causality_scale8.json
+      - .local/reports/stage16c3r5_reference_retiming_c4/c4_gpu_vector_benchmark_scale8.json
   stage7_1_warm_start_audit:
     profile: src/toporetarget/workflows/warm_start_audit.py
     formal_stage7_objective_unchanged: true

@@ -1,9 +1,27 @@
-schema_version: toporetarget.stage16c2.direct_env.v1
+schema_version: toporetarget.stage16c3r5.direct_env.v1
 environment: IsaacWorldWristFingerDirectRLEnv
 reference_bank:
   clips: [hocap_170105, hocap_170650]
-  frames: 41
-  control_hz: 20
+  source_frames: 41
+  source_control_hz: 20
+  source_npz_modified: false
+  source_keys_and_hashes_preserved: true
+  source_hashes:
+    hocap_170105: 63bb0b630d54a92c45bf9d306bf2111ff1d4c070d112706d21970aef452db162
+    hocap_170650: c153f5071ffd81414ef7837cde625597e46c753afad8966598649cae9b3fac5c
+  active_retiming:
+    mode: uniform_time_scale_at_20hz_control
+    time_scale: 8
+    runtime_frames: 321
+    runtime_control_hz: 20
+    runtime_key_span_s: 16.0
+    episode_length_s: 16.05
+    shared_across_both_clips: true
+active_wrist:
+  controller: finite_virtual_6d_wrist_actuator_v1
+  articulation: explicit_serial_3p3r
+  profile: high_authority_bounded
+  real_arm: false
 scene:
   physics_dt_hz: 120
   decimation: 6

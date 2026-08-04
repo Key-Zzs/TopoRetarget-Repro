@@ -27,6 +27,7 @@ _TELEPORT_CONTROL_STEP_DELTA_MAX_M = 0.10
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--accept-eula", action="store_true")
+    parser.add_argument("--reference-time-scale", type=int, default=1)
     parser.add_argument(
         "--output",
         type=Path,
@@ -119,7 +120,7 @@ def _raw_control_interval(env: Any, torch: Any, action: Any) -> None:
 
 
 def _run_zero_action_clip(env: Any, torch: Any, *, clip_index: int) -> dict[str, Any]:
-    """Measure all 41 frozen keys with dynamic PhysX wrist substeps only."""
+    """Measure the complete retimed view with dynamic PhysX wrist substeps only."""
 
     from toporetarget.rl.environments.isaaclab_backend.explicit_virtual_wrist import (
         explicit_3p3r_rotation_matrix,
@@ -171,7 +172,8 @@ def _run_zero_action_clip(env: Any, torch: Any, *, clip_index: int) -> dict[str,
     finite = initial["finite"]
     state_evolved = False
     diagnostic_maxima = joint_diagnostics()
-    for _ in range(_STEPS - 1):
+    runtime_steps = env.reference_bank.frame_count
+    for _ in range(runtime_steps - 1):
         _raw_control_interval(env, torch, action)
         sample = _wrist_sample(env, torch)
         maxima["position_m"] = max(maxima["position_m"], sample["position_m"])
@@ -193,9 +195,12 @@ def _run_zero_action_clip(env: Any, torch: Any, *, clip_index: int) -> dict[str,
     total_physics_substeps = int(env._wrist_substeps.max().item())
     return {
         "clip": env.reference_bank.clip_ids[clip_index],
-        "frames_requested": _STEPS,
-        "frames_completed": _STEPS,
-        "control_intervals": _STEPS - 1,
+        "source_keyframes": _STEPS,
+        "retimed_control_steps_requested": runtime_steps,
+        "retimed_control_steps_completed": runtime_steps,
+        "frames_requested": runtime_steps,
+        "frames_completed": runtime_steps,
+        "control_intervals": runtime_steps - 1,
         "formal_task_termination_evaluated": False,
         "finite": finite,
         "physx_state_evolved": state_evolved,
@@ -216,7 +221,7 @@ def _run_zero_action_clip(env: Any, torch: Any, *, clip_index: int) -> dict[str,
             "physics_substeps": total_physics_substeps,
         },
         "diagnostic_maxima": diagnostic_maxima,
-        "rmse": {key: math.sqrt(value / _STEPS) for key, value in squared.items()},
+        "rmse": {key: math.sqrt(value / runtime_steps) for key, value in squared.items()},
     }
 
 
@@ -244,7 +249,7 @@ def _tracking_pass(report: dict[str, Any]) -> bool:
     maxima = report["maxima"]
     rmse = report["rmse"]
     return bool(
-        report["frames_completed"] == _STEPS
+        report["frames_completed"] == report["frames_requested"]
         and report["finite"]
         and report["physx_state_evolved"]
         and maxima["position_m"] <= _POSITION_MAX_M
@@ -280,6 +285,8 @@ def _worker_command(args: argparse.Namespace, *, mode: str, profile: str, output
         sys.executable,
         str(Path(__file__).resolve()),
         "--accept-eula",
+        "--reference-time-scale",
+        str(args.reference_time_scale),
         "--worker-mode",
         mode,
         "--worker-profile",
@@ -361,7 +368,9 @@ def _orchestrate(args: argparse.Namespace) -> int:
         "profile_selection": "first_two_clip_passing_global_profile_in_frozen_order",
         "selected_profile": selected_profile,
         "ablation_profile": ablation_profile,
-        "frames": _STEPS,
+        "source_keyframes": _STEPS,
+        "reference_time_scale": args.reference_time_scale,
+        "retimed_control_steps": (_STEPS - 1) * args.reference_time_scale + 1,
         "object_scope": "both task objects inactive and non-contact during wrist gate",
         "contact_sensor_update": "lazy_and_unread_for_noncontact_wrist_gate",
         "process_isolation": "one_fresh_isaac_process_per_profile_or_ablation",
@@ -410,6 +419,7 @@ def _worker_main(args: argparse.Namespace) -> int:
         from toporetarget.rl.environments.isaaclab_backend.world_wrist_direct_env_cfg import (
             IsaacWorldWristFingerDirectRLEnvCfg,
             configure_explicit_virtual_wrist,
+            configure_uniform_reference_retiming,
         )
 
         candidate = next(
@@ -420,6 +430,7 @@ def _worker_main(args: argparse.Namespace) -> int:
         cfg.scene.lazy_sensor_update = True
         cfg.balanced_clip_assignment = False
         cfg.contact_telemetry = "off"
+        configure_uniform_reference_retiming(cfg, time_scale=args.reference_time_scale)
         configure_explicit_virtual_wrist(
             cfg,
             profile_identifier=candidate.identifier,

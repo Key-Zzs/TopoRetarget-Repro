@@ -58,28 +58,36 @@ conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
 
 ## Gate boundary
 
-C.3 remains blocked, but not because of contact readout. C.3R2 completes
-`C3_CONTACT_READOUT_VALIDATED` with real 1/128-env CUDA PhysX child-process
-evidence. C3-0 then completes
+C.3R2 completed `C3_CONTACT_READOUT_VALIDATED` with real 1/128-env CUDA PhysX
+child-process evidence. C3-0 then completed
 `C3_REFERENCE_OR_FRAME_CONTRACT_VALIDATED`: its diagnostic target is the
-canonical-URDF FK derived from frozen wrist pose plus frozen finger state. The
-stored link field remains unchanged and continues to serve its existing
+canonical-URDF FK derived from source wrist pose plus finger state. The stored
+link field remains unchanged and continues to serve its existing
 observation/reward contract.
 
 The generic D6 wrapper exposes zero D6 tensor joints in the live GPU contract;
 therefore the permitted explicit serial 3P+3R articulation was qualified. It
 has six GPU tensor joints, a fixed virtual anchor, no Cartesian-wrench
-fallback, and no real arm. Its PD profiles fail both clips. C3R3/R4 also run
-both full-articulation computed-torque profiles and the single bounded preview
-architecture. The corrected substep-affine model fails independent 1/6-step
-holdout and both fixed 41-frame MPC gates, so no controller is active. The
-final status is
-`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; C3-1 through C3-5,
-contact-momentum causality, C.4, and C.5 are
-`NOT_RUN_GATE_BLOCKED_BY_C3_WRIST_ARCHITECTURE`, and C.6 is not authorized.
-The high-authority candidate independently passes bounded C.2 runtime smokes
-for 1/128 environments, including all 26 action bases and a 64-of-128 subset
-reset; this validates the preserved 26-D/764-D/reset/no-write contract only,
-not C.3 tracking or profile selection.
+fallback, and no real arm. Under the original 41-key timing, its PD,
+full-articulation computed-torque and bounded-preview paths all fail; that
+C3R4 result remains immutable historical evidence.
+
+The user then explicitly authorized one global reference retiming. C3R5
+preserves both source NPZ hashes and every source key while deriving a shared
+factor-8, 321-sample view at the same 20 Hz runtime cadence. With unchanged
+gains, effort bounds, 26-D action, 764-D observation and gates, the shared
+`high_authority_bounded` explicit-wrist profile passes both clips. C3-1 through
+C3-5, all 26 action bases, task contact causality, reset/termination
+classification and zero formal wrist/object rollout writes pass. The current
+status is `STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED`, which opens C.4 only.
+C.4 then completes all formal 128/512/1024/2048/4096 aggregate-contact counts
+with clean exits, finite tensors, exact action/observation/contact shapes, and
+zero formal wrist/object rollout writes. The result is
+`STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`; 4096 environments measure 700.35
+samples/s, 3731 MiB process-VRAM peak, and zero contact warnings under shared
+GPU load. The selected rollout geometry is 4096 environments, length 16, four
+shards, and 65536 samples/update. This validates vector-backend capacity and
+stability, not linear scaling or training-optimal throughput. C.5 has not run
+in this goal, and C.6/PPO remains unauthorized.
 See `ISAACLAB_CONTACT_CAUSALITY.md`, `ISAACLAB_WRIST_DYNAMICS.md`, and the
 ignored C3R2 report bundle.

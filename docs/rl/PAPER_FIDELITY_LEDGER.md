@@ -67,8 +67,10 @@ is claimed.
 | 26-D action | not specified | 3 local translation, 3 local SO(3) log, 20 canonical fingers | ENGINEERING_EXTENSION | `isaaclab_world_wrist_env.yaml` |
 | finite wrist wrench | not specified | global 250 N/m, 2 Nm/rad with frozen limits | ENGINEERING_ASSUMPTION | `isaaclab_world_wrist_control.yaml` |
 | C.2 task shell | not specified | real GPU `DirectRLEnv`, 1/128-env finite smokes | ENGINEERING_EXTENSION | C.2 local report bundle |
-| C.3 semantic qualification | not specified | C3-0 frame target and contact readout validate; explicit serial 3P+3R computed-torque and bounded-preview paths fail both clips | ENGINEERING_DIAGNOSTIC | C3R4 local closeout bundle |
-| C.4/C.5/C.6 | not specified | not run / not authorized after `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED` | NOT_STARTED_GATE_BLOCKED | C3R4 gate decision |
+| C.3 original timing | not specified | C3-0/readout validate; explicit serial 3P+3R computed-torque and bounded-preview paths fail both clips | ENGINEERING_DIAGNOSTIC | C3R4 local closeout bundle |
+| C.3 authorized retiming | not specified | shared factor 8, immutable 41 source keys/hashes, derived 321-sample 20 Hz view; C3-0--C3-5 pass as `STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED` | ENGINEERING_EXTENSION | C3R5 local qualification bundle |
+| C.4 GPU vector backend | not specified | `STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`; 128/512/1024/2048/4096 clean/finite, selected 4096 x 16; 700.35 samples/s at 4096 under shared GPU load | ENGINEERING_INFRASTRUCTURE | C3R5/C4 local benchmark bundle |
+| C.5/C.6 | not specified | C.5 not run in the C3/C4 goal; PPO remains unauthorized | NOT_STARTED_GATE_BLOCKED | C3R5/C4 closeout |
 
 C.0 is not a paper-fidelity upgrade and is not evidence that the Stage-16
 task is controllable in PhysX. Its current result is

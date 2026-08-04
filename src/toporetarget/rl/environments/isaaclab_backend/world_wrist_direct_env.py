@@ -102,6 +102,7 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         super().__init__(cfg, render_mode, **kwargs)
         self.scene_frame_contract = Stage16CSceneFrameContractV1()
         self.reference_bank = WorldWristReferenceBank(cfg.reference_paths, device=self.device)
+        self.reference_bank.apply_uniform_time_scale(cfg.reference_time_scale)
         self._object_contact_sensors = {
             "Object170105": self.scene["object_170105_hand_contact"],
             "Object170650": self.scene["object_170650_hand_contact"],
@@ -384,11 +385,19 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         self._wrist_interval_end_quaternion = torch.zeros_like(self._wrist_target_quaternion)
         self._wrist_interval_start_twist = torch.zeros_like(self._wrist_target_twist)
         self._wrist_interval_end_twist = torch.zeros_like(self._wrist_target_twist)
+        self._object_interval_start_position = torch.zeros_like(self._wrist_target_position)
+        self._object_interval_end_position = torch.zeros_like(self._wrist_target_position)
+        self._object_interval_start_quaternion = torch.zeros_like(self._wrist_target_quaternion)
+        self._object_interval_end_quaternion = torch.zeros_like(self._wrist_target_quaternion)
+        self._object_interval_start_twist = torch.zeros_like(self._wrist_target_twist)
+        self._object_interval_end_twist = torch.zeros_like(self._wrist_target_twist)
         self._wrist_translation_residual = torch.zeros_like(self._wrist_target_position)
         self._wrist_rotation_residual = torch.zeros_like(self._wrist_target_position)
         self._wrist_target_quaternion[:, 0] = 1.0
         self._wrist_interval_start_quaternion[:, 0] = 1.0
         self._wrist_interval_end_quaternion[:, 0] = 1.0
+        self._object_interval_start_quaternion[:, 0] = 1.0
+        self._object_interval_end_quaternion[:, 0] = 1.0
         self._physics_substep = 0
         self._force_saturated = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._torque_saturated = torch.zeros_like(self._force_saturated)
@@ -528,6 +537,26 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         )
         self._wrist_interval_end_twist = self.reference_bank.gather(
             "wrist_twist_world_ref", self._clip_index, self._target_reference_index
+        )
+        self._object_interval_start_position = self.reference_bank.gather(
+            "object_pose_translation_world_ref", self._clip_index, self._reference_index
+        )
+        self._object_interval_end_position = self.reference_bank.gather(
+            "object_pose_translation_world_ref", self._clip_index, self._target_reference_index
+        )
+        self._object_interval_start_quaternion = self.reference_bank.gather(
+            "object_pose_quaternion_world_ref_wxyz", self._clip_index, self._reference_index
+        )
+        self._object_interval_end_quaternion = self.reference_bank.gather(
+            "object_pose_quaternion_world_ref_wxyz",
+            self._clip_index,
+            self._target_reference_index,
+        )
+        self._object_interval_start_twist = self.reference_bank.gather(
+            "object_twist_world_ref", self._clip_index, self._reference_index
+        )
+        self._object_interval_end_twist = self.reference_bank.gather(
+            "object_twist_world_ref", self._clip_index, self._target_reference_index
         )
         # Keep the endpoint target observable for static action-map tests.  The
         # actual controller target is recomputed from the exact substep sample.
@@ -672,8 +701,6 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         if self.cfg.collect_wrist_diagnostics and composite is not None:
             self._append_wrist_diagnostic(composite, wrench, target.alpha)
         self._physics_substep += 1
-        if self.cfg.diagnostic_kinematic_object:
-            self._write_kinematic_object_diagnostic(self._target_reference_index)
 
     def _apply_explicit_virtual_wrist_target(
         self, target_position_scene: torch.Tensor, target_quaternion: torch.Tensor
@@ -1321,23 +1348,28 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
     def wrist_diagnostic_records(self) -> list[dict[str, object]]:
         return list(self._wrist_diagnostic_records)
 
-    def _write_kinematic_object_diagnostic(self, reference_index: torch.Tensor) -> None:
-        """C3-1-only object playback; formal free-object rollouts never call this."""
+    def _write_kinematic_object_diagnostic(self) -> None:
+        """Reset the C3-1 object after one dynamic hand/object interval."""
 
         env_ids = self._robot._ALL_INDICES
+        target = self._wrist_interpolator.sample(
+            position_k=self._object_interval_start_position,
+            quaternion_k_wxyz=self._object_interval_start_quaternion,
+            twist_k_world=self._object_interval_start_twist,
+            position_k1=self._object_interval_end_position,
+            quaternion_k1_wxyz=self._object_interval_end_quaternion,
+            twist_k1_world=self._object_interval_end_twist,
+            # This write occurs immediately before the next simulation step.
+            # Boundary 6/6 therefore places the object exactly at key k+1.
+            substep=self._physics_substep,
+        )
         active_position = scene_to_global(
-            self.reference_bank.gather(
-                "object_pose_translation_world_ref", self._clip_index, reference_index
-            ),
+            target.position_world,
             self.scene.env_origins,
         )
-        active_quaternion = self.reference_bank.gather(
-            "object_pose_quaternion_world_ref_wxyz", self._clip_index, reference_index
+        active_state = torch.cat(
+            (active_position, target.quaternion_wxyz, target.twist_world), dim=-1
         )
-        active_twist = self.reference_bank.gather(
-            "object_twist_world_ref", self._clip_index, reference_index
-        )
-        active_state = torch.cat((active_position, active_quaternion, active_twist), dim=-1)
         inactive_position = self.scene.env_origins + torch.tensor(
             self.cfg.inactive_object_scene_offset, device=self.device
         )
@@ -1525,6 +1557,12 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
         self._record_completed_contact_substep()
+        if self.cfg.diagnostic_kinematic_object:
+            # Match the historical C3-1/MuJoCo diagnostic: first complete the
+            # dynamic hand interval, then place the object at key k+1 for
+            # measurement.  The kinematic object is not an infinite-mass
+            # controller participating in the preceding contact solve.
+            self._write_kinematic_object_diagnostic()
         state = self._state()
         index = self._target_reference_index
         termination = stage16_termination(
@@ -1714,6 +1752,13 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             "observation_dimension": self.cfg.observation_space,
             "scene_frame": self.scene_frame_contract.as_dict(),
             "reference_bank": self.reference_bank.manifest.as_dict(),
+            "reference_timing": {
+                "mode": "uniform_time_scale_at_20hz_control",
+                "time_scale": self.cfg.reference_time_scale,
+                "source_npz_modified": False,
+                "source_keys_preserved": True,
+                "source_key_runtime_stride": self.cfg.reference_time_scale,
+            },
             "joint_mapping": self.action_adapter.mapping_manifest(),
             "termination": self.termination_profile.as_dict(),
             "reward": self.reward_profile.as_dict(),

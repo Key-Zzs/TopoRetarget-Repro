@@ -90,9 +90,22 @@ full-articulation computed-torque 均在两条 clip 上失败。此前所谓 MPC
 reporter 读取 `gain` 引发的 `KeyError`，不是 CUDA/PhysX 退出；修正 reporter、120 Hz
 physics boundary、live bias、solver spectral step 和 substep-affine identification 后，独立
 holdout 仍失败，最终 MPC 的位置最大误差为 1.961/0.777 m、旋转 RMSE 为
-119.13/114.21 度、最大单关节饱和率为 44.58%/6.25%。结构性状态仍为
-`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`；没有 active controller，C.3 modes 1--5、
-contact-momentum causality、C.4/C.5 均未运行，PPO 未获授权。详见
+119.13/114.21 度、最大单关节饱和率为 44.58%/6.25%。该原始时间轴的结构性结果继续作为
+不可变的 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED` 历史证据。
+
+用户随后授权一个全局 reference retiming。C3R5 保持两个 source NPZ hash 和全部 41 个
+source key 不变，在相同 20 Hz control cadence 下派生共享 factor-8、321-sample view。
+factor 2/4 均未通过 `hocap_170105` finger gate，factor 8 是首个全局共享选择；controller
+gain、effort bound、26-D action、764-D observation 与 acceptance threshold 均不变。
+`high_authority_bounded` 随后在两条 clip 上通过：wrist position/rotation 最大误差分别为
+0.001183 m/0.669 度和 0.001228 m/0.736 度，saturation 为零。C3-0 至 C3-5（包括 task
+contact causality 与正式 wrist/object rollout write=0）全部通过，状态为
+`STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED`。retimed task 的 active controller 为
+`finite_virtual_6d_wrist_actuator_v1`。C.4 随后在 128/512/1024/2048/4096 环境完成
+aggregate-contact GPU clean/finite 验证，状态为
+`STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`；4096 环境在共享 GPU 负载下达到 700.35
+samples/s，本进程显存峰值 3731 MiB、contact warning 为零，选择 4096 环境 x rollout 16
+= 65536 samples/update。C.5 尚未运行，PPO 仍未获授权。详见
 [DirectRLEnv 契约](docs/rl/ISAACLAB_DIRECT_RL_ENV.md)、
 [wrist 收口](docs/rl/ISAACLAB_WRIST_DYNAMICS.md) 和
 [资产迁移契约](docs/rl/ISAACLAB_ASSET_MIGRATION.md)。

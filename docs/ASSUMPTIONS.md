@@ -388,9 +388,16 @@ PAPER_PROTOCOL_REPRODUCTION_WITH_ASSUMPTIONS rather than author-exact results.
   kinematic-object diagnostic is explicitly non-formal and records its own
   state writes; it cannot demonstrate free-object contact controllability.
 - C3-0 derived-FK replay and C.3R2 object-centric contact readout are validated
-  engineering diagnostics; neither is paper-exact contact causality. The
-  permitted explicit serial 3P+3R fallback fails both full-articulation
-  computed-torque profiles and the single bounded-preview architecture on both
-  clips; independent local-model holdout also fails. C.3 is therefore
-  `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; C.4/C.5 remain unrun and C.6 PPO
-  is unauthorized.
+  engineering diagnostics. Under the original source timing, the permitted
+  explicit serial 3P+3R fallback fails both full-articulation computed-torque
+  profiles and the single bounded-preview architecture; independent local-
+  model holdout also fails. This remains immutable C3R4 historical evidence.
+- The user separately authorized one global factor-8 reference retiming for
+  C3R5. Source NPZs, hashes and 41 spatial keys are unchanged; the derived
+  runtime view has 321 samples at 20 Hz. This is an engineering structural
+  choice, not a paper value. With unchanged gains, effort bounds and gates,
+  both clips pass wrist/finger/link tracking and task-level aggregate contact
+  causality. The current C.3 state is
+  `STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED`. Aggregate angular causality is
+  approximate because no contact point is available. C.5 remains unrun and
+  C.6 PPO remains unauthorized.

@@ -81,28 +81,32 @@ Stage 16-C 路线为：C.0 Isaac Lab platform qualification 已在全部硬 gate
 128-env/1000-step smoke 均通过；显式 3P+3R high-authority candidate 的 bounded C.2
 runtime-contract 1-env/128-env smoke、26 维 action basis 与 64-of-128 subset reset 均通过
 （`STAGE16C2_EXPLICIT_3P3R_WRIST_VALIDATED`），但它不选择 active C.3 profile。C.3
-的 stage-level 最终状态为 `STAGE16C3_SEMANTIC_QUALIFICATION_BLOCKED`，阻塞原因为
-`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`：C3-0 derived-FK replay 与 object-centric
-contact readout 各自通过，但显式串联 3P+3R 架构未通过完整 joint-dynamics 决策树。
-两档 computed-torque 均失败；修复 MPC reporter 误报退出、120 Hz boundary、live bias、
-solver spectral stability 与 substep-affine model 后，独立 1/6-step holdout 和两条
-41-frame MPC gate 仍失败。该 fallback 暴露 6 个 GPU tensor joint，但没有添加真实机械臂，
-也没有 active controller。因此 C.4 GPU vectorization 和 C.5
-PhysX Oracle 均不得运行（分别为 `STAGE16C4_NOT_RUN_GATE_BLOCKED` 与
-`STAGE16C5_NOT_RUN_GATE_BLOCKED`），C.6 single-clip GPU PPO 未获授权
+的原始时间轴 C3R4 结果仍是不可变历史证据：显式串联 3P+3R 架构未通过完整
+joint-dynamics 决策树；修复 MPC reporter 误报退出、120 Hz boundary、live bias、solver
+spectral stability 与 substep-affine model 后，独立 1/6-step holdout 和两条 41-frame MPC
+gate 仍失败。用户随后单独授权全局 factor-8 reference retiming。C3R5 保持两条 source
+NPZ hash 与全部 41 个 source key 不变，派生 321-sample、20 Hz runtime view；controller
+gain、effort bound、26-D action、764-D observation 与 gate 均不变。共享
+`high_authority_bounded` profile、contact causality 以及 C3-0 至 C3-5 全部通过，当前状态为
+`STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED`。该 fallback 仍只是固定虚拟 anchor 的抽象腕部，
+没有添加真实机械臂。C.4 的 128/512/1024/2048/4096 aggregate-contact benchmark 全部
+clean/finite 退出，状态为 `STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`；4096 环境在共享 GPU
+负载下达到 700.35 samples/s，本进程显存峰值 3731 MiB、contact warning 为零，选择 4096
+环境 x rollout 16 = 65536 samples/update。C.5 不在当前 C3/C4 收口范围内。C.6
+single-clip GPU PPO 仍未获授权
 （`STAGE16C6_SINGLE_CLIP_GPU_PPO_NOT_AUTHORIZED`；0 样本、0 checkpoint）。
 C.7 two-clip GPU PPO、
 C.8 dynamics randomization、C.9 geometry/MuJoCo/Isaac/PPO comparison 均为 TODO。
 MuJoCo 不删除，继续负责 correctness、
 deterministic regression、contact diagnostics、action replay 与 visualization；Isaac Lab 负责计划中的
 GPU 并行训练。MuJoCo 与 PhysX 不要求 bitwise 一致，但必须重新完成语义对齐和 PhysX Oracle，
-MuJoCo Oracle 不能直接授权 Isaac Lab PPO。当前已有 Isaac Lab 自定义 DirectRLEnv，但尚未完成
-C.3 semantic qualification，也没有开始 PPO。
+MuJoCo Oracle 不能直接授权 Isaac Lab PPO。当前 Isaac Lab 自定义 DirectRLEnv 的 C.3 semantic
+qualification 与 C.4 正式 benchmark 均已通过；C.5 未运行，也没有开始 PPO。
 
 Stage 16-C.0 将独立平台栈冻结为 Python 3.11.15、Isaac Sim 5.1.0、Isaac Lab v2.3.2
 （精确 commit `37ddf626871758333d6ed89cf64ad702aef127d0`）与 Torch 2.7.0 cu128。
 其资格范围仅包括 host/install/import、有限步官方 GPU-PhysX、headless、viewer 与 128 环境证据。
-C.2 已验证但 C.3 已阻断；C.4/C.5 被前置 gate 阻断，C.0/C.1/C.2 本身都不能授权 PPO。C.1 使用浮动基座 Wuji
+C.2 已验证，C.3 已通过授权 retiming 后的完整重验；C.5 未在当前 C3/C4 目标中运行，C.0/C.1/C.2/C.3 本身都不能授权 PPO。C.1 使用浮动基座 Wuji
 Hand2 Beta1、两个冻结 HO-Cap free rigid object、确定性凸包代理，并验证 CUDA tensor、
 128 个唯一环境原点与子集复位。无 DISPLAY 的交互 visual review 是软限制。
 

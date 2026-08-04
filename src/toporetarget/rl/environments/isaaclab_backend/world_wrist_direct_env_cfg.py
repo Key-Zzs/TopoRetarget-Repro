@@ -150,6 +150,10 @@ class IsaacWorldWristFingerDirectRLEnvCfg(DirectRLEnvCfg):
     balanced_clip_assignment = True
     alternate_clip_on_reset = False
     reset_reference_index = "frame0"
+    # A value greater than one materializes a derived 20 Hz reference view.
+    # Source key k is preserved exactly at runtime key k * scale.  This is a
+    # global structural choice shared by both clips, never policy-controlled.
+    reference_time_scale = 1
     inactive_object_scene_offset = (5.0, 5.0, -5.0)
     diagnostic_kinematic_object = False
     # Telemetry has no control/reward effect.  C.3R2 uses one object-centric
@@ -252,6 +256,17 @@ def configure_explicit_virtual_wrist(
             velocity_limit_sim=12.0,
         ),
     }
+
+
+def configure_uniform_reference_retiming(
+    cfg: IsaacWorldWristFingerDirectRLEnvCfg, *, time_scale: int
+) -> None:
+    """Authorize one global integer reference time scale at 20 Hz control rate."""
+
+    if isinstance(time_scale, bool) or not isinstance(time_scale, int) or time_scale < 1:
+        raise ValueError("reference time scale must be a positive integer")
+    cfg.reference_time_scale = time_scale
+    cfg.episode_length_s = (((41 - 1) * time_scale) + 1) / 20.0
 
 
 def configure_full_articulation_computed_torque_wrist(
@@ -358,6 +373,7 @@ def configure_bounded_mpc_wrist(
 __all__ = [
     "IsaacWorldWristFingerDirectRLEnvCfg",
     "configure_explicit_virtual_wrist",
+    "configure_uniform_reference_retiming",
     "configure_full_articulation_computed_torque_wrist",
     "configure_bounded_tvlqr_wrist",
     "configure_bounded_mpc_wrist",

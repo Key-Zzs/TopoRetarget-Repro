@@ -105,10 +105,26 @@ repair, corrected 120 Hz boundary sampling, live bias compensation, a
 spectrally bounded solver step, and substep-affine identification, the
 independent model holdout still fails and the final MPC reaches 1.961/0.777 m
 maximum position error, 119.13/114.21 degrees rotation RMSE, and
-44.58%/6.25% maximum per-joint saturation. The structural result remains
-`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; no controller is active, C.3 modes
-1--5/contact-momentum causality and C.4/C.5 were not run, and PPO is not
-authorized. See the
+44.58%/6.25% maximum per-joint saturation. That original-timing structural
+result remains immutable `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED` historical
+evidence.
+
+The user subsequently authorized one global reference retiming. C3R5 keeps
+the two source NPZ hashes and all 41 source keys unchanged while deriving a
+shared factor-8, 321-sample view at the same 20 Hz control cadence. Factor 8 is
+the first shared choice after factors 2/4 fail the `hocap_170105` finger gate;
+no controller gain, effort bound, 26-D action, 764-D observation, or acceptance
+threshold changed. `high_authority_bounded` then passes both clips: wrist
+maximum position/rotation errors are 0.001183 m/0.669 degrees and
+0.001228 m/0.736 degrees, with zero saturation. C3-0 through C3-5, including
+task contact causality and zero formal wrist/object rollout writes, pass as
+`STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED`. The active retimed-task
+controller is `finite_virtual_6d_wrist_actuator_v1`. C.4 then validates clean,
+finite aggregate-contact GPU execution at 128/512/1024/2048/4096 environments
+as `STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`; 4096 environments sustain 700.35
+samples/s under shared GPU load, with 3731 MiB process-VRAM peak, zero contact
+warnings, and selection 4096 environments x rollout 16 = 65536 samples/update.
+C.5 has not run and PPO remains unauthorized. See the
 [DirectRLEnv contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md),
 [wrist closeout](docs/rl/ISAACLAB_WRIST_DYNAMICS.md), and
 [the asset migration contract](docs/rl/ISAACLAB_ASSET_MIGRATION.md).

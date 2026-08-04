@@ -464,3 +464,19 @@ bounded preview architecture fail both clips. A high local-model fit R2 is not
 treated as validation because independent 1/6-step holdout and 41-frame tracking
 fail. This produces `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; no contact
 causality, C.4 benchmark, C.5 oracle, or PPO result is claimed.
+
+That statement is the immutable original-timing C3R4 closeout, not the current
+C.3 gate. The user later authorized one explicit engineering structural
+change: a global factor-8 reference retiming shared by both clips. C3R5 leaves
+the source NPZ hashes and all 41 source spatial keys unchanged, materializes a
+derived 321-sample view at 20 Hz, and changes no controller gain, effort bound,
+action/observation contract or acceptance threshold. The retimed task passes
+C3-0 through C3-5, including aggregate contact-to-momentum causality, and is
+`STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED`. This is still an
+`ENGINEERING_EXTENSION`, not a paper timing, author-exact controller, real-arm,
+real-dynamics, or sim-to-real result. The formal 128/512/1024/2048/4096
+aggregate-contact GPU benchmark then exits clean and finite at every count as
+`STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`. The highest count measures 700.35
+samples/s and 3731 MiB process-VRAM peak under unrelated concurrent CUDA load;
+this is shared-load infrastructure evidence, not a linear-scaling or training-
+optimality claim. C.5 and PPO remain unrun/unauthorized.

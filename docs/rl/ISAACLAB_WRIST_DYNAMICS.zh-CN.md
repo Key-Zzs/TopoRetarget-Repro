@@ -2,9 +2,10 @@
 
 ## 范围与冻结边界
 
-这是仅用于 C.3 的工程诊断。它保留两条不可变的 41-frame、20 Hz world-wrist
-reference、26-D action 与 C.2 observation contract；不授权 C.4、C.5、PPO 或真实
-控制结论。
+这是 C.3 工程诊断。C3R3/R4 保留两条不可变的 41-frame、20 Hz world-wrist reference；
+C3R5 随后使用用户明确授权的单一全局 reference 时间变更：source NPZ 与 hash 不变，
+在相同 20 Hz control cadence 下物化 factor-8、321-sample derived view。26-D action 与
+764-D C.2 observation contract 不变；这不授权 C.5、PPO 或真实控制结论。
 
 ## 已确认的事实
 
@@ -57,3 +58,29 @@ RMSE 1 cm / 5 度和 5% saturation gate。
 `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`；没有 active controller。contact causality 与
 完整 C.3 不恢复，C.4/C.5 继续 gate-blocked，PPO 未获授权。本机 C3R4 证据位于
 `.local/reports/stage16c3r4_mpc_holdout_c4/`。
+
+## C3R5 明确授权的 reference retiming
+
+上面的 C3R4 结论继续作为原始时间轴的不可变证据，不被修复或重标。授权的 C3R5
+结构性选择对两条 clip 使用同一个整数因子。source key `k` 精确保留在 runtime index
+`8*k`；位置与 finger 值使用 cubic Hermite，quaternion 使用 normalized shortest-arc
+interpolation，rate 缩放为 1/8。factor 2 与 4 均因 `hocap_170105` 仍未通过 finger semantic
+gate 而被拒绝，factor 8 是首个全局共享通过值。gain、effort bound、action/observation
+contract 与 qualification threshold 均未修改。
+
+C3-1 object diagnostic 也恢复为历史 MuJoCo 语义：object 在 6 个 PhysX substep 内保持
+dynamic，只在 interval 完成后放置到下一 reference boundary；它不会以 infinite-mass
+kinematic actor 身份参与 contact solve。正式 C3-2/C3-4/contact rollout 的 object 与
+wrist-root state write 仍为零。
+
+共享 `high_authority_bounded` profile 的最终 C3-1 结果为：
+
+| Clip | Wrist position max | Wrist rotation max | Finger final RMSE | Link final RMSE |
+| --- | ---: | ---: | ---: | ---: |
+| `hocap_170105` | 0.001183 m | 0.669 deg | 0.007632 rad | 0.000470 m |
+| `hocap_170650` | 0.001228 m | 0.736 deg | 0.018714 rad | 0.000988 m |
+
+两条 clip 的 wrist force/torque saturation 均为零。C3-0 至 C3-5（包括 task-level contact
+causality）全部通过，因此当前状态为 `STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED`，
+active controller 为 `finite_virtual_6d_wrist_actuator_v1`。证据位于
+`.local/reports/stage16c3r5_reference_retiming_c4/`。

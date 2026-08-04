@@ -62,9 +62,9 @@ R0 is MJCF playback/PD, R1 is PPO tracking, and CP remains later.
 | 16-C.0 | Isaac Lab platform qualification | Host, isolated install, Isaac Sim/Lab, GPU PhysX, headless and 128-env vector smoke | Platform-only evidence; no custom task/PPO | COMPLETE WITH LIMITATIONS: all hard gates pass; no display |
 | 16-C.1 | Wuji and object asset migration | Wuji Hand2 Beta1 plus HO-Cap 170105/170650 | Floating articulation, rigid dynamics, contact and 1/128-env CUDA evidence | COMPLETE / `STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED` |
 | 16-C.2 | Isaac Lab `DirectRLEnv` | Stage-16 task shell | Asset migration complete | COMPLETE / `STAGE16C2_DIRECT_RL_ENV_VALIDATED` |
-| 16-C.3 | Single-environment semantic parity | Action/observation/reward/termination parity | DirectRLEnv exists | BLOCKED / `STAGE16C3_SEMANTIC_QUALIFICATION_BLOCKED`: C3-0 frame contract and contact readout pass, but Path A is condition-gated and all three finite virtual 3P+3R profiles fail both clips |
-| 16-C.4 | GPU vectorization benchmark | Stage-16 task throughput | Semantic parity passes | NOT RUN / `STAGE16C4_NOT_RUN_GATE_BLOCKED` |
-| 16-C.5 | PhysX oracle | Independent PhysX controllability gate | PhysX task qualified | NOT RUN / `STAGE16C5_NOT_RUN_GATE_BLOCKED` |
+| 16-C.3 | Single-environment semantic parity | Action/observation/reward/termination parity | DirectRLEnv exists | COMPLETE / `STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED`: one authorized global factor-8 retiming preserves both source hashes and all 41 source keys in a derived 321-sample view; C3-0 through C3-5 pass with the unchanged shared bounded wrist profile |
+| 16-C.4 | GPU vectorization benchmark | Stage-16 task throughput | Semantic parity passes | COMPLETE / `STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`: all 128/512/1024/2048/4096 aggregate-contact counts exit clean/finite; selected 4096 envs x rollout 16 = 65536 samples/update |
+| 16-C.5 | PhysX oracle | Independent PhysX controllability gate | PhysX task qualified | NOT RUN / outside the authorized C3/C4 closeout |
 | 16-C.6 | Single-clip GPU PPO | Per-clip PPO in Isaac Lab | PhysX oracle passes both clips | NOT AUTHORIZED; 0 samples, 0 checkpoints |
 | 16-C.7 | Two-clip GPU PPO | Shared policy | Both single-clip policies pass | TODO |
 | 16-C.8 | Dynamics randomization | Bounded PhysX DR | Nominal policy qualified | TODO |
@@ -89,16 +89,21 @@ while viewer review is unavailable without a display. C.1 independently
 validates the floating Wuji Hand2 Beta1 articulation, both frozen HO-Cap
 objects, named PhysX contact pairs, CUDA tensors, and 128-env subset reset.
 C.2 is `STAGE16C2_DIRECT_RL_ENV_VALIDATED` with real 1/128-env GPU evidence.
-C.3 is `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`: C3-0 derived-FK replay and
-object-centric contact readout validate their respective contracts, but the
-explicit serial 3P+3R architecture fails the complete joint-dynamics decision
-tree. Both computed-torque profiles fail. After repairing a false MPC reporter
-termination, 120 Hz boundary sampling, live bias, solver spectral stability,
-and a substep-affine model, the independent 1/6-step holdout and both 41-frame
-MPC gates still fail. The fallback exposes six GPU tensor joints but adds no
-real arm. No controller is active; C.4/C.5 are not run and C.6 PPO remains
-unauthorized. Neither
-C.0/C.1/C.2 nor historical MuJoCo evidence authorizes a PhysX oracle or PPO.
+C3R4 remains immutable original-timing evidence: the explicit serial 3P+3R
+architecture exhausted computed-torque and bounded-preview paths after the
+false MPC reporter termination was repaired; independent 1/6-step holdout and
+both 41-frame MPC gates still failed. The later user-authorized C3R5 structural
+choice applies one factor-8 retiming globally to both clips, preserving the two
+source hashes and every one of the 41 source keys in a derived 321-sample 20 Hz
+view. With unchanged gains, effort bounds, 26-D action, 764-D observation and
+acceptance gates, `high_authority_bounded` passes both clips, contact causality,
+and C3-0 through C3-5 as `STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED`. This does
+not turn the abstract fixed-anchor wrist into a real arm. C.4 passes all five
+formal counts as `STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`; 4096 environments
+sustain 700.35 samples/s under shared GPU load with 3731 MiB process-VRAM peak
+and zero contact warnings. C.5 is outside the current C3/C4 closeout and C.6
+PPO remains unauthorized; neither historical MuJoCo evidence nor C.3 alone
+authorizes a PhysX oracle or PPO.
 
 The Wuji three-clip implementation is available through the generic
 `workflow run-grab-suite` command; its completion status is determined only by

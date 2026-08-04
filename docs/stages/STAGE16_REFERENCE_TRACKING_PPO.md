@@ -50,11 +50,23 @@ qualified full-articulation computed-torque profiles fail. C3R4 proves that an
 apparent MPC worker termination was a reporter `KeyError`; the worker completes
 both clips after repair. Correct 120 Hz boundaries, live bias, a spectrally
 bounded solver step, and a substep-affine model still fail independent 1/6-step
-holdout and both 41-frame gates. The result is
-`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`, with no active controller.
-C3-1 through C3-5, contact causality, C.4 task-vector benchmarks, and C.5
-PhysX oracle are not run; C.6/C.7 PPO remain unauthorized with zero samples
-and checkpoints. C.8/C.9 remain TODO.
+holdout and both 41-frame gates. That original-timing result remains
+`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED` historical evidence.
+
+The user then explicitly authorized one shared reference retiming. C3R5 keeps
+the 41 source keys and NPZ hashes immutable, materializes a factor-8 derived
+321-sample reference at 20 Hz, and changes no gain, effort limit, action,
+observation or gate. The shared `high_authority_bounded` explicit 3P+3R profile
+passes both clips; C3-0 through C3-5, task-level contact causality, 26-D action
+bases, reset/termination classification, and zero formal wrist/object rollout
+writes pass. The current result is
+`STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED`, with
+`finite_virtual_6d_wrist_actuator_v1` active for the retimed task. C.4 is the
+next mandatory gate. Its formal 128/512/1024/2048/4096 aggregate-contact runs
+all exit clean and finite as `STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`; the
+selected geometry is 4096 environments x rollout 16 with four shards. C.5 has
+not run in this active goal; C.6/C.7 PPO remain unauthorized with zero
+samples/checkpoints, and C.8/C.9 remain TODO.
 MuJoCo and PhysX need not be bitwise identical, but MuJoCo oracle evidence can
 never directly authorize an Isaac Lab policy run.
 

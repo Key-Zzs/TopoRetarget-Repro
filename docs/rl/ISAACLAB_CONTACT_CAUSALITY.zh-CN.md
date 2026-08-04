@@ -36,7 +36,21 @@ flush 后的阶段事件、stdout、stderr、exit code 和 tensor shape。汇总
   `[128, 1, 21, 3]`。
 
 preload 的 state write 被明确限制为 probe rollout 之前的 C.1 fixture setup；普通 DirectRLEnv rollout
-仍不会写入 wrist root 或 object state。这只验证读取能力。C3-0 reference/frame gate 现已通过，
-但后续 C3R3/R4 的 computed-torque 与 bounded-preview 路径均未通过冻结 wrist gate。最终结果为
-`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`；任务级 contact–momentum causality 仍为 not run，
-不能从 preload fixture 推断。
+仍不会写入 wrist root 或 object state。这只验证读取能力。在原始时间轴下，C3R3/R4 的
+computed-torque 与 bounded-preview 路径未通过冻结 wrist gate，因此该次收口正确地没有运行
+task-level causality，且不能从 preload fixture 推断因果。
+
+## C3R5 task-level causality 结果
+
+用户单独授权两条 clip 共享的 factor-8 reference retiming 后，
+`qualify_stage16c3_retimed_contact_causality.py` 在隔离进程中运行 collision-disabled baseline
+以及两条完整的 320-interval task reference。baseline 的 net contact force 与 object delta-v
+均精确为零。随后每条 clip 都产生至少一个有限非零的 object-side force/impulse sample，且与
+后续有限 delta-v 或 delta-omega 同时出现。两条 wrist tracking gate 均通过；runtime contract
+记录 wrist-root write=0、正式 object rollout write=0，且无 hidden object force。
+
+当前结果为 `C3_CONTACT_CAUSALITY_VALIDATED`。由于只提供 aggregate object force，angular
+causality 继续明确标记为 approximate；报告不伪造 contact point 或 point force。证据为
+`.local/reports/stage16c3r5_reference_retiming_c4/contact_causality_scale8.json`。
+结合 C3-0 至 C3-4，该结果支持当前阶段状态
+`STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED`。

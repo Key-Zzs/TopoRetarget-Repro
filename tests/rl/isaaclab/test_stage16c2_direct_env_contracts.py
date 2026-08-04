@@ -8,8 +8,12 @@ from pathlib import Path
 
 import pytest
 import torch
+import yaml
 
 from toporetarget.rl.environments.isaaclab_backend.action_adapter import Stage16ActionAdapter
+from toporetarget.rl.environments.isaaclab_backend.explicit_wrist_reference import (
+    ExplicitWristJointReferenceV2,
+)
 from toporetarget.rl.environments.isaaclab_backend.finite_virtual_wrist_actuator import (
     VIRTUAL_6D_JOINT_ORDER,
     FiniteVirtual6DWristActuator,
@@ -50,6 +54,10 @@ from toporetarget.rl.environments.isaaclab_backend.wrist_controller import (
 )
 
 JOINTS = tuple(f"joint_{index}" for index in range(20))
+REFERENCE_HASHES = {
+    "hocap_170105": "63bb0b630d54a92c45bf9d306bf2111ff1d4c070d112706d21970aef452db162",
+    "hocap_170650": "c153f5071ffd81414ef7837cde625597e46c753afad8966598649cae9b3fac5c",
+}
 
 
 def adapter() -> Stage16ActionAdapter:
@@ -169,6 +177,108 @@ def test_reference_bank_preserves_two_clips_if_local_artifacts_exist() -> None:
     assert bank.frame_count == 41
     assert bank.q_finger_ref.shape == (2, 41, 20)
     assert bank.tracked_link_positions_world_ref.shape == (2, 41, 16, 3)
+
+
+def test_uniform_reference_retiming_preserves_source_keys_and_scales_rates() -> None:
+    root = Path(".local/stage16_reference_tracking_ppo/world_wrist_references")
+    paths = {
+        "hocap_170105": root / "hocap_170105.world_wrist.stage16.npz",
+        "hocap_170650": root / "hocap_170650.world_wrist.stage16.npz",
+    }
+    if not all(path.is_file() for path in paths.values()):
+        pytest.skip("local immutable Stage 16 reference artifacts are unavailable")
+    bank = WorldWristReferenceBank(paths, device="cpu")
+    source_wrist = bank.wrist_pose_translation_world_ref.clone()
+    source_quaternion = bank.wrist_pose_quaternion_world_ref_wxyz.clone()
+    source_finger = bank.q_finger_ref.clone()
+    source_twist = bank.wrist_twist_world_ref.clone()
+    source_finger_rate = bank.qdot_finger_ref.clone()
+    source_object_position = bank.object_pose_translation_world_ref.clone()
+    source_object_quaternion = bank.object_pose_quaternion_world_ref_wxyz.clone()
+    source_object_twist = bank.object_twist_world_ref.clone()
+    source_axis_points = bank.object_axis_points_world_ref.clone()
+    source_links = bank.tracked_link_positions_world_ref.clone()
+    source_hashes = dict(bank.hashes)
+    source_joint_reference = ExplicitWristJointReferenceV2.from_reference_bank(bank)
+    bank.apply_uniform_time_scale(4)
+    retimed_joint_reference = ExplicitWristJointReferenceV2.from_reference_bank(bank)
+    assert bank.frame_count == 161
+    assert bank.manifest.reference_time_scale == 4
+    assert bank.manifest.source_frame_count == 41
+    assert bank.manifest.source_control_hz == 20.0
+    assert bank.hashes == source_hashes
+    assert torch.equal(bank.wrist_pose_translation_world_ref[:, ::4], source_wrist)
+    assert torch.allclose(bank.wrist_pose_quaternion_world_ref_wxyz[:, ::4], source_quaternion)
+    assert torch.equal(bank.q_finger_ref[:, ::4], source_finger)
+    assert torch.allclose(bank.wrist_twist_world_ref[:, ::4], source_twist / 4.0)
+    assert torch.allclose(bank.qdot_finger_ref[:, ::4], source_finger_rate / 4.0)
+    assert torch.allclose(bank.object_pose_translation_world_ref[:, ::4], source_object_position)
+    assert torch.allclose(
+        bank.object_pose_quaternion_world_ref_wxyz[:, ::4], source_object_quaternion
+    )
+    assert torch.allclose(bank.object_twist_world_ref[:, ::4], source_object_twist / 4.0)
+    assert torch.allclose(bank.object_axis_points_world_ref[:, ::4], source_axis_points)
+    assert torch.allclose(bank.tracked_link_positions_world_ref[:, ::4], source_links)
+    assert torch.allclose(
+        torch.linalg.vector_norm(bank.wrist_pose_quaternion_world_ref_wxyz, dim=-1),
+        torch.ones((2, 161)),
+        atol=1.0e-6,
+    )
+    assert torch.allclose(
+        torch.linalg.vector_norm(bank.object_pose_quaternion_world_ref_wxyz, dim=-1),
+        torch.ones((2, 161)),
+        atol=1.0e-6,
+    )
+    assert torch.allclose(torch.diff(bank.timestamps), torch.full((2, 160), 0.05))
+    assert retimed_joint_reference.q_wrist_ref.shape == (2, 161, 6)
+    assert torch.allclose(
+        retimed_joint_reference.q_wrist_ref[:, ::4],
+        source_joint_reference.q_wrist_ref,
+        atol=1.0e-5,
+    )
+    assert retimed_joint_reference.dt_s == source_joint_reference.dt_s == 0.05
+    assert torch.isfinite(retimed_joint_reference.qd_wrist_ref).all()
+    assert torch.isfinite(retimed_joint_reference.qd_finger_ref).all()
+    assert (
+        retimed_joint_reference.qd_wrist_ref.abs().amax()
+        < source_joint_reference.qd_wrist_ref.abs().amax()
+    )
+    assert (
+        retimed_joint_reference.qd_finger_ref.abs().amax()
+        < source_joint_reference.qd_finger_ref.abs().amax()
+    )
+    with pytest.raises(ValueError, match="positive integer"):
+        bank.apply_uniform_time_scale(0)
+    with pytest.raises(RuntimeError, match="already been retimed"):
+        bank.apply_uniform_time_scale(2)
+
+
+def test_active_c3r5_config_binds_shared_retiming_and_controller() -> None:
+    config = yaml.safe_load(
+        Path("configs/rl/stage16/isaaclab_world_wrist_env.yaml").read_text(encoding="utf-8")
+    )
+    reference = config["reference_bank"]
+    retiming = reference["active_retiming"]
+    wrist = config["active_wrist"]
+    assert config["schema_version"] == "toporetarget.stage16c3r5.direct_env.v1"
+    assert reference["source_frames"] == 41
+    assert reference["source_control_hz"] == 20
+    assert reference["source_hashes"] == REFERENCE_HASHES
+    assert retiming == {
+        "mode": "uniform_time_scale_at_20hz_control",
+        "time_scale": 8,
+        "runtime_frames": 321,
+        "runtime_control_hz": 20,
+        "runtime_key_span_s": 16.0,
+        "episode_length_s": 16.05,
+        "shared_across_both_clips": True,
+    }
+    assert wrist == {
+        "controller": "finite_virtual_6d_wrist_actuator_v1",
+        "articulation": "explicit_serial_3p3r",
+        "profile": "high_authority_bounded",
+        "real_arm": False,
+    }
 
 
 def test_fully_kinematic_targets_are_derived_without_rewriting_local_references() -> None:

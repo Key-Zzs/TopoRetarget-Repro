@@ -83,16 +83,26 @@ stateDiagram-v2
     C3_BLOCKED --> C4_BLOCKED
     C4_BLOCKED --> C5_BLOCKED
     C5_BLOCKED --> C6_NOT_AUTHORIZED
+    C3_BLOCKED --> C3_RUNNING: explicit structural authorization
 ```
 
 C.2 is validated. C3-0 passes `C3_REFERENCE_OR_FRAME_CONTRACT_VALIDATED` with
-derived canonical-URDF FK targets while retaining the frozen stored link field,
-and C.3R2 readout passes. The live D6 tensor contract reports zero D6 joints,
-permitting the explicit serial 3P+3R articulation fallback. It exposes six GPU
-tensor joints and no real arm. C3R3/R4 then exhaust both full-articulation
-computed-torque profiles and the single bounded-preview architecture. The
-independent 1/6-step dynamics holdout and both 41-frame MPC gates fail, so the
-recovery closes at
-`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`. C.3 modes 1--5, contact causality,
-C.4, C.5, and PPO are not run/not authorized. The recovery record is
+derived canonical-URDF FK targets while retaining the source stored-link
+field, and C.3R2 readout passes. The live D6 tensor contract reports zero D6
+joints, permitting the explicit serial 3P+3R articulation fallback. It exposes
+six GPU tensor joints and no real arm. C3R3/R4 exhausted both full-articulation
+computed-torque profiles and the single bounded-preview architecture under the
+original timing. Independent 1/6-step dynamics holdout and both 41-frame MPC
+gates failed, so that recovery correctly closed at
+`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; its record remains
 `.local/reports/stage16c3r4_mpc_holdout_c4/final_summary.json`.
+
+The user subsequently supplied the required new authority for one structural
+change: shared reference retiming. Recovery resumed at C3 with source keys and
+hashes preserved, factor 8 selected globally, and no gain/effort/gate change.
+The new evidence passes C3-0 through C3-5 and contact causality, yielding
+`STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED` and the transition into C4. This
+does not skip C4/C5 ordering and does not authorize PPO. C4 subsequently exits
+clean/finite at all five bounded counts and closes as
+`STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`; C5 remains outside the active C3/C4
+goal, so C6/PPO remains unauthorized.

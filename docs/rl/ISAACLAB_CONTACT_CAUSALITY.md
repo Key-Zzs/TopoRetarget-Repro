@@ -44,8 +44,25 @@ The real RTX 5080 / CUDA PhysX result is
 
 The preload state writes are explicitly limited to C.1 fixture setup before
 the probe rollout; normal DirectRLEnv rollout still writes neither wrist root
-nor object state. This validates readout capability only. C3-0's
-reference/frame gate now passes, but the later C3R3/R4 computed-torque and
-bounded-preview paths both fail the frozen wrist gate. The final result is
-`C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; task-level contact–momentum
-causality remains not run and must not be inferred from the preload fixtures.
+nor object state. This validates readout capability only. Under the original
+timing, C3R3/R4 computed-torque and bounded-preview paths failed the frozen
+wrist gate, so task-level causality was correctly not run in that closeout and
+must not be inferred from preload fixtures.
+
+## C3R5 task-level causality result
+
+After the user separately authorized one shared factor-8 reference retiming,
+`qualify_stage16c3_retimed_contact_causality.py` ran a collision-disabled
+baseline and both complete 320-interval task references in isolated processes.
+The baseline produced exactly zero net contact force and zero object delta-v.
+Each clip then produced at least one finite nonzero object-side force/impulse
+sample coincident with a subsequent finite delta-v or delta-omega. Both wrist
+tracking gates pass, and the runtime contracts record zero wrist-root writes,
+zero formal object rollout writes, and no hidden object force.
+
+The current result is `C3_CONTACT_CAUSALITY_VALIDATED`. Because only aggregate
+object force is available, angular causality remains explicitly approximate;
+the report does not fabricate a contact point or point force. Evidence is
+`.local/reports/stage16c3r5_reference_retiming_c4/contact_causality_scale8.json`.
+Together with C3-0 through C3-4, this supports the current stage status
+`STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED`.

@@ -1,8 +1,10 @@
 """Immutable-key joint references for the explicit serial 3P+3R wrist.
 
-This module deliberately stays free of Isaac imports.  It converts the frozen
-SE(3) references once, then evaluates a cubic-Hermite segment analytically at
-every physics substep.  The original 20 Hz keys are never filtered or retimed.
+This module deliberately stays free of Isaac imports.  It converts the selected
+SE(3) reference-bank view once, then evaluates a cubic-Hermite segment
+analytically at every physics substep.  The input view may be the original
+41-key bank or an explicitly authorized derived retimed view; this module does
+not mutate or filter that input.
 """
 
 from __future__ import annotations

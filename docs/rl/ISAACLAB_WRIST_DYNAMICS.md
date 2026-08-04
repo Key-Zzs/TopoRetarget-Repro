@@ -2,9 +2,13 @@
 
 ## Scope and frozen boundary
 
-This is an engineering diagnostic for C.3 only. It preserves the two immutable
-41-frame, 20 Hz world-wrist references, the 26-D action and the C.2 observation
-contract. It does not authorize C.4, C.5, PPO, or a physical-control claim.
+This is an engineering diagnostic for C.3. C3R3/R4 preserved the two immutable
+41-frame, 20 Hz world-wrist references. C3R5 then used the user's explicit
+authorization for one global reference-time change: it leaves those source
+NPZs and hashes unchanged and materializes a derived factor-8, 321-sample view
+at the same 20 Hz control cadence. The 26-D action and 764-D C.2 observation
+contracts remain unchanged. This does not authorize C.5, PPO, or a physical-
+control claim.
 
 ## What was established
 
@@ -70,3 +74,33 @@ The result is `C3_EXPLICIT_WRIST_FINITE_EFFORT_TRACKING_EXHAUSTED` and
 causality and full C.3 are not resumed, C.4/C.5 remain gate-blocked, and PPO is
 not authorized. Machine-local C3R4 evidence is under
 `.local/reports/stage16c3r4_mpc_holdout_c4/`.
+
+## C3R5 explicitly authorized reference retiming
+
+The C3R4 result above remains immutable evidence for the original timing; it
+was not repaired or relabeled. The authorized C3R5 structural choice applies
+one integer factor to both clips. Source key `k` appears exactly at runtime
+index `8*k`; position and finger values use cubic Hermite interpolation,
+quaternions use normalized shortest-arc interpolation, and rates are scaled by
+1/8. Factors 2 and 4 were rejected because `hocap_170105` still failed the
+finger semantic gate. Factor 8 is the first shared passing choice. No gain,
+effort bound, action/observation contract, or qualification threshold changed.
+
+The C3-1 object diagnostic was also corrected to match its historical MuJoCo
+semantics. The object is dynamic during all six PhysX substeps and is placed at
+the next reference boundary only after the interval; it is not an infinite-
+mass kinematic actor in the contact solve. Formal C3-2/C3-4/contact rollouts
+still have zero object and wrist-root state writes.
+
+With the shared `high_authority_bounded` profile, final C3-1 results are:
+
+| Clip | Wrist position max | Wrist rotation max | Finger final RMSE | Link final RMSE |
+| --- | ---: | ---: | ---: | ---: |
+| `hocap_170105` | 0.001183 m | 0.669 deg | 0.007632 rad | 0.000470 m |
+| `hocap_170650` | 0.001228 m | 0.736 deg | 0.018714 rad | 0.000988 m |
+
+Both clips have zero wrist force/torque saturation. C3-0 through C3-5 pass,
+including task-level contact causality, so the current status is
+`STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED` and the active controller is
+`finite_virtual_6d_wrist_actuator_v1`. Evidence is under
+`.local/reports/stage16c3r5_reference_retiming_c4/`.

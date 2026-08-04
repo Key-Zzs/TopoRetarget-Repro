@@ -21,6 +21,9 @@ class WorldWristReferenceBankManifest:
     joint_order: tuple[str, ...]
     tracked_link_names: tuple[str, ...]
     hashes: dict[str, str]
+    source_frame_count: int = 41
+    source_control_hz: float = 20.0
+    reference_time_scale: int = 1
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -31,12 +34,16 @@ class WorldWristReferenceBankManifest:
             "joint_order": list(self.joint_order),
             "tracked_link_names": list(self.tracked_link_names),
             "hashes": self.hashes,
+            "source_frame_count": self.source_frame_count,
+            "source_control_hz": self.source_control_hz,
+            "reference_time_scale": self.reference_time_scale,
         }
 
 
 class WorldWristReferenceBank:
     """Load both immutable references exactly once and copy them to CUDA once."""
 
+    timestamps: torch.Tensor
     wrist_pose_translation_world_ref: torch.Tensor
     wrist_pose_quaternion_world_ref_wxyz: torch.Tensor
     wrist_twist_world_ref: torch.Tensor
@@ -137,6 +144,146 @@ class WorldWristReferenceBank:
             joint_order=self.joint_order,
             tracked_link_names=self.tracked_link_names,
             hashes=dict(self.hashes),
+        )
+        self.object_axis_points_local = self._local_axis_points()
+
+    @staticmethod
+    def _linear_retime(
+        values: torch.Tensor, interval: torch.Tensor, alpha: torch.Tensor
+    ) -> torch.Tensor:
+        start = values[:, interval]
+        end = values[:, interval + 1]
+        weight = alpha.reshape((1, -1) + (1,) * (values.ndim - 2))
+        return start + weight * (end - start)
+
+    @staticmethod
+    def _quaternion_retime(
+        values: torch.Tensor, interval: torch.Tensor, alpha: torch.Tensor
+    ) -> torch.Tensor:
+        """Shortest-arc normalized interpolation without importing tensor_math."""
+
+        start = values[:, interval]
+        end = values[:, interval + 1]
+        dot = (start * end).sum(dim=-1, keepdim=True)
+        end = torch.where(dot < 0.0, -end, end)
+        weight = alpha[None, :, None]
+        result = (1.0 - weight) * start + weight * end
+        return result / torch.linalg.vector_norm(result, dim=-1, keepdim=True).clamp_min(1.0e-12)
+
+    @staticmethod
+    def _hermite_retime(
+        values: torch.Tensor,
+        derivatives: torch.Tensor,
+        interval: torch.Tensor,
+        alpha: torch.Tensor,
+        *,
+        source_dt_s: float,
+    ) -> torch.Tensor:
+        start = values[:, interval]
+        end = values[:, interval + 1]
+        velocity_start = derivatives[:, interval]
+        velocity_end = derivatives[:, interval + 1]
+        weight = alpha.reshape((1, -1) + (1,) * (values.ndim - 2))
+        weight2 = weight.square()
+        weight3 = weight2 * weight
+        return (
+            (2.0 * weight3 - 3.0 * weight2 + 1.0) * start
+            + (weight3 - 2.0 * weight2 + weight) * source_dt_s * velocity_start
+            + (-2.0 * weight3 + 3.0 * weight2) * end
+            + (weight3 - weight2) * source_dt_s * velocity_end
+        )
+
+    def apply_uniform_time_scale(self, time_scale: int) -> None:
+        """Materialize a 20 Hz, uniformly retimed view while preserving source keys.
+
+        The source NPZs and their hashes remain unchanged.  Every original key is
+        present at ``retimed_index = source_index * time_scale``.  The runtime
+        still advances at 20 Hz, so policy action and observation cadence stay
+        unchanged while reference velocity and acceleration demand decrease.
+        """
+
+        if isinstance(time_scale, bool) or not isinstance(time_scale, int) or time_scale < 1:
+            raise ValueError("reference_time_scale must be a positive integer")
+        if time_scale == 1:
+            return
+        if self.manifest.reference_time_scale != 1:
+            raise RuntimeError("reference bank has already been retimed")
+
+        source_frames = self.frame_count
+        source_dt_s = 1.0 / self.manifest.source_control_hz
+        retimed_frames = (source_frames - 1) * time_scale + 1
+        retimed_index = torch.arange(retimed_frames, device=self.device)
+        source_coordinate = retimed_index.to(torch.float32) / float(time_scale)
+        interval = torch.floor(source_coordinate).to(torch.long).clamp_max(source_frames - 2)
+        alpha = (source_coordinate - interval.to(torch.float32)).clamp(0.0, 1.0)
+        alpha[-1] = 1.0
+
+        wrist_position = self._hermite_retime(
+            self.wrist_pose_translation_world_ref,
+            self.wrist_twist_world_ref[..., :3],
+            interval,
+            alpha,
+            source_dt_s=source_dt_s,
+        )
+        object_position = self._hermite_retime(
+            self.object_pose_translation_world_ref,
+            self.object_twist_world_ref[..., :3],
+            interval,
+            alpha,
+            source_dt_s=source_dt_s,
+        )
+        finger_position = self._hermite_retime(
+            self.q_finger_ref,
+            self.qdot_finger_ref,
+            interval,
+            alpha,
+            source_dt_s=source_dt_s,
+        )
+        self.wrist_pose_translation_world_ref = wrist_position
+        self.wrist_pose_quaternion_world_ref_wxyz = self._quaternion_retime(
+            self.wrist_pose_quaternion_world_ref_wxyz, interval, alpha
+        )
+        self.wrist_twist_world_ref = self._linear_retime(
+            self.wrist_twist_world_ref, interval, alpha
+        ) / float(time_scale)
+        self.q_finger_ref = finger_position
+        self.qdot_finger_ref = self._linear_retime(self.qdot_finger_ref, interval, alpha) / float(
+            time_scale
+        )
+        self.object_pose_translation_world_ref = object_position
+        self.object_pose_quaternion_world_ref_wxyz = self._quaternion_retime(
+            self.object_pose_quaternion_world_ref_wxyz, interval, alpha
+        )
+        self.object_twist_world_ref = self._linear_retime(
+            self.object_twist_world_ref, interval, alpha
+        ) / float(time_scale)
+        for field in (
+            "object_axis_points_world_ref",
+            "tracked_link_positions_world_ref",
+            "object_axis_points_wrist_ref",
+            "tracked_link_positions_wrist_ref",
+        ):
+            setattr(self, field, self._linear_retime(getattr(self, field), interval, alpha))
+        source_timestamps = self.timestamps
+        start_time = source_timestamps[:, :1]
+        self.timestamps = (
+            start_time
+            + torch.arange(retimed_frames, dtype=source_timestamps.dtype, device=self.device)[None]
+            / self.manifest.control_hz
+        )
+        self.frame_count = retimed_frames
+        self.valid_mask = torch.ones((2, retimed_frames), dtype=torch.bool, device=self.device)
+        self.manifest = WorldWristReferenceBankManifest(
+            identifier="world_wrist_reference_bank_uniform_retimed_v1",
+            frame_count=retimed_frames,
+            control_hz=self.manifest.control_hz,
+            clip_ids=self.clip_ids,
+            joint_order=self.joint_order,
+            tracked_link_names=self.tracked_link_names,
+            hashes=dict(self.hashes),
+            source_frame_count=source_frames,
+            source_control_hz=self.manifest.source_control_hz,
+            reference_time_scale=time_scale,
         )
         self.object_axis_points_local = self._local_axis_points()
 
