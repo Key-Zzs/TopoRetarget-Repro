@@ -64,9 +64,12 @@ writes pass. The current result is
 `finite_virtual_6d_wrist_actuator_v1` active for the retimed task. C.4 is the
 next mandatory gate. Its formal 128/512/1024/2048/4096 aggregate-contact runs
 all exit clean and finite as `STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`; the
-selected geometry is 4096 environments x rollout 16 with four shards. C.5 has
-not run in this active goal; C.6/C.7 PPO remain unauthorized with zero
-samples/checkpoints, and C.8/C.9 remain TODO.
+selected geometry is 4096 environments x rollout 16 with four shards. C.5A then
+passes its candidate-state contract and CUDA O0 pool isolation at 1/32/96/144,
+but the mandatory natural no-clone 20x8 baseline violates hard caps. It is
+therefore `STAGE16C5A_BLOCKED_PHYSX_REPLICATION_BASELINE_NONDETERMINISM`: no O1,
+history replay, C5B Oracle, CEM, PPO, samples, or checkpoints run, and no
+tolerance is softened. C.6/C.7 remain unauthorized; C.8/C.9 remain TODO.
 MuJoCo and PhysX need not be bitwise identical, but MuJoCo oracle evidence can
 never directly authorize an Isaac Lab policy run.
 

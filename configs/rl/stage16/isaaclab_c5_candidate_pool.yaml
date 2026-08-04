@@ -1,0 +1,24 @@
+schema_version: toporetarget.stage16c5.candidate_pool.v1
+identifier: PhysXOracleCandidatePoolV1
+scope: O0_C5B_only_no_policy_training
+execution_env_id: 0
+candidate_env_ids: contiguous_after_execution
+allowed_candidate_counts: [1, 32, 96, 144]
+default_schedule:
+  candidate_count: 96
+  horizons: [1, 5, 10]
+  population_per_horizon: 32
+upgrade_schedule:
+  candidate_count: 144
+  horizons: [1, 5, 10]
+  population_per_horizon: 48
+isolation:
+  unique_env_origins: required
+  candidate_execution_disjoint: required
+  subset_reset_must_not_change_peer_or_execution: required
+  formal_execution_rollout_direct_state_writes: 0
+forbidden:
+  - parallel_full_4096_env_pool
+  - cem_implementation
+  - ppo_training
+  - checkpoint_write

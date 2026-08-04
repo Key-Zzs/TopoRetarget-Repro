@@ -105,8 +105,13 @@ contact causality 与正式 wrist/object rollout write=0）全部通过，状态
 aggregate-contact GPU clean/finite 验证，状态为
 `STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`；4096 环境在共享 GPU 负载下达到 700.35
 samples/s，本进程显存峰值 3731 MiB、contact warning 为零，选择 4096 环境 x rollout 16
-= 65536 samples/update。C.5 尚未运行，PPO 仍未获授权。详见
+= 65536 samples/update。C.5A 已完成可审计的有界 state-replication 收口：candidate state
+contract 与 CUDA O0（1/32/96/144 candidates）均通过，但两条 clip、四个 phase 的 20-trial
+natural no-clone baseline 超过冻结 hard cap。精确 fail-closed 状态为
+`STAGE16C5A_BLOCKED_PHYSX_REPLICATION_BASELINE_NONDETERMINISM`；O1 tensor clone、history
+replay、C5B 与 PPO 均未运行，也没有放宽 tolerance。详见
 [DirectRLEnv 契约](docs/rl/ISAACLAB_DIRECT_RL_ENV.md)、
+[state-replication 收口](docs/rl/ISAACLAB_STATE_REPLICATION.zh-CN.md)、
 [wrist 收口](docs/rl/ISAACLAB_WRIST_DYNAMICS.md) 和
 [资产迁移契约](docs/rl/ISAACLAB_ASSET_MIGRATION.md)。
 

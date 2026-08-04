@@ -124,8 +124,14 @@ finite aggregate-contact GPU execution at 128/512/1024/2048/4096 environments
 as `STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`; 4096 environments sustain 700.35
 samples/s under shared GPU load, with 3731 MiB process-VRAM peak, zero contact
 warnings, and selection 4096 environments x rollout 16 = 65536 samples/update.
-C.5 has not run and PPO remains unauthorized. See the
+C.5A now has an auditable bounded state-replication closeout: its candidate
+state contract and CUDA O0 pools (1/32/96/144 candidates) pass, but the required
+20-trial natural no-clone baseline across both clips and four phases exceeds
+frozen hard caps. Its exact fail-closed status is
+`STAGE16C5A_BLOCKED_PHYSX_REPLICATION_BASELINE_NONDETERMINISM`; O1 tensor clone,
+history replay, C5B, and PPO were not run, and no tolerance was loosened. See the
 [DirectRLEnv contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md),
+[state-replication closeout](docs/rl/ISAACLAB_STATE_REPLICATION.md),
 [wrist closeout](docs/rl/ISAACLAB_WRIST_DYNAMICS.md), and
 [the asset migration contract](docs/rl/ISAACLAB_ASSET_MIGRATION.md).
 

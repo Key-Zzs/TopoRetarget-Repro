@@ -479,4 +479,8 @@ aggregate-contact GPU benchmark then exits clean and finite at every count as
 `STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`. The highest count measures 700.35
 samples/s and 3731 MiB process-VRAM peak under unrelated concurrent CUDA load;
 this is shared-load infrastructure evidence, not a linear-scaling or training-
-optimality claim. C.5 and PPO remain unrun/unauthorized.
+optimality claim. C.5A subsequently validates a candidate-state contract and
+CUDA O0 isolation at 1/32/96/144 candidates, but its required natural no-clone
+20x8 baseline exceeds frozen hard caps. The result is
+`STAGE16C5A_BLOCKED_PHYSX_REPLICATION_BASELINE_NONDETERMINISM`; O1, history
+replay, C5B, and PPO remain unrun/unauthorized, with no tolerance softening.

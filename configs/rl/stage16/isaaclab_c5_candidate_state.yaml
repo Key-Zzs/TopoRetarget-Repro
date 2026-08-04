@@ -1,0 +1,58 @@
+schema_version: toporetarget.stage16c5.candidate_state.v1
+identifier: Stage16C5CandidateStateV1
+scope: bounded_offline_physx_oracle_only
+frozen_runtime:
+  reference_time_scale: 8
+  runtime_frames: 321
+  runtime_control_hz: 20
+  articulation_dof: 26
+  action_dimension: 26
+  observation_dimension: 764
+  physics_hz: 120
+  decimation: 6
+capture:
+  simulation:
+    - robot_joint_pos
+    - robot_joint_vel
+    - robot_root_state
+    - object_170105_root_state
+    - object_170650_root_state
+  task_and_history:
+    - clip_index
+    - reference_index
+    - target_reference_index
+    - actions
+    - previous_actions
+    - second_previous_actions
+  controller:
+    - joint_target_isaac
+    - explicit_wrist_joint_target
+    - explicit_wrist_joint_velocity_target
+    - previous_explicit_wrist_joint_target
+    - wrist_target_position
+    - wrist_target_quaternion
+    - wrist_target_twist
+  reset_and_saturation:
+    - force_saturated
+    - torque_saturated
+    - velocity_saturated
+    - success
+    - reason_codes
+    - base_episode_length_buf
+    - base_reset_terminated
+    - base_reset_time_outs
+restore:
+  allowed_during_candidate_setup: true
+  allowed_during_execution_rollout: false
+  source_env_write_allowed: false
+  rebase_world_positions_by_env_origin: true
+unavailable_physx_state:
+  - solver_warm_start
+  - contact_manifold_cache
+  - friction_patch_state
+  - internal_constraint_cache
+validation:
+  require_device_match: true
+  require_finite_floating_tensors: true
+  require_explicit_discrete_dtypes: true
+  fail_closed_on_missing_field: true

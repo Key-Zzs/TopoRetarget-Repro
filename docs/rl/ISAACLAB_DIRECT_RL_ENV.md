@@ -87,7 +87,10 @@ zero formal wrist/object rollout writes. The result is
 samples/s, 3731 MiB process-VRAM peak, and zero contact warnings under shared
 GPU load. The selected rollout geometry is 4096 environments, length 16, four
 shards, and 65536 samples/update. This validates vector-backend capacity and
-stability, not linear scaling or training-optimal throughput. C.5 has not run
-in this goal, and C.6/PPO remains unauthorized.
-See `ISAACLAB_CONTACT_CAUSALITY.md`, `ISAACLAB_WRIST_DYNAMICS.md`, and the
-ignored C3R2 report bundle.
+stability, not linear scaling or training-optimal throughput. C.5A then
+validates the candidate-state contract and O0 allocation/isolation at
+1/32/96/144 candidates, but its required natural no-clone baseline exceeds hard
+caps. It is therefore `STAGE16C5A_BLOCKED_PHYSX_REPLICATION_BASELINE_NONDETERMINISM`:
+O1, history replay, benchmark, C5B and C.6/PPO are not run, and tolerance is not
+softened. See `ISAACLAB_CONTACT_CAUSALITY.md`, `ISAACLAB_WRIST_DYNAMICS.md`,
+`ISAACLAB_STATE_REPLICATION.md`, and the ignored C5A report bundle.

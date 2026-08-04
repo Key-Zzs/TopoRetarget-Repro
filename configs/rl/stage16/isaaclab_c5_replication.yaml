@@ -1,0 +1,25 @@
+schema_version: toporetarget.stage16c5.replication.v1
+identifier: C5AStateReplicationQualification
+required_phases: [pre_contact, contact_onset, sustained_contact, post_contact]
+clips: [hocap_170105, hocap_170650]
+baseline:
+  trials_per_clip_phase: 20
+  candidate_envs: 32
+  tolerance_rule: max(fixed_floor, 10x_p99_no_clone_baseline)
+  hard_caps:
+    wrist_position_m: 0.001
+    wrist_orientation_rad: 0.002
+    object_position_m: 0.001
+    object_orientation_rad: 0.002
+    joint_position_rad: 0.001
+    linear_velocity_mps: 0.01
+    angular_velocity_radps: 0.01
+    reward: 0.001
+fail_closed:
+  baseline_exceeds_hard_cap: PHYSX_REPLICATION_BASELINE_NONDETERMINISM
+  action: stop_O1_history_replay_and_benchmark
+fallback:
+  name: deterministic_history_replay_v1
+  permitted_only_after: tensor_clone_contact_mismatch_with_passing_baseline
+  replay: raw_normal_control_steps_from_frame_zero
+  prohibited: direct_object_state_write_during_replay

@@ -70,7 +70,8 @@ is claimed.
 | C.3 original timing | not specified | C3-0/readout validate; explicit serial 3P+3R computed-torque and bounded-preview paths fail both clips | ENGINEERING_DIAGNOSTIC | C3R4 local closeout bundle |
 | C.3 authorized retiming | not specified | shared factor 8, immutable 41 source keys/hashes, derived 321-sample 20 Hz view; C3-0--C3-5 pass as `STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED` | ENGINEERING_EXTENSION | C3R5 local qualification bundle |
 | C.4 GPU vector backend | not specified | `STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`; 128/512/1024/2048/4096 clean/finite, selected 4096 x 16; 700.35 samples/s at 4096 under shared GPU load | ENGINEERING_INFRASTRUCTURE | C3R5/C4 local benchmark bundle |
-| C.5/C.6 | not specified | C.5 not run in the C3/C4 goal; PPO remains unauthorized | NOT_STARTED_GATE_BLOCKED | C3R5/C4 closeout |
+| C.5A | not specified | candidate-state capture/restore contract plus CUDA O0 1/32/96/144 isolation pass; natural no-clone 20x8 baseline exceeds hard caps, so O1/history replay/benchmark stop without tolerance softening | ENGINEERING_DIAGNOSTIC_BLOCKED | C5A local closeout |
+| C.5B/C.6 | not specified | Oracle evaluator and PPO are not authorized; no CEM, Oracle episodes, samples, or checkpoints | NOT_STARTED_GATE_BLOCKED | C5A closeout |
 
 C.0 is not a paper-fidelity upgrade and is not evidence that the Stage-16
 task is controllable in PhysX. Its current result is
