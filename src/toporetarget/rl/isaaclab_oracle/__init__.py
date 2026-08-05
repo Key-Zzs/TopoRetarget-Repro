@@ -15,12 +15,13 @@ from .candidate_state import (
     validate_candidate_state,
 )
 from .contracts import Stage16C5CandidateStateV1, Stage16C5WriteAuditV1
-from .recovery import Stage16C5ARecoveryStateMachine
+from .recovery import Stage16C5AR2RecoveryStateMachine, Stage16C5ARecoveryStateMachine
 
 __all__ = [
     "CandidateActionHistoryV1",
     "PhysXOracleCandidatePoolV1",
     "Stage16C5ARecoveryStateMachine",
+    "Stage16C5AR2RecoveryStateMachine",
     "Stage16C5CandidateStateV1",
     "Stage16C5WriteAuditV1",
     "capture_candidate_state",

@@ -1,0 +1,41 @@
+schema_version: toporetarget.stage16c5a_r2.recovery.v1
+identifier: Stage16C5AR2RecoveryStateMachine
+phases:
+  - INPUT_FREEZE
+  - P0_CURRENT_CONTRACT_AUDIT
+  - P1_API_AUDIT
+  - P2_CANDIDATE_MATRIX_FREEZE
+  - S0_SMOKE
+  - S1_PRECONTACT
+  - S2_CONTACT_ONSET
+  - S3_SUSTAINED_CONTACT
+  - S4_POSTCONTACT
+  - S5_FULL_REPLICATION
+  - CPU_DIAGNOSTIC
+  - CONTRACT_SELECTION
+  - C3P_SEMANTIC_REGRESSION
+  - C4P_RESOURCE_BENCHMARK
+  - O1_REQUALIFICATION
+  - CLOSEOUT
+budgets:
+  gpu_candidates: 6
+  cpu_diagnostic_candidates: 1
+  retries_per_candidate_stage: 2
+  repairs_per_failure_class: 3
+  replication_method_switches: 1
+  major_transitions: 32
+fail_closed:
+  - source_hash_drift
+  - reference_hash_drift
+  - controller_hash_drift
+  - physics_baseline_hash_drift
+  - candidate_added_after_freeze
+  - runtime_config_fallback
+  - direct_object_or_wrist_execution_write
+  - selected_contract_c3p_failure
+  - selected_contract_c4p_failure
+prohibited:
+  - tolerance_softening
+  - hidden_object_control
+  - execution_wrist_teleport
+  - ppo

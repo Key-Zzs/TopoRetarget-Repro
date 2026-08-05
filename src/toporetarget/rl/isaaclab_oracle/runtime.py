@@ -8,6 +8,12 @@ from typing import Any
 
 import torch
 
+from toporetarget.rl.environments.isaaclab_backend.physx_contract import (
+    Stage16PhysxContractV1,
+    apply_physx_contract,
+    baseline_contract,
+)
+
 from .action_history import CandidateActionHistoryV1
 from .candidate_state import capture_candidate_state
 from .history_replay import raw_control_step, synchronize_reset_boundary
@@ -18,8 +24,14 @@ def make_stage16c5_env(
     num_envs: int,
     seed: int = 20260804,
     contact_telemetry: str = "aggregate",
+    physx_contract: Stage16PhysxContractV1 | None = None,
 ) -> Any:
-    """Instantiate the frozen retimed C.3/C.4 DirectRLEnv after AppLauncher."""
+    """Instantiate a frozen R2 PhysX contract after ``AppLauncher``.
+
+    Omitting ``physx_contract`` selects the retained historical G0 contract.
+    The contract is applied before creating the scene, never by mutating a
+    live PhysX scene or a subset of vector environments.
+    """
 
     from toporetarget.rl.environments.isaaclab_backend.world_wrist_direct_env import (
         IsaacWorldWristFingerDirectRLEnv,
@@ -42,6 +54,7 @@ def make_stage16c5_env(
     cfg.reset_reference_index = "frame0"
     configure_uniform_reference_retiming(cfg, time_scale=8)
     configure_explicit_virtual_wrist(cfg, profile_identifier="high_authority_bounded")
+    apply_physx_contract(cfg, physx_contract or baseline_contract())
     env = IsaacWorldWristFingerDirectRLEnv(cfg)
     env.reset(seed=seed)
     return env
