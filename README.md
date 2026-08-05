@@ -124,19 +124,26 @@ finite aggregate-contact GPU execution at 128/512/1024/2048/4096 environments
 as `STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`; 4096 environments sustain 700.35
 samples/s under shared GPU load, with 3731 MiB process-VRAM peak, zero contact
 warnings, and selection 4096 environments x rollout 16 = 65536 samples/update.
-C.5A-R1 now has an auditable bounded state-replication closeout. Frozen inputs,
+C.5A-R1 has an auditable bounded state-replication closeout: frozen inputs,
 the repaired reset/DirectRLEnv stepping harness, exact single-environment
-replication, origin normalization, cross-process controls, and read-only contact
-telemetry all pass. In the required same-process 33-environment natural
-no-clone baseline, peer environments still split after contact and the frozen
-hard caps fail. Its exact final status is
-`STAGE16C5A_PHYSICS_CONTRACT_CHANGE_REQUIRED` with reason
-`TRUE_FROZEN_PHYSX_BASELINE_NONDETERMINISM`; O1 tensor clone, history replay,
-C5B, C5C, and PPO were not run, and no tolerance was loosened. See the
+replication, origin normalization, cross-process controls, and read-only
+contact telemetry all pass. C.5A-R3 retains those inputs and resolves the
+remaining topology question: T0/T1 pass; simultaneous-contact T2, every
+natural T4 shard (down to 8/9), and every natural T5 shard (down to 8x12) fail
+raw and derived state gates. The formal result is
+`TRUE_CONTACT_SOLVER_NONDETERMINISM`, not a harness metric failure; T3
+staggered starts pass only as a diagnostic and never validate a candidate pool.
+R3 implements a frame-zero independent robust statistical contract, but C5C's
+20 replicas fail the unchanged physical task gates for both selected traces
+(170105: orientation; 170650: axis/position). The exact state is
+`STAGE16C5_CONTACT_ORACLE_BLOCKED`: no C5B Oracle, C.6/PPO, samples, or
+checkpoints, and no tolerance/solver/reference/controller change. See the
 [DirectRLEnv contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md),
 [state-replication closeout](docs/rl/ISAACLAB_STATE_REPLICATION.md),
 [wrist closeout](docs/rl/ISAACLAB_WRIST_DYNAMICS.md), and
-[the asset migration contract](docs/rl/ISAACLAB_ASSET_MIGRATION.md).
+[the asset migration contract](docs/rl/ISAACLAB_ASSET_MIGRATION.md).  The R3
+[contact-topology and robust-oracle handoff](docs/reports/stage16_c5a_r3_contact_topology_robust_oracle.md)
+records the exact C5 boundary.
 
 ## Dataset support
 

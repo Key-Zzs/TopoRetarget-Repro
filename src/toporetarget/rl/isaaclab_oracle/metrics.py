@@ -8,10 +8,18 @@ import torch
 def quaternion_geodesic_rad(first: torch.Tensor, second: torch.Tensor) -> torch.Tensor:
     if first.shape != second.shape or first.shape[-1] != 4:
         raise ValueError("quaternion comparison requires matching [..., 4] tensors")
+    exact_same_rotation = torch.logical_or(
+        torch.all(first == second, dim=-1),
+        torch.all(first == -second, dim=-1),
+    )
     first_n = first / torch.linalg.vector_norm(first, dim=-1, keepdim=True).clamp_min(1.0e-12)
     second_n = second / torch.linalg.vector_norm(second, dim=-1, keepdim=True).clamp_min(1.0e-12)
     dot = (first_n * second_n).sum(dim=-1).abs().clamp(max=1.0)
-    return 2.0 * torch.arccos(dot)
+    # A byte-identical unit quaternion can produce dot=0.99999994 after
+    # float32 normalization, which would invent a 6.9e-4 rad error.  Exact
+    # equality (including q/-q) is an exact SO(3) equality, not a tolerance.
+    angle = 2.0 * torch.arccos(dot)
+    return torch.where(exact_same_rotation, torch.zeros_like(angle), angle)
 
 
 def max_abs_difference(first: torch.Tensor, second: torch.Tensor) -> float:

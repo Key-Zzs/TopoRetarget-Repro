@@ -107,15 +107,21 @@ aggregate-contact GPU clean/finite 验证，状态为
 samples/s，本进程显存峰值 3731 MiB、contact warning 为零，选择 4096 环境 x rollout 16
 = 65536 samples/update。C.5A-R1 已完成可审计的有界 state-replication 收口：冻结输入、修复后的
 reset/DirectRLEnv stepping harness、单环境精确复现、环境原点归一化、跨进程控制与只读
-contact telemetry 均通过。但在规定的同进程 33 环境 natural no-clone baseline 中，环境同伴
-仍会在接触后分叉并超过冻结 hard cap。最终精确状态为
-`STAGE16C5A_PHYSICS_CONTRACT_CHANGE_REQUIRED`，原因为
-`TRUE_FROZEN_PHYSX_BASELINE_NONDETERMINISM`；O1 tensor clone、history replay、C5B、C5C
-与 PPO 均未运行，也没有放宽 tolerance。详见
+contact telemetry 均通过。C.5A-R3 在保留这些输入的前提下完成了剩余的 topology 归因：T0/T1
+通过；同时接触 T2、所有 natural T4 shard（最小 8/9）及所有 natural T5 shard（最小 8x12）
+都在 raw 与 derived state gate 失败。正式结论是
+`TRUE_CONTACT_SOLVER_NONDETERMINISM`，不是 harness metric failure；T3 staggered start 的通过
+只具诊断意义，绝不验证 candidate pool。R3 实现了每个 replica 都从 frame zero 独立运行的
+robust statistical contract，但两个 selected trace 的 C5C 20-replica 均未通过原始物理任务门槛
+（170105 为 orientation；170650 为 axis/position）。当前精确状态为
+`STAGE16C5_CONTACT_ORACLE_BLOCKED`：未运行 C5B Oracle、C.6/PPO、sample 或 checkpoint，且没有
+改变 tolerance、solver、reference 或 controller。详见
 [DirectRLEnv 契约](docs/rl/ISAACLAB_DIRECT_RL_ENV.md)、
 [state-replication 收口](docs/rl/ISAACLAB_STATE_REPLICATION.zh-CN.md)、
 [wrist 收口](docs/rl/ISAACLAB_WRIST_DYNAMICS.md) 和
-[资产迁移契约](docs/rl/ISAACLAB_ASSET_MIGRATION.md)。
+[资产迁移契约](docs/rl/ISAACLAB_ASSET_MIGRATION.md)。R3 的
+[接触拓扑与 robust-oracle 交接](docs/reports/stage16_c5a_r3_contact_topology_robust_oracle.zh-CN.md)
+记录了精确的 C5 边界。
 
 ## 数据集支持
 

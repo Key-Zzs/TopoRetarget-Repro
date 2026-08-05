@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from toporetarget.rl.isaaclab_oracle.metrics import state_differences
+from toporetarget.rl.isaaclab_oracle.metrics import quaternion_geodesic_rad, state_differences
 from toporetarget.rl.isaaclab_oracle.tolerance import freeze_tolerances
 
 
@@ -35,6 +35,15 @@ def test_replication_metric_and_noise_floor_have_hard_caps() -> None:
     )
     assert report["status"] == "REPLICATION_TOLERANCES_FROZEN"
     assert report["metrics"]["object_position_m"]["frozen_tolerance"] <= 1.0e-3
+
+
+def test_quaternion_metric_has_no_float32_self_comparison_artifact() -> None:
+    quaternion = torch.tensor([[0.31, -0.47, 0.53, 0.63]], dtype=torch.float32)
+    assert quaternion_geodesic_rad(quaternion, quaternion).item() == 0.0
+    assert quaternion_geodesic_rad(quaternion, -quaternion).item() == 0.0
+    changed = quaternion.clone()
+    changed[:, 0] += 0.01
+    assert quaternion_geodesic_rad(quaternion, changed).item() > 0.0
 
 
 def test_noise_floor_fails_closed_above_hard_cap() -> None:

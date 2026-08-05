@@ -1,0 +1,65 @@
+schema_version: toporetarget.stage16c5a_r3.topology.v1
+identifier: Stage16C5AContactTopologyAndRobustOracleTransition
+frozen_inputs:
+  reference_time_scale: 8
+  runtime_samples: 321
+  control_hz: 20
+  physics_hz: 120
+  decimation: 6
+  action_dimension: 26
+  observation_dimension: 764
+  controller: finite_virtual_6d_wrist_actuator_v1
+  articulation_model: explicit_serial_3p3r
+  physics_contract: physx_factor8_baseline_v1
+topology_matrix:
+  trials: 20
+  T0: {scene_envs: 1, active_contact_envs: 1, schedule: all_simultaneous}
+  T1:
+    scene_envs: 33
+    active_contact_envs: 1
+    schedule: one_active
+    inactive_env_contract: no_contact_dummies
+  T2: {scene_envs: 33, active_contact_envs: 33, schedule: all_simultaneous}
+  T3:
+    scene_envs: 33
+    active_contact_envs: 33
+    schedule: staggered
+    scheduling_contract: candidate_start_only
+  T4:
+    - {total_envs: 33, shards: [33]}
+    - {total_envs: 33, shards: [16, 17]}
+    - {total_envs: 33, shards: [8, 8, 8, 9]}
+  T5:
+    - {total_candidates: 96, shards: [96]}
+    - {total_candidates: 96, shards: [24, 24, 24, 24]}
+    - {total_candidates: 96, shards: [12, 12, 12, 12, 12, 12, 12, 12]}
+classification:
+  batch_failure: single_env_pass_and_at_least_one_smaller_sharded_topology_pass
+  solver_nondeterminism: sharding_fails
+  harness_metric_failure: raw_state_stable_and_derived_metric_fails
+robust_oracle:
+  replicas_default: 4
+  replicas_upgrade: 8
+  benchmark_replicas: [1, 4, 8]
+  candidate_counts: [32, 96]
+  cvar_alpha: 0.8
+  objective: mean_plus_lambda_std_v1
+  std_lambda: 1.0
+  selector_order:
+    - failure_probability
+    - cvar_formal_gate_violation
+    - worst_normalized_gate_margin
+    - mean_object_error
+    - mean_rotation_error
+    - contact_stability_penalty
+    - action_smoothness
+    - effort
+forbidden:
+  - solver_or_iteration_change
+  - tolerance_or_hard_cap_change
+  - reference_or_retiming_change
+  - controller_or_effort_change
+  - object_pose_write
+  - hidden_force
+  - teleport
+  - ppo

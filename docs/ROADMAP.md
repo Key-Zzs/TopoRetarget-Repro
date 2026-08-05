@@ -64,8 +64,8 @@ R0 is MJCF playback/PD, R1 is PPO tracking, and CP remains later.
 | 16-C.2 | Isaac Lab `DirectRLEnv` | Stage-16 task shell | Asset migration complete | COMPLETE / `STAGE16C2_DIRECT_RL_ENV_VALIDATED` |
 | 16-C.3 | Single-environment semantic parity | Action/observation/reward/termination parity | DirectRLEnv exists | COMPLETE / `STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED`: one authorized global factor-8 retiming preserves both source hashes and all 41 source keys in a derived 321-sample view; C3-0 through C3-5 pass with the unchanged shared bounded wrist profile |
 | 16-C.4 | GPU vectorization benchmark | Stage-16 task throughput | Semantic parity passes | COMPLETE / `STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`: all 128/512/1024/2048/4096 aggregate-contact counts exit clean/finite; selected 4096 envs x rollout 16 = 65536 samples/update |
-| 16-C.5A | Bounded state replication | Candidate-state contract and O0/O1 replication gate | C.3/C.4 qualified | COMPLETE FAIL-CLOSED / `STAGE16C5A_PHYSICS_CONTRACT_CHANGE_REQUIRED`: R1 verifies frozen inputs, repaired harness, single-env, origin, cross-process, and telemetry controls; the same-process 33-env natural baseline still diverges after contact and exceeds frozen caps. O1/history replay/benchmark stop |
-| 16-C.5B | PhysX oracle evaluator | Separately authorized bounded evaluator | C.5A O0/O1 passes | NOT AUTHORIZED; no CEM, no formal Oracle episodes |
+| 16-C.5A | Contact topology and robust contract | T0--T5 attribution plus independent statistical-oracle contract | C.3/C.4 qualified | COMPLETE FAIL-CLOSED / `STAGE16C5_CONTACT_ORACLE_BLOCKED`: R3 finds `TRUE_CONTACT_SOLVER_NONDETERMINISM` (no natural T4/T5 shard passes) and C5C fails unchanged physical gates for both selected traces |
+| 16-C.5B | PhysX oracle evaluator | Separately authorized bounded evaluator | Physically qualified C5C on both clips | NOT AUTHORIZED / `STAGE16C5_CONTACT_ORACLE_BLOCKED`; no CEM, no formal Oracle episodes |
 | 16-C.6 | Single-clip GPU PPO | Per-clip PPO in Isaac Lab | PhysX oracle passes both clips | NOT AUTHORIZED; 0 samples, 0 checkpoints |
 | 16-C.7 | Two-clip GPU PPO | Shared policy | Both single-clip policies pass | TODO |
 | 16-C.8 | Dynamics randomization | Bounded PhysX DR | Nominal policy qualified | TODO |
@@ -102,16 +102,18 @@ and C3-0 through C3-5 as `STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED`. This does
 not turn the abstract fixed-anchor wrist into a real arm. C.4 passes all five
 formal counts as `STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`; 4096 environments
 sustain 700.35 samples/s under shared GPU load with 3731 MiB process-VRAM peak
-and zero contact warnings. C.5A-R1 subsequently validates frozen inputs, the
-candidate-state contract and O0 CUDA isolation at 1/32/96/144 candidates,
-repaired reset/DirectRLEnv stepping, exact single-environment replication,
-origin normalization, cross-process controls, and read-only contact telemetry.
-Its prescribed same-process 33-environment natural no-clone baseline still
-diverges after contact and exceeds hard caps. The exact state is
-`STAGE16C5A_PHYSICS_CONTRACT_CHANGE_REQUIRED` with reason
-`TRUE_FROZEN_PHYSX_BASELINE_NONDETERMINISM`: O1, history replay, resource
-benchmark, C5B, C5C, and C.6/PPO stop without tolerance softening.
-Neither historical MuJoCo evidence nor C.3/C.4 authorizes a PhysX oracle or PPO.
+and zero contact warnings. C.5A-R1 validates the frozen inputs, candidate-state
+contract, repaired harness, exact single-environment replication, origin
+normalization, cross-process controls, and read-only contact telemetry.
+C.5A-R3 then finds T0/T1 passing but T2, every natural T4 shard, and every
+natural T5 shard (including 8x12) failing raw and derived gates. The result is
+`TRUE_CONTACT_SOLVER_NONDETERMINISM`; T3 staggered starts are diagnostic only.
+R3 implements an independent frame-zero robust contract, but C5C's unchanged
+20-replica physical gate fails for both selected traces. The exact current
+status is `STAGE16C5_CONTACT_ORACLE_BLOCKED`: C5B, C.6/PPO, samples, and
+checkpoints remain at zero, without tolerance softening or solver/reference/
+controller mutation. Neither historical MuJoCo evidence nor C.3/C.4 authorizes
+a PhysX oracle or PPO.
 
 The Wuji three-clip implementation is available through the generic
 `workflow run-grab-suite` command; its completion status is determined only by
