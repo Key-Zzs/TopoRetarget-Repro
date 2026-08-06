@@ -56,6 +56,26 @@ _R2_FAIL_CLOSED_FAILURES = {
     "SELECTED_CONTRACT_C4P_FAILURE",
 }
 
+_R4_PHASES = (
+    "INPUT_FREEZE",
+    "NATURAL_DISTRIBUTION",
+    "REPLICATION_GATE",
+    "POOL_BUILD",
+    "CEM_SMOKE",
+    "SHORT_ROLLOUT",
+    "FULL_ORACLE",
+    "FORMAL_EVAL",
+    "CLOSEOUT",
+)
+
+_R4_FAILURES = {
+    "POOL_OOM",
+    "REPLICATION_DISTRIBUTION_FAIL",
+    "CEM_COLLAPSE",
+    "HIGH_VARIANCE",
+    "FORMAL_GATE_FAIL",
+}
+
 
 @dataclass
 class Stage16C5ARecoveryStateMachine:
@@ -225,4 +245,79 @@ class Stage16C5AR2RecoveryStateMachine:
         }
 
 
-__all__ = ["Stage16C5ARecoveryStateMachine", "Stage16C5AR2RecoveryStateMachine"]
+@dataclass
+class Stage16C5R4RecoveryStateMachine:
+    """Exact bounded recovery policy for distributional R4/C5B/C5C."""
+
+    phase: str = "INPUT_FREEZE"
+    transitions: list[dict[str, object]] = field(default_factory=list)
+    failures: list[dict[str, object]] = field(default_factory=list)
+    candidate_scale_reductions: int = 0
+    replica_upgrades: int = 0
+
+    def transition(self, target: str, *, reason: str) -> None:
+        if target not in _R4_PHASES:
+            raise ValueError(f"unknown R4 recovery phase: {target}")
+        source_index = _R4_PHASES.index(self.phase)
+        target_index = _R4_PHASES.index(target)
+        if target_index < source_index and target != self.phase:
+            raise RuntimeError("R4 recovery transitions cannot move backward")
+        self.transitions.append({"from": self.phase, "to": target, "reason": reason})
+        self.phase = target
+
+    def record_failure(self, failure_class: str, *, evidence: str) -> str:
+        if failure_class not in _R4_FAILURES:
+            raise ValueError(f"unknown R4 failure class: {failure_class}")
+        action: str
+        if failure_class == "POOL_OOM":
+            if self.candidate_scale_reductions >= 1:
+                action = "BLOCKED_POOL_OOM_AT_384"
+            else:
+                self.candidate_scale_reductions += 1
+                action = "REDUCE_CANDIDATE_SCALE_TO_384"
+        elif failure_class == "REPLICATION_DISTRIBUTION_FAIL":
+            action = "AUDIT_SNAPSHOT_STATE_FIELDS_AND_METRICS_GATE_IMMUTABLE"
+        elif failure_class == "CEM_COLLAPSE":
+            action = "AUDIT_STD_FLOOR_ELITES_AND_SEED_DIVERSITY"
+        elif failure_class == "HIGH_VARIANCE":
+            if self.replica_upgrades >= 1:
+                action = "RETAIN_HIGH_VARIANCE_FAILURE"
+            else:
+                self.replica_upgrades += 1
+                action = "UPGRADE_REPLICAS_4_TO_8_ONCE"
+        else:
+            action = "RETAIN_FORMAL_FAILURE_ANALYZE_CONTACT_ORIENTATION_ACTION_NO_RELAXATION"
+        self.failures.append(
+            {
+                "phase": self.phase,
+                "failure_class": failure_class,
+                "evidence": evidence,
+                "action": action,
+            }
+        )
+        return action
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "version": "Stage16C5R4RecoveryStateMachine",
+            "phase": self.phase,
+            "phases": list(_R4_PHASES),
+            "transitions": self.transitions,
+            "failures": self.failures,
+            "candidate_scale_reductions": self.candidate_scale_reductions,
+            "replica_upgrades": self.replica_upgrades,
+            "immutable_recovery_rules": {
+                "POOL_OOM": "reduce once to 384 then block",
+                "REPLICATION_DISTRIBUTION_FAIL": "audit state/metrics; never change gate",
+                "CEM_COLLAPSE": "audit std floor/elites/seed diversity",
+                "HIGH_VARIANCE": "replicas 4 to 8 once",
+                "FORMAL_GATE_FAIL": "retain failure; never relax gates",
+            },
+        }
+
+
+__all__ = [
+    "Stage16C5ARecoveryStateMachine",
+    "Stage16C5AR2RecoveryStateMachine",
+    "Stage16C5R4RecoveryStateMachine",
+]

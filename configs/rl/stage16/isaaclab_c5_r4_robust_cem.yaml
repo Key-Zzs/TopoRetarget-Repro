@@ -1,0 +1,81 @@
+schema_version: toporetarget.stage16c5.r4.robust_cem.v1
+identifier: Stage16C5DistributionalRobustOracle
+frozen_inputs:
+  reference_time_scale: 8
+  runtime_samples: 321
+  control_hz: 20
+  physics_hz: 120
+  decimation: 6
+  action_dimension: 26
+  observation_dimension: 764
+  controller: finite_virtual_6d_wrist_actuator_v1
+  articulation_model: explicit_serial_3p3r
+  physics_contract: physx_factor8_baseline_v1
+distributional_replication:
+  natural_replicas: 20
+  candidate_replicas: 20
+  phases: [pre-contact, contact-onset, sustained-contact, post-contact]
+  fields:
+    - object_pose
+    - object_velocity
+    - wrist_state
+    - finger_state
+    - tracked_links
+    - reward_components
+    - contact
+  metrics:
+    - mean_difference
+    - variance_difference
+    - p95_difference
+    - wasserstein_distance
+    - mmd
+    - termination_distribution_divergence
+    - success_probability_confidence_interval
+  threshold: 2x_p95_deterministic_half_split_natural_envelope
+persistent_pool:
+  layouts:
+    - {population: 32, horizons: 3, replicas: 4, candidate_envs: 384}
+    - {population: 48, horizons: 3, replicas: 4, candidate_envs: 576}
+    - {population: 32, horizons: 3, replicas: 8, candidate_envs: 768}
+  candidate_slot_permutation: deterministic_per_iteration
+  selection: cem_compatible_then_highest_rollout_speed
+robust_cem:
+  horizons: [1, 5, 10]
+  population: 32
+  iterations: 3
+  elites: 8
+  replicas: 4
+  initial_std: 0.35
+  minimum_std: 0.05
+  cvar_alpha: 0.8
+  selector_order:
+    - formal_failure_probability
+    - cvar_gate_violation
+    - worst_normalized_gate_margin
+    - p95_axis_error
+    - p95_object_position
+    - p95_object_rotation
+    - mean_tracking_error
+    - contact_stability
+    - smoothness
+    - effort
+  upgrades:
+    exactly_one_of: [population_48, replicas_8]
+adaptive_horizon:
+  remaining_gte_10: [1, 5, 10]
+  remaining_5_to_9: [1, 5]
+  remaining_1_to_4: [1]
+  remaining_0: terminate
+  padding: false
+forbidden:
+  - reference_change
+  - reward_change
+  - termination_change
+  - physical_gate_change
+  - controller_or_effort_change
+  - solver_or_contact_change
+  - hidden_object_control
+  - hidden_force
+  - teleport
+  - clip_specific_branch
+  - ppo
