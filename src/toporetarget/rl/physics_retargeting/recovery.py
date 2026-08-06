@@ -348,3 +348,160 @@ __all__ += [
     "GEOMETRY_AWARE_PPO_PHASES",
     "Stage16DGeometryAwarePPORecoveryStateMachine",
 ]
+
+
+STABLE_GRASP_GEOMETRY_PPO_PHASES = (
+    "INPUT_FREEZE",
+    "TOPOLOGY_FAMILIES",
+    "CALIBRATION_MATRIX",
+    "STABLE_GRASP_SEARCH",
+    "CALIBRATION_QUALIFICATION",
+    "V1_ATTAINABILITY",
+    "DYNAMIC_CONTACT_REFERENCE",
+    "METRIC_V2",
+    "ONLINE_SIGNAL",
+    "OPTIMIZE_170650",
+    "OPTIMIZE_170105",
+    "TRAJECTORY_QUALIFICATION",
+    "DEMONSTRATIONS",
+    "BC",
+    "PPO_BENCHMARK",
+    "PPO_170650",
+    "PPO_170105",
+    "TWO_CLIP",
+    "V2_EXPORT",
+    "SENSITIVITY",
+    "CLOSEOUT",
+)
+
+
+@dataclass
+class Stage16DStableGraspGeometryPPORecoveryStateMachine:
+    """Fail-closed D.4R3-through-D.7 budgets and prerequisites."""
+
+    phase: str = "INPUT_FREEZE"
+    transitions: list[dict[str, Any]] = field(default_factory=list)
+    calibration_levels: set[str] = field(default_factory=set)
+    calibration_candidates: dict[str, set[str]] = field(default_factory=dict)
+    calibration_formal_evaluations: dict[str, int] = field(default_factory=dict)
+    gate_versions: set[str] = field(default_factory=lambda: {"V1"})
+    online_geometry_backends: set[str] = field(default_factory=set)
+    optimizer_levels: dict[str, set[str]] = field(default_factory=dict)
+    optimizer_formal_evaluations: dict[str, int] = field(default_factory=dict)
+    ppo_seeds: dict[str, set[int]] = field(default_factory=dict)
+    ppo_lr_fallbacks: dict[str, int] = field(default_factory=dict)
+    ppo_samples: dict[str, int] = field(default_factory=dict)
+    single_ppo_validated: set[str] = field(default_factory=set)
+
+    def transition(self, target: str, *, reason: str) -> None:
+        if target not in STABLE_GRASP_GEOMETRY_PPO_PHASES:
+            raise ValueError("unknown Stage16D stable-grasp recovery phase")
+        if len(self.transitions) >= 56:
+            raise RuntimeError("STAGE16D_MAJOR_TRANSITION_BUDGET_EXHAUSTED")
+        if target == "TWO_CLIP" and self.single_ppo_validated != {
+            "hocap_170105",
+            "hocap_170650",
+        }:
+            raise RuntimeError("STAGE16D_TWO_CLIP_PPO_PREREQUISITES_NOT_MET")
+        self.transitions.append({"from": self.phase, "to": target, "reason": reason})
+        self.phase = target
+
+    def register_calibration_level(self, level: str) -> None:
+        if level not in {"C1", "C2"}:
+            raise ValueError("only C1/C2 calibration levels are authorized")
+        if level == "C2" and "C1" not in self.calibration_levels:
+            raise RuntimeError("STAGE16D_C2_REQUIRES_C1")
+        self.calibration_levels.add(level)
+        if len(self.calibration_levels) > 2:
+            raise RuntimeError("STAGE16D_CALIBRATION_LEVEL_BUDGET_EXHAUSTED")
+
+    def register_calibration_candidate(self, object_id: str, candidate_id: str) -> None:
+        candidates = self.calibration_candidates.setdefault(object_id, set())
+        candidates.add(candidate_id)
+        if len(candidates) > 48:
+            raise RuntimeError(f"STAGE16D_CALIBRATION_CANDIDATE_BUDGET_EXHAUSTED:{object_id}")
+
+    def register_calibration_formal(self, object_id: str, family_id: str) -> None:
+        key = f"{object_id}:{family_id}"
+        count = self.calibration_formal_evaluations.get(key, 0) + 1
+        self.calibration_formal_evaluations[key] = count
+        if count > 1:
+            raise RuntimeError(f"STAGE16D_CALIBRATION_FORMAL20_BUDGET_EXHAUSTED:{key}")
+
+    def register_gate_version(self, version: str) -> None:
+        if version not in {"V1", "V2"}:
+            raise ValueError("only V1/V2 geometry contracts are authorized")
+        self.gate_versions.add(version)
+        if len(self.gate_versions) > 2:
+            raise RuntimeError("STAGE16D_GEOMETRY_GATE_VERSION_BUDGET_EXHAUSTED")
+
+    def register_online_geometry_backend(self, backend: str) -> None:
+        self.online_geometry_backends.add(backend)
+        if len(self.online_geometry_backends) > 1:
+            raise RuntimeError("STAGE16D_ONLINE_GEOMETRY_BACKEND_BUDGET_EXHAUSTED")
+
+    def register_optimizer_level(self, clip: str, level: str) -> None:
+        if level not in {"G1", "G2"}:
+            raise ValueError("only G1/G2 optimizer levels are authorized")
+        levels = self.optimizer_levels.setdefault(clip, set())
+        if level == "G2" and "G1" not in levels:
+            raise RuntimeError(f"STAGE16D_G2_REQUIRES_G1:{clip}")
+        levels.add(level)
+        if len(levels) > 2:
+            raise RuntimeError(f"STAGE16D_OPTIMIZER_LEVEL_BUDGET_EXHAUSTED:{clip}")
+
+    def register_optimizer_formal(self, clip: str, level: str) -> None:
+        key = f"{clip}:{level}"
+        count = self.optimizer_formal_evaluations.get(key, 0) + 1
+        self.optimizer_formal_evaluations[key] = count
+        if count > 1:
+            raise RuntimeError(f"STAGE16D_FORMAL20_BUDGET_EXHAUSTED:{key}")
+
+    def register_ppo_run(self, clip: str, *, seed: int, cumulative_samples: int) -> None:
+        if not 0 <= cumulative_samples <= 67_108_864:
+            raise RuntimeError(f"STAGE16D_PPO_SAMPLE_BUDGET_EXHAUSTED:{clip}")
+        seeds = self.ppo_seeds.setdefault(clip, set())
+        seeds.add(int(seed))
+        if len(seeds) > 2:
+            raise RuntimeError(f"STAGE16D_PPO_SEED_BUDGET_EXHAUSTED:{clip}")
+        self.ppo_samples[clip] = max(self.ppo_samples.get(clip, 0), cumulative_samples)
+
+    def register_ppo_lr_fallback(self, clip: str) -> None:
+        count = self.ppo_lr_fallbacks.get(clip, 0) + 1
+        self.ppo_lr_fallbacks[clip] = count
+        if count > 1:
+            raise RuntimeError(f"STAGE16D_PPO_LR_FALLBACK_BUDGET_EXHAUSTED:{clip}")
+
+    def authorize_single_ppo_success(self, clip: str) -> None:
+        if clip not in {"hocap_170105", "hocap_170650"}:
+            raise ValueError("unknown Stage16D clip")
+        self.single_ppo_validated.add(clip)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "Stage16DStableGraspGeometryPPORecoveryStateMachineV1",
+            "phase": self.phase,
+            "transitions": self.transitions,
+            "calibration_levels": sorted(self.calibration_levels),
+            "calibration_candidates": {
+                key: sorted(value) for key, value in self.calibration_candidates.items()
+            },
+            "calibration_formal_evaluations": dict(self.calibration_formal_evaluations),
+            "gate_versions": sorted(self.gate_versions),
+            "online_geometry_backends": sorted(self.online_geometry_backends),
+            "optimizer_levels": {
+                key: sorted(value) for key, value in self.optimizer_levels.items()
+            },
+            "optimizer_formal_evaluations": dict(self.optimizer_formal_evaluations),
+            "ppo_seeds": {key: sorted(value) for key, value in self.ppo_seeds.items()},
+            "ppo_lr_fallbacks": dict(self.ppo_lr_fallbacks),
+            "ppo_samples": dict(self.ppo_samples),
+            "single_ppo_validated": sorted(self.single_ppo_validated),
+            "major_transition_budget": 56,
+        }
+
+
+__all__ += [
+    "STABLE_GRASP_GEOMETRY_PPO_PHASES",
+    "Stage16DStableGraspGeometryPPORecoveryStateMachine",
+]

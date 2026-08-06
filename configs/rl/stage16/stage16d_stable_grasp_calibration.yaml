@@ -1,0 +1,54 @@
+schema_version: StableFreeObjectGraspCalibrationV1
+runtime_steps: 321
+development_replicas: 4
+formal_replicas: 20
+initialization:
+  precontact_clearance_m: 0.003
+  exact_reset_target_signed_clearance_m: 0.00025
+  exact_reset_maximum_pair_penetration_m: 0.0000005
+  exact_balance_requires_solver_convergence: true
+  free_object_control_intervals_before_schedule: 0
+  exact_balance_maximum_translation_correction_m: 0.010
+  exact_balance_maximum_rotation_correction_deg: 10.0
+  exact_orientation_seed_grid_fine_deg: [-10.0, -5.0, 0.0, 5.0, 10.0]
+  exact_orientation_seed_grid_coarse_deg: [-90.0, 0.0, 90.0, 180.0]
+levels:
+  C1:
+    maximum_candidates_per_object: 24
+    approach_offsets_m: [-0.006, 0.0, 0.006]
+    closure_amplitudes: [0.5, 1.0]
+  C2:
+    maximum_candidates_per_object: 48
+    approach_offsets_m: [-0.010, 0.010]
+    # C2 contains only candidates not already evaluated in C1 and expands one
+    # pre-frozen dimension only: approach offset. Closure remains unchanged.
+    closure_amplitudes: [0.5, 1.0]
+schedule:
+  open_steps: 24
+  approach_steps: 48
+  contact_establishment_steps: 32
+  closure_steps: 64
+  settle_steps: 53
+  terminal_hold_steps: 100
+  wrist_approach_action_amplitude: 1.0
+  hold_closure_fraction: 0.60
+  unselected_flexion_during_all_phases: -1.0
+gate:
+  topology_coverage_min: 0.95
+  terminal_hold_coverage_min: 0.95
+  maximum_consecutive_contact_loss_steps: 5
+  final_linear_speed_p95_max_mps: 0.01
+  final_angular_speed_p95_max_radps: 0.10
+  strict_catastrophic_max_m: 0.010
+  active_p95_max_m: 0.003
+invariants:
+  free_object: true
+  gravity: 0
+  ground: false
+  support: false
+  rollout_object_state_writes: 0
+  rollout_wrist_state_writes: 0
+  hidden_force: false
+  hidden_attachment: false
+  corrected_trajectory_used: false
+  same_generation_rule_for_all_objects: true

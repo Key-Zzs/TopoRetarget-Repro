@@ -1,0 +1,13 @@
+schema_version: Stage16DStableGraspTopologyConfigV1
+derivation:
+  topology_contract: .local/reports/stage16d_physics_consistent_retargeting/contact_topology.json
+  runtime_geometry_manifest: .local/reports/stage16d_metric_qualification_and_ppo/runtime_collision_geometry_manifest.json
+  allowed_families:
+    - thumb_opposition
+    - bilateral_fingertip
+    - palm_finger_enclosure
+    - multi_finger_enclosure
+  clip_specific_branches: false
+  require_all_source_required_groups_covered: true
+calibration_role: engineering stable-contact reference only
+task_trajectory: false

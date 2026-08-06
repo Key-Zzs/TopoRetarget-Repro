@@ -1,0 +1,16 @@
+schema_version: EmpiricalStableDynamicContactReferenceContractV1
+name: EmpiricalStableDynamicContactReferenceV1
+not_a_physical_truth: true
+not_a_mathematical_lower_bound: true
+bootstrap:
+  resamples: 10000
+  seed: 20260806
+  statistic: per-replica 95th percentile
+  upper_one_sided_confidence: 0.95
+aggregation: maximum UCB95 across both objects and all required topology families
+absolute_gate:
+  max_penetration_m_strictly_less_than: 0.010
+  active_p95_penetration_m_at_most: 0.003
+corrected_trajectory_used: false
+optimizer_result_observed_before_freeze: false
+shared_across_clips: true

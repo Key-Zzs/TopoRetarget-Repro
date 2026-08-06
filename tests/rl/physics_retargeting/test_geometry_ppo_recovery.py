@@ -6,6 +6,7 @@ import pytest
 
 from toporetarget.rl.physics_retargeting.recovery import (
     Stage16DGeometryAndPPORecoveryStateMachine,
+    Stage16DStableGraspGeometryPPORecoveryStateMachine,
 )
 
 
@@ -39,3 +40,20 @@ def test_ppo_budgets_and_transition_limit() -> None:
         state.transition("CLOSEOUT", reason=f"bounded transition {index}")
     with pytest.raises(RuntimeError, match="MAJOR_TRANSITION_BUDGET"):
         state.transition("CLOSEOUT", reason="not authorized")
+
+
+def test_stable_grasp_recovery_enforces_calibration_and_two_clip_prerequisites() -> None:
+    state = Stage16DStableGraspGeometryPPORecoveryStateMachine()
+    with pytest.raises(RuntimeError, match="C2_REQUIRES_C1"):
+        state.register_calibration_level("C2")
+    state.register_calibration_level("C1")
+    state.register_calibration_level("C2")
+    for index in range(48):
+        state.register_calibration_candidate("hocap_170105", f"candidate-{index}")
+    with pytest.raises(RuntimeError, match="CALIBRATION_CANDIDATE_BUDGET"):
+        state.register_calibration_candidate("hocap_170105", "candidate-48")
+    with pytest.raises(RuntimeError, match="TWO_CLIP_PPO_PREREQUISITES"):
+        state.transition("TWO_CLIP", reason="not yet authorized")
+    state.authorize_single_ppo_success("hocap_170105")
+    state.authorize_single_ppo_success("hocap_170650")
+    state.transition("TWO_CLIP", reason="both single policies passed")

@@ -98,7 +98,12 @@ def geometry_contract_sha256(payload: dict[str, Any]) -> str:
 
 @dataclass(frozen=True)
 class RuntimeCollisionProxyPenetrationV2:
-    """Evidence-gated normalization revision; absolute safety limits stay frozen."""
+    """Evidence-gated normalization revision; absolute safety limits stay frozen.
+
+    The historical field names retain source compatibility with D.4R2.  In
+    D.4R3 their values are explicitly an empirical stable dynamic-contact
+    reference, not a physical floor or mathematical lower bound.
+    """
 
     parent_v1_sha256: str
     calibration_sha256: str
@@ -151,9 +156,15 @@ class RuntimeCollisionProxyPenetrationV2:
     def as_dict(self) -> dict[str, Any]:
         return {
             **asdict(self),
+            "dynamic_contact_reference_max_m": self.dynamic_contact_floor_max_m,
+            "dynamic_contact_reference_active_p95_m": (self.dynamic_contact_floor_active_p95_m),
+            "reference_terminology": (
+                "EmpiricalStableDynamicContactReferenceV1; not a physical truth "
+                "or mathematical lower bound"
+            ),
             "relative_comparison": (
                 "corrected_metric <= max(source_metric * 1.10 + geometry_epsilon_m, "
-                "dynamic_contact_floor_metric)"
+                "dynamic_contact_reference_metric)"
             ),
             "absolute_gates_unchanged": True,
             "clip_specific_thresholds": False,
