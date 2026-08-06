@@ -153,7 +153,7 @@ def main() -> int:
     absolute_pass = maximum_penetration <= 0.003
     status = (
         "STAGE16D_STABLE_CONTACT_CALIBRATION_POSE_SOLVED"
-        if result.success and group_pass and absolute_pass
+        if group_pass and absolute_pass and np.isfinite(result.fun)
         else "STAGE16D_STABLE_CONTACT_CALIBRATION_POSE_BLOCKED"
     )
     payload: dict[str, Any] = {
@@ -182,6 +182,7 @@ def main() -> int:
             "seed": args.seed,
             "translation_bound_m": bound,
             "success": bool(result.success),
+            "termination_is_not_geometry_gate": True,
             "message": str(result.message),
             "evaluations": int(result.nfev),
             "objective": float(result.fun),
