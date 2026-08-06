@@ -13,10 +13,10 @@ The closeout status is `STAGE16D_BLOCKED_WITH_BOUNDED_EVIDENCE`.
 | Stage | Status | Evidence |
 | --- | --- | --- |
 | D.0 freeze | `VALIDATED` | Source hashes and Stage 16-C failure ledger frozen. |
-| D.1 semantics | `STAGE16D_TASK_SEMANTICS_PARTIAL` | Both C3 contact traces are sparse and below the 0.60 confidence gate. |
+| D.1 semantics | `VALIDATED_WITH_GENERIC_FALLBACK` | Complete 321-step signed-proxy telemetry was regenerated; frozen source traces have no force/impulse fields, and confidence remains below 0.60. |
 | D.2 environment | `STAGE16D_PHYSICS_CORRECTION_ENV_VALIDATED` | Real 1/128/4096-env CUDA PhysX smokes; 26-D action and 764-D observation. |
-| D.3 optimization | `PARTIAL_BLOCKED` | Shared 16-knot, population-64, four-replica, five-iteration spline CEM produced two candidates. |
-| D.4 qualification | `PARTIAL_BLOCKED` | 20-replica empirical success 0.75/1.00, but formal penetration comparability is blocked. |
+| D.3 optimization | `PARTIAL_BLOCKED` | 170105 terminal repair stayed 15/20; its only global fallback regressed to 12/20. |
+| D.4 qualification | `PARTIAL_BLOCKED` | 20-replica empirical success 0.75/1.00; both fail source-relative runtime-proxy geometry. |
 | D.5 single PPO | `NOT_RUN_GATE_BLOCKED` | No demonstration dataset, zero samples, no checkpoints. |
 | D.6 two-clip PPO | `NOT_RUN_GATE_BLOCKED` | Both single-clip PPO gates are unmet. |
 | D.7 export/audit | `PARTIAL_BLOCKED` | Partial V1 packages exist; V2 and sensitivity audit are not authorized. |
@@ -44,16 +44,20 @@ classification.
 
 ## Qualification result
 
-| Clip | Success | Semantic | Contact | Causality | Stability | Penetration diagnostic |
+| Clip | Success | Semantic | Contact | Causality | Stability | Formal runtime-proxy max / active-p95 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| `170105` | 0.75 | 1.00 | 1.00 | 1.00 | 0.75 | max lower bound 1.553 mm; p95 0 mm |
-| `170650` | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | max lower bound 1.117 mm; p95 0.096 mm |
+| `170105` | 0.75 | 1.00 | 1.00 | 1.00 | 0.75 | 1.088 / 0.972 mm; source 0.014 / 0.014 mm; relative fail |
+| `170650` | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 0.838 / 0.427 mm; source 0.188 / 0.187 mm; relative fail |
 
-These penetration numbers are lower bounds from the runtime convex collision
-proxy, not signed upper bounds. The original OBJ files are non-watertight, and
-the Stage 12 SDF uses a different geometry, scale, and metric. Therefore the
-formal gate is `BLOCKED_METRIC_COMPARABILITY_AND_VISUAL_SIGN` for both clips.
-An empirical optimized seed is not a validated trajectory and is not PPO data.
+`RuntimeCollisionProxyPenetrationV1` queries every allowed 21-by-1 hand/object
+convex pair with `python-fcl==0.7.0.11`. Positive is separation and negative is
+overlap; per-frame aggregation selects the worst pair, and formal p95 uses only
+contact-active per-frame-worst samples. Source and corrected trajectories use
+the same proxies, transforms, backend, tolerance, and aggregation. Both clips
+pass max <10 mm and active-p95 <=3 mm, but fail corrected <= source×1.10 plus
+the frozen 0.5 micrometre numeric epsilon. Non-watertight visual meshes remain
+unsigned diagnostics only. An empirical optimized seed is not a validated
+trajectory and is not PPO data.
 
 ## Reproducible commands
 
@@ -86,11 +90,15 @@ conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
   --trace .local/reports/stage16d_physics_consistent_retargeting/trajectory_trace_170105_v3.npz \
   --output .local/reports/stage16d_physics_consistent_retargeting/trajectory_qualification_170105_v3.json
 
-conda run -n toporetarget-rl python scripts/rl/audit_stage16d_geometry.py \
-  --clip hocap_170105 \
-  --trace .local/reports/stage16d_physics_consistent_retargeting/trajectory_trace_170105_v3.npz \
-  --source-stage12 .local/experiments/stage12_dataset_validation_v4/stage12_v4_20260730T155200Z_b31d179_de6ba696_13d502c3_r7_active_jacobian/hocap/hocap_subject_1_20231025_170105/final/final_refinement_fast_exact_v2_r1/final_retarget.zarr \
-  --output .local/reports/stage16d_physics_consistent_retargeting/geometry_audit_170105_v3.json
+conda run -n toporetarget-isaaclab python \
+  scripts/rl/isaaclab/audit_stage16d_runtime_collision_geometry.py \
+  --phase audit
+
+conda run -n toporetarget-isaaclab python \
+  scripts/rl/isaaclab/audit_stage16d_runtime_collision_geometry.py \
+  --phase candidate --clip hocap_170105 \
+  --corrected-trace .local/reports/stage16d_metric_qualification_and_ppo/trajectory_trace_170105_terminal_refined.npz \
+  --candidate-label terminal_refined
 
 conda run -n dp3 python scripts/rl/isaaclab/materialize_stage16d_trajectory.py \
   --clip hocap_170105 \

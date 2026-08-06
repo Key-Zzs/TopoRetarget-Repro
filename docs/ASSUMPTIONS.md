@@ -412,9 +412,12 @@ PAPER_PROTOCOL_REPRODUCTION_WITH_ASSUMPTIONS rather than author-exact results.
 - `A_STAGE16D_OBJECT_CORRECTION_001`: the source object world path is a soft
   prior; the corrected path is generated only by free PhysX contact. This is
   an engineering goal change, not a paper-specified objective.
-- `A_STAGE16D_GEOMETRY_METRIC_001`: convex-proxy penetration is treated only
-  as a lower bound. The formal gate fails closed because the runtime visual
-  mesh is non-watertight and the Stage 12 SDF is not metric-compatible.
+- `A_STAGE16D_GEOMETRY_METRIC_001`: the authored runtime convex collision
+  proxies, not the visual meshes or Stage 12 SDF, are formal authority for
+  `RuntimeCollisionProxyPenetrationV1`. Source and corrected paths use the same
+  shapes, transforms, pair filter, signed backend, tolerance, and aggregation.
+  This is a simulator collision-proxy metric and is not true visual-mesh
+  penetration; non-watertight visual geometry is unsigned diagnostic evidence.
 - `A_STAGE16D_PHYSICAL_PARAMETERS_001`: object mass, inertia, and friction are
   engineering-nominal and uncalibrated. Empirical replay cannot establish
   physical provenance.

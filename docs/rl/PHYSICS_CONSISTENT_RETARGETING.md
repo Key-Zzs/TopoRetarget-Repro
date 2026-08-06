@@ -56,13 +56,15 @@ replicas, five iterations, and 12 elites for both clips. Candidates are ranked
 lexically by failure classes before fidelity, smoothness, effort, and stable
 candidate ID. The free object rollout is never optimized directly.
 
-The current audit transforms 21 runtime hand collision proxies against the
-object convex hull over all 321 steps and 20 replicas. It measures a
-penetration lower bound and supporting-plane gap. It cannot prove the frozen
-upper-bound gate or the required no-more-than-10-percent source degradation.
-The visual meshes are non-watertight and the Stage 12 SDF is not
-metric-compatible. The correct result is therefore a formal blocker, not a
-numerical pass.
+The formal audit transforms 21 runtime hand collision proxies against the
+object convex hull over all 321 steps and 20 replicas. The fixed
+`python-fcl==0.7.0.11` backend returns signed separation and contact MTD;
+analytic separation/touching/overlap, rigid-transform, q/-q, symmetry, scale,
+near-touch, determinism, and depenetration tests pass. The per-frame metric is
+the worst pair and formal p95 uses contact-active samples only. Both candidates
+pass the 10 mm/3 mm absolute gates but fail the no-more-than-10-percent source
+degradation gates. Visual meshes are non-watertight and remain unsigned
+diagnostics; they are not used to determine the formal sign.
 
 ## Artifact contract
 

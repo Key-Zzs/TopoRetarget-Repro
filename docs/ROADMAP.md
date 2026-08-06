@@ -182,7 +182,7 @@ EVIDENCE`. The Stage 16-D progression is:
 | Stage | Result |
 | --- | --- |
 | D.0 contract/freeze | `VALIDATED` |
-| D.1 task/contact semantics | `STAGE16D_TASK_SEMANTICS_PARTIAL` |
+| D.1 task/contact semantics | `VALIDATED_WITH_GENERIC_FALLBACK` |
 | D.2 physics-correction environment | `STAGE16D_PHYSICS_CORRECTION_ENV_VALIDATED` |
 | D.3 corrected trajectories | both `PARTIAL_BLOCKED` |
 | D.4 qualification/V1 export | both `PARTIAL_BLOCKED` |
@@ -192,8 +192,11 @@ EVIDENCE`. The Stage 16-D progression is:
 
 The source object path is now a soft prior, not a hard target; source NPZs and
 Stage 12 results remain frozen. The corrected object motion comes only from a
-free PhysX rollout. The formal blocker is a non-comparable lower-bound
-penetration audit on non-watertight visual meshes. Factor-8 changes timing, the
-virtual wrist is not a physical arm, physical provenance is unresolved,
-qualified simulation data are not robot data, and no sim-to-real claim is
-made. The next gate is a signed, metric-compatible runtime-geometry audit.
+free PhysX rollout. The signed, metric-compatible runtime-proxy audit is now
+validated, but both corrected candidates exceed the frozen source-relative max
+and contact-active-p95 limits. `170105` also remains 15/20 after its only
+terminal repair, and its one global fallback regressed to 12/20. Per-clip PPO
+authorization remains independent, but neither clip is currently authorized.
+Factor-8 changes timing, the virtual wrist is not a physical arm, physical
+provenance is unresolved, qualified simulation data are not robot data, and no
+sim-to-real claim is made.

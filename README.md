@@ -573,10 +573,16 @@ Stage 16-C strict object-path tracking is closed with partial evidence. Stage
 16-D instead preserves source wrist/finger intent and contact semantics while
 allowing a free PhysX object to produce a corrected causal trajectory. Both
 321-step candidates pass semantic/contact/causality replay checks, with
-20-replica empirical success of 0.75 (`170105`) and 1.00 (`170650`), but their
-penetration audit is only a collision-proxy lower bound. The formal result is
+20-replica empirical success of 0.75 (`170105`) and 1.00 (`170650`). The
+metric-compatible `RuntimeCollisionProxyPenetrationV1` audit now uses the exact
+runtime convex proxies and a qualified `python-fcl==0.7.0.11` signed-query
+backend. Both clips pass the 10 mm maximum and 3 mm contact-active-p95 absolute
+limits, but both fail the frozen source-relative limit. The single authorized
+`170105` terminal repair stayed at 15/20, and its only global fallback regressed
+to 12/20. The formal result remains
 `STAGE16D_BLOCKED_WITH_BOUNDED_EVIDENCE`; BC/PPO did not run, with zero samples
-and no checkpoints.
+and no checkpoints. Visual-mesh distances remain unsigned diagnostics and are
+not a formal gate.
 
 Source NPZs and Stage 12 artifacts remain unchanged. Factor-8 retiming changes
 time semantics, the 3P+3R wrist is virtual rather than a real arm, physical

@@ -159,7 +159,7 @@ Stage 16-C 的严格物体轨迹跟踪为 `PARTIAL / CLOSED WITH EVIDENCE`。Sta
 | 阶段 | 结果 |
 | --- | --- |
 | D.0 contract/freeze | `VALIDATED` |
-| D.1 task/contact semantics | `STAGE16D_TASK_SEMANTICS_PARTIAL` |
+| D.1 task/contact semantics | `VALIDATED_WITH_GENERIC_FALLBACK` |
 | D.2 physics-correction environment | `STAGE16D_PHYSICS_CORRECTION_ENV_VALIDATED` |
 | D.3 corrected trajectories | 两条均为 `PARTIAL_BLOCKED` |
 | D.4 qualification/V1 export | 两条均为 `PARTIAL_BLOCKED` |
@@ -168,8 +168,9 @@ Stage 16-C 的严格物体轨迹跟踪为 `PARTIAL / CLOSED WITH EVIDENCE`。Sta
 | D.7 V2/sensitivity | `PARTIAL_BLOCKED` |
 
 Source object path 改为 soft prior，不再是 hard target；source NPZ 和 Stage 12 结果保持
-冻结。修正后的 object motion 只来自 free PhysX rollout。当前正式 blocker 是：对非
-watertight visual mesh 的 penetration audit 只能给出不可比较的 lower bound。Factor-8
-改变时间语义，virtual wrist 不是真实机械臂，physical provenance 仍未解决，qualified
-simulation data 不是真实机器人数据，并且没有 sim-to-real 声明。下一步必须建立 signed、
-metric-compatible 的 runtime geometry audit。
+冻结。修正后的 object motion 只来自 free PhysX rollout。Signed、metric-compatible 的
+runtime-proxy audit 已验证，但两条 corrected candidate 均超过冻结的 source-relative max
+与 contact-active-p95 门。`170105` 在唯一 terminal repair 后仍为 15/20，唯一 global
+fallback 降至 12/20。Per-clip PPO 的授权保持相互独立，但当前两条 clip 均未获授权。
+Factor-8 改变时间语义，virtual wrist 不是真实机械臂，physical provenance 仍未解决，
+qualified simulation data 不是真实机器人数据，并且没有 sim-to-real 声明。

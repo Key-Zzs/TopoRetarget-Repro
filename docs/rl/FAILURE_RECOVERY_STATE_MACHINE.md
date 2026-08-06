@@ -127,3 +127,15 @@ not repaired by changing a threshold. D.4 exported explicitly partial V1
 packages, then D.5 through D.7 stopped at their entry gates. No PPO workers
 started, samples remain zero, and no checkpoints exist. The ordered record is
 `.local/reports/stage16d_physics_consistent_retargeting/failure_transitions.jsonl`.
+
+The metric/PPO recovery continuation uses the stricter
+`Stage16DGeometryAndPPORecoveryStateMachine`: one external geometry backend,
+three geometry implementation repairs, one terminal-refinement profile, one
+global optimizer fallback, two PPO seeds per clip, one learning-rate fallback,
+67,108,864 samples per PPO run, and 48 major transitions. In the recorded run,
+`hpp-fcl` was rejected for non-finite convex-overlap output; the single fixed
+`python-fcl` backend passed. A draft all-frame p95 was invalidated before
+formal acceptance and replaced with contact-active p95. The terminal repair
+remained 15/20 and the only global fallback produced 12/20. Both runtime-proxy
+geometry gates also failed source-relative limits, so demonstrations and every
+PPO stage stopped with zero samples.

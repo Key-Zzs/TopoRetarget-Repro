@@ -27,36 +27,46 @@ are scratch, the 170105 single policy, and the 170650 single policy.
 
 ## Current result
 
-Both formal geometry gates are blocked. The demonstration dataset was not
-created; BC and single-clip PPO did not run; samples are zero and best/last
-checkpoints do not exist. Two-clip PPO and the sensitivity audit also did not
-run. These are gate outcomes, not training failures.
+The metric implementation itself is validated. It queries all 21 allowed hand
+proxy/object proxy pairs with the exact runtime convex geometry, a fixed
+`python-fcl==0.7.0.11` backend, and the frozen
+`RuntimeCollisionProxyPenetrationV1` contract. Formal p95 is computed only from
+contact-active per-frame-worst samples; the all-frame p95 is diagnostic.
+
+Both corrected trajectories pass the absolute max/p95 limits but fail the
+source-relative max and p95 limits. `170105` also remains 15/20 after the one
+authorized terminal-tail repair; its only authorized global fallback regressed
+to 12/20. `170650` remains 20/20 empirically, but that cannot override its
+failed geometry gate. The demonstration dataset was not created; BC and
+single-clip PPO did not run; samples are zero and best/last checkpoints do not
+exist. Two-clip PPO, V2 export, and sensitivity also did not run. These are gate
+outcomes, not training failures.
 
 The implemented entry points are:
 
 ```bash
 conda run -n toporetarget-rl python scripts/rl/isaaclab/build_stage16d_demonstrations.py \
-  --qualification .local/reports/stage16d_physics_consistent_retargeting/trajectory_qualification_170105.json \
-  --qualification .local/reports/stage16d_physics_consistent_retargeting/trajectory_qualification_170650.json \
-  --geometry .local/reports/stage16d_physics_consistent_retargeting/geometry_audit_170105_v3.json \
-  --geometry .local/reports/stage16d_physics_consistent_retargeting/geometry_audit_170650_v3.json \
-  --output .local/reports/stage16d_physics_consistent_retargeting/demonstration_manifest.json
+  --qualification .local/reports/stage16d_metric_qualification_and_ppo/trajectory_requalification_170105.json \
+  --qualification .local/reports/stage16d_metric_qualification_and_ppo/trajectory_requalification_170650.json \
+  --geometry .local/reports/stage16d_metric_qualification_and_ppo/geometry_qualification_170105_terminal_refined.json \
+  --geometry .local/reports/stage16d_metric_qualification_and_ppo/geometry_qualification_170650.json \
+  --output .local/reports/stage16d_metric_qualification_and_ppo/demonstration_manifest.json
 
 conda run -n toporetarget-rl python scripts/rl/isaaclab/train_stage16d_single_ppo.py \
   --clip hocap_170105 \
-  --qualification .local/reports/stage16d_physics_consistent_retargeting/trajectory_qualification_170105.json \
-  --geometry .local/reports/stage16d_physics_consistent_retargeting/geometry_audit_170105_v3.json \
-  --bc-output .local/reports/stage16d_physics_consistent_retargeting/bc_training_170105.json \
-  --output .local/reports/stage16d_physics_consistent_retargeting/ppo_training_170105.json
+  --qualification .local/reports/stage16d_metric_qualification_and_ppo/trajectory_requalification_170105.json \
+  --geometry .local/reports/stage16d_metric_qualification_and_ppo/geometry_qualification_170105_terminal_refined.json \
+  --bc-output .local/reports/stage16d_metric_qualification_and_ppo/bc_training_170105.json \
+  --output .local/reports/stage16d_metric_qualification_and_ppo/ppo_training_170105.json
 
 conda run -n toporetarget-rl python scripts/rl/isaaclab/qualify_stage16d_ppo.py \
-  --training .local/reports/stage16d_physics_consistent_retargeting/ppo_training_170105.json \
-  --output .local/reports/stage16d_physics_consistent_retargeting/ppo_evaluation_170105.json
+  --training .local/reports/stage16d_metric_qualification_and_ppo/ppo_training_170105.json \
+  --output .local/reports/stage16d_metric_qualification_and_ppo/ppo_evaluation_170105.json
 
 conda run -n toporetarget-rl python scripts/rl/isaaclab/train_stage16d_two_clip_ppo.py \
-  --evaluation .local/reports/stage16d_physics_consistent_retargeting/ppo_evaluation_170105.json \
-  --evaluation .local/reports/stage16d_physics_consistent_retargeting/ppo_evaluation_170650.json \
-  --output .local/reports/stage16d_physics_consistent_retargeting/two_clip_ppo.json
+  --evaluation .local/reports/stage16d_metric_qualification_and_ppo/ppo_evaluation_170105.json \
+  --evaluation .local/reports/stage16d_metric_qualification_and_ppo/ppo_evaluation_170650.json \
+  --output .local/reports/stage16d_metric_qualification_and_ppo/two_clip_ppo.json
 ```
 
 Today every command above exits with its explicit `NOT_RUN` or

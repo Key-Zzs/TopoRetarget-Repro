@@ -497,6 +497,9 @@ soft prior and the corrected path comes from free PhysX dynamics. This method,
 its spline CEM, task-semantic fallback, geometry gate, BC lane, and PPO lane
 are not specified by the paper.
 
-The two optimized candidates are partial simulation evidence. Their formal
-penetration metric is unresolved, and PPO did not run. They do not support
-author-exact, real-robot, physical-parameter, or sim-to-real claims.
+The runtime collision-proxy metric implementation is resolved and validated,
+but both corrected candidates fail its frozen source-relative gates. `170105`
+also remains below the 16/20 trajectory gate after its only two bounded repair
+paths. PPO did not run. These are engineering qualification results and do not
+support author-exact, visual-mesh-penetration, real-robot,
+physical-parameter, or sim-to-real claims.

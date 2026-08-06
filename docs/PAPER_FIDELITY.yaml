@@ -1241,7 +1241,14 @@ stage16d_physics_consistent_retargeting:
   source_robot_reference_frozen: true
   source_object_reference_frozen: true
   corrected_object_path: free_physx_rollout_output
-  geometry_qualification: blocked_metric_comparability_and_visual_sign
+  geometry_metric: RuntimeCollisionProxyPenetrationV1
+  geometry_backend: python-fcl==0.7.0.11
+  geometry_authority: authored_runtime_collision_proxies
+  visual_geometry_role: unsigned_diagnostic_only
+  source_corrected_metric_compatible: true
+  geometry_qualification: blocked_source_relative_max_and_contact_active_p95
+  trajectory_170105: blocked_15_of_20_and_geometry
+  trajectory_170650: blocked_geometry_despite_20_of_20
   ppo_started: false
   ppo_samples: 0
   ppo_checkpoints: 0
