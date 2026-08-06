@@ -352,6 +352,9 @@ def _runtime_from_trace(args: argparse.Namespace) -> dict[str, Any]:
 
 def main() -> int:
     args = _parser().parse_args()
+    args.output = args.output.resolve()
+    args.trace = args.trace.resolve()
+    args.raw_geometry = args.raw_geometry.resolve()
     if not args.accept_eula:
         raise SystemExit("Stage16D Isaac calibration requires --accept-eula")
     if args.output.exists() or args.raw_geometry.exists():
