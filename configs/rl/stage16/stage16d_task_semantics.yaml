@@ -1,0 +1,10 @@
+schema_version: TaskSemanticExtractionConfigV1
+protocol: physics_consistent_retargeting_v1
+clips: [hocap_170105, hocap_170650]
+reference_time_scale: 8
+control_hz: 20
+force_threshold_n: 0.0001
+classification_confidence_gate: 0.60
+ambiguous_fallback: generic_contact_preserving_motion
+clip_specific_rules: false
+source_object_world_trajectory: diagnostic_and_feature_extraction_only

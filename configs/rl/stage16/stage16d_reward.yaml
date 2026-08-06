@@ -1,0 +1,25 @@
+schema_version: physics_consistent_retargeting_reward_v1
+selected_profile: semantic_balanced_v1
+selected_globally: true
+profiles: [semantic_balanced_v1, contact_priority_v1, source_fidelity_priority_v1]
+weights:
+  wrist_fidelity: 1.5
+  finger_fidelity: 1.0
+  link_fidelity: 1.0
+  contact_coverage: 3.0
+  contact_persistence: 2.0
+  contact_onset: 0.5
+  final_topology: 2.0
+  forbidden_contact: -2.0
+  penetration: -4.0
+  impulse_outlier: -1.0
+  object_stability: -0.25
+  action_effort: -0.01
+  action_first_difference: -0.02
+  action_second_difference: -0.01
+  semantic_progress: 4.0
+  relative_pose_progress: 1.0
+  source_object_soft_prior: 0.10
+  terminal_success: 10.0
+  catastrophic_failure: -10.0
+strict_object_world_tracking_hard_reward: false

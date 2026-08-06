@@ -1,0 +1,11 @@
+schema_version: Stage16DTwoClipPPOV1
+entry: both_single_clip_ppo_validated
+balanced_clip_sampling: true
+shared_observation_normalization: true
+shared_reward: true
+shared_controller: true
+clip_id_in_observation: false
+clip_specific_parameters: false
+initializations: [scratch, from_170105_single, from_170650_single]
+maximum_samples: 67108864
+gate: {each_clip_success: 0.80, overall_success: 0.85, each_semantic_reach: 0.80, no_clip_collapse: true}
