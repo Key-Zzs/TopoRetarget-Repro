@@ -27,3 +27,15 @@ def test_geometry_block_prevents_ppo() -> None:
 def test_qualified_seed_authorizes_single_clip_ppo() -> None:
     decision = trajectory_entry_decision(_qualification(), {"formal_geometry_gate": "PASS"})
     assert decision["authorization"] == "STAGE16D_SINGLE_CLIP_PPO_AUTHORIZED"
+
+
+def test_runtime_proxy_metric_schema_is_recognized_and_fail_closed() -> None:
+    qualification = _qualification()
+    qualification.pop("episodes")
+    decision = trajectory_entry_decision(qualification, {"formal_pass": True})
+    assert decision["authorization"] == "STAGE16D_SINGLE_CLIP_PPO_AUTHORIZED"
+
+    qualification.pop("numerical_pass_rate")
+    blocked = trajectory_entry_decision(qualification, {"formal_pass": True})
+    assert blocked["authorization"] == "PPO_NOT_AUTHORIZED_FOR_CLIP"
+    assert "numerical failures observed" in blocked["blockers"]

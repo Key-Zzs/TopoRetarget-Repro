@@ -9,14 +9,21 @@ def trajectory_entry_decision(
     qualification: dict[str, Any], geometry: dict[str, Any]
 ) -> dict[str, Any]:
     clip = str(qualification["clip"])
-    geometry_pass = geometry.get("formal_geometry_gate") == "PASS"
+    geometry_pass = (
+        geometry.get("formal_pass") is True or geometry.get("formal_geometry_gate") == "PASS"
+    )
     success = float(qualification["success_rate"])
     semantic = float(qualification["semantic_reach_rate"])
     contact = float(qualification["contact_topology_pass_rate"])
     causality = float(qualification["contact_causality_pass_rate"])
     stable = float(qualification["terminal_stability_pass_rate"])
-    numerical = float(qualification["numerical_pass_rate"])
+    numerical = float(qualification.get("numerical_pass_rate", 0.0))
     complete = float(qualification["complete_trajectory_rate"])
+    episodes = qualification.get("episodes", [])
+    maximum_episode_progress = max(
+        (float(row["semantic_progress"]) for row in episodes),
+        default=float(qualification.get("semantic_reach_rate", 0.0)),
+    )
     qualified = (
         success >= 0.80
         and semantic >= 0.80
@@ -30,7 +37,7 @@ def trajectory_entry_decision(
     partial = (
         success >= 0.30
         and contact >= 0.50
-        and max(float(row["semantic_progress"]) for row in qualification["episodes"]) > 0.0
+        and maximum_episode_progress > 0.0
         and numerical == 1.0
         and complete == 1.0
         and geometry_pass
