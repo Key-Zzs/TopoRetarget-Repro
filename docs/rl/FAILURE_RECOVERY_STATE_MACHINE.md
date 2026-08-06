@@ -148,3 +148,11 @@ V1 was not demonstrated with persistent required contact and source-only
 calibration did not establish a stable shared floor for V2. `FAST_SIGNAL`
 through `SENSITIVITY` were not entered. This stop is a contract qualification
 failure, not a PPO training failure.
+
+The D.4R3 continuation uses
+`Stage16DStableGraspGeometryPPORecoveryStateMachine`. It exhausts C1 before the
+single pre-frozen C2 expansion, allows at most one formal20 per object/family,
+and requires both single policies before two-clip PPO. The recorded transition
+is `INPUT_FREEZE -> C1_DEVELOPMENT -> C2_DEVELOPMENT -> CLOSEOUT`: zero
+candidate passed the stable-grasp gate, so formal20 and every V2/optimizer/BC/
+PPO transition remained unauthorized.

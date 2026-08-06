@@ -598,3 +598,13 @@ corrected 的正式 runtime-proxy metric 已可比较，但这不等于运动学
 稳定、共享的 dynamic-contact floor。因此没有创建 V2，10 mm/3 mm 绝对 Gate 保持不变。
 Geometry-aware optimizer、demonstration、BC、PPO、two-clip PPO 和 V2 export 均因
 前置合同阻塞而未运行。
+
+### D.4R3 稳定自由物体校准
+
+D.4R3 冻结了 12 个 C1 与 8 个不重复的 C2 development candidate。每个 candidate
+都使用 4 个自由物体 PhysX replica、同一套 321-step 26D action schedule、仅 reset
+初始化、无 ground/support，并执行正式 runtime-proxy exact geometry 审计。没有 candidate
+同时通过 contact、topology、terminal hold、twist 与 geometry Gate。结果为
+`STAGE16D_STABLE_GRASP_CALIBRATION_BLOCKED`，停止标记为
+`STAGE16D_STABLE_FREE_OBJECT_GRASP_CALIBRATION_BLOCKED`；formal20、V2、trajectory
+optimizer、BC 与 PPO 仍被禁止。

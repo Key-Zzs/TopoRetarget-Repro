@@ -429,3 +429,9 @@ PAPER_PROTOCOL_REPRODUCTION_WITH_ASSUMPTIONS rather than author-exact results.
   D.4R2 did not prove V1 with required topology and did not establish the
   stable shared dynamic floor required for V2. The absolute 10 mm/3 mm gate is
   unchanged; no corrected candidate value defines a threshold.
+- `A_STAGE16D_STABLE_GRASP_003`: D.4R3 stable-grasp calibration is an
+  engineering contract probe, not a task trajectory. Its 20 frozen C1/C2
+  development candidates produced no complete stability pass. No empirical
+  dynamic-contact reference or V2 threshold was created from failed traces.
+  The free object, reset-only initialization, exact metric, controller,
+  physics, collision proxies, and absolute gates remain unchanged.

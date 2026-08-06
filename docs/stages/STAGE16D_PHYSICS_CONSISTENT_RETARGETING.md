@@ -130,3 +130,13 @@ floor for V2. The result is `STAGE16D_GEOMETRY_GATE_REVISION_BLOCKED`; no new
 trajectory optimization or PPO is authorized. Exact python-fcl remains the
 formal authority. The online signal and exact top-K design code is not a
 qualification result and was not used for reward or gate acceptance.
+
+## D.4R3 stable-grasp stop
+
+The follow-up uses object-canonical convex-proxy initialization and a shared
+321-step action schedule. C1 evaluates -6/0/+6 mm offsets; unique C2 evaluates
+only -10/+10 mm, with closure amplitudes 0.5/1.0. Across 20 development
+candidates no candidate passed the complete stability contract, so no
+20-replica formal calibration was authorized. The exact stop is
+`STAGE16D_STABLE_FREE_OBJECT_GRASP_CALIBRATION_BLOCKED`. This calibration is
+not a task trajectory and cannot establish task success.

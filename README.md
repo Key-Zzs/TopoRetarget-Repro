@@ -639,3 +639,14 @@ no 20-replica stable shared dynamic-contact floor was established. V2 was
 therefore not created; the 10 mm/3 mm absolute gate is unchanged. Geometry-
 aware optimization, demonstrations, BC, PPO, two-clip PPO, and V2 export were
 not run because their entry contract is blocked.
+
+### D.4R3 stable free-object calibration
+
+The clip-agnostic D.4R3 calibration froze 12 C1 and 8 unique C2 development
+candidates. Every candidate used four free-object PhysX replicas, the same
+321-step 26D action schedule, reset-only initialization, no ground/support,
+and exact runtime-proxy geometry. No candidate passed all contact, topology,
+terminal-hold, twist, and geometry gates. The result is
+`STAGE16D_STABLE_GRASP_CALIBRATION_BLOCKED` with stop marker
+`STAGE16D_STABLE_FREE_OBJECT_GRASP_CALIBRATION_BLOCKED`; formal20, V2,
+trajectory optimization, BC, and PPO remain prohibited.

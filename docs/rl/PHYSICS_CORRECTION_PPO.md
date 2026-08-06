@@ -79,3 +79,11 @@ V1 contact-preserving attainability was not demonstrated, and no legal stable
 dynamic-contact floor exists for V2. Online geometry qualification, G1/G2,
 demonstration export, BC, environment scaling, single PPO, two-clip PPO, and V2
 export are all `NOT_RUN_GATE_BLOCKED`; samples and checkpoints remain zero.
+
+## D.4R3 PPO authorization result
+
+The newer stable free-object calibration also failed before formal20:
+`STAGE16D_STABLE_FREE_OBJECT_GRASP_CALIBRATION_BLOCKED`. This is a calibration
+contract failure, not a PPO training failure. BC and PPO workers were not
+started; samples and checkpoints remain zero. Two-clip PPO cannot start unless
+both single-clip policies independently qualify.

@@ -510,3 +510,9 @@ demonstrated under persistent required contact and V2 lacks a legal stable
 dynamic floor. No geometry-aware optimizer or PPO evidence was produced. This
 does not change paper fidelity, validate visual geometry, calibrate physics, or
 support real-arm or sim-to-real claims.
+
+D.4R3 is also an `ENGINEERING_EXTENSION`. Its object-canonical initializer,
+grasp families, C1/C2 matrix, and 321-step action schedule are not paper
+methods. The bounded development search produced no stable qualified grasp,
+so it adds no author-exact, physical-parameter, real-robot, or sim-to-real
+evidence and does not authorize V2 or PPO.

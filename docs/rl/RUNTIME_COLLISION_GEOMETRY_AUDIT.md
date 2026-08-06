@@ -66,3 +66,13 @@ preserve required topology across 20 replicas. This is insufficient both to
 retain V1 as demonstrated-attainable and to freeze a shared stable floor for
 V2, so the decision is `STAGE16D_GEOMETRY_GATE_REVISION_BLOCKED`. No corrected
 candidate metric was used as a calibration floor.
+
+## D.4R3 exact calibration audit
+
+The bounded calibration reused `python-fcl==0.7.0.11` and
+`RuntimeCollisionProxyPenetrationV1` over the authored runtime proxies. One
+development trace produced a signed-distance/contact-MTD disagreement and was
+rejected fail-closed without fallback or metric imputation. The other exact
+audits do not define a dynamic reference because no candidate passed the
+stability gate. V1 remains current, V2 is absent, and the absolute 10 mm/3 mm
+limits are unchanged. Collision-proxy overlap is not visual truth.

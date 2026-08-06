@@ -85,3 +85,12 @@ source-only stable-contact trials did not establish the shared 20-replica
 dynamic floor required to define V2. V2 is therefore absent and the absolute
 10 mm/3 mm limits remain unchanged. The frozen geometry-aware G1/G2 contracts
 were implemented but not executed after the gate-revision stop.
+
+## D.4R3 qualification boundary
+
+The independent stable-grasp calibration does not use a source or corrected
+object trajectory. It keeps the object free and measures only whether the
+current hand/controller/physics contract can create a persistent, stable
+multi-sided grasp. The bounded C1/C2 development matrix produced zero eligible
+candidates. Consequently no new corrected trajectory, demonstration, policy,
+or `PhysicsQualifiedIsaacTrajectoryV2` was created.

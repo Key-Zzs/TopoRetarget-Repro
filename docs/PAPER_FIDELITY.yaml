@@ -1315,3 +1315,22 @@ stage16d_geometry_aware_recovery:
   virtual_wrist_is_real_arm: false
   physical_parameters_calibrated: false
   sim_to_real_claim: false
+stage16d_stable_free_object_grasp_calibration:
+  paper_method: false
+  engineering_extension: true
+  status: STAGE16D_STABLE_GRASP_CALIBRATION_BLOCKED
+  stop_marker: STAGE16D_STABLE_FREE_OBJECT_GRASP_CALIBRATION_BLOCKED
+  c1_development_candidates: 12
+  c2_unique_development_candidates: 8
+  development_replicas_per_candidate: 4
+  runtime_steps: 321
+  eligible_candidates: 0
+  formal20_runs: 0
+  empirical_dynamic_contact_reference_created: false
+  v2_created: false
+  ppo_samples: 0
+  checkpoints: 0
+  absolute_geometry_gate_changed: false
+  collision_proxy_is_visual_truth: false
+  physical_parameters_calibrated: false
+  sim_to_real_claim: false

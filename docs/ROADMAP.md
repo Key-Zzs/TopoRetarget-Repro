@@ -212,3 +212,13 @@ while `170650` had no PhysX contact. Source-only low-overlap contact calibration
 also failed to establish required topology across 20 replicas. Consequently V1
 attainability is unproven and V2 has no legal stable dynamic floor. G1/G2,
 demonstrations, BC, and every PPO/export stage remain `NOT_RUN_GATE_BLOCKED`.
+
+### D.4R3 bounded stable-grasp calibration
+
+D.4R3 completed the frozen C1/C2 development search: 20 candidates, four
+replicas and 321 control steps per candidate. `170105` produced a diagnostic
+candidate with full terminal contact coverage, but terminal linear/angular
+stability exceeded the frozen limits. `170650` never established its derived
+thumb/index/pinky topology. Eligible candidates and formal20 runs are both
+zero. The roadmap stops at `STAGE16D_STABLE_FREE_OBJECT_GRASP_CALIBRATION_BLOCKED`;
+V2 and D.3R3 through D.7 are not authorized.

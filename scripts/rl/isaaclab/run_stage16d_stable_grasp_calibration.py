@@ -815,6 +815,30 @@ def _runtime_from_trace(args: argparse.Namespace, candidate: dict[str, Any]) -> 
     }
 
 
+def _fail_closed_exact_audit(runtime: dict[str, Any], error: RuntimeError) -> dict[str, Any]:
+    """Turn an exact-backend disagreement into an explicit candidate failure."""
+
+    message = str(error)
+    if not message.startswith("STAGE16D_CONVEX_QUERY_"):
+        raise error
+    runtime.update(
+        {
+            "exact_audit_pending": False,
+            "development_pass": False,
+            "exact_audit_failure": {
+                "schema_version": "StableGraspExactAuditFailureV1",
+                "backend": "python-fcl==0.7.0.11",
+                "error": message,
+                "fallback_used": False,
+                "metric_value_imputed": False,
+                "candidate_rejected_fail_closed": True,
+            },
+            "status": "STAGE16D_STABLE_GRASP_EXACT_GEOMETRY_AUDIT_FAILED",
+        }
+    )
+    return runtime
+
+
 def main() -> int:
     args = _parser().parse_args()
     args.output = args.output.resolve()
@@ -848,7 +872,10 @@ def main() -> int:
         runtime = (
             pending_runtime if pending_runtime is not None else _runtime_from_trace(args, candidate)
         )
-        result = _exact_audit(args, candidate, runtime)
+        try:
+            result = _exact_audit(args, candidate, runtime)
+        except RuntimeError as error:
+            result = _fail_closed_exact_audit(runtime, error)
         write_result(result)
     else:
         if args.trace.exists():
@@ -859,11 +886,13 @@ def main() -> int:
         app = AppLauncher(headless=True).app
         try:
             runtime = _run_physx(args, candidate)
-            result = (
-                _exact_audit(args, candidate, runtime)
-                if runtime["exact_audit_pending"]
-                else runtime
-            )
+            if runtime["exact_audit_pending"]:
+                try:
+                    result = _exact_audit(args, candidate, runtime)
+                except RuntimeError as error:
+                    result = _fail_closed_exact_audit(runtime, error)
+            else:
+                result = runtime
             # Kit shutdown may terminate the interpreter in some Isaac builds.
             write_result(result)
         finally:

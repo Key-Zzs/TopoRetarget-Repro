@@ -184,3 +184,12 @@ qualified simulation data 不是真实机器人数据，并且没有 sim-to-real
 接触校准同样未在 20 replicas 建立 required topology。因此 V1 可实现性未获证明，
 V2 也没有合法的稳定 dynamic floor；G1/G2、demonstration、BC 以及全部 PPO/export
 阶段保持 `NOT_RUN_GATE_BLOCKED`。
+
+### D.4R3 有界稳定夹持校准
+
+D.4R3 已完成冻结的 C1/C2 development 搜索：共 20 个 candidate，每个 candidate
+运行 4 replicas × 321 control steps。`170105` 有一个 diagnostic candidate 达到完整
+terminal contact coverage，但 terminal 线速度/角速度稳定性超过冻结阈值；`170650`
+始终没有建立数据推导出的 thumb/index/pinky topology。合格 candidate 与 formal20
+运行数均为 0。路线在 `STAGE16D_STABLE_FREE_OBJECT_GRASP_CALIBRATION_BLOCKED`
+停止；V2 以及 D.3R3 至 D.7 均未获授权。
