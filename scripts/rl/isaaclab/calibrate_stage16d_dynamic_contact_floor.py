@@ -35,6 +35,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--replicas", type=int, default=20)
     parser.add_argument("--steps", type=int, default=321)
     parser.add_argument("--contact-frame", type=int)
+    parser.add_argument("--exact-only", action="store_true")
     parser.add_argument("--accept-eula", action="store_true")
     return parser
 
@@ -294,26 +295,94 @@ def _exact_audit(args: argparse.Namespace, runtime: dict[str, Any]) -> dict[str,
     return runtime
 
 
+def _runtime_from_trace(args: argparse.Namespace) -> dict[str, Any]:
+    """Recover exact-audit metadata when Kit exited after writing the PhysX trace."""
+
+    topology_path = (
+        REPO_ROOT / ".local/reports/stage16d_physics_consistent_retargeting/contact_topology.json"
+    )
+    topology = json.loads(topology_path.read_text(encoding="utf-8"))["clips"][args.clip]
+    with np.load(args.trace, allow_pickle=False) as trace:
+        force = np.asarray(trace["contact_force_world"], dtype=np.float64)
+        force_norm = np.linalg.norm(force, axis=-1)
+        required_presence = np.asarray(trace["required_contact_presence"], dtype=bool)
+        object_twist = np.asarray(trace["object_twist"], dtype=np.float64)
+        steps, replicas = required_presence.shape
+    contact_frame = args.contact_frame
+    if args.mode == "stable-contact" and contact_frame is None:
+        contact_frame = _source_contact_frame(args.clip)
+    return {
+        "schema_version": "Stage16DDynamicContactCalibrationTraceV1",
+        "mode": args.mode,
+        "clip": args.clip,
+        "replicas": replicas,
+        "control_steps": steps,
+        "contact_frame": contact_frame,
+        "contact_frame_provenance": (
+            "source-only RuntimeCollisionProxyPenetrationV1 maximum frame"
+            if args.mode == "stable-contact"
+            else "not_applicable"
+        ),
+        "source_files_modified": False,
+        "free_object": True,
+        "initialization_state_writes": 2 if args.mode == "no-contact" else 1,
+        "rollout_object_state_writes": 0,
+        "rollout_wrist_state_writes": 0,
+        "hidden_force": False,
+        "hidden_attachment": False,
+        "required_contact_groups": list(topology["required_body_groups"]),
+        "required_contact_present_rate": float(required_presence.mean()),
+        "required_contact_final100_rate": float(required_presence[-100:].mean()),
+        "contact_force_max_n": float(force_norm.max()),
+        "contact_force_active_p95_n": (
+            float(np.quantile(force_norm[force_norm > 0.0], 0.95))
+            if np.any(force_norm > 0.0)
+            else 0.0
+        ),
+        "object_linear_speed_max_mps": float(np.linalg.norm(object_twist[..., :3], axis=-1).max()),
+        "object_angular_speed_max_radps": float(
+            np.linalg.norm(object_twist[..., 3:], axis=-1).max()
+        ),
+        "trace": str(args.trace.relative_to(REPO_ROOT)),
+        "trace_sha256": _sha256(args.trace),
+        "wall_time_physx_s": None,
+        "recovered_from_existing_trace": True,
+    }
+
+
 def main() -> int:
     args = _parser().parse_args()
     if not args.accept_eula:
         raise SystemExit("Stage16D Isaac calibration requires --accept-eula")
-    for path in (args.output, args.trace, args.raw_geometry):
-        if path.exists():
-            raise FileExistsError(path)
+    if args.output.exists() or args.raw_geometry.exists():
+        raise FileExistsError(args.output if args.output.exists() else args.raw_geometry)
+    if args.exact_only:
+        if not args.trace.is_file():
+            raise FileNotFoundError(args.trace)
+        result = _exact_audit(args, _runtime_from_trace(args))
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(
+            json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        print(json.dumps({"status": result["status"], "output": str(args.output)}))
+        return 0
+    if args.trace.exists():
+        raise FileExistsError(args.trace)
     os.environ["OMNI_KIT_ACCEPT_EULA"] = "YES"
     from isaaclab.app import AppLauncher
 
     app = AppLauncher(headless=True).app
     try:
         runtime = _run_physx(args)
+        result = _exact_audit(args, runtime)
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(
+            json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        print(json.dumps({"status": result["status"], "output": str(args.output)}))
+        return 0
     finally:
         app.close(wait_for_replicator=False)
-    result = _exact_audit(args, runtime)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(json.dumps({"status": result["status"], "output": str(args.output)}))
-    return 0
 
 
 if __name__ == "__main__":
