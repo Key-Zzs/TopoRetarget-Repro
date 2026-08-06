@@ -49,6 +49,22 @@ Its authoritative result is
 start. This MuJoCo result cannot authorize Isaac Lab PPO, and no PhysX result
 is claimed.
 
+## Stage 16-D engineering-extension ledger
+
+| Item | Paper value | Implemented mapping | Classification | Evidence |
+| --- | --- | --- | --- | --- |
+| Physics-consistent object correction | not specified | source object path is a soft prior; free PhysX rollout is output | ENGINEERING_EXTENSION | `PHYSICS_CONSISTENT_RETARGETING.md` |
+| Semantic/contact extraction | not specified | shared generic fallback from sparse C3 traces | ENGINEERING_DIAGNOSTIC | ignored Stage 16-D semantic reports |
+| Robust spline optimizer | not specified | 16 knots, population 64, four replicas, five iterations | ENGINEERING_DIAGNOSTIC | ignored Stage 16-D optimizer reports |
+| Penetration qualification | not specified | convex collision-proxy lower bound; formal gate blocked | UNRESOLVED | ignored Stage 16-D geometry audits |
+| Physics-correction PPO | Appendix A.5 does not specify this corrected-object task | not run; 0 samples, no checkpoints | NOT_STARTED_GATE_BLOCKED | ignored Stage 16-D PPO reports |
+| Physical parameters | not specified | nominal uncalibrated mass, inertia, and friction | ENGINEERING_ASSUMPTION | Stage 16-C asset manifest |
+
+Stage 16-D changes the engineering task and is not a paper-fidelity upgrade.
+Factor-8 changes timing; the virtual wrist is not a physical arm; partial
+simulation trajectories are not real-robot data or PPO data; no sim-to-real
+claim is made.
+
 ## Stage 16-C.0 Isaac Lab platform ledger
 
 | Item | Paper value | Implemented mapping | Classification | Evidence |

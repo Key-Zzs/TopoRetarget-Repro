@@ -1234,6 +1234,20 @@ wuji_continuous_sequential_fast_exact_v1:
   recommended: false
   stage12_default: false
   author_exact: unresolved
+stage16d_physics_consistent_retargeting:
+  paper_method: false
+  engineering_extension: true
+  goal_change: strict_object_tracking_to_contact_driven_object_correction
+  source_robot_reference_frozen: true
+  source_object_reference_frozen: true
+  corrected_object_path: free_physx_rollout_output
+  geometry_qualification: blocked_metric_comparability_and_visual_sign
+  ppo_started: false
+  ppo_samples: 0
+  ppo_checkpoints: 0
+  real_robot_claim: false
+  sim_to_real_claim: false
+  author_exact: false
 wuji_continuous_sequential_fast_exact_v2:
   paper_method: false
   engineering_execution_profile: true

@@ -150,3 +150,26 @@ portable compiled CPU probe kernel 仍为实验项：五帧整体收益未达到
 
 P4 增加可选的 float64 compiled generalized winding 和认证式 FD-probe 符号复用。
 阈值附近仍回退到已验证 reference；在完成五帧和 60 帧验收前保持实验性、非默认，且不触及 Stage-12。
+
+## Stage 16-D 物理一致重定向收口
+
+Stage 16-C 的严格物体轨迹跟踪为 `PARTIAL / CLOSED WITH EVIDENCE`。Stage 16-D
+实际路线如下：
+
+| 阶段 | 结果 |
+| --- | --- |
+| D.0 contract/freeze | `VALIDATED` |
+| D.1 task/contact semantics | `STAGE16D_TASK_SEMANTICS_PARTIAL` |
+| D.2 physics-correction environment | `STAGE16D_PHYSICS_CORRECTION_ENV_VALIDATED` |
+| D.3 corrected trajectories | 两条均为 `PARTIAL_BLOCKED` |
+| D.4 qualification/V1 export | 两条均为 `PARTIAL_BLOCKED` |
+| D.5 single-clip PPO | 两条均为 `NOT_RUN_GATE_BLOCKED` |
+| D.6 two-clip PPO | `NOT_RUN_GATE_BLOCKED` |
+| D.7 V2/sensitivity | `PARTIAL_BLOCKED` |
+
+Source object path 改为 soft prior，不再是 hard target；source NPZ 和 Stage 12 结果保持
+冻结。修正后的 object motion 只来自 free PhysX rollout。当前正式 blocker 是：对非
+watertight visual mesh 的 penetration audit 只能给出不可比较的 lower bound。Factor-8
+改变时间语义，virtual wrist 不是真实机械臂，physical provenance 仍未解决，qualified
+simulation data 不是真实机器人数据，并且没有 sim-to-real 声明。下一步必须建立 signed、
+metric-compatible 的 runtime geometry audit。

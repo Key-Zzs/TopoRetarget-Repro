@@ -487,3 +487,16 @@ diverges after contact and exceeds frozen hard caps. The result is
 `STAGE16C5A_PHYSICS_CONTRACT_CHANGE_REQUIRED` with reason
 `TRUE_FROZEN_PHYSX_BASELINE_NONDETERMINISM`; O1, history replay, C5B, C5C, and
 PPO remain unrun/unauthorized, with no tolerance softening.
+
+## Stage 16-D engineering boundary
+
+Stage 16-D changes the engineering task from strict source object-path
+tracking to contact-driven physics-consistent retargeting. Source robot and
+object trajectories remain frozen evidence, but the object path becomes a
+soft prior and the corrected path comes from free PhysX dynamics. This method,
+its spline CEM, task-semantic fallback, geometry gate, BC lane, and PPO lane
+are not specified by the paper.
+
+The two optimized candidates are partial simulation evidence. Their formal
+penetration metric is unresolved, and PPO did not run. They do not support
+author-exact, real-robot, physical-parameter, or sim-to-real claims.

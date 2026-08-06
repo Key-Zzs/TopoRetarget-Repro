@@ -98,3 +98,19 @@ contact and exceeds hard caps. It is therefore
 C5B, C5C and C.6/PPO are not run, and tolerance is not softened. See
 `ISAACLAB_CONTACT_CAUSALITY.md`, `ISAACLAB_WRIST_DYNAMICS.md`,
 `ISAACLAB_STATE_REPLICATION.md`, and the ignored C5A report bundle.
+
+## Stage 16-D environment extension
+
+`PhysicsConsistentRetargetingEnv` subclasses the validated Stage 16-C.2
+environment without changing its 26-D action, 764-D observation, 120 Hz
+simulation, decimation 6, or factor-8 reference view. It adds task-semantic,
+persistent-contact, causal object-motion, action-history, and corrected-object
+telemetry. The object remains a free zero-gravity rigid body with no ground or
+support. It is not an action component or optimizer decision variable.
+
+Real 1-env smokes for both clips, a 128-env smoke, and the selected 4096-env
+smoke pass with finite CUDA observations and zero formal wrist/object rollout
+state writes. The 4096-env run takes 34.64 seconds. Penetration is deliberately
+reported as unavailable inside the control environment: only an independent
+post-rollout geometry audit may satisfy that gate. This prevents a missing
+metric from being interpreted as zero.

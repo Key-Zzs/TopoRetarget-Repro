@@ -108,3 +108,22 @@ transition.
 
 The ordered transitions are machine-readable in the ignored
 `.local/reports/stage16c5a_repair_c5c_oracle/c5_failure_transitions.jsonl`.
+
+## Stage 16-D bounded recovery
+
+`Stage16DRecoveryStateMachine` caps repairs per failure class at three,
+phase reruns at five, reward profiles at three, knot levels at three, global
+optimizer upgrades at two, PPO seeds per clip at two, and learning-rate
+fallbacks at one. Hash drift, hidden control, rollout state writes, source
+overwrite, action mutation, unauthorized physics changes, and reward exploits
+are fail-closed.
+
+D3-S1 exposed degenerate/no-progress segments; D3-S2 was the bounded diagnostic
+rerun. A trace-selection implementation defect was repaired so the best
+actually evaluated candidate is retained. The shared default D3-S3 search then
+produced both candidates. Geometry-audit implementations received bounded
+efficiency repairs, but their metric remained formally non-comparable; that is
+not repaired by changing a threshold. D.4 exported explicitly partial V1
+packages, then D.5 through D.7 stopped at their entry gates. No PPO workers
+started, samples remain zero, and no checkpoints exist. The ordered record is
+`.local/reports/stage16d_physics_consistent_retargeting/failure_transitions.jsonl`.

@@ -173,3 +173,27 @@ The recoverable status-8/9 path reconstructs representable active-set slack at
 fixed q/base and reruns the unchanged strict solver/audit. This generic solver
 engineering is not a paper-method extension and does not establish the
 ContactPose Eq.10/Eq.11 benchmark.
+
+## Stage 16-D physics-consistent retargeting closeout
+
+Stage 16-C strict object-trajectory tracking is `PARTIAL / CLOSED WITH
+EVIDENCE`. The Stage 16-D progression is:
+
+| Stage | Result |
+| --- | --- |
+| D.0 contract/freeze | `VALIDATED` |
+| D.1 task/contact semantics | `STAGE16D_TASK_SEMANTICS_PARTIAL` |
+| D.2 physics-correction environment | `STAGE16D_PHYSICS_CORRECTION_ENV_VALIDATED` |
+| D.3 corrected trajectories | both `PARTIAL_BLOCKED` |
+| D.4 qualification/V1 export | both `PARTIAL_BLOCKED` |
+| D.5 single-clip PPO | both `NOT_RUN_GATE_BLOCKED` |
+| D.6 two-clip PPO | `NOT_RUN_GATE_BLOCKED` |
+| D.7 V2/sensitivity | `PARTIAL_BLOCKED` |
+
+The source object path is now a soft prior, not a hard target; source NPZs and
+Stage 12 results remain frozen. The corrected object motion comes only from a
+free PhysX rollout. The formal blocker is a non-comparable lower-bound
+penetration audit on non-watertight visual meshes. Factor-8 changes timing, the
+virtual wrist is not a physical arm, physical provenance is unresolved,
+qualified simulation data are not robot data, and no sim-to-real claim is
+made. The next gate is a signed, metric-compatible runtime-geometry audit.

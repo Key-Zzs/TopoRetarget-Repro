@@ -534,6 +534,19 @@ Licensed-data test 是 opt-in，要求已配置本地 GRAB/MANO 资源。
 - [solver-feasibility 说明](docs/SOLVER_FEASIBILITY_RESTORATION.md)
 - [Stage 16 reference-tracking PPO](docs/stages/STAGE16_REFERENCE_TRACKING_PPO.md)
 
+## Stage 16-D 物理一致重定向
+
+Stage 16-C 的严格物体轨迹跟踪已以部分证据关闭。Stage 16-D 保留 source 腕部、手指
+运动意图和接触语义，同时允许自由 PhysX 刚体生成新的因果自洽物体轨迹。两条 321-step
+candidate 的 semantic/contact/causality replay 均通过；20-replica 经验成功率分别为
+0.75（`170105`）和 1.00（`170650`）。但当前 penetration audit 只能给出 collision
+proxy lower bound，因此正式状态为 `STAGE16D_BLOCKED_WITH_BOUNDED_EVIDENCE`；BC/PPO
+未运行，样本为 0，checkpoint 不存在。
+
+Source NPZ 与 Stage 12 artifact 均未修改。Factor-8 改变时间语义，3P+3R wrist 是虚拟
+关节而不是真实机械臂，物理参数尚未真实标定，并且没有 sim-to-real 声明。完整说明见
+[Stage 16-D closeout](docs/stages/STAGE16D_PHYSICS_CONSISTENT_RETARGETING.md)。
+
 ## License
 
 仓库代码与文档采用 GNU General Public License v3.0，见 [LICENSE](LICENSE)。Tracked

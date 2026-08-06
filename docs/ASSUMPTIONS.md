@@ -406,3 +406,18 @@ PAPER_PROTOCOL_REPRODUCTION_WITH_ASSUMPTIONS rather than author-exact results.
   `STAGE16C5A_PHYSICS_CONTRACT_CHANGE_REQUIRED` with reason
   `TRUE_FROZEN_PHYSX_BASELINE_NONDETERMINISM`. O1/C5B/C5C and C.6 PPO remain
   unauthorized, and tolerances are not softened.
+
+## Stage 16-D assumptions
+
+- `A_STAGE16D_OBJECT_CORRECTION_001`: the source object world path is a soft
+  prior; the corrected path is generated only by free PhysX contact. This is
+  an engineering goal change, not a paper-specified objective.
+- `A_STAGE16D_GEOMETRY_METRIC_001`: convex-proxy penetration is treated only
+  as a lower bound. The formal gate fails closed because the runtime visual
+  mesh is non-watertight and the Stage 12 SDF is not metric-compatible.
+- `A_STAGE16D_PHYSICAL_PARAMETERS_001`: object mass, inertia, and friction are
+  engineering-nominal and uncalibrated. Empirical replay cannot establish
+  physical provenance.
+- Factor-8 changes time semantics; the virtual 3P+3R wrist is not a real arm;
+  partial simulation trajectories are neither real-robot nor PPO data; no
+  sim-to-real claim is made.

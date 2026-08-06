@@ -77,6 +77,25 @@ C.6/C.7 remain unauthorized; C.8/C.9 remain TODO.
 MuJoCo and PhysX need not be bitwise identical, but MuJoCo oracle evidence can
 never directly authorize an Isaac Lab policy run.
 
+## Stage 16-D physics-consistent correction closeout
+
+Stage 16-C strict object-trajectory tracking is now closed as partial evidence.
+Stage 16-D keeps the factor-8 wrist/finger reference, the 26-D/764-D contract,
+and all source hashes fixed, but changes the object path from a hard tracking
+target to a soft prior. The runtime object is free, unsupported, zero-gravity,
+and moves only through PhysX contact.
+
+The Stage 16-D environment passes real 1/128/4096-env GPU smokes. Shared
+phase-wise spline CEM yields 20-replica empirical success of 0.75 for `170105`
+and 1.00 for `170650`, with semantic reach, contact topology, and contact
+causality all 1.00. Formal acceptance remains blocked because the runtime
+collision audit is only a penetration lower bound, the source visual meshes
+are non-watertight, and its metric is not directly comparable to the Stage 12
+SDF. Partial V1 packages are exported; demonstration construction, BC, both
+single PPO runs, two-clip PPO, V2 export, and sensitivity remain unauthorized.
+Their actual counts are zero samples and no checkpoints. See
+[STAGE16D_PHYSICS_CONSISTENT_RETARGETING.md](STAGE16D_PHYSICS_CONSISTENT_RETARGETING.md).
+
 ## Stage 16-C.0 Isaac Lab platform contract
 
 C.0 is an `ENGINEERING_INFRASTRUCTURE` qualification, not a paper-method or

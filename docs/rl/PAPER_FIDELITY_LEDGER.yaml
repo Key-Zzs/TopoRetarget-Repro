@@ -92,3 +92,22 @@ isaaclab_platform_extension:
     - .local/reports/stage16c3r5_reference_retiming_c4/contact_causality_scale8.json
     - .local/reports/stage16c3r5_reference_retiming_c4/c4_gpu_vector_benchmark_scale8.json
     - .local/reports/stage16c5a_repair_c5c_oracle/final_summary.json
+physics_consistent_retargeting_extension:
+  label: ENGINEERING_EXTENSION
+  stage: 16-D
+  paper_method: false
+  status: STAGE16D_BLOCKED_WITH_BOUNDED_EVIDENCE
+  source_object_path: soft_prior_only
+  corrected_object_path: free_physx_rollout_output
+  action_dimension: 26
+  observation_dimension: 764
+  reference_time_scale: 8
+  trajectory_status: {hocap_170105: PARTIAL_BLOCKED, hocap_170650: PARTIAL_BLOCKED}
+  empirical_success: {hocap_170105: 0.75, hocap_170650: 1.0}
+  geometry_gate: BLOCKED_METRIC_COMPARABILITY_AND_VISUAL_SIGN
+  partial_v1_exported: true
+  qualified_v2_exported: false
+  ppo_started: false
+  ppo_samples: 0
+  ppo_checkpoints: 0
+  sim_to_real_claim: false

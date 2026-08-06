@@ -567,6 +567,22 @@ Detailed stage history and implementation notes are maintained in:
 - [solver feasibility note](docs/SOLVER_FEASIBILITY_RESTORATION.md)
 - [Stage 16 reference-tracking PPO](docs/stages/STAGE16_REFERENCE_TRACKING_PPO.md)
 
+## Stage 16-D physics-consistent retargeting
+
+Stage 16-C strict object-path tracking is closed with partial evidence. Stage
+16-D instead preserves source wrist/finger intent and contact semantics while
+allowing a free PhysX object to produce a corrected causal trajectory. Both
+321-step candidates pass semantic/contact/causality replay checks, with
+20-replica empirical success of 0.75 (`170105`) and 1.00 (`170650`), but their
+penetration audit is only a collision-proxy lower bound. The formal result is
+`STAGE16D_BLOCKED_WITH_BOUNDED_EVIDENCE`; BC/PPO did not run, with zero samples
+and no checkpoints.
+
+Source NPZs and Stage 12 artifacts remain unchanged. Factor-8 retiming changes
+time semantics, the 3P+3R wrist is virtual rather than a real arm, physical
+parameters are not calibrated, and no simulation-to-real claim is made. See
+[the Stage 16-D closeout](docs/stages/STAGE16D_PHYSICS_CONSISTENT_RETARGETING.md).
+
 ## License
 
 Repository code and documentation are released under the GNU General Public License v3.0; see

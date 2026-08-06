@@ -143,3 +143,20 @@ evidence:
 - `.local/reports/stage16c5a_r3_robust_oracle_final_retry1/robust_oracle_report.json`
 - `.local/reports/stage16c5_r4_distributional_final/`
 - `.local/reports/stage16c5_r4_cem_final/`
+
+## Stage 16-D robust trajectory search
+
+Stage 16-D does not reopen or relabel the failed Stage 16-C strict-tracking
+oracle. It implements a different objective: contact-driven physical
+retargeting with the source object trajectory as a soft prior. The shared
+phase-wise spline CEM uses 16 knots, population 64, four replicas, five
+iterations, and stable lexical ranking. Candidate object poses are always
+free-rollout outputs.
+
+The selected traces pass semantic/contact/causality replay empirically, but the
+formal geometry gate remains blocked. The audit's convex-proxy penetration is
+a lower bound, the runtime visual mesh has no watertight sign, and Stage 12
+uses a non-comparable SDF. Therefore the search produces only partial
+candidate evidence and cannot authorize demonstrations or PPO. No tolerance,
+reward, physics parameter, source hash, or action contract was changed after
+seeing this result.
