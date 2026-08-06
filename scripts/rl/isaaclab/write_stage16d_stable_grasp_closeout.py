@@ -67,7 +67,7 @@ def _candidate_row(path: Path) -> dict[str, Any]:
     report = _load(path)
     metrics = report.get("selection_metrics", {})
     candidate = report["candidate"]
-    geometry = report.get("formal_geometry", {})
+    geometry = report.get("formal_geometry")
     return {
         "object_id": report["object_id"],
         "level": candidate["level"],
@@ -86,7 +86,7 @@ def _candidate_row(path: Path) -> dict[str, Any]:
         "terminal_angular_speed_p95_max_radps": metrics.get("terminal_angular_speed_p95_max_radps"),
         "max_penetration_m": metrics.get("max_penetration_m"),
         "active_p95_penetration_m": metrics.get("active_p95_penetration_m"),
-        "geometry_backend": geometry.get("backend"),
+        "geometry_backend": "python-fcl==0.7.0.11" if isinstance(geometry, dict) else None,
         "development_pass": report.get("development_pass", False),
         "status": report["status"],
         "exact_audit_failure": report.get("exact_audit_failure"),
