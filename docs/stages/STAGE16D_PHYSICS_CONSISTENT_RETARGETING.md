@@ -119,3 +119,14 @@ Factor-8 retiming changes time semantics. The six wrist joints are a virtual
 3P+3R articulation, not a physical arm. Object mass, inertia, and friction are
 engineering-nominal rather than physically calibrated. Qualified simulation
 data are not robot data, and this stage makes no sim-to-real claim.
+
+## D.4R2 attainability stop
+
+The D.4R2 audit preserves every frozen source, factor-8, 26D/764D,
+controller, physics, asset, and absolute 10 mm/3 mm contract. Numerical and
+no-contact floors pass, but source-only dynamic/stable calibration does not
+establish V1 under required contact topology or a 20-replica stable shared
+floor for V2. The result is `STAGE16D_GEOMETRY_GATE_REVISION_BLOCKED`; no new
+trajectory optimization or PPO is authorized. Exact python-fcl remains the
+formal authority. The online signal and exact top-K design code is not a
+qualification result and was not used for reward or gate acceptance.

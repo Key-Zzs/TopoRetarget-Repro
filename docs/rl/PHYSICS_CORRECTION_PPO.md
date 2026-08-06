@@ -71,3 +71,11 @@ conda run -n toporetarget-rl python scripts/rl/isaaclab/train_stage16d_two_clip_
 
 Today every command above exits with its explicit `NOT_RUN` or
 `NOT_AUTHORIZED` record. None silently starts workers or creates a checkpoint.
+
+## D.4R2 superseding entry decision
+
+`STAGE16D_GEOMETRY_GATE_REVISION_BLOCKED` now precedes all commands above.
+V1 contact-preserving attainability was not demonstrated, and no legal stable
+dynamic-contact floor exists for V2. Online geometry qualification, G1/G2,
+demonstration export, BC, environment scaling, single PPO, two-clip PPO, and V2
+export are all `NOT_RUN_GATE_BLOCKED`; samples and checkpoints remain zero.

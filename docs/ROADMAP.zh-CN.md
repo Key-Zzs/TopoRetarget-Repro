@@ -174,3 +174,13 @@ runtime-proxy audit 已验证，但两条 corrected candidate 均超过冻结的
 fallback 降至 12/20。Per-clip PPO 的授权保持相互独立，但当前两条 clip 均未获授权。
 Factor-8 改变时间语义，virtual wrist 不是真实机械臂，physical provenance 仍未解决，
 qualified simulation data 不是真实机器人数据，并且没有 sim-to-real 声明。
+
+### D.4R2 geometry Gate 恢复
+
+后续可实现性审计为 `STAGE16D_GEOMETRY_GATE_REVISION_BLOCKED`。python-fcl
+1000 次重复数值 floor 与两条 20x321 no-contact 实验均以零 penetration 通过。
+零 residual 动态 source-following 未维持 required contact：`170105` 的短暂接触达到
+约 0.837/0.797 mm max/active-p95，`170650` 没有 PhysX 接触。Source-only 低重叠
+接触校准同样未在 20 replicas 建立 required topology。因此 V1 可实现性未获证明，
+V2 也没有合法的稳定 dynamic floor；G1/G2、demonstration、BC 以及全部 PPO/export
+阶段保持 `NOT_RUN_GATE_BLOCKED`。

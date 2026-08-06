@@ -588,3 +588,13 @@ MANO/SMPL-X、ContactPose、ManipTrans 及其它外部资源受各自条款约�
 同时请引用实验实际使用的 dataset、body model、目标手资产和上游实现。本地论文副本见
 [docs/TopoRetarget.pdf](docs/TopoRetarget.pdf)，上游引用索引见
 [docs/UPSTREAM_REFERENCES.md](docs/UPSTREAM_REFERENCES.md)。
+
+## Stage 16-D geometry-aware recovery 状态
+
+D.4R2 可实现性审计为 `STAGE16D_GEOMETRY_GATE_REVISION_BLOCKED`。Source 与
+corrected 的正式 runtime-proxy metric 已可比较，但这不等于运动学 source 的近零重叠
+就是动态 PhysX 接触的合理上界。数值 floor 与 no-contact floor 均通过；source-only
+动态与稳定接触校准既未在 required topology 下证明 V1 可实现，也未建立 20-replica
+稳定、共享的 dynamic-contact floor。因此没有创建 V2，10 mm/3 mm 绝对 Gate 保持不变。
+Geometry-aware optimizer、demonstration、BC、PPO、two-clip PPO 和 V2 export 均因
+前置合同阻塞而未运行。

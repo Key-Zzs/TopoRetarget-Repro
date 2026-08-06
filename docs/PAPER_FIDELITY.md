@@ -503,3 +503,10 @@ also remains below the 16/20 trajectory gate after its only two bounded repair
 paths. PPO did not run. These are engineering qualification results and do not
 support author-exact, visual-mesh-penetration, real-robot,
 physical-parameter, or sim-to-real claims.
+
+The D.4R2 geometry-aware recovery remains an `ENGINEERING_EXTENSION`. Its
+attainability audit ends `STAGE16D_GEOMETRY_GATE_REVISION_BLOCKED`: V1 is not
+demonstrated under persistent required contact and V2 lacks a legal stable
+dynamic floor. No geometry-aware optimizer or PPO evidence was produced. This
+does not change paper fidelity, validate visual geometry, calibrate physics, or
+support real-arm or sim-to-real claims.

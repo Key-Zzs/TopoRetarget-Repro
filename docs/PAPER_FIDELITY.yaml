@@ -1298,3 +1298,20 @@ wuji_continuous_sequential_fast_exact_v4_compiled_sign:
   recommended: false
   stage12_default: false
   author_exact: unresolved
+stage16d_geometry_aware_recovery:
+  paper_method: false
+  engineering_extension: true
+  status: STAGE16D_GEOMETRY_GATE_REVISION_BLOCKED
+  v1_comparability: validated
+  v1_contact_preserving_attainability: not_demonstrated
+  v2_created: false
+  dynamic_contact_floor: not_established
+  absolute_geometry_gate_changed: false
+  online_signal_qualified: false
+  geometry_optimizer_run: false
+  ppo_samples: 0
+  checkpoints: 0
+  factor8_changes_time_semantics: true
+  virtual_wrist_is_real_arm: false
+  physical_parameters_calibrated: false
+  sim_to_real_claim: false

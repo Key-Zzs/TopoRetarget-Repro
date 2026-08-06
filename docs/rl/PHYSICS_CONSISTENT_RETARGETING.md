@@ -76,3 +76,12 @@ and the free-object provenance. Current packages are explicitly partial.
 
 `PhysicsQualifiedIsaacTrajectoryV2` requires a passing formal geometry gate
 and validated PPO evaluation; no V2 artifact exists in this closeout.
+
+## Geometry-aware recovery boundary
+
+The later D.4R2 audit separates metric comparability from normative gate
+attainability. V1 was not demonstrated with persistent required contact, and
+source-only stable-contact trials did not establish the shared 20-replica
+dynamic floor required to define V2. V2 is therefore absent and the absolute
+10 mm/3 mm limits remain unchanged. The frozen geometry-aware G1/G2 contracts
+were implemented but not executed after the gate-revision stop.

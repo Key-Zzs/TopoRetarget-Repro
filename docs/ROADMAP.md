@@ -200,3 +200,15 @@ authorization remains independent, but neither clip is currently authorized.
 Factor-8 changes timing, the virtual wrist is not a physical arm, physical
 provenance is unresolved, qualified simulation data are not robot data, and no
 sim-to-real claim is made.
+
+### D.4R2 geometry-gate recovery
+
+The follow-up attainability audit is
+`STAGE16D_GEOMETRY_GATE_REVISION_BLOCKED`. A 1,000-repeat python-fcl numerical
+floor and both 20x321 no-contact experiments passed at zero penetration.
+Zero-residual dynamic source following did not preserve required contact: the
+`170105` transient-contact run reached about 0.837/0.797 mm max/active-p95,
+while `170650` had no PhysX contact. Source-only low-overlap contact calibration
+also failed to establish required topology across 20 replicas. Consequently V1
+attainability is unproven and V2 has no legal stable dynamic floor. G1/G2,
+demonstrations, BC, and every PPO/export stage remain `NOT_RUN_GATE_BLOCKED`.

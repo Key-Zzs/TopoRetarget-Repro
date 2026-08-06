@@ -627,3 +627,15 @@ If this repository or its implementation notes are useful, cite the TopoRetarget
 Also cite each dataset, body model, target-hand asset, and upstream implementation used in your
 experiment. The local paper copy is [docs/TopoRetarget.pdf](docs/TopoRetarget.pdf), and upstream
 references are listed in [docs/UPSTREAM_REFERENCES.md](docs/UPSTREAM_REFERENCES.md).
+
+## Stage 16-D geometry-aware recovery status
+
+The D.4R2 attainability audit is `STAGE16D_GEOMETRY_GATE_REVISION_BLOCKED`.
+The formal source/corrected runtime-proxy metric is comparable, but that does
+not make the near-zero kinematic source overlap a validated bound for dynamic
+PhysX contact. Numerical and no-contact floors passed. Source-only dynamic and
+stable-contact calibrations did not demonstrate V1 with required topology, and
+no 20-replica stable shared dynamic-contact floor was established. V2 was
+therefore not created; the 10 mm/3 mm absolute gate is unchanged. Geometry-
+aware optimization, demonstrations, BC, PPO, two-clip PPO, and V2 export were
+not run because their entry contract is blocked.

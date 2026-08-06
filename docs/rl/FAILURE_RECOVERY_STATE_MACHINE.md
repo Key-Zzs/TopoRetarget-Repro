@@ -139,3 +139,12 @@ formal acceptance and replaced with contact-active p95. The terminal repair
 remained 15/20 and the only global fallback produced 12/20. Both runtime-proxy
 geometry gates also failed source-relative limits, so demonstrations and every
 PPO stage stopped with zero samples.
+
+The D.4R2 continuation uses
+`Stage16DGeometryAwarePPORecoveryStateMachine`: at most V1 plus one optional
+V2, one fast backend, G1/G2, one formal20 per level and clip, two PPO seeds,
+one LR fallback, and 48 transitions. It stopped in `GATE_ATTAINABILITY` because
+V1 was not demonstrated with persistent required contact and source-only
+calibration did not establish a stable shared floor for V2. `FAST_SIGNAL`
+through `SENSITIVITY` were not entered. This stop is a contract qualification
+failure, not a PPO training failure.

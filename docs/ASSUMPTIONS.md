@@ -424,3 +424,8 @@ PAPER_PROTOCOL_REPRODUCTION_WITH_ASSUMPTIONS rather than author-exact results.
 - Factor-8 changes time semantics; the virtual 3P+3R wrist is not a real arm;
   partial simulation trajectories are neither real-robot nor PPO data; no
   sim-to-real claim is made.
+- `A_STAGE16D_GEOMETRY_ATTAINABILITY_002`: same-metric comparability does not
+  establish that kinematic source overlap is a valid dynamic-contact limit.
+  D.4R2 did not prove V1 with required topology and did not establish the
+  stable shared dynamic floor required for V2. The absolute 10 mm/3 mm gate is
+  unchanged; no corrected candidate value defines a threshold.

@@ -53,3 +53,16 @@ conda run -n toporetarget-isaaclab python \
   scripts/rl/isaaclab/audit_stage16d_runtime_collision_geometry.py \
   --phase audit
 ```
+
+## V1 attainability versus comparability
+
+The D.4R2 audit does not revoke the same-geometry comparability result above.
+It tests the separate claim that a kinematic source-relative threshold is
+attainable in dynamic contact. A 1,000-repeat query floor and both no-contact
+runs pass. `170105` zero-residual dynamic source following produces only
+transient required contact and about 0.837/0.797 mm max/active-p95; `170650`
+produces no PhysX contact. Bounded source-only stable-contact trials fail to
+preserve required topology across 20 replicas. This is insufficient both to
+retain V1 as demonstrated-attainable and to freeze a shared stable floor for
+V2, so the decision is `STAGE16D_GEOMETRY_GATE_REVISION_BLOCKED`. No corrected
+candidate metric was used as a calibration floor.
