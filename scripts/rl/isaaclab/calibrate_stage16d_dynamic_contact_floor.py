@@ -21,6 +21,14 @@ REPORT_ROOT = REPO_ROOT / ".local/reports/stage16d_geometry_aware_optimization_p
 BASELINE_ROOT = REPO_ROOT / ".local/reports/stage16d_metric_qualification_and_ppo"
 MANIFEST_PATH = BASELINE_ROOT / "runtime_collision_geometry_manifest.json"
 CLIPS = ("hocap_170105", "hocap_170650")
+GROUP_FLEXION_ACTION_INDICES = {
+    "thumb": (0, 2, 3),
+    "index": (4, 6, 7),
+    "middle": (8, 10, 11),
+    "ring": (12, 14, 15),
+    "pinky": (16, 18, 19),
+    "palm": (),
+}
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -35,6 +43,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--replicas", type=int, default=20)
     parser.add_argument("--steps", type=int, default=321)
     parser.add_argument("--contact-frame", type=int)
+    parser.add_argument("--calibration-pose", type=Path)
+    parser.add_argument("--finger-close-action", type=float, default=0.0)
     parser.add_argument("--exact-only", action="store_true")
     parser.add_argument("--accept-eula", action="store_true")
     return parser
@@ -106,6 +116,32 @@ def _separate_active_object(env: Any, *, clip_index: int, ids: Any) -> None:
     synchronize_reset_boundary(env)
 
 
+def _write_calibration_object_pose(
+    env: Any, *, clip_index: int, ids: Any, calibration_pose: Path
+) -> None:
+    """Apply a source-only calibration pose as an initialization write."""
+
+    import torch
+
+    from toporetarget.rl.isaaclab_oracle.history_replay import synchronize_reset_boundary
+
+    payload = json.loads(calibration_pose.read_text(encoding="utf-8"))
+    if payload.get("status") != "STAGE16D_STABLE_CONTACT_CALIBRATION_POSE_SOLVED":
+        raise RuntimeError("STAGE16D_STABLE_CONTACT_CALIBRATION_POSE_NOT_VALIDATED")
+    if payload.get("clip") != CLIPS[clip_index] or payload.get("corrected_candidate_used"):
+        raise RuntimeError("STAGE16D_STABLE_CONTACT_CALIBRATION_POSE_PROVENANCE_FAILURE")
+    pose = torch.as_tensor(
+        payload["object_pose_scene_xyz_wxyz"], dtype=torch.float32, device=env.device
+    ).expand(len(ids), -1)
+    global_position = pose[:, :3] + env.scene.env_origins.index_select(0, ids)
+    root_state = torch.cat(
+        (global_position, pose[:, 3:], torch.zeros((len(ids), 6), device=env.device)), dim=-1
+    )
+    obj = env._object_170105 if clip_index == 0 else env._object_170650
+    obj.write_root_state_to_sim(root_state, env_ids=ids)
+    synchronize_reset_boundary(env)
+
+
 def _run_physx(args: argparse.Namespace) -> dict[str, Any]:
     import torch
     from optimize_stage16d_physics_trajectory import make_env
@@ -121,6 +157,8 @@ def _run_physx(args: argparse.Namespace) -> dict[str, Any]:
 
     if args.replicas != 20 or args.steps != 321:
         raise ValueError("formal dynamic calibration requires exactly 20 replicas and 321 steps")
+    if not 0.0 <= args.finger_close_action <= 0.5:
+        raise ValueError("stable-contact finger close action must be in [0,0.5]")
     clip_index = CLIPS.index(args.clip)
     env = None
     started = time.perf_counter()
@@ -139,6 +177,14 @@ def _run_physx(args: argparse.Namespace) -> dict[str, Any]:
         initialization_state_writes = 1
         if args.mode == "no-contact":
             _separate_active_object(env, clip_index=clip_index, ids=ids)
+            initialization_state_writes += 1
+        elif args.mode == "stable-contact" and args.calibration_pose is not None:
+            _write_calibration_object_pose(
+                env,
+                clip_index=clip_index,
+                ids=ids,
+                calibration_pose=args.calibration_pose.resolve(),
+            )
             initialization_state_writes += 1
 
         hand_body_ids = torch.tensor(
@@ -159,6 +205,9 @@ def _run_physx(args: argparse.Namespace) -> dict[str, Any]:
         object_twist_rows: list[np.ndarray] = []
         reason_rows: list[np.ndarray] = []
         zero_action = torch.zeros((args.replicas, 26), dtype=torch.float32, device=env.device)
+        for group in required_groups:
+            for action_index in GROUP_FLEXION_ACTION_INDICES[group]:
+                zero_action[:, 6 + action_index] = args.finger_close_action
         for _ in range(args.steps):
             raw_control_step(env, zero_action)
             state = env._state()
@@ -217,6 +266,16 @@ def _run_physx(args: argparse.Namespace) -> dict[str, Any]:
                 if args.mode == "stable-contact"
                 else "not_applicable"
             ),
+            "calibration_pose": (
+                str(args.calibration_pose.resolve().relative_to(REPO_ROOT))
+                if args.calibration_pose is not None
+                else None
+            ),
+            "calibration_pose_sha256": (
+                _sha256(args.calibration_pose.resolve())
+                if args.calibration_pose is not None
+                else None
+            ),
             "source_files_modified": False,
             "free_object": True,
             "initialization_state_writes": initialization_state_writes,
@@ -225,6 +284,8 @@ def _run_physx(args: argparse.Namespace) -> dict[str, Any]:
             "hidden_force": False,
             "hidden_attachment": False,
             "required_contact_groups": list(required_groups),
+            "finger_close_action": args.finger_close_action,
+            "action_contract": "26D residual through env control only",
             "required_contact_present_rate": float(required_presence.mean()),
             "required_contact_final100_rate": float(required_presence[-100:].mean()),
             "contact_force_max_n": float(force_norm.max()),
@@ -331,6 +392,8 @@ def _runtime_from_trace(args: argparse.Namespace) -> dict[str, Any]:
         "hidden_force": False,
         "hidden_attachment": False,
         "required_contact_groups": list(topology["required_body_groups"]),
+        "finger_close_action": args.finger_close_action,
+        "action_contract": "26D residual through env control only",
         "required_contact_present_rate": float(required_presence.mean()),
         "required_contact_final100_rate": float(required_presence[-100:].mean()),
         "contact_force_max_n": float(force_norm.max()),
