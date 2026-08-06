@@ -117,3 +117,114 @@ class Stage16DRecoveryStateMachine:
 
 
 __all__ = ["FAIL_CLOSED", "PHASES", "Stage16DRecoveryStateMachine"]
+
+
+GEOMETRY_PPO_PHASES = (
+    "INPUT_FREEZE",
+    "GEOMETRY_INVENTORY",
+    "QUERY_BACKEND",
+    "QUERY_VALIDATION",
+    "METRIC_FREEZE",
+    "SOURCE_GEOMETRY",
+    "CORRECTED_GEOMETRY",
+    "D4_REQUALIFICATION",
+    "TERMINAL_FAILURE_ANALYSIS",
+    "TERMINAL_REFINEMENT",
+    "GLOBAL_OPTIMIZER_FALLBACK",
+    "DEMONSTRATIONS",
+    "BC",
+    "PPO_BENCHMARK",
+    "SINGLE_PPO",
+    "TWO_CLIP_PPO",
+    "V2_EXPORT",
+    "SENSITIVITY",
+    "CLOSEOUT",
+)
+
+
+@dataclass
+class Stage16DGeometryAndPPORecoveryStateMachine:
+    """Fail-closed budgets for the metric-qualification and PPO recovery run."""
+
+    phase: str = "INPUT_FREEZE"
+    transitions: list[dict[str, Any]] = field(default_factory=list)
+    geometry_backends: set[str] = field(default_factory=set)
+    geometry_repairs: int = 0
+    terminal_refinement_profiles: set[str] = field(default_factory=set)
+    global_optimizer_upgrades: int = 0
+    ppo_seeds: dict[str, set[int]] = field(default_factory=dict)
+    ppo_lr_fallbacks: dict[str, int] = field(default_factory=dict)
+    ppo_samples: dict[str, int] = field(default_factory=dict)
+
+    def transition(self, target: str, *, reason: str) -> None:
+        if target not in GEOMETRY_PPO_PHASES:
+            raise ValueError("unknown Stage16D geometry/PPO recovery phase")
+        if len(self.transitions) >= 48:
+            raise RuntimeError("STAGE16D_MAJOR_TRANSITION_BUDGET_EXHAUSTED")
+        self.transitions.append({"from": self.phase, "to": target, "reason": reason})
+        self.phase = target
+
+    def register_geometry_backend(self, backend: str) -> None:
+        self.geometry_backends.add(backend)
+        if len(self.geometry_backends) > 1:
+            raise RuntimeError("STAGE16D_GEOMETRY_BACKEND_BUDGET_EXHAUSTED")
+
+    def register_geometry_repair(self, *, reason: str) -> None:
+        self.geometry_repairs += 1
+        if self.geometry_repairs > 3:
+            raise RuntimeError("STAGE16D_GEOMETRY_REPAIR_BUDGET_EXHAUSTED")
+        self.transitions.append(
+            {
+                "phase": self.phase,
+                "geometry_repair": self.geometry_repairs,
+                "reason": reason,
+            }
+        )
+
+    def register_terminal_refinement_profile(self, profile: str) -> None:
+        self.terminal_refinement_profiles.add(profile)
+        if len(self.terminal_refinement_profiles) > 1:
+            raise RuntimeError("STAGE16D_TERMINAL_REFINEMENT_PROFILE_BUDGET_EXHAUSTED")
+
+    def register_global_optimizer_upgrade(self, *, reason: str) -> None:
+        self.global_optimizer_upgrades += 1
+        if self.global_optimizer_upgrades > 1:
+            raise RuntimeError("STAGE16D_GLOBAL_OPTIMIZER_UPGRADE_BUDGET_EXHAUSTED")
+        self.transitions.append(
+            {
+                "phase": self.phase,
+                "global_optimizer_upgrade": self.global_optimizer_upgrades,
+                "reason": reason,
+            }
+        )
+
+    def register_ppo_run(self, clip: str, *, seed: int, samples: int) -> None:
+        if samples < 0 or samples > 67_108_864:
+            raise RuntimeError(f"STAGE16D_PPO_SAMPLE_BUDGET_EXHAUSTED:{clip}")
+        seeds = self.ppo_seeds.setdefault(clip, set())
+        seeds.add(int(seed))
+        if len(seeds) > 2:
+            raise RuntimeError(f"STAGE16D_PPO_SEED_BUDGET_EXHAUSTED:{clip}")
+        self.ppo_samples[clip] = self.ppo_samples.get(clip, 0) + int(samples)
+
+    def register_ppo_lr_fallback(self, clip: str) -> None:
+        count = self.ppo_lr_fallbacks.get(clip, 0) + 1
+        if count > 1:
+            raise RuntimeError(f"STAGE16D_PPO_LR_FALLBACK_BUDGET_EXHAUSTED:{clip}")
+        self.ppo_lr_fallbacks[clip] = count
+
+    def as_dict(self) -> dict[str, Any]:
+        payload = asdict(self)
+        payload["geometry_backends"] = sorted(self.geometry_backends)
+        payload["terminal_refinement_profiles"] = sorted(self.terminal_refinement_profiles)
+        payload["ppo_seeds"] = {key: sorted(value) for key, value in self.ppo_seeds.items()}
+        return {
+            "schema_version": "Stage16DGeometryAndPPORecoveryStateMachine",
+            **payload,
+        }
+
+
+__all__ += [
+    "GEOMETRY_PPO_PHASES",
+    "Stage16DGeometryAndPPORecoveryStateMachine",
+]

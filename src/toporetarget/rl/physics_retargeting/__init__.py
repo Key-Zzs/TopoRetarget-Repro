@@ -6,7 +6,10 @@ from .contracts import (
     PhysicsConsistentTaskGateV1,
     TaskSemanticContractV1,
 )
-from .recovery import Stage16DRecoveryStateMachine
+from .recovery import (
+    Stage16DGeometryAndPPORecoveryStateMachine,
+    Stage16DRecoveryStateMachine,
+)
 from .spline_actions import PiecewiseSplineResidualV1
 
 __all__ = [
@@ -14,6 +17,7 @@ __all__ = [
     "PhysicsConsistentTaskGateV1",
     "PersistentContactTopologyV1",
     "PiecewiseSplineResidualV1",
+    "Stage16DGeometryAndPPORecoveryStateMachine",
     "Stage16DRecoveryStateMachine",
     "TaskSemanticContractV1",
 ]
