@@ -123,11 +123,15 @@ def _best_diagnostic(rows: list[dict[str, Any]], object_id: str) -> dict[str, An
     candidates = [row for row in rows if row["object_id"] == object_id]
 
     def key(row: dict[str, Any]) -> tuple[Any, ...]:
+        def metric(name: str, *, missing: float) -> float:
+            value = row[name]
+            return missing if value is None else float(value)
+
         return (
-            -float(row["terminal_hold_stability"] or 0.0),
-            -float(row["topology_coverage"] or 0.0),
-            -float(row["contact_persistence"] or 0.0),
-            float(row["terminal_angular_speed_p95_max_radps"] or float("inf")),
+            -metric("terminal_hold_stability", missing=0.0),
+            -metric("topology_coverage", missing=0.0),
+            -metric("contact_persistence", missing=0.0),
+            metric("terminal_angular_speed_p95_max_radps", missing=float("inf")),
             row["candidate_id"],
         )
 
