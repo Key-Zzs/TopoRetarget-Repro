@@ -98,8 +98,14 @@ telemetry。C.5A-R3 完成 T0--T5 contact topology 矩阵：T0/T1 通过，但 T
 shard 及所有 natural T5 shard（最小 8x12）都在 raw/derived gate 失败；T3 staggered start 仅为
 诊断，不能验证 candidate pool。结论是 `TRUE_CONTACT_SOLVER_NONDETERMINISM`。R3 已实现每个
 replica 都从 frame zero 独立运行的 robust contract，但两个 selected trace 的 C5C 20-replica
-均不满足未改变的物理任务门槛。当前状态为 `STAGE16C5_CONTACT_ORACLE_BLOCKED`；C5B、C.6/PPO、
-sample 与 checkpoint 仍为零，且不放宽 tolerance 或修改 solver/reference/controller。C.6
+均不满足未改变的物理任务门槛。R4 在查看 candidate 结果前冻结 20-replica natural baseline
+及全部七项 distribution metric。两个 clip 的 pre-contact 通过，但 contact-onset、
+sustained-contact 与 post-contact 均超过冻结 envelope。384/576/768 persistent pool 全部通过
+mapping/resource gate，最终选择 384。H1/H5/H10 robust CEM 已实现，B0/B1 与两条 30-step B2
+已完成，但两条 B2 最终 formal failure probability 都是 1.0；因此 B3 和新 C5C 均为
+`NOT_STARTED_GATE_BLOCKED`。当前状态为 `STAGE16C5_PHYSX_ROBUST_ORACLE_PARTIAL`；C.6/PPO
+未获授权，started=false、samples=0、checkpoints=0，且不放宽 tolerance 或修改
+solver/reference/controller/reward/termination。C.6
 single-clip GPU PPO 仍未获授权
 （`STAGE16C6_SINGLE_CLIP_GPU_PPO_NOT_AUTHORIZED`；0 样本、0 checkpoint）。
 C.7 two-clip GPU PPO、

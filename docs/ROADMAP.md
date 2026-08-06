@@ -64,8 +64,9 @@ R0 is MJCF playback/PD, R1 is PPO tracking, and CP remains later.
 | 16-C.2 | Isaac Lab `DirectRLEnv` | Stage-16 task shell | Asset migration complete | COMPLETE / `STAGE16C2_DIRECT_RL_ENV_VALIDATED` |
 | 16-C.3 | Single-environment semantic parity | Action/observation/reward/termination parity | DirectRLEnv exists | COMPLETE / `STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED`: one authorized global factor-8 retiming preserves both source hashes and all 41 source keys in a derived 321-sample view; C3-0 through C3-5 pass with the unchanged shared bounded wrist profile |
 | 16-C.4 | GPU vectorization benchmark | Stage-16 task throughput | Semantic parity passes | COMPLETE / `STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`: all 128/512/1024/2048/4096 aggregate-contact counts exit clean/finite; selected 4096 envs x rollout 16 = 65536 samples/update |
-| 16-C.5A | Contact topology and robust contract | T0--T5 attribution plus independent statistical-oracle contract | C.3/C.4 qualified | COMPLETE FAIL-CLOSED / `STAGE16C5_CONTACT_ORACLE_BLOCKED`: R3 finds `TRUE_CONTACT_SOLVER_NONDETERMINISM` (no natural T4/T5 shard passes) and C5C fails unchanged physical gates for both selected traces |
-| 16-C.5B | PhysX oracle evaluator | Separately authorized bounded evaluator | Physically qualified C5C on both clips | NOT AUTHORIZED / `STAGE16C5_CONTACT_ORACLE_BLOCKED`; no CEM, no formal Oracle episodes |
+| 16-C.5A | Distributional candidate replication | Natural 20-replica baseline, frozen distribution metrics, persistent GPU pool | C.3/C.4 qualified; R3 deterministic failure retained | PARTIAL / `REPLICATION_DISTRIBUTION_FAIL`: pre-contact passes both clips, all contact-bearing phases fail frozen natural envelopes; 384/576/768 pools pass and 384 is selected |
+| 16-C.5B | Multi-horizon robust CEM | H1/H5/H10, 32x3x4 persistent evaluation, lexical robust selector | C.5A-R4 distribution gate passes | IMPLEMENTED / GATE-BLOCKED: B0/B1 and two 30-step B2 runs complete; both B2 outcomes have failure probability 1.0, so B3 is `NOT_STARTED_GATE_BLOCKED` |
+| 16-C.5C | Two-clip formal robust qualification | New B3 trace plus 20 fresh frame-zero PhysX episodes per clip | Both B3 full rollouts complete | NOT STARTED / gate-blocked by C.5A-R4 and B2; `STAGE16C5_PHYSX_ROBUST_ORACLE_PARTIAL` |
 | 16-C.6 | Single-clip GPU PPO | Per-clip PPO in Isaac Lab | PhysX oracle passes both clips | NOT AUTHORIZED; 0 samples, 0 checkpoints |
 | 16-C.7 | Two-clip GPU PPO | Shared policy | Both single-clip policies pass | TODO |
 | 16-C.8 | Dynamics randomization | Bounded PhysX DR | Nominal policy qualified | TODO |
@@ -109,11 +110,17 @@ C.5A-R3 then finds T0/T1 passing but T2, every natural T4 shard, and every
 natural T5 shard (including 8x12) failing raw and derived gates. The result is
 `TRUE_CONTACT_SOLVER_NONDETERMINISM`; T3 staggered starts are diagnostic only.
 R3 implements an independent frame-zero robust contract, but C5C's unchanged
-20-replica physical gate fails for both selected traces. The exact current
-status is `STAGE16C5_CONTACT_ORACLE_BLOCKED`: C5B, C.6/PPO, samples, and
-checkpoints remain at zero, without tolerance softening or solver/reference/
-controller mutation. Neither historical MuJoCo evidence nor C.3/C.4 authorizes
-a PhysX oracle or PPO.
+20-replica physical gate fails for both selected traces. R4 freezes a
+20-replica distributional baseline and all seven metrics before candidate
+results. Both clips pass pre-contact but fail contact-onset, sustained-contact,
+and post-contact envelopes. Persistent 384/576/768 pools pass their mapping and
+resource gates; 384 is selected. The H1/H5/H10 robust CEM is implemented and
+B0/B1 plus two 30-step B2 runs complete, but both B2 runs finish with formal
+failure probability 1.0. B3 and the new C5C are therefore
+`NOT_STARTED_GATE_BLOCKED`. The exact status is
+`STAGE16C5_PHYSX_ROBUST_ORACLE_PARTIAL`: C.6/PPO is not authorized and remains
+started=false, samples=0, checkpoints=0, without tolerance softening or
+solver/reference/controller/reward/termination mutation.
 
 The Wuji three-clip implementation is available through the generic
 `workflow run-grab-suite` command; its completion status is determined only by

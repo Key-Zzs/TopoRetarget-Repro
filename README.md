@@ -135,13 +135,23 @@ raw and derived state gates. The formal result is
 staggered starts pass only as a diagnostic and never validate a candidate pool.
 R3 implements a frame-zero independent robust statistical contract, but C5C's
 20 replicas fail the unchanged physical task gates for both selected traces
-(170105: orientation; 170650: axis/position). The exact state is
-`STAGE16C5_CONTACT_ORACLE_BLOCKED`: no C5B Oracle, C.6/PPO, samples, or
-checkpoints, and no tolerance/solver/reference/controller change. See the
+(170105: orientation; 170650: axis/position). R4 then freezes a new
+distributional contract before candidate results, covering mean, variance,
+p95, Wasserstein, MMD, termination divergence, and 95% success intervals over
+20 replicas. Both clips pass pre-contact replication but fail every
+contact-bearing phase. Persistent 384/576/768 candidate layouts all run on GPU
+with unbiased deterministic slot permutation; 384 (32 candidates x 3 horizons
+x 4 replicas) is selected at 2.53 vector control steps/s and 2351 MiB. The
+actual three-iteration H1/H5/H10 CEM completes B0/B1 and two 30-step B2 runs,
+but both reach failure probability 1.0. B3 and formal C5C are therefore
+`NOT_STARTED_GATE_BLOCKED`; the exact state is
+`STAGE16C5_PHYSX_ROBUST_ORACLE_PARTIAL`. C.6/PPO is not authorized: started
+= false, samples = 0, checkpoints = 0. No tolerance, solver, reference,
+controller, reward, termination, or physical gate changed. See the
 [DirectRLEnv contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md),
 [state-replication closeout](docs/rl/ISAACLAB_STATE_REPLICATION.md),
 [wrist closeout](docs/rl/ISAACLAB_WRIST_DYNAMICS.md), and
-[the asset migration contract](docs/rl/ISAACLAB_ASSET_MIGRATION.md).  The R3
+[the asset migration contract](docs/rl/ISAACLAB_ASSET_MIGRATION.md). The R3
 [contact-topology and robust-oracle handoff](docs/reports/stage16_c5a_r3_contact_topology_robust_oracle.md)
 records the exact C5 boundary.
 

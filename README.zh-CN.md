@@ -113,9 +113,15 @@ contact telemetry 均通过。C.5A-R3 在保留这些输入的前提下完成了
 `TRUE_CONTACT_SOLVER_NONDETERMINISM`，不是 harness metric failure；T3 staggered start 的通过
 只具诊断意义，绝不验证 candidate pool。R3 实现了每个 replica 都从 frame zero 独立运行的
 robust statistical contract，但两个 selected trace 的 C5C 20-replica 均未通过原始物理任务门槛
-（170105 为 orientation；170650 为 axis/position）。当前精确状态为
-`STAGE16C5_CONTACT_ORACLE_BLOCKED`：未运行 C5B Oracle、C.6/PPO、sample 或 checkpoint，且没有
-改变 tolerance、solver、reference 或 controller。详见
+（170105 为 orientation；170650 为 axis/position）。R4 随后在查看 candidate 结果前冻结新的
+distributional contract，对 20 replicas 比较 mean、variance、p95、Wasserstein、MMD、termination
+divergence 与 95% success interval。两个 clip 的 pre-contact 均通过，但所有含接触 phase 均失败。
+384/576/768 三档 persistent GPU candidate pool 均完成无偏 deterministic slot permutation 验证；
+最终选择 384（32 candidates x 3 horizons x 4 replicas），速度 2.53 vector control steps/s，显存
+2351 MiB。真实三轮 H1/H5/H10 CEM 完成 B0/B1 和两条 30-step B2，但两条最终 failure
+probability 都是 1.0。因此 B3 与正式 C5C 为 `NOT_STARTED_GATE_BLOCKED`，当前精确状态为
+`STAGE16C5_PHYSX_ROBUST_ORACLE_PARTIAL`。C.6/PPO 未获授权：started = false、samples = 0、
+checkpoints = 0。未改变 tolerance、solver、reference、controller、reward、termination 或物理 gate。详见
 [DirectRLEnv 契约](docs/rl/ISAACLAB_DIRECT_RL_ENV.md)、
 [state-replication 收口](docs/rl/ISAACLAB_STATE_REPLICATION.zh-CN.md)、
 [wrist 收口](docs/rl/ISAACLAB_WRIST_DYNAMICS.md) 和

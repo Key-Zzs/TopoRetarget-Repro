@@ -2,16 +2,69 @@
 
 ## Current verdict
 
-`STAGE16C5_CONTACT_ORACLE_BLOCKED`.  Stage 16-C.5A-R3 completed the required
-contact-topology diagnosis and implemented the frozen robust-oracle contract,
-but its independent C5C qualification fails the unchanged physical task gates
-for both frozen selected traces.  Therefore C5B is not authorized, and no
-Oracle optimization episode, CEM run, PPO sample, or checkpoint exists.
+`STAGE16C5_PHYSX_ROBUST_ORACLE_PARTIAL`. Stage 16-C.5A-R4 implements the
+distributional contract and persistent GPU pool, and C5B implements an actual
+three-iteration multi-horizon robust CEM. The frozen distribution gate fails
+for every contact-bearing phase on both clips, and both bounded B2 rollouts
+finish with formal failure probability 1.0. B3 and the new formal C5C are
+therefore `NOT_STARTED_GATE_BLOCKED`. C.6/PPO is not authorized: started is
+false, samples are 0, and checkpoints are 0.
 
 This supersedes the R1-only wording while retaining its evidence.  The result
 is neither a harness-metric failure nor permission to change PhysX solver
-settings, tolerances, reference timing, controller, effort limits, mass, or
-friction.
+settings, tolerances, reference timing, controller, effort limits, mass,
+friction, reward, termination, or physical gates.
+
+## R4 distributional replication result
+
+`DistributionalReplicationContractV1` is frozen before candidate inspection.
+For 20 natural and 20 candidate replicas it covers object pose/velocity, wrist
+state, finger state, tracked links, all reward components, contact count/force/
+impulse, termination reason, and success probability. The immutable metrics
+are mean, variance, p95, per-feature Wasserstein, RBF MMD, total-variation
+termination divergence, and 95% Wilson success intervals. Every limit is twice
+the p95 deterministic half-split envelope measured from the natural population
+only; no result-dependent metric or gate adjustment is permitted.
+
+Both clips pass pre-contact. `hocap_170105` fails all three contact-bearing
+phases in state/task fields; `hocap_170650` fails contact onset in reward
+components and fails sustained/post-contact state/task fields. Termination
+divergence remains zero, so this is not a reason-code or auto-reset artifact.
+The required historical conclusion `SAME_SCENE_CONTACT_DIVERGENCE` /
+`TRUE_CONTACT_SOLVER_NONDETERMINISM` is retained unchanged.
+
+## Persistent pool and robust CEM
+
+One persistent DirectRLEnv is reused per benchmark/CEM process. All required
+layouts pass unique allocation, deterministic per-iteration slot permutation,
+ranking invariance under two mappings, and zero hidden rollout writes.
+
+| Population x horizons x replicas | Candidate envs | VRAM | Vector control steps/s | Dispatch | Aggregation |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 32 x 3 x 4 | 384 | 2351 MiB | 2.529 | 6.24 ms | 1.56 ms |
+| 48 x 3 x 4 | 576 | 2429 MiB | 1.716 | 6.26 ms | 2.33 ms |
+| 32 x 3 x 8 | 768 | 2507 MiB | 1.315 | 6.48 ms | 2.02 ms |
+
+The selection rule first requires CEM compatibility, then chooses throughput;
+32 x 3 x 4 is selected. `RobustMultiHorizonCEMV1` uses H=[1,5,10], population
+32, three iterations, eight elites, four replicas, initial std 0.35, floor
+0.05, and no scored padding. The selector is strictly ordered by failure
+probability, 0.8-CVaR gate violation, worst normalized margin, p95 axis,
+p95 position, p95 rotation, mean tracking, contact stability, smoothness, and
+effort. Candidate simulations use audited setup rewinds; selected actions use
+the normal controller/PhysX path. Formal C5C, if authorized later, is explicitly
+restore-free.
+
+B1 covers pre-contact/contact/post-contact for both clips. B2 runs 30 steps per
+clip and exercises both H=1 and H=10 selection. Its terminal evidence is:
+
+| Clip | H selection | failure probability | p95 position | p95 rotation | p95 axis |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `hocap_170105` | H1: 19, H10: 11 | 1.0 | 0.2505 m | 138.49 deg | 0.2987 m |
+| `hocap_170650` | H1: 26, H10: 4 | 1.0 | 0.2248 m | 137.45 deg | 0.2887 m |
+
+These failures are retained. B3, optimized 320-action traces, and C5C's 20
+fresh episodes per clip do not exist because their prerequisite gates fail.
 
 ## R3 topology diagnosis
 
@@ -70,19 +123,23 @@ or action modification.
 | `hocap_170105` | 0% success, 0% final reach; position 0.00827 m, axis 0.04665 m, rotation 47.48 deg | `FAILURE_OBJECT_ORIENTATION` |
 | `hocap_170650` | 0% success, 0% final reach; mean position 0.03841 m, axis 0.05492 m, rotation 26.66 deg | `FAILURE_OBJECT_AXIS_POINT` |
 
-Neither trace meets the unchanged C5C gates, so a robust contract is
-implemented but not physically qualified.  It does not authorize C5B or C.6.
+Neither historical trace meets the unchanged C5C gates. This remains R3
+evidence; R4 later implements bounded C5B but also fails and does not authorize
+C.6.
 
 ## Scope stop and future authority
 
-C5B, C.6/PPO, C.7, checkpoints, and real-robot work remain out of scope.  A
-future goal needs explicit authority to propose and freeze a new physical
-repair; it cannot silently relax a gate or treat the serial robust runner as a
-solution to the contact-topology failure.  Historical MuJoCo Oracle evidence
-does not authorize an Isaac Lab Oracle or PPO.
+B3, formal C5C, C.6/PPO, C.7, checkpoints, and real-robot work remain
+gate-blocked. Factor-8 changes the reference's time semantics; the virtual
+wrist remains an abstract actuator rather than a real robot arm. Nothing here
+is a sim-to-real claim. A future goal cannot silently relax a gate, change a
+frozen metric after observing results, or treat B0--B2 execution as formal
+qualification.
 
 The authoritative machine-readable reports are intentionally ignored local
 evidence:
 
 - `.local/reports/stage16c5a_r3_contact_topology_final/contact_topology_diagnosis.json`
 - `.local/reports/stage16c5a_r3_robust_oracle_final_retry1/robust_oracle_report.json`
+- `.local/reports/stage16c5_r4_distributional_final/`
+- `.local/reports/stage16c5_r4_cem_final/`
