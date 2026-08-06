@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import math
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -86,6 +89,78 @@ class RuntimeCollisionProxyPenetrationV1:
         }
 
 
+def geometry_contract_sha256(payload: dict[str, Any]) -> str:
+    """Hash a geometry contract with stable JSON serialization."""
+
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+@dataclass(frozen=True)
+class RuntimeCollisionProxyPenetrationV2:
+    """Evidence-gated normalization revision; absolute safety limits stay frozen."""
+
+    parent_v1_sha256: str
+    calibration_sha256: str
+    geometry_epsilon_m: float
+    dynamic_contact_floor_max_m: float
+    dynamic_contact_floor_active_p95_m: float
+    schema_version: str = "RuntimeCollisionProxyPenetrationV2"
+    geometry_authority: str = "C.1 authored runtime collision proxies"
+    strict_catastrophic_max_m: float = 0.010
+    maximum_p95_m: float = 0.003
+    relative_degradation_factor: float = 1.10
+
+    def __post_init__(self) -> None:
+        hashes = (self.parent_v1_sha256, self.calibration_sha256)
+        if any(
+            len(value) != 64 or any(char not in "0123456789abcdef" for char in value)
+            for value in hashes
+        ):
+            raise ValueError("V2 requires lowercase SHA-256 parent and calibration hashes")
+        values = (
+            self.geometry_epsilon_m,
+            self.dynamic_contact_floor_max_m,
+            self.dynamic_contact_floor_active_p95_m,
+        )
+        if not all(math.isfinite(value) and value >= 0.0 for value in values):
+            raise ValueError("V2 geometry values must be finite and nonnegative")
+        if self.geometry_epsilon_m > self.dynamic_contact_floor_max_m:
+            raise ValueError("V2 max dynamic floor cannot be below geometry epsilon")
+        if self.geometry_epsilon_m > self.dynamic_contact_floor_active_p95_m:
+            raise ValueError("V2 p95 dynamic floor cannot be below geometry epsilon")
+        if self.strict_catastrophic_max_m != 0.010 or self.maximum_p95_m != 0.003:
+            raise ValueError("V2 cannot change the frozen 10mm/3mm absolute gates")
+        if self.relative_degradation_factor != 1.10:
+            raise ValueError("V2 cannot change the source degradation factor")
+        if self.dynamic_contact_floor_max_m >= self.strict_catastrophic_max_m:
+            raise ValueError("V2 max dynamic floor must remain below the absolute max gate")
+        if self.dynamic_contact_floor_active_p95_m > self.maximum_p95_m:
+            raise ValueError("V2 p95 dynamic floor must remain within the absolute p95 gate")
+
+    def relative_limit(self, metric: str, source_value_m: float) -> float:
+        if metric == "max_penetration_m":
+            floor = self.dynamic_contact_floor_max_m
+        elif metric in {"p95_penetration_m", "active_p95_penetration_m"}:
+            floor = self.dynamic_contact_floor_active_p95_m
+        else:
+            raise ValueError(f"unsupported V2 relative metric: {metric}")
+        source_limit = source_value_m * self.relative_degradation_factor + self.geometry_epsilon_m
+        return max(source_limit, floor)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            **asdict(self),
+            "relative_comparison": (
+                "corrected_metric <= max(source_metric * 1.10 + geometry_epsilon_m, "
+                "dynamic_contact_floor_metric)"
+            ),
+            "absolute_gates_unchanged": True,
+            "clip_specific_thresholds": False,
+            "formal_authority": "exact python-fcl RuntimeCollisionProxy query",
+        }
+
+
 GEOMETRY_QUERY_CONTRACT = GeometryQueryContractV1()
 GEOMETRY_METRIC_CONTRACT = RuntimeCollisionProxyPenetrationV1()
 
@@ -95,4 +170,6 @@ __all__ = [
     "GEOMETRY_QUERY_CONTRACT",
     "GeometryQueryContractV1",
     "RuntimeCollisionProxyPenetrationV1",
+    "RuntimeCollisionProxyPenetrationV2",
+    "geometry_contract_sha256",
 ]

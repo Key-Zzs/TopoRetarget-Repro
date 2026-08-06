@@ -228,3 +228,123 @@ __all__ += [
     "GEOMETRY_PPO_PHASES",
     "Stage16DGeometryAndPPORecoveryStateMachine",
 ]
+
+
+GEOMETRY_AWARE_PPO_PHASES = (
+    "INPUT_FREEZE",
+    "GATE_ATTAINABILITY",
+    "METRIC_V2",
+    "FAST_SIGNAL",
+    "GEOMETRY_RANKING",
+    "OPTIMIZE_170650",
+    "OPTIMIZE_170105",
+    "TRAJECTORY_QUALIFICATION",
+    "DEMONSTRATIONS",
+    "BC",
+    "PPO_BENCHMARK",
+    "PPO_170650",
+    "PPO_170105",
+    "TWO_CLIP",
+    "V2_EXPORT",
+    "SENSITIVITY",
+    "CLOSEOUT",
+)
+
+
+@dataclass
+class Stage16DGeometryAwarePPORecoveryStateMachine:
+    """Budgets and prerequisite checks for the D.4R2 through D.7 recovery."""
+
+    phase: str = "INPUT_FREEZE"
+    transitions: list[dict[str, Any]] = field(default_factory=list)
+    gate_versions: set[str] = field(default_factory=lambda: {"V1"})
+    fast_geometry_backends: set[str] = field(default_factory=set)
+    optimizer_levels: dict[str, set[str]] = field(default_factory=dict)
+    formal_evaluations: dict[str, int] = field(default_factory=dict)
+    ppo_seeds: dict[str, set[int]] = field(default_factory=dict)
+    ppo_lr_fallbacks: dict[str, int] = field(default_factory=dict)
+    single_ppo_validated: set[str] = field(default_factory=set)
+
+    def transition(self, target: str, *, reason: str) -> None:
+        if target not in GEOMETRY_AWARE_PPO_PHASES:
+            raise ValueError("unknown Stage16D geometry-aware recovery phase")
+        if len(self.transitions) >= 48:
+            raise RuntimeError("STAGE16D_MAJOR_TRANSITION_BUDGET_EXHAUSTED")
+        if target == "TWO_CLIP" and self.single_ppo_validated != {
+            "hocap_170105",
+            "hocap_170650",
+        }:
+            raise RuntimeError("STAGE16D_TWO_CLIP_PPO_PREREQUISITES_NOT_MET")
+        self.transitions.append({"from": self.phase, "to": target, "reason": reason})
+        self.phase = target
+
+    def register_gate_version(self, version: str) -> None:
+        if version not in {"V1", "V2"}:
+            raise ValueError("only V1 and evidence-authorized V2 are supported")
+        self.gate_versions.add(version)
+        if len(self.gate_versions) > 2:
+            raise RuntimeError("STAGE16D_GEOMETRY_GATE_VERSION_BUDGET_EXHAUSTED")
+
+    def register_fast_geometry_backend(self, backend: str) -> None:
+        self.fast_geometry_backends.add(backend)
+        if len(self.fast_geometry_backends) > 1:
+            raise RuntimeError("STAGE16D_FAST_GEOMETRY_BACKEND_BUDGET_EXHAUSTED")
+
+    def register_optimizer_level(self, clip: str, level: str) -> None:
+        if level not in {"G1", "G2"}:
+            raise ValueError("only G1/G2 optimizer levels are authorized")
+        levels = self.optimizer_levels.setdefault(clip, set())
+        if level == "G2" and "G1" not in levels:
+            raise RuntimeError(f"STAGE16D_G2_REQUIRES_G1:{clip}")
+        levels.add(level)
+        if len(levels) > 2:
+            raise RuntimeError(f"STAGE16D_GEOMETRY_OPTIMIZER_LEVEL_BUDGET_EXHAUSTED:{clip}")
+
+    def register_formal_evaluation(self, clip: str, level: str) -> None:
+        key = f"{clip}:{level}"
+        evaluations = self.formal_evaluations.get(key, 0) + 1
+        self.formal_evaluations[key] = evaluations
+        if evaluations > 1:
+            raise RuntimeError(f"STAGE16D_FORMAL20_BUDGET_EXHAUSTED:{key}")
+
+    def register_ppo_run(self, clip: str, *, seed: int, samples: int) -> None:
+        if samples < 0 or samples > 67_108_864:
+            raise RuntimeError(f"STAGE16D_PPO_SAMPLE_BUDGET_EXHAUSTED:{clip}")
+        seeds = self.ppo_seeds.setdefault(clip, set())
+        seeds.add(int(seed))
+        if len(seeds) > 2:
+            raise RuntimeError(f"STAGE16D_PPO_SEED_BUDGET_EXHAUSTED:{clip}")
+
+    def register_ppo_lr_fallback(self, clip: str) -> None:
+        count = self.ppo_lr_fallbacks.get(clip, 0) + 1
+        if count > 1:
+            raise RuntimeError(f"STAGE16D_PPO_LR_FALLBACK_BUDGET_EXHAUSTED:{clip}")
+        self.ppo_lr_fallbacks[clip] = count
+
+    def authorize_single_ppo_success(self, clip: str) -> None:
+        if clip not in {"hocap_170105", "hocap_170650"}:
+            raise ValueError("unknown Stage16D clip")
+        self.single_ppo_validated.add(clip)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "Stage16DGeometryAwarePPORecoveryStateMachineV1",
+            "phase": self.phase,
+            "transitions": self.transitions,
+            "gate_versions": sorted(self.gate_versions),
+            "fast_geometry_backends": sorted(self.fast_geometry_backends),
+            "optimizer_levels": {
+                key: sorted(value) for key, value in self.optimizer_levels.items()
+            },
+            "formal_evaluations": dict(self.formal_evaluations),
+            "ppo_seeds": {key: sorted(value) for key, value in self.ppo_seeds.items()},
+            "ppo_lr_fallbacks": dict(self.ppo_lr_fallbacks),
+            "single_ppo_validated": sorted(self.single_ppo_validated),
+            "major_transition_budget": 48,
+        }
+
+
+__all__ += [
+    "GEOMETRY_AWARE_PPO_PHASES",
+    "Stage16DGeometryAwarePPORecoveryStateMachine",
+]

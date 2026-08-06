@@ -1,0 +1,17 @@
+schema_version: OnlineRuntimeProxyGeometrySignalConfigV1
+formal_authority: exact_python_fcl_runtime_collision_proxy
+fast_role:
+  - candidate_pre_ranking
+  - ppo_dense_penalty
+  - online_monitoring
+qualification:
+  catastrophic_10mm_recall: 1.0
+  over_3mm_recall: 0.99
+  penetration_sign_agreement: 0.99
+  no_contact_false_positive_rate: 0.01
+  holdout_p95_absolute_depth_error_m: 0.0005
+fallback:
+  exact_top_k_minimum_elite_multiple: 2
+  exact_for_all_elites: true
+  exact_for_all_final_candidates: true
+  exact_for_all_formal_replicas: true
