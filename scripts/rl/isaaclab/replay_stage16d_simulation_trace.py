@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -82,6 +83,11 @@ def parse_args() -> argparse.Namespace:
         help="Bound static-frame hold; GUI defaults to hold until close",
     )
     parser.add_argument("--headless", action="store_true")
+    parser.add_argument(
+        "--validation-output",
+        type=Path,
+        help="Optional JSON receipt written after a complete replay pass",
+    )
     parser.add_argument("--accept-eula", action="store_true")
     return parser.parse_args()
 
@@ -148,6 +154,38 @@ def _status_line(trace: Stage16DSimulationTraceReplay, frame: int, replica: int)
         f"penetration={penetration} inter_finger={inter_finger} "
         f"finite={row.finite} reason={row.reason_code}"
     )
+
+
+def _write_validation_receipt(
+    path: Path,
+    *,
+    args: argparse.Namespace,
+    trace: Stage16DSimulationTraceReplay,
+    frames: range,
+    reference_ghost: str,
+    ppo_metadata: dict[str, object],
+) -> None:
+    """Materialize replay evidence without changing legacy trace playback."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": "Stage16DPPO26DReplayValidationV1",
+        "status": "STAGE16D_PPO26D_REPLAY_VALIDATED",
+        "headless": args.headless,
+        "trace": str(args.trace.resolve()),
+        "object": args.object,
+        "replica": args.replica,
+        "frame_start": frames.start,
+        "frame_end_exclusive": frames.stop,
+        "frame_count": len(frames),
+        "trace_kind": trace.trace_kind,
+        "qualification_status": trace.qualification_status,
+        "hand_collision_proxy_count": len(trace.hand_collision_body_names),
+        "reference_ghost": reference_ghost,
+        "ppo_action_contract": ppo_metadata.get("action_contract"),
+        "finite": all(trace.diagnostics(frame, args.replica).finite for frame in frames),
+    }
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _ppo26d_embedded_reference(
@@ -405,6 +443,15 @@ def main() -> int:
                     args.max_loops is None or loop_count < args.max_loops
                 )
         print()
+        if args.validation_output is not None:
+            _write_validation_receipt(
+                args.validation_output,
+                args=args,
+                trace=trace,
+                frames=frames,
+                reference_ghost=ghost_kind,
+                ppo_metadata=ppo_metadata,
+            )
         print(
             f"REPLAY_COMPLETE object={object_id} trace={args.trace.resolve()} "
             f"replica={args.replica} frames={frames.start}:{frames.stop} "
