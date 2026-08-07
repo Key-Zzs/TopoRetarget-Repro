@@ -7,7 +7,7 @@ import pytest
 
 from toporetarget.rl.geometry_audit.simulation_trace_replay import (
     infer_object_id,
-    load_reference_object_pose,
+    load_factor8_hocap_reference_object_pose,
     load_stage16d_simulation_trace,
 )
 
@@ -178,12 +178,50 @@ def test_corrected_trace_rejects_replica_without_frame_telemetry(tmp_path: Path)
         trace.validate_replica(1)
 
 
-def test_load_reference_object_pose_requires_matching_frames(tmp_path: Path) -> None:
-    source = tmp_path / "source_trace.npz"
-    pose = np.zeros((3, 7), dtype=np.float32)
+def _write_hocap_reference(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    timestamps = np.arange(41, dtype=np.float64) * 0.05
+    position = np.stack((timestamps, np.square(timestamps), -timestamps), axis=-1)
+    quaternion = np.zeros((41, 4), dtype=np.float64)
+    quaternion[:, 0] = 1.0
+    quaternion[20:, 0] = -1.0
+    twist = np.zeros((41, 6), dtype=np.float64)
+    twist[:, 0] = 1.0
+    twist[:, 1] = 2.0 * timestamps
+    twist[:, 2] = -1.0
+    np.savez_compressed(
+        path,
+        timestamps=timestamps,
+        object_pose_translation_world_ref=position,
+        object_pose_quaternion_world_ref_wxyz=quaternion,
+        object_twist_world_ref=twist,
+    )
+    return position, quaternion
+
+
+def test_factor8_hocap_reference_preserves_all_source_keys(tmp_path: Path) -> None:
+    reference = tmp_path / "hocap_170105.world_wrist.stage16.npz"
+    position, quaternion = _write_hocap_reference(reference)
+
+    pose = load_factor8_hocap_reference_object_pose(reference, expected_frames=321)
+
+    assert pose.shape == (321, 7)
+    np.testing.assert_allclose(pose[::8, :3], position, atol=1.0e-7)
+    np.testing.assert_allclose(np.abs(pose[::8, 3:]), np.abs(quaternion), atol=1.0e-7)
+
+
+def test_factor8_hocap_reference_rejects_physx_source_trace(tmp_path: Path) -> None:
+    source = tmp_path / "source_trace_170105.npz"
+    pose = np.zeros((321, 7), dtype=np.float32)
     pose[:, 3] = 1.0
     np.savez_compressed(source, object_pose=pose)
 
-    assert load_reference_object_pose(source, expected_frames=3).shape == (3, 7)
-    with pytest.raises(ValueError, match="shape"):
-        load_reference_object_pose(source, expected_frames=4)
+    with pytest.raises(ValueError, match="PhysX source trace"):
+        load_factor8_hocap_reference_object_pose(source, expected_frames=321)
+
+
+def test_factor8_hocap_reference_requires_matching_runtime_length(tmp_path: Path) -> None:
+    reference = tmp_path / "hocap_170105.world_wrist.stage16.npz"
+    _write_hocap_reference(reference)
+
+    with pytest.raises(ValueError, match="produces 321 frames"):
+        load_factor8_hocap_reference_object_pose(reference, expected_frames=41)

@@ -23,7 +23,7 @@ from toporetarget.rl.geometry_audit.runtime_geometry import (  # noqa: E402
 from toporetarget.rl.geometry_audit.simulation_trace_replay import (  # noqa: E402
     Stage16DSimulationTraceReplay,
     infer_object_id,
-    load_reference_object_pose,
+    load_factor8_hocap_reference_object_pose,
     load_stage16d_simulation_trace,
 )
 from toporetarget.rl.geometry_audit.transforms import transform_points  # noqa: E402
@@ -32,6 +32,7 @@ DEFAULT_MANIFEST = (
     REPO_ROOT / ".local/reports/stage16d_metric_qualification_and_ppo/"
     "runtime_collision_geometry_manifest.json"
 )
+DEFAULT_REFERENCE_ROOT = REPO_ROOT / ".local/stage16_reference_tracking_ppo/world_wrist_references"
 
 
 def parse_args() -> argparse.Namespace:
@@ -48,9 +49,14 @@ def parse_args() -> argparse.Namespace:
         help="Optional qualification JSON; corrected traces auto-detect a matching sibling",
     )
     parser.add_argument(
-        "--source-trace",
+        "--reference",
         type=Path,
-        help="Optional source/reference NPZ rendered as a translucent object ghost",
+        help="Frozen 41-frame HO-Cap Stage 16 reference; inferred from --object by default",
+    )
+    parser.add_argument(
+        "--no-reference-ghost",
+        action="store_true",
+        help="Disable the factor-8 HO-Cap reference ghost",
     )
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--object", choices=("hocap_170105", "hocap_170650"))
@@ -154,10 +160,15 @@ def main() -> int:
         expected_body_names=[proxy.body_name for proxy in hand_proxies],
         qualification_path=args.qualification,
     )
-    source_object_pose = (
-        load_reference_object_pose(args.source_trace, expected_frames=trace.frame_count)
-        if args.source_trace is not None
-        else None
+    reference_path = args.reference or (
+        DEFAULT_REFERENCE_ROOT / f"{object_id}.world_wrist.stage16.npz"
+    )
+    reference_object_pose = (
+        None
+        if args.no_reference_ghost
+        else load_factor8_hocap_reference_object_pose(
+            reference_path, expected_frames=trace.frame_count, time_scale=8
+        )
     )
     trace.validate_replica(args.replica)
     if args.frame is not None:
@@ -223,11 +234,11 @@ def main() -> int:
             (0.92, 0.82, 0.20),
             0.72,
         )
-        source_object_prim = None
-        if source_object_pose is not None:
-            source_object_prim = create_proxy(
+        reference_object_prim = None
+        if reference_object_pose is not None:
+            reference_object_prim = create_proxy(
                 object_proxy_map[object_id][0],
-                f"/World/Replay/SourceObject/{object_id}",
+                f"/World/Replay/HOCapReferenceObject/{object_id}",
                 (0.20, 0.88, 1.00),
                 0.25,
             )
@@ -250,8 +261,8 @@ def main() -> int:
                 )
                 prim.color_attr.Set([Gf.Vec3f(*color)])
             set_pose(object_prim, trace.object_pose[frame, replica])
-            if source_object_prim is not None and source_object_pose is not None:
-                set_pose(source_object_prim, source_object_pose[frame])
+            if reference_object_prim is not None and reference_object_pose is not None:
+                set_pose(reference_object_prim, reference_object_pose[frame])
             object_color = object_prim.base_color
             if trace.frame_worst_penetration_m is not None:
                 depth = float(trace.frame_worst_penetration_m[frame, replica])
@@ -264,8 +275,8 @@ def main() -> int:
             print("\r" + _status_line(trace, frame, replica), end="", flush=True)
 
         center, radius = trace.camera_bounds(args.replica, frames)
-        if source_object_pose is not None:
-            reference_positions = source_object_pose[np.asarray(list(frames)), :3]
+        if reference_object_pose is not None:
+            reference_positions = reference_object_pose[np.asarray(list(frames)), :3]
             low = np.minimum(center - radius, reference_positions.min(axis=0))
             high = np.maximum(center + radius, reference_positions.max(axis=0))
             center = (low + high) * 0.5
@@ -275,10 +286,15 @@ def main() -> int:
         sim.reset()
 
         qualification_metrics = trace.qualification_metrics or {}
+        reference_label = (
+            str(reference_path.resolve()) if reference_object_pose is not None else "none"
+        )
         print(
             f"REPLAY_INPUT kind={trace.trace_kind} frames={trace.frame_count} "
             f"qualification={trace.qualification_status} metrics={qualification_metrics} "
-            f"source_ghost={'enabled' if source_object_pose is not None else 'disabled'}",
+            "reference_ghost="
+            f"{'factor8_hocap_reference' if reference_object_pose is not None else 'disabled'} "
+            f"reference={reference_label}",
             flush=True,
         )
 

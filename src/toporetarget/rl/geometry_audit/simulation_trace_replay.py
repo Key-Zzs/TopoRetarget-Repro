@@ -43,6 +43,12 @@ CORRECTED_TRACE_REQUIRED_ARRAYS = (
 )
 
 CONTACT_GROUP_NAMES = ("thumb", "index", "middle", "ring", "pinky", "palm")
+HOCAP_REFERENCE_FIELDS = (
+    "timestamps",
+    "object_pose_translation_world_ref",
+    "object_pose_quaternion_world_ref_wxyz",
+    "object_twist_world_ref",
+)
 
 
 def infer_object_id(path: Path) -> str:
@@ -443,15 +449,104 @@ def load_stage16d_simulation_trace(
     )
 
 
-def load_reference_object_pose(path: Path, *, expected_frames: int) -> np.ndarray:
-    """Load a source/reference object pose solely for translucent comparison."""
+def _hermite_retime_numpy(
+    values: np.ndarray,
+    derivatives: np.ndarray,
+    interval: np.ndarray,
+    alpha: np.ndarray,
+    *,
+    source_dt_s: float,
+) -> np.ndarray:
+    start = values[interval]
+    end = values[interval + 1]
+    velocity_start = derivatives[interval]
+    velocity_end = derivatives[interval + 1]
+    weight = alpha[:, None]
+    weight2 = weight * weight
+    weight3 = weight2 * weight
+    return (
+        (2.0 * weight3 - 3.0 * weight2 + 1.0) * start
+        + (weight3 - 2.0 * weight2 + weight) * source_dt_s * velocity_start
+        + (-2.0 * weight3 + 3.0 * weight2) * end
+        + (weight3 - weight2) * source_dt_s * velocity_end
+    )
 
+
+def _quaternion_retime_numpy(
+    values: np.ndarray, interval: np.ndarray, alpha: np.ndarray
+) -> np.ndarray:
+    start = values[interval]
+    end = values[interval + 1].copy()
+    end[np.sum(start * end, axis=-1) < 0.0] *= -1.0
+    weight = alpha[:, None]
+    result = (1.0 - weight) * start + weight * end
+    return result / np.maximum(np.linalg.norm(result, axis=-1, keepdims=True), 1.0e-12)
+
+
+def load_factor8_hocap_reference_object_pose(
+    path: Path,
+    *,
+    expected_frames: int,
+    time_scale: int = 8,
+) -> np.ndarray:
+    """Materialize the frozen 41-frame HO-Cap reference as the runtime view.
+
+    This intentionally accepts only the immutable Stage 16 reference schema,
+    not a recorded PhysX ``source_trace``.  Its interpolation is the NumPy
+    equivalent of :meth:`WorldWristReferenceBank.apply_uniform_time_scale`.
+    """
+
+    if isinstance(time_scale, bool) or not isinstance(time_scale, int) or time_scale < 1:
+        raise ValueError("reference time_scale must be a positive integer")
     arrays = _load_npz(path)
-    if "object_pose" not in arrays:
-        raise ValueError("reference trace is missing object_pose")
-    pose = arrays["object_pose"]
-    _validate_pose_array("reference object_pose", pose, (expected_frames, 7))
-    return pose
+    missing = sorted(set(HOCAP_REFERENCE_FIELDS) - arrays.keys())
+    if missing:
+        raise ValueError(
+            "HO-Cap reference is missing frozen reference fields; a PhysX source trace "
+            f"cannot be used as the ghost: {missing}"
+        )
+    timestamps = np.asarray(arrays["timestamps"], dtype=np.float64)
+    position = np.asarray(arrays["object_pose_translation_world_ref"], dtype=np.float64)
+    quaternion = np.asarray(arrays["object_pose_quaternion_world_ref_wxyz"], dtype=np.float64)
+    twist = np.asarray(arrays["object_twist_world_ref"], dtype=np.float64)
+    if (
+        timestamps.shape != (41,)
+        or position.shape != (41, 3)
+        or quaternion.shape != (41, 4)
+        or twist.shape != (41, 6)
+    ):
+        raise ValueError("HO-Cap reference must be the frozen 41-frame object contract")
+    if not all(np.isfinite(value).all() for value in (timestamps, position, quaternion, twist)):
+        raise ValueError("HO-Cap reference contains non-finite values")
+    source_delta = np.diff(timestamps)
+    if not np.all(source_delta > 0.0) or not np.isclose(np.median(source_delta), 0.05, atol=1.0e-8):
+        raise ValueError("HO-Cap reference must be the frozen 20 Hz contract")
+    quaternion_norm = np.linalg.norm(quaternion, axis=-1)
+    if np.any(quaternion_norm < 1.0e-8):
+        raise ValueError("HO-Cap reference contains a zero quaternion")
+    quaternion = quaternion / quaternion_norm[:, None]
+
+    retimed_frames = (len(timestamps) - 1) * time_scale + 1
+    if expected_frames != retimed_frames:
+        raise ValueError(
+            f"factor-{time_scale} HO-Cap reference produces {retimed_frames} frames, "
+            f"but the replay trace has {expected_frames}"
+        )
+    coordinate = np.arange(retimed_frames, dtype=np.float64) / float(time_scale)
+    interval = np.minimum(np.floor(coordinate).astype(np.int64), len(timestamps) - 2)
+    alpha = np.clip(coordinate - interval, 0.0, 1.0)
+    alpha[-1] = 1.0
+    retimed_position = _hermite_retime_numpy(
+        position,
+        twist[:, :3],
+        interval,
+        alpha,
+        source_dt_s=0.05,
+    )
+    retimed_quaternion = _quaternion_retime_numpy(quaternion, interval, alpha)
+    pose = np.concatenate((retimed_position, retimed_quaternion), axis=-1)
+    _validate_pose_array("factor-8 HO-Cap reference object pose", pose, (expected_frames, 7))
+    return pose.astype(np.float32)
 
 
 __all__ = [
@@ -459,7 +554,8 @@ __all__ = [
     "Stage16DSimulationTraceReplay",
     "TRACE_REQUIRED_ARRAYS",
     "CORRECTED_TRACE_REQUIRED_ARRAYS",
+    "HOCAP_REFERENCE_FIELDS",
     "infer_object_id",
-    "load_reference_object_pose",
+    "load_factor8_hocap_reference_object_pose",
     "load_stage16d_simulation_trace",
 ]

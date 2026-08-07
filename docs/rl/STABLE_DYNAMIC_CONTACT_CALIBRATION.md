@@ -41,9 +41,11 @@ metric.
 The same viewer also accepts the nominal 321-frame trace exported by
 `PhysicsConsistentRetargetedTrajectoryV1`. For that schema it derives contact
 groups from the recorded per-body contact mask, reports the matching trajectory
-qualification JSON, and can overlay the recorded source object as a translucent
-cyan ghost. It never broadcasts nominal contact telemetry onto the other robust
-replicas, so corrected traces expose replica 0 only.
+qualification JSON, and overlays the immutable 41-frame HO-Cap object reference
+as a translucent cyan ghost after applying the exact factor-8 runtime retiming
+contract. It never accepts `source_trace_*.npz` as that ghost and never
+broadcasts nominal contact telemetry onto other robust replicas, so corrected
+traces expose replica 0 only. Use `--no-reference-ghost` for an unoverlaid view.
 
 Run the current `hocap_170105` trace continuously at half speed:
 
@@ -74,8 +76,8 @@ For a new repair, pass its trace and matching optional `*_geometry.npz`. The
 object id is inferred from a filename containing `hocap_170105` or
 `hocap_170650`; use `--object` when a custom filename does not contain one.
 
-Replay the complete current `hocap_170105` corrected trajectory with its source
-object ghost:
+Replay the complete current `hocap_170105` corrected trajectory with its
+factor-8 HO-Cap reference ghost:
 
 ```bash
 cd /home/deepcybo/workspace/dex/retarget/TopoRetarget-Repro
@@ -84,7 +86,7 @@ conda run --no-capture-output -n toporetarget-isaaclab \
 env OMNI_KIT_ACCEPT_EULA=YES \
 python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py \
   --trace .local/reports/stage16d_physics_consistent_retargeting/trajectory_trace_170105_v3.npz \
-  --source-trace .local/reports/stage16d_physics_consistent_retargeting/source_trace_170105.npz \
+  --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170105.world_wrist.stage16.npz \
   --qualification .local/reports/stage16d_physics_consistent_retargeting/trajectory_qualification_170105_v3.json \
   --object hocap_170105 --fps 20 --speed 0.5 --loop --accept-eula
 ```
