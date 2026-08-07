@@ -87,3 +87,19 @@ The newer stable free-object calibration also failed before formal20:
 contract failure, not a PPO training failure. BC and PPO workers were not
 started; samples and checkpoints remain zero. Two-clip PPO cannot start unless
 both single-clip policies independently qualify.
+
+## D.5-R0 superseding PPO gate
+
+The preceding sections preserve the historical D.4 entry decision, but it is
+superseded for `Stage16DReferenceResidualAction26DV1`. The training reference
+is the original factor-8 Stage16-D reference, never a corrected yellow-object
+path or CEM output. Gate A is the only entry gate. It intentionally does not
+evaluate terminal contact, terminal stability, final success, exact
+hand-object penetration, or old CEM qualification; those are Gate C post-PPO
+diagnostics.
+
+The protocol is `TOPORETARGET_PPO_REPRODUCTION_WITH_26D_WRIST_ADAPTATION`.
+It retains the paper tracking reward/PPO, adds wrist tracking because the
+virtual wrist is controllable, and labels the 6-D wrist residual, explicit
+serial 3P+3R wrist, factor-8 timing, and IsaacLab backend as engineering
+adaptations. See [REFERENCE_TRACKING_PPO_26D.md](REFERENCE_TRACKING_PPO_26D.md).

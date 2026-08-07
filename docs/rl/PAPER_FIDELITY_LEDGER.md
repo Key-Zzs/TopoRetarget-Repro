@@ -65,6 +65,20 @@ Factor-8 changes timing; the virtual wrist is not a physical arm; partial
 simulation trajectories are not real-robot data or PPO data; no sim-to-real
 claim is made.
 
+### Stage 16-D.5 PPO-26D update
+
+| Item | Paper value | Implemented mapping | Classification | Evidence |
+| --- | --- | --- | --- | --- |
+| Reference-residual PPO | Appendix A.5 / Tables 4–6 | paper object/link/joint/smoothness terms, RSI and PPO | PAPER_EXACT | `docs/TopoRetarget.pdf`, pp. 13–16 |
+| Wrist residual | finger residual only | 3 translation + 3 rotation-vector residual composed with reference SE(3) | ENGINEERING_ADAPTATION | `Stage16DReferenceResidualAction26DV1` |
+| Explicit virtual wrist | fixed/given base | serial 3P+3R target through existing SE(3) adapter | ENGINEERING_ADAPTATION | `explicit_virtual_wrist.py` |
+| Factor-8 timing | 400-step, 20 s reference | immutable 41-key source materialized at 321 × 20 Hz | ENGINEERING_ADAPTATION | `WorldWristReferenceBank` |
+| IsaacLab backend | author backend not disclosed | GPU PhysX `DirectRLEnv` | ENGINEERING_ADAPTATION | Stage 16-C platform contract |
+
+The D.5 claim is `TOPORETARGET_PPO_REPRODUCTION_WITH_26D_WRIST_ADAPTATION`,
+not exact author reproduction. Unimplemented IsaacLab randomization mappings
+remain `PAPER_FIDELITY_PARTIAL` and are never represented as paper-exact.
+
 ## Stage 16-C.0 Isaac Lab platform ledger
 
 | Item | Paper value | Implemented mapping | Classification | Evidence |

@@ -608,3 +608,22 @@ D.4R3 冻结了 12 个 C1 与 8 个不重复的 C2 development candidate。每�
 `STAGE16D_STABLE_GRASP_CALIBRATION_BLOCKED`，停止标记为
 `STAGE16D_STABLE_FREE_OBJECT_GRASP_CALIBRATION_BLOCKED`；formal20、V2、trajectory
 optimizer、BC 与 PPO 仍被禁止。
+
+## Stage 16-D.5 PPO-26D 入口修订
+
+Stage 16-D.5 只对 PPO lane 替换原有的 trajectory/terminal/geometry 授权链。历史
+S3/CEM replay 保留为负对照：在当前 self-collision contract 下，`hocap_170105` 与
+`hocap_170650` 的 terminal contact、terminal stability 和 final success 均为 `0/20`。
+它们被重新归类为 `PRE_PPO_BASELINE_FAILURE`，绝不是 `PPO_ENTRY_BLOCKER`。
+
+Gate A 是唯一的训练前判断：它验证 factor-8 的 321-sample reference、6-D wrist 加
+20-D finger 的 reference-residual action、SE(3) 到 explicit 3P+3R adapter、有限的
+vector rollout/PPO update、仅 reset 的 state write 与 checkpoint round-trip。Gate B
+记录训练时 safety；terminal contact/stability、penetration 与最终 success 移至 Gate C
+post-PPO physics qualification。已训练但尚未通过 Gate C 的策略报告为
+`PPO_TRAINED_NOT_YET_PHYSICS_QUALIFIED`，而不是未经授权。
+
+当前路线是 `TOPORETARGET_PPO_REPRODUCTION_WITH_26D_WRIST_ADAPTATION`：保留论文的
+reference-tracking reward/PPO，而可控 virtual wrist、factor-8 timing 与 IsaacLab
+backend 均明确为 engineering adaptation。详见
+[PPO-26D contract](docs/rl/REFERENCE_TRACKING_PPO_26D.md)。

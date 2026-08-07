@@ -111,3 +111,17 @@ physics_consistent_retargeting_extension:
   ppo_samples: 0
   ppo_checkpoints: 0
   sim_to_real_claim: false
+stage16d_ppo26d_revision:
+  label: TOPORETARGET_PPO_REPRODUCTION_WITH_26D_WRIST_ADAPTATION
+  stage: 16-D.5
+  ppo_entry_gate: ENVIRONMENT_TRAINABILITY_GATE_A_ONLY
+  old_s3_cem_status: PRE_PPO_BASELINE_FAILURE
+  old_s3_cem_terminal_contact: {hocap_170105: "0/20", hocap_170650: "0/20"}
+  old_s3_cem_terminal_stability: {hocap_170105: "0/20", hocap_170650: "0/20"}
+  old_s3_cem_final_success: {hocap_170105: "0/20", hocap_170650: "0/20"}
+  paper_reference_tracking_ppo: PAPER_EXACT
+  wrist_residual_6d: ENGINEERING_ADAPTATION
+  explicit_serial_3p3r_wrist: ENGINEERING_ADAPTATION
+  factor8_reference: ENGINEERING_ADAPTATION
+  isaaclab_backend: ENGINEERING_ADAPTATION
+  post_ppo_geometry_status: PAPER_FIDELITY_PARTIAL

@@ -140,3 +140,19 @@ candidates no candidate passed the complete stability contract, so no
 20-replica formal calibration was authorized. The exact stop is
 `STAGE16D_STABLE_FREE_OBJECT_GRASP_CALIBRATION_BLOCKED`. This calibration is
 not a task trajectory and cannot establish task success.
+
+## D.5-R0 PPO entry-gate revision
+
+This document retains D.4/D.4R3 as historical trajectory/geometry evidence.
+They no longer authorize or prohibit the independent reference-residual PPO
+lane. Current S3/CEM replays are `PRE_PPO_BASELINE_FAILURE`: for both clips the
+self-collision/terminal revision measured terminal contact `0/20`, terminal
+stability `0/20`, and final success `0/20`.
+
+Gate A is the only pre-PPO gate: source-reference provenance and 321-frame
+factor-8 materialization; 26-D action and SE(3) adapter; reset-only object and
+wrist state writes; free-object contact causality; finite observations,
+rewards, vector rollouts, GAE, losses, parameter updates, and checkpoint
+round-trip. Gate B monitors numerical/safety failures during training. Gate C,
+after training, evaluates task/contact/geometry. Gate C failure yields
+`PPO_TRAINED_NOT_YET_PHYSICS_QUALIFIED`, not a pre-training block.

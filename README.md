@@ -650,3 +650,25 @@ terminal-hold, twist, and geometry gates. The result is
 `STAGE16D_STABLE_GRASP_CALIBRATION_BLOCKED` with stop marker
 `STAGE16D_STABLE_FREE_OBJECT_GRASP_CALIBRATION_BLOCKED`; formal20, V2,
 trajectory optimization, BC, and PPO remain prohibited.
+
+## Stage 16-D.5 PPO-26D entry revision
+
+Stage 16-D.5 replaces the former trajectory/terminal/geometry authorization
+chain for the PPO lane only. The historical S3/CEM replays remain valid
+negative-control evidence: `hocap_170105` and `hocap_170650` both have terminal
+contact, terminal stability, and final success of `0/20` under the current
+self-collision contract. They are `PRE_PPO_BASELINE_FAILURE`, never
+`PPO_ENTRY_BLOCKER`.
+
+Gate A is the sole pre-training decision: it verifies the 321-sample factor-8
+reference, 6-D wrist plus 20-D finger reference-residual action, SE(3)-to-
+explicit-3P+3R adapter, finite vector rollout/PPO update, reset-only state
+writes, and checkpoint round-trip. Gate B monitors training safety. Terminal
+contact/stability, penetration, and final success are Gate C post-PPO physics
+qualification. A trained policy which has not passed Gate C is
+`PPO_TRAINED_NOT_YET_PHYSICS_QUALIFIED`, not unauthorized.
+
+The active route is `TOPORETARGET_PPO_REPRODUCTION_WITH_26D_WRIST_ADAPTATION`:
+the paper reference-tracking reward/PPO is retained, while the controllable
+virtual wrist, factor-8 timing, and IsaacLab backend are engineering
+adaptations. See [the PPO-26D contract](docs/rl/REFERENCE_TRACKING_PPO_26D.md).

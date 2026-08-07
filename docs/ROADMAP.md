@@ -240,3 +240,23 @@ in timeout. Inter-finger penetration passed 20/20 (max 1.774 mm for `170105`
 and 0.265 mm for `170650`). These runs invalidate the former 15/20 terminal
 success as current evidence; they do not create a newly optimized trajectory
 or authorize PPO.
+
+## Stage 16-D.5 PPO-26D route
+
+| Stage | Scope | Status |
+| --- | --- | --- |
+| D.5-R0 | PPO entry-gate revision and documentation | CURRENT |
+| D.5-R1 | 26D wrist-and-finger reference-residual contract | CURRENT |
+| D.5-R2 | IsaacLab PPO environment, RSI, reward and nominal DR | CURRENT |
+| D.5-R3 | Host-GPU capacity qualification and automatic env selection | CURRENT |
+| D.5-R4 | Environment/trainability Gate A | CURRENT |
+| D.5-R5 | `hocap_170650` smoke and L0 PPO (at least 1M samples) | CURRENT |
+| D.5-R6 | Continue the single-clip sample ladder (4M, 16M, at most 67M if justified) | FUTURE |
+| D.5-R7 | Post-PPO formal physics qualification | FUTURE |
+| D.5-R8 | `hocap_170105` single-clip PPO-26D | FUTURE |
+| D.6 | Multi-clip PPO | FUTURE |
+| D.7 | `PhysicsQualifiedIsaacTrajectory` export | FUTURE |
+
+Old S3/CEM actions are `PRE_PPO_BASELINE_FAILURE` (`0/20` terminal contact,
+terminal stability, and final success for both clips). They do not block Gate
+A; terminal/contact/penetration qualification is Gate C after PPO training.
