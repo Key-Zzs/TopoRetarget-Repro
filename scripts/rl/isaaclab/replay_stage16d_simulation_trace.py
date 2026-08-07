@@ -152,7 +152,7 @@ def _status_line(trace: Stage16DSimulationTraceReplay, frame: int, replica: int)
 
 def _ppo26d_embedded_reference(
     trace_path: Path, *, expected_frames: int
-) -> tuple[np.ndarray | None, dict[str, str]]:
+) -> tuple[np.ndarray | None, dict[str, object]]:
     """Read optional PPO metadata without changing legacy trace interpretation."""
 
     with np.load(trace_path, allow_pickle=False) as archive:
@@ -172,6 +172,11 @@ def _ppo26d_embedded_reference(
             )
             if name in archive.files
         }
+        if "reward_total" in archive.files:
+            reward_total = np.asarray(archive["reward_total"], dtype=np.float64)
+            if reward_total.shape != (expected_frames,) or not np.isfinite(reward_total).all():
+                raise ValueError("PPO reward_total must be finite [frames]")
+            metadata["reward_total"] = reward_total
     if metadata.get("trace_type") != "stage16d_ppo26d":
         raise ValueError("embedded PPO reference requires trace_type=stage16d_ppo26d")
     if metadata.get("action_contract") != "26D_reference_residual":
@@ -330,6 +335,9 @@ def main() -> int:
                         f" finger_residual_norm={np.linalg.norm(action[6:]):.4f}"
                         " reference_frame=embedded_ppo"
                     )
+                reward_total = ppo_metadata.get("reward_total")
+                if isinstance(reward_total, np.ndarray):
+                    line += f" reward={float(reward_total[frame]):.4f}"
             print("\r" + line, end="", flush=True)
 
         center, radius = trace.camera_bounds(args.replica, frames)

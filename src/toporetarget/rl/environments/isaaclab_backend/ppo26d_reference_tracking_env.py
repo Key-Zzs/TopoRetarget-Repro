@@ -254,6 +254,10 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         return {"policy": observation}
 
     def _get_rewards(self) -> torch.Tensor:
+        first_difference = self._actions - self._previous_actions
+        second_difference = (
+            self._actions - 2.0 * self._previous_actions + self._second_previous_actions
+        )
         reward = super()._get_rewards()
         self._last_reward_terms = {
             **self._last_reward_terms,
@@ -264,6 +268,10 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             "r_wrist_rotation": self._last_reward_terms["wrist_rotation"],
             "r_wrist": self._last_reward_terms["wrist_position"]
             + self._last_reward_terms["wrist_rotation"],
+            "smoothness_wrist": first_difference[:, :6].square().sum(dim=-1)
+            + second_difference[:, :6].square().sum(dim=-1),
+            "smoothness_finger": first_difference[:, 6:26].square().sum(dim=-1)
+            + second_difference[:, 6:26].square().sum(dim=-1),
         }
         return reward
 

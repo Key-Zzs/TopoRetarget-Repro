@@ -72,6 +72,12 @@ def run_episode(env: Any, trainer: PPO26DTrainer, *, capture: bool) -> dict[str,
     terminal_contact = False
     final_extras: dict[str, Any] = {}
     rows: dict[str, list[np.ndarray]] = {
+        "wrist_pose": [],
+        "wrist_twist": [],
+        "virtual_wrist_q": [],
+        "virtual_wrist_qdot": [],
+        "finger_q": [],
+        "finger_qdot": [],
         "object_pose": [],
         "object_twist": [],
         "hand_collision_body_pose": [],
@@ -93,24 +99,89 @@ def run_episode(env: Any, trainer: PPO26DTrainer, *, capture: bool) -> dict[str,
         "reward_links": [],
         "reward_finger": [],
         "reward_wrist": [],
+        "reward_wrist_translation": [],
+        "reward_wrist_rotation": [],
         "reward_smoothness": [],
+        "reward_smoothness_wrist": [],
+        "reward_smoothness_finger": [],
         "reason_code": [],
+        "terminated": [],
+        "timed_out": [],
+        "inter_finger_penetration_m": [],
     }
+    object_tracking_errors: list[float] = []
+    wrist_position_errors: list[float] = []
+    wrist_rotation_errors: list[float] = []
+    finger_errors: list[float] = []
+    inter_finger_values: list[float] = []
     for _ in range(env.reference_bank.frame_count):
         state = env._state()
         with torch.no_grad():
             distribution = trainer.trainer.distribution(observation["policy"])
             action = distribution.mean.clamp(-1.0, 1.0)
         index = int(env._reference_index[0].item())
-        if capture:
-            body_ids = torch.as_tensor(env._hand_collision_body_ids, device=env.device)
-            body_pose = torch.cat(
-                (
-                    env._robot.data.body_link_pos_w[0, body_ids],
-                    env._robot.data.body_link_quat_w[0, body_ids],
-                ),
-                dim=-1,
+        object_reference_position = env.reference_bank.object_pose_translation_world_ref[1, index]
+        wrist_reference_position = env.reference_bank.wrist_pose_translation_world_ref[1, index]
+        wrist_reference_quaternion = env.reference_bank.wrist_pose_quaternion_world_ref_wxyz[
+            1, index
+        ]
+        finger_reference = env.reference_bank.q_finger_ref[1, index]
+        object_tracking_errors.append(
+            float(
+                torch.linalg.vector_norm(
+                    state["object_position_scene"][0] - object_reference_position
+                )
             )
+        )
+        wrist_position_errors.append(
+            float(
+                torch.linalg.vector_norm(
+                    state["wrist_position_scene"][0] - wrist_reference_position
+                )
+            )
+        )
+        wrist_rotation_errors.append(
+            float(
+                torch.acos(
+                    torch.clamp(
+                        torch.abs(
+                            (state["wrist_quaternion_wxyz"][0] * wrist_reference_quaternion).sum()
+                        ),
+                        max=1.0,
+                    )
+                )
+                * 2.0
+            )
+        )
+        finger_errors.append(float(torch.mean(torch.abs(state["finger_q"][0] - finger_reference))))
+        body_ids = torch.as_tensor(env._hand_collision_body_ids, device=env.device)
+        body_pose = torch.cat(
+            (
+                env._robot.data.body_link_pos_w[0, body_ids],
+                env._robot.data.body_link_quat_w[0, body_ids],
+            ),
+            dim=-1,
+        )
+        inter_finger = env._inter_finger_metric.evaluate(body_pose.unsqueeze(0))[
+            "maximum_penetration_m"
+        ]
+        inter_finger_values.append(float(inter_finger[0].detach().cpu()))
+        if capture:
+            rows["wrist_pose"].append(
+                torch.cat((state["wrist_position_scene"][0], state["wrist_quaternion_wxyz"][0]))
+                .detach()
+                .cpu()
+                .numpy()
+            )
+            rows["wrist_twist"].append(state["wrist_twist_world"][0].detach().cpu().numpy())
+            rows["virtual_wrist_q"].append(
+                env._robot.data.joint_pos[0, env._virtual_wrist_joint_ids].detach().cpu().numpy()
+            )
+            rows["virtual_wrist_qdot"].append(
+                env._robot.data.joint_vel[0, env._virtual_wrist_joint_ids].detach().cpu().numpy()
+            )
+            rows["finger_q"].append(state["finger_q"][0].detach().cpu().numpy())
+            rows["finger_qdot"].append(state["finger_qdot"][0].detach().cpu().numpy())
             rows["object_pose"].append(
                 torch.cat((state["object_position_scene"][0], state["object_quaternion_wxyz"][0]))
                 .detach()
@@ -183,25 +254,57 @@ def run_episode(env: Any, trainer: PPO26DTrainer, *, capture: bool) -> dict[str,
             rows["reward_links"].append(terms["r_link"][0].detach().cpu().numpy())
             rows["reward_finger"].append(terms["r_finger"][0].detach().cpu().numpy())
             rows["reward_wrist"].append(terms["r_wrist"][0].detach().cpu().numpy())
+            rows["reward_wrist_translation"].append(
+                terms["r_wrist_translation"][0].detach().cpu().numpy()
+            )
+            rows["reward_wrist_rotation"].append(
+                terms["r_wrist_rotation"][0].detach().cpu().numpy()
+            )
             rows["reward_smoothness"].append(terms["smoothness"][0].detach().cpu().numpy())
+            rows["reward_smoothness_wrist"].append(
+                terms["smoothness_wrist"][0].detach().cpu().numpy()
+            )
+            rows["reward_smoothness_finger"].append(
+                terms["smoothness_finger"][0].detach().cpu().numpy()
+            )
             rows["reason_code"].append(
                 final_extras["primary_reason_code"][0].detach().cpu().numpy()
             )
+            rows["terminated"].append(terminated[0].detach().cpu().numpy())
+            rows["timed_out"].append(timed_out[0].detach().cpu().numpy())
+            rows["inter_finger_penetration_m"].append(inter_finger[0].detach().cpu().numpy())
         if bool(terminated[0] | timed_out[0]):
             break
     linear_speed = float(final_extras.get("object_linear_speed_mps", torch.zeros(1))[0].cpu())
     angular_speed = float(final_extras.get("object_angular_speed_radps", torch.zeros(1))[0].cpu())
     return {
-        "steps": len(rows["action"]) if capture else env.reference_bank.frame_count,
-        "reached_final_reference": bool(len(rows["action"]) == env.reference_bank.frame_count)
-        if capture
-        else True,
+        "steps": len(object_tracking_errors),
+        "reached_final_reference": bool(
+            len(object_tracking_errors) == env.reference_bank.frame_count
+        ),
         "total_reward": total_reward,
         "contact": contact_seen,
         "terminal_contact": terminal_contact,
         "terminal_object_linear_speed_mps": linear_speed,
         "terminal_object_angular_speed_radps": angular_speed,
         "termination_reason": int(final_extras.get("primary_reason_code", torch.zeros(1))[0].cpu()),
+        "object_tracking_error_m": {
+            "mean": float(np.mean(object_tracking_errors)),
+            "final": float(object_tracking_errors[-1]),
+        },
+        "wrist_tracking": {
+            "position_error_m_mean": float(np.mean(wrist_position_errors)),
+            "rotation_error_rad_mean": float(np.mean(wrist_rotation_errors)),
+        },
+        "finger_tracking_error_rad_mean": float(np.mean(finger_errors)),
+        "self_collision_enabled": bool(
+            env.cfg.robot.spawn.articulation_props.enabled_self_collisions
+        ),
+        "inter_finger_penetration_m": {
+            "mean": float(np.mean(inter_finger_values)),
+            "max": float(np.max(inter_finger_values)),
+        },
+        "terminal_stability": "POST_PPO_QUALIFICATION_NOT_RUN",
         "trace": rows if capture else None,
     }
 
@@ -243,15 +346,15 @@ def main() -> int:
         rsi = [run_episode(env, trainer, capture=False) for _ in range(20)]
         assert trace_rows is not None
         trace_path = output / "ppo_l0_eval_trace_replica0.npz"
-        reference_pose = np.concatenate(
-            (
-                env.reference_bank.object_pose_translation_world_ref[1].detach().cpu().numpy(),
-                env.reference_bank.object_pose_quaternion_world_ref_wxyz[1].detach().cpu().numpy(),
-            ),
-            axis=-1,
-        )
+        reference_pose = np.asarray(trace_rows["object_reference"], dtype=np.float32)
         np.savez_compressed(
             trace_path,
+            wrist_pose=np.asarray(trace_rows["wrist_pose"], dtype=np.float32),
+            wrist_twist=np.asarray(trace_rows["wrist_twist"], dtype=np.float32),
+            virtual_wrist_q=np.asarray(trace_rows["virtual_wrist_q"], dtype=np.float32),
+            virtual_wrist_qdot=np.asarray(trace_rows["virtual_wrist_qdot"], dtype=np.float32),
+            finger_q=np.asarray(trace_rows["finger_q"], dtype=np.float32),
+            finger_qdot=np.asarray(trace_rows["finger_qdot"], dtype=np.float32),
             object_pose=np.asarray(trace_rows["object_pose"], dtype=np.float32),
             object_twist=np.asarray(trace_rows["object_twist"], dtype=np.float32),
             hand_collision_body_pose=np.asarray(
@@ -262,6 +365,11 @@ def main() -> int:
             contact_pair_presence=np.asarray(trace_rows["contact_pair_presence"], dtype=bool),
             actuator_effort=np.asarray(trace_rows["actuator_effort"], dtype=np.float32),
             reason_code=np.asarray(trace_rows["reason_code"], dtype=np.int64),
+            terminated=np.asarray(trace_rows["terminated"], dtype=bool),
+            timed_out=np.asarray(trace_rows["timed_out"], dtype=bool),
+            inter_finger_penetration_m=np.asarray(
+                trace_rows["inter_finger_penetration_m"], dtype=np.float32
+            ),
             action=np.asarray(trace_rows["action"], dtype=np.float32),
             action_mean=np.asarray(trace_rows["action_mean"], dtype=np.float32),
             action_std=np.asarray(trace_rows["action_std"], dtype=np.float32),
@@ -280,8 +388,19 @@ def main() -> int:
             reward_links=np.asarray(trace_rows["reward_links"], dtype=np.float32),
             reward_finger=np.asarray(trace_rows["reward_finger"], dtype=np.float32),
             reward_wrist=np.asarray(trace_rows["reward_wrist"], dtype=np.float32),
+            reward_wrist_translation=np.asarray(
+                trace_rows["reward_wrist_translation"], dtype=np.float32
+            ),
+            reward_wrist_rotation=np.asarray(trace_rows["reward_wrist_rotation"], dtype=np.float32),
             reward_smoothness=np.asarray(trace_rows["reward_smoothness"], dtype=np.float32),
+            reward_smoothness_wrist=np.asarray(
+                trace_rows["reward_smoothness_wrist"], dtype=np.float32
+            ),
+            reward_smoothness_finger=np.asarray(
+                trace_rows["reward_smoothness_finger"], dtype=np.float32
+            ),
             trace_type=np.asarray("stage16d_ppo26d"),
+            clip=np.asarray(args.clip),
             action_contract=np.asarray("26D_reference_residual"),
             checkpoint_path=np.asarray(str(checkpoint.resolve())),
             checkpoint_sha256=np.asarray(checkpoint_hash(checkpoint)),

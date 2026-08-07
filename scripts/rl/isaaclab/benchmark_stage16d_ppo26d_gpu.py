@@ -103,48 +103,73 @@ def child_main(args: argparse.Namespace) -> int:
         ppo26d_cfg.configure_stage16d_ppo26d(
             cfg, num_envs=args.child_num_envs, rsi=True, critical_dr=False
         )
+        startup_started = time.perf_counter()
         env = IsaacPPO26DReferenceTrackingEnv(cfg)
+        startup_s = time.perf_counter() - startup_started
+        reset_started = time.perf_counter()
         observation, _ = env.reset(seed=20260808)
+        reset_s = time.perf_counter() - reset_started
         if observation["policy"].shape != (args.child_num_envs, 764):
             raise RuntimeError("PPO26D_OBSERVATION_INVALID")
         action = torch.zeros((args.child_num_envs, 26), device=env.device)
+        b0_started = time.perf_counter()
         for _ in range(50):
             env.step(action)
+        torch.cuda.synchronize(env.device)
+        b0_elapsed_s = time.perf_counter() - b0_started
+        b1_started = time.perf_counter()
         for _ in range(100):
             env.step(action)
         torch.cuda.synchronize(env.device)
+        b1_elapsed_s = time.perf_counter() - b1_started
+        torch.cuda.synchronize(env.device)
         start = time.perf_counter()
-        finite = True
+        finite = torch.ones((), dtype=torch.bool, device=env.device)
+        nan_count = torch.zeros((), dtype=torch.long, device=env.device)
+        inf_count = torch.zeros((), dtype=torch.long, device=env.device)
         for _ in range(500):
             observation, reward, terminated, timed_out, _ = env.step(action)
-            finite &= bool(torch.isfinite(observation["policy"]).all())
-            finite &= bool(torch.isfinite(reward).all())
-            finite &= bool(
-                torch.isfinite(terminated.float()).all() & torch.isfinite(timed_out.float()).all()
-            )
+            values = (observation["policy"], reward, terminated.float(), timed_out.float())
+            finite &= torch.stack(tuple(torch.isfinite(value).all() for value in values)).all()
+            nan_count += sum(torch.isnan(value).sum() for value in values)
+            inf_count += sum(torch.isinf(value).sum() for value in values)
         torch.cuda.synchronize(env.device)
         elapsed = time.perf_counter() - start
+        torch.cuda.reset_peak_memory_stats(env.device)
         trainer = PPO26DTrainer(observation_dim=764, device=str(env.device))
         update = trainer.collect_and_update(env)
         # The last observation is needed only by checkpoint round-trip callers;
         # benchmark evidence must remain plain JSON.
         update.pop("last_policy_observation")
+        torch.cuda.synchronize(env.device)
         free_bytes, total_bytes = torch.cuda.mem_get_info(env.device)
         result = {
             "num_envs": args.child_num_envs,
             "startup_and_reset_pass": True,
+            "startup_s": startup_s,
+            "reset_s": reset_s,
             "b0_control_steps": 50,
+            "b0_elapsed_s": b0_elapsed_s,
+            "b0_control_steps_per_s": 50 / b0_elapsed_s,
             "b1_warmup_control_steps": 100,
+            "b1_elapsed_s": b1_elapsed_s,
+            "b1_control_steps_per_s": 100 / b1_elapsed_s,
             "b2_measurement_control_steps": 500,
             "b2_elapsed_s": elapsed,
+            "control_steps_per_s": 500 / elapsed,
+            "env_steps_per_s": args.child_num_envs * 500 / elapsed,
             "samples_per_s": args.child_num_envs * 500 / elapsed,
-            "finite": finite,
+            "finite": bool(finite.item()),
+            "nan_count": int(nan_count.item()),
+            "inf_count": int(inf_count.item()),
             "ppo_update": update,
             "ppo_update_ok": update["actor_parameter_changed"]
             and update["critic_parameter_changed"],
+            "rollout_storage_mib": update["rollout_storage_mib"],
+            "ppo_update_s": update["ppo_update_s"],
             "free_vram_mib": free_bytes / 2**20,
             "total_vram_mib": total_bytes / 2**20,
-            "torch_peak_allocated_mib": torch.cuda.max_memory_allocated(env.device) / 2**20,
+            "ppo_peak_allocated_mib": torch.cuda.max_memory_allocated(env.device) / 2**20,
             "cpu_rss_mib": _rss_mib(os.getpid()),
             "rsi": env.rsi_report(),
             "contract": env.contract_report(),
@@ -313,23 +338,41 @@ def main() -> int:
             stream,
             fieldnames=[
                 "num_envs",
+                "startup_s",
+                "reset_s",
+                "control_steps_per_s",
+                "env_steps_per_s",
                 "samples_per_s",
                 "ppo_update_ok",
+                "ppo_update_s",
+                "rollout_storage_mib",
+                "ppo_peak_allocated_mib",
                 "peak_vram_mib",
                 "free_vram_mib",
+                "nan_count",
+                "inf_count",
                 "clean_exit",
                 "eligible",
             ],
         )
         writer.writeheader()
-        for measurement in measurements:
+        for row, measurement in zip(rows, measurements, strict=True):
             writer.writerow(
                 {
                     "num_envs": measurement.num_envs,
+                    "startup_s": row.get("startup_s"),
+                    "reset_s": row.get("reset_s"),
+                    "control_steps_per_s": row.get("control_steps_per_s"),
+                    "env_steps_per_s": row.get("env_steps_per_s"),
                     "samples_per_s": measurement.samples_per_s,
                     "ppo_update_ok": measurement.ppo_update_ok,
+                    "ppo_update_s": row.get("ppo_update_s"),
+                    "rollout_storage_mib": row.get("rollout_storage_mib"),
+                    "ppo_peak_allocated_mib": row.get("ppo_peak_allocated_mib"),
                     "peak_vram_mib": measurement.peak_vram_mib,
                     "free_vram_mib": measurement.free_vram_mib,
+                    "nan_count": row.get("nan_count"),
+                    "inf_count": row.get("inf_count"),
                     "clean_exit": measurement.clean_exit,
                     "eligible": measurement.eligible,
                 }

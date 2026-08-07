@@ -66,6 +66,7 @@ def rollout_gate(
     critical_dr: bool,
     measurement: bool,
     warmup_steps: int = 0,
+    contact_probe: bool = False,
 ) -> dict[str, Any]:
     from toporetarget.rl.environments.isaaclab_backend import (
         ppo26d_reference_tracking_env_cfg as ppo26d_cfg,
@@ -80,6 +81,10 @@ def rollout_gate(
     try:
         observation, _ = env.reset(seed=20260808)
         action = torch.zeros((num_envs, 26), device=env.device)
+        if contact_probe:
+            # A bounded policy-space closing residual verifies that physical
+            # contact, rather than a kinematic write, can affect the free object.
+            action[:, 6:26] = 1.0
         initial_object = env._state()["object_position_scene"].clone()
         for _ in range(warmup_steps):
             env.step(action)
@@ -114,7 +119,19 @@ def rollout_gate(
             "rsi": rsi,
             "critical_dr": critical_dr,
             "measurement": measurement,
+            "contact_probe": contact_probe,
             "observation_shape": list(observation["policy"].shape),
+            "reference_index_min": int(env._reference_index.min().item()),
+            "reference_index_max": int(env._reference_index.max().item()),
+            "wrist_target_finite": bool(torch.isfinite(env._wrist_target_position).all()),
+            "finger_target_finite": bool(torch.isfinite(env._joint_target_isaac).all()),
+            "action_bounds": bool((action.abs() <= 1.0).all()),
+            "joint_limits_safe": bool(
+                (
+                    (env._state()["finger_q"] >= env.joint_lower)
+                    & (env._state()["finger_q"] <= env.joint_upper)
+                ).all()
+            ),
             "finite": bool(torch.isfinite(rewards).all()),
             "reward_non_constant": bool(torch.std(rewards) > 0.0),
             "reward_mean": float(rewards.mean()),
@@ -168,9 +185,23 @@ def main() -> int:
     selected = selected_num_envs(args)
     app = AppLauncher(headless=True).app
     try:
-        t0 = rollout_gate(num_envs=1, steps=100, rsi=False, critical_dr=False, measurement=False)
+        t0 = rollout_gate(
+            num_envs=1,
+            steps=100,
+            rsi=False,
+            critical_dr=False,
+            measurement=False,
+            contact_probe=True,
+        )
         write_json(root / "trainability" / "t0_single_env.json", t0)
-        t1 = rollout_gate(num_envs=128, steps=500, rsi=True, critical_dr=True, measurement=False)
+        t1 = rollout_gate(
+            num_envs=128,
+            steps=500,
+            rsi=True,
+            critical_dr=True,
+            measurement=False,
+            contact_probe=True,
+        )
         write_json(root / "trainability" / "t1_rsi_128env.json", t1)
         t2 = rollout_gate(
             num_envs=selected,
@@ -191,8 +222,8 @@ def main() -> int:
         "reference_loaded_correctly": t0["contract"]["reference_bank"]["frame_count"] == 321,
         "action_contract_26d": t0["contract"]["ppo26d"]["action_semantic"]
         == "Stage16DReferenceResidualAction26DV1",
-        "wrist_se3_adapter": t0["contract"]["ppo26d"]["action"]["action_dimension"] == 26,
-        "finger_target": t0["contract"]["joint_mapping"]["contract"]["action_dimension"] == 26,
+        "wrist_se3_adapter": t0["wrist_target_finite"],
+        "finger_target": t0["finger_target_finite"],
         "observation_finite": t0["finite"],
         "reward_finite": t0["finite"],
         "reward_non_constant": t0["reward_non_constant"],
@@ -203,8 +234,8 @@ def main() -> int:
         "no_hidden_force": not t0["contract"]["ppo26d"]["hidden_force_or_attachment"],
         "no_rollout_object_state_write": t0["contract"]["object_rollout_state_writes"] == 0,
         "no_rollout_wrist_root_write": t0["contract"]["wrist_root_state_writes_during_step"] == 0,
-        "action_bounds": True,
-        "joint_limits": True,
+        "action_bounds": t0["action_bounds"],
+        "joint_limits": t0["joint_limits_safe"],
         "physx_finite": t2["finite"],
         "vector_env_stable": t2["finite"],
         "rollout_storage": t3["samples"] == selected * 40,

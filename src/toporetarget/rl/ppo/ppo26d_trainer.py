@@ -82,6 +82,8 @@ class PPO26DTrainer:
         }
         reward_terms: dict[str, list[float]] = {}
         started = time.perf_counter()
+        reference_index_sum = 0.0
+        reference_index_count = 0
         for _ in range(self.training_contract.rollout_length):
             policy_observation = _policy_observation(observation)
             action, _, value = self.trainer.act(policy_observation)
@@ -103,7 +105,10 @@ class PPO26DTrainer:
             for name, term in getattr(env, "_last_reward_terms", {}).items():
                 if isinstance(term, torch.Tensor):
                     reward_terms.setdefault(name, []).append(float(term.mean().detach().cpu()))
+            reference_index_sum += float(env._reference_index.float().mean().detach().cpu())
+            reference_index_count += 1
             observation = next_observation
+        rollout_collection_s = time.perf_counter() - started
         policy_observation = _policy_observation(observation)
         with torch.no_grad():
             last_value = self.trainer.model.value(
@@ -134,9 +139,25 @@ class PPO26DTrainer:
         }
         if not all(finite.values()):
             raise FloatingPointError("PPO26D rollout or GAE contains NaN/Inf")
+        rollout_storage_mib = (
+            sum(
+                value.numel() * value.element_size()
+                for value in (
+                    storage.observations,
+                    storage.actions,
+                    storage.log_probs,
+                    storage.rewards,
+                    storage.dones,
+                    storage.values,
+                )
+            )
+            / 2**20
+        )
         actor_before = parameter_hash(self.model, "actor")
         critic_before = parameter_hash(self.model, "critic")
+        update_started = time.perf_counter()
         update = self.trainer.update(storage, last_value)
+        ppo_update_s = time.perf_counter() - update_started
         actor_after = parameter_hash(self.model, "actor")
         critic_after = parameter_hash(self.model, "critic")
         self.cumulative_samples += storage.sample_count
@@ -149,7 +170,10 @@ class PPO26DTrainer:
             "samples": storage.sample_count,
             "cumulative_samples": self.cumulative_samples,
             "wall_time_s": elapsed,
+            "rollout_collection_s": rollout_collection_s,
+            "ppo_update_s": ppo_update_s,
             "samples_per_s": storage.sample_count / max(elapsed, 1.0e-12),
+            "rollout_storage_mib": rollout_storage_mib,
             "finite": finite,
             "ppo": update,
             "actor_parameter_hash_before": actor_before,
@@ -159,6 +183,12 @@ class PPO26DTrainer:
             "actor_parameter_changed": actor_before != actor_after,
             "critic_parameter_changed": critic_before != critic_after,
             "reward": {name: sum(values) / len(values) for name, values in reward_terms.items()},
+            "reference": {
+                "mean_reference_index": reference_index_sum / max(reference_index_count, 1),
+                "reference_progress": reference_index_sum
+                / max(reference_index_count * (env.reference_bank.frame_count - 1), 1),
+                "rsi": env.rsi_report(),
+            },
             "last_policy_observation": policy_observation.detach().clone(),
         }
 
