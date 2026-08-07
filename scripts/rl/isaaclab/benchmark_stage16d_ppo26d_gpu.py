@@ -35,6 +35,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--accept-eula", action="store_true")
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--env-counts", nargs="+", type=int, default=list(CANDIDATES))
+    parser.add_argument(
+        "--reuse-existing",
+        action="store_true",
+        help="Reuse same-root completed candidate rows instead of rerunning them.",
+    )
     parser.add_argument("--child-num-envs", type=int)
     parser.add_argument("--child-output", type=Path)
     return parser.parse_args()
@@ -225,6 +230,20 @@ def run_child(args: argparse.Namespace, count: int, root: Path) -> dict[str, Any
     return payload
 
 
+def completed_rows(root: Path) -> dict[int, dict[str, Any]]:
+    """Load only finished prior rows for an explicitly requested resume."""
+
+    path = root / "ppo_gpu_capacity_benchmark.json"
+    if not path.is_file():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    result: dict[int, dict[str, Any]] = {}
+    for row in payload.get("rows", []):
+        if isinstance(row, dict) and row.get("clean_exit") and row.get("ppo_update_ok"):
+            result[int(row["num_envs"])] = row
+    return result
+
+
 def main() -> int:
     args = parse_args()
     if args.child_num_envs is not None:
@@ -252,7 +271,10 @@ def main() -> int:
     )
     (root / "gpu_processes.txt").write_text(before["pmon"], encoding="utf-8")
     (root / "gpu_before_benchmark.txt").write_text(before["nvidia_smi"], encoding="utf-8")
-    rows = [run_child(args, count, root) for count in counts]
+    existing = completed_rows(root) if args.reuse_existing else {}
+    rows = [
+        existing[count] if count in existing else run_child(args, count, root) for count in counts
+    ]
     measurements = [
         GpuCapacityMeasurement(
             num_envs=int(row["num_envs"]),
