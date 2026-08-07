@@ -190,7 +190,7 @@ def run_geometry_query_analytic_tests(
 
     order_forward = backend.query(box, _pose(), sphere, _pose((1.2, 0.0, 0.0)))
     order_reverse = backend.query(sphere, _pose((1.2, 0.0, 0.0)), box, _pose())
-    directions_opposite = (
+    directions_opposite = bool(
         np.linalg.norm(
             np.asarray(order_forward.depenetration_direction_for_second)
             + np.asarray(order_reverse.depenetration_direction_for_second)
@@ -204,7 +204,7 @@ def run_geometry_query_analytic_tests(
             abs(order_forward.signed_separation_m - order_reverse.signed_separation_m) <= tolerance
             and directions_opposite,
             reverse_signed_separation_m=order_reverse.signed_separation_m,
-            directions_opposite=bool(directions_opposite),
+            directions_opposite=directions_opposite,
         )
     )
 

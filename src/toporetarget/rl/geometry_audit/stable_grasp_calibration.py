@@ -451,14 +451,15 @@ def qualify_stable_grasp(
     any_contact = presence.any(axis=-1)
     group_ever = presence.any(axis=0)
     topology_replica_pass = group_ever.all(axis=-1)
-    final_presence = presence[-gate.final_window_steps :].all(axis=-1)
-    final_hold_replica_pass = np.asarray(
-        [
+    final_presence = np.asarray(presence[-gate.final_window_steps :].all(axis=-1), dtype=np.bool_)
+    final_hold_replica_pass = np.fromiter(
+        (
             _maximum_false_run(final_presence[:, replica])
             <= gate.maximum_consecutive_contact_loss_steps
             for replica in range(gate.replicas)
-        ],
-        dtype=bool,
+        ),
+        dtype=np.bool_,
+        count=gate.replicas,
     )
     linear = np.linalg.norm(twist[-gate.final_window_steps :, :, :3], axis=-1)
     angular = np.linalg.norm(twist[-gate.final_window_steps :, :, 3:], axis=-1)

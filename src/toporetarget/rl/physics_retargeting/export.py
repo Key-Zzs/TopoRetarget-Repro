@@ -75,7 +75,8 @@ def export_physics_consistent_trajectory(
             if hasattr(group, "create_array"):
                 group.create_array(name, data=array, chunks=chunks)
             else:  # zarr 2.x compatibility
-                group.create_dataset(name, data=array, shape=array.shape, chunks=chunks)
+                legacy_group: Any = group
+                legacy_group.create_dataset(name, data=array, shape=array.shape, chunks=chunks)
         group.attrs.update(enriched)
     except ImportError:
         rollout_path = output_dir / "rollout.zarr.NOT_WRITTEN.json"
