@@ -39,6 +39,7 @@ def qualify_physics_consistent_replicas(
     )
     penetration = [float(row["max_penetration_m"]) for row in episodes]
     p95_penetration = [float(row["p95_penetration_m"]) for row in episodes]
+    inter_finger_penetration = [float(row["max_inter_finger_penetration_m"]) for row in episodes]
     hard_contract = all(
         bool(row["no_hidden_control"])
         and int(row["formal_object_state_writes"]) == 0
@@ -52,11 +53,13 @@ def qualify_physics_consistent_replicas(
         max(penetration) <= gate.catastrophic_penetration_m
         and percentile(p95_penetration, 0.95) <= gate.p95_penetration_m
     )
+    inter_finger_pass = max(inter_finger_penetration) <= gate.maximum_inter_finger_penetration_m
     seed_pass = (
         success_rate >= gate.seed_success_rate
         and semantic_rate >= 0.80
         and contact_rate >= 0.80
         and penetration_pass
+        and inter_finger_pass
         and hard_contract
         and all(bool(row["terminal_stability_pass"]) for row in episodes)
     )
@@ -64,6 +67,7 @@ def qualify_physics_consistent_replicas(
         success_rate >= 0.30
         and fmean(float(row["contact_recall"]) for row in episodes) >= 0.50
         and max(penetration) <= gate.catastrophic_penetration_m
+        and inter_finger_pass
         and all(bool(row["no_hidden_control"]) for row in episodes)
         and all(bool(row["numerical_pass"]) for row in episodes)
         and max(float(row["semantic_progress"]) for row in episodes) > 0.0
@@ -86,6 +90,11 @@ def qualify_physics_consistent_replicas(
             "max_m": max(penetration),
             "p95_of_episode_p95_m": percentile(p95_penetration, 0.95),
             "passes": penetration_pass,
+        },
+        "inter_finger_penetration": {
+            "max_m": max(inter_finger_penetration),
+            "limit_m": gate.maximum_inter_finger_penetration_m,
+            "passes": inter_finger_pass,
         },
         "hard_contract_pass": hard_contract,
         "termination_distribution": dict(

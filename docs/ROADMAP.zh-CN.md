@@ -193,3 +193,16 @@ terminal contact coverage，但 terminal 线速度/角速度稳定性超过冻�
 始终没有建立数据推导出的 thumb/index/pinky topology。合格 candidate 与 formal20
 运行数均为 0。路线在 `STAGE16D_STABLE_FREE_OBJECT_GRASP_CALIBRATION_BLOCKED`
 停止；V2 以及 D.3R3 至 D.7 均未获授权。
+
+### D.4R4 自碰撞与末段 Gate 修正
+
+Stage16D 现在独立使用版本化的 `stage16d_inter_finger_self_collision_v1`，Stage16-C
+的 `self_collision=false` 历史谱系保持不变。Live USD smoke 已确认 PhysX
+self-collision 实际开启。由 C.1 碰撞体统一派生的跨手指 capsule metric 提供 -4.0 reward
+项和 3 mm hard Gate。Terminal stability 改为完整 20-step、任务感知的接触窗口和连续速度
+稳定性；无接触自由物体使用 0.01 m/s 与 0.25 rad/s 阈值。
+
+在新物理合约下重新验收现有 S3 actions 后，两条 clip 均为 0/20 success、0/20 terminal
+stability，全部 replica 以 timeout 结束。跨指穿透均为 20/20 通过（`170105` 最大
+1.774 mm，`170650` 最大 0.265 mm）。因此旧 15/20 terminal success 不再是当前有效
+证据；该次复验没有生成重新优化的轨迹，也没有授权 PPO。

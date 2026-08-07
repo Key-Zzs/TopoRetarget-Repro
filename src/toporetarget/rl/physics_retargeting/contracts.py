@@ -133,6 +133,13 @@ class PhysicsConsistentTaskGateV1:
     minimum_object_rotation_deg: float
     terminal_window_control_steps: int
     workspace_radius_m: float
+    terminal_contact_mode: str = "optional"
+    terminal_required_contact_fraction: float = 0.80
+    terminal_linear_speed_mps: float = 0.05
+    terminal_angular_speed_radps: float = 0.50
+    terminal_free_object_linear_speed_mps: float = 0.01
+    terminal_free_object_angular_speed_radps: float = 0.25
+    maximum_inter_finger_penetration_m: float = 0.003
     catastrophic_penetration_m: float = 0.010
     p95_penetration_m: float = 0.003
     action_limit: float = 1.0
@@ -150,6 +157,7 @@ class PhysicsConsistentTaskGateV1:
             "finger_joint_limits",
             "workspace",
             "catastrophic_penetration",
+            "inter_finger_penetration",
             "terminal_semantics",
             "contact_topology",
             "contact_driven_object_motion",
@@ -174,6 +182,20 @@ class PhysicsConsistentTaskGateV1:
             raise ValueError("semantic progress gate must be in [0,1]")
         if self.terminal_window_control_steps < 1:
             raise ValueError("terminal window must be positive")
+        if self.terminal_contact_mode not in {"required", "forbidden", "optional"}:
+            raise ValueError("unknown terminal contact mode")
+        if not 0.0 <= self.terminal_required_contact_fraction <= 1.0:
+            raise ValueError("terminal contact fraction must be in [0,1]")
+        for name in (
+            "terminal_linear_speed_mps",
+            "terminal_angular_speed_radps",
+            "terminal_free_object_linear_speed_mps",
+            "terminal_free_object_angular_speed_radps",
+            "maximum_inter_finger_penetration_m",
+        ):
+            value = float(getattr(self, name))
+            if not math.isfinite(value) or value < 0.0:
+                raise ValueError(f"{name} must be finite and nonnegative")
 
     def as_dict(self) -> dict[str, Any]:
         return {"schema_version": "PhysicsConsistentTaskGateV1", **asdict(self)}
@@ -190,6 +212,8 @@ def derive_task_gate(
         raise ValueError("object bbox diagonal must be finite and positive")
     translation_scale = semantic.source_object_translation_m
     rotation_scale = semantic.source_object_rotation_deg
+    from .terminal_stability import derive_terminal_contact_mode
+
     return PhysicsConsistentTaskGateV1(
         clip=semantic.clip,
         object_bbox_diagonal_m=object_bbox_diagonal_m,
@@ -206,6 +230,9 @@ def derive_task_gate(
         ),
         terminal_window_control_steps=max(3, min(20, semantic.retimed_frame_count // 16)),
         workspace_radius_m=max(0.30, 4.0 * object_bbox_diagonal_m),
+        terminal_contact_mode=derive_terminal_contact_mode(
+            semantic.task_class, semantic.source_motion_class
+        ),
     )
 
 

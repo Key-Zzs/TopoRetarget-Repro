@@ -6,6 +6,8 @@ from pathlib import Path
 
 from isaaclab.utils import configclass
 
+from toporetarget.rl.physics_retargeting.self_collision import load_self_collision_contract
+
 from .world_wrist_direct_env_cfg import (
     REPO_ROOT,
     IsaacWorldWristFingerDirectRLEnvCfg,
@@ -14,6 +16,7 @@ from .world_wrist_direct_env_cfg import (
 )
 
 _REPORT_ROOT = REPO_ROOT / ".local/reports/stage16d_physics_consistent_retargeting"
+_SELF_COLLISION_CONTRACT = REPO_ROOT / "configs/rl/stage16/stage16d_self_collision.yaml"
 
 
 @configclass
@@ -27,6 +30,7 @@ class IsaacPhysicsConsistentRetargetingEnvCfg(IsaacWorldWristFingerDirectRLEnvCf
     contact_topology_path = str(_REPORT_ROOT / "contact_topology.json")
     task_gate_path = str(_REPORT_ROOT / "anti_degenerate_contract.json")
     reward_contract_path = str(_REPORT_ROOT / "reward_contract.json")
+    self_collision_contract_path = str(_SELF_COLLISION_CONTRACT)
     physics_consistent_protocol = "physics_consistent_retargeting_v1"
     contact_telemetry = "aggregate"
     reference_time_scale = 8
@@ -53,6 +57,12 @@ def configure_stage16d_nominal(
     configure_explicit_virtual_wrist(
         cfg, profile_identifier="high_authority_bounded", authority_enabled=True
     )
+    self_collision = load_self_collision_contract(
+        Path(cfg.self_collision_contract_path), repo_root=REPO_ROOT
+    )
+    cfg.robot.spawn.articulation_props.enabled_self_collisions = (
+        self_collision.enabled_self_collisions
+    )
     if clip is not None:
         cfg.stage16d_fixed_clip = clip
 
@@ -62,6 +72,7 @@ def stage16d_contract_paths(cfg: IsaacPhysicsConsistentRetargetingEnvCfg) -> tup
         Path(cfg.contact_topology_path),
         Path(cfg.task_gate_path),
         Path(cfg.reward_contract_path),
+        Path(cfg.self_collision_contract_path),
     )
 
 

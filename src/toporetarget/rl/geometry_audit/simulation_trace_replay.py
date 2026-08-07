@@ -91,6 +91,7 @@ class ReplayFrameDiagnostics:
     reason_code: int
     worst_penetration_m: float | None
     worst_pair_index: int | None
+    inter_finger_penetration_m: float | None
 
 
 @dataclass(frozen=True)
@@ -117,6 +118,7 @@ class Stage16DSimulationTraceReplay:
     penetration_depth_m: np.ndarray | None = None
     frame_worst_penetration_m: np.ndarray | None = None
     frame_worst_pair_index: np.ndarray | None = None
+    inter_finger_penetration_m: np.ndarray | None = None
 
     @property
     def frame_count(self) -> int:
@@ -155,6 +157,9 @@ class Stage16DSimulationTraceReplay:
             worst_penetration = float(self.frame_worst_penetration_m[frame, replica])
         if self.frame_worst_pair_index is not None:
             worst_pair = int(self.frame_worst_pair_index[frame, replica])
+        inter_finger = None
+        if self.inter_finger_penetration_m is not None:
+            inter_finger = float(self.inter_finger_penetration_m[frame, replica])
         return ReplayFrameDiagnostics(
             frame=frame,
             replica=replica,
@@ -174,6 +179,7 @@ class Stage16DSimulationTraceReplay:
             reason_code=int(self.reason_code[frame, replica]),
             worst_penetration_m=worst_penetration,
             worst_pair_index=worst_pair,
+            inter_finger_penetration_m=inter_finger,
         )
 
     def camera_bounds(self, replica: int, frames: Sequence[int]) -> tuple[np.ndarray, float]:
@@ -300,6 +306,10 @@ def _load_corrected_trace(
         )
     )
     status, selected_qualification, metrics = _load_qualification(trace_path, qualification_path)
+    inter_finger = arrays.get("inter_finger_penetration_m")
+    if inter_finger is not None:
+        if inter_finger.shape != (frames,) or not np.isfinite(inter_finger).all():
+            raise ValueError("inter_finger_penetration_m must be finite [frames]")
     return Stage16DSimulationTraceReplay(
         trace_path=trace_path,
         trace_kind="physics_consistent_corrected_nominal",
@@ -318,6 +328,7 @@ def _load_corrected_trace(
         qualification_status=status,
         qualification_path=selected_qualification,
         qualification_metrics=metrics,
+        inter_finger_penetration_m=(inter_finger[:, None] if inter_finger is not None else None),
     )
 
 

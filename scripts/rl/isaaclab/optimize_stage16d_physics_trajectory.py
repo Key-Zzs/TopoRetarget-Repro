@@ -124,6 +124,17 @@ def run_smoke(args: argparse.Namespace, app: Any) -> int:
             raw_control_step(env, torch.zeros((env.num_envs, 26), device=env.device))
         contract = env.contract_report()
         stage = env.extras["stage16d"]
+        import omni.usd
+        from pxr import PhysxSchema, Usd
+
+        robot_prim = omni.usd.get_context().get_stage().GetPrimAtPath("/World/envs/env_0/Robot")
+        live_self_collision_values = []
+        for prim in Usd.PrimRange(robot_prim):
+            api = PhysxSchema.PhysxArticulationAPI(prim)
+            if api:
+                value = api.GetEnabledSelfCollisionsAttr().Get()
+                if value is not None:
+                    live_self_collision_values.append(bool(value))
         payload = {
             "schema_version": "Stage16DEnvironmentSmokeV1",
             "status": "STAGE16D_PHYSICS_CORRECTION_ENV_VALIDATED",
@@ -135,6 +146,16 @@ def run_smoke(args: argparse.Namespace, app: Any) -> int:
             "contract": contract,
             "semantic_progress": stage["semantic_progress"].detach().cpu().tolist(),
             "contact_recall": stage["contact_recall"].detach().cpu().tolist(),
+            "inter_finger_penetration_m": stage["inter_finger_penetration_m"]
+            .detach()
+            .cpu()
+            .tolist(),
+            "terminal_stable": stage["terminal_stable"].detach().cpu().tolist(),
+            "terminal_kinematic_pass": stage["terminal_kinematic_pass"].detach().cpu().tolist(),
+            "terminal_contact_pass": stage["terminal_contact_pass"].detach().cpu().tolist(),
+            "primary_reason_code": stage["primary_reason_code"].detach().cpu().tolist(),
+            "live_physx_self_collision_values": live_self_collision_values,
+            "live_physx_self_collision_pass": live_self_collision_values == [True],
             "object_rollout_state_writes": stage["object_rollout_state_writes"],
             "wrist_rollout_state_writes": stage["wrist_rollout_state_writes"],
             "wall_time_s": time.perf_counter() - started,

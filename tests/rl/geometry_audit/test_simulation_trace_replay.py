@@ -76,6 +76,7 @@ def _write_corrected_trace(path: Path, *, frames: int = 3, bodies: int = 2) -> N
         actuator_effort=np.full((frames, 26), -0.5, dtype=np.float32),
         reason_code=np.zeros(frames, dtype=np.int64),
         action=np.zeros((frames, 26), dtype=np.float32),
+        inter_finger_penetration_m=np.asarray([0.0, 0.004, 0.0], dtype=np.float32),
     )
 
 
@@ -167,6 +168,7 @@ def test_load_corrected_nominal_trace_and_qualification(tmp_path: Path) -> None:
     assert row.contact_groups == ("thumb",)
     assert row.contact_force_norm_n == pytest.approx(3.5)
     assert row.mean_absolute_effort == pytest.approx(0.5)
+    assert row.inter_finger_penetration_m == pytest.approx(0.004)
 
 
 def test_corrected_trace_rejects_replica_without_frame_telemetry(tmp_path: Path) -> None:

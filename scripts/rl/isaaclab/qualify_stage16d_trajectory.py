@@ -92,6 +92,9 @@ def run(args: argparse.Namespace) -> int:
         max_contact = torch.zeros_like(max_progress)
         first_reason = torch.zeros(args.replicas, dtype=torch.long, device=env.device)
         terminal_stable = torch.zeros_like(active)
+        terminal_kinematic = torch.zeros_like(active)
+        terminal_contact = torch.zeros_like(active)
+        max_inter_finger_penetration = torch.zeros(args.replicas, device=env.device)
         early_failure = torch.zeros_like(active)
         traces: dict[str, list[np.ndarray]] = {
             name: []
@@ -121,6 +124,9 @@ def run(args: argparse.Namespace) -> int:
                 "contact_force_world",
                 "contact_impulse_world",
                 "terminal_stable",
+                "terminal_kinematic_pass",
+                "terminal_contact_pass",
+                "inter_finger_penetration_m",
                 "reason_code",
             )
         }
@@ -143,12 +149,17 @@ def run(args: argparse.Namespace) -> int:
             ever_success |= stage["success"]
             ever_causality |= stage["contact_causality"]
             terminal_stable = stage["terminal_stable"]
+            terminal_kinematic = stage["terminal_kinematic_pass"]
+            terminal_contact = stage["terminal_contact_pass"]
+            max_inter_finger_penetration = torch.maximum(
+                max_inter_finger_penetration, stage["inter_finger_penetration_m"]
+            )
             newly_done = active & (terminated | timed_out)
             first_reason = torch.where(newly_done, stage["primary_reason_code"], first_reason)
             early_failure |= (
                 newly_done
                 & (stage["primary_reason_code"] >= 2)
-                & (stage["primary_reason_code"] <= 8)
+                & (stage["primary_reason_code"] != 9)
             )
             active &= ~newly_done
             wrist_pose = torch.cat(
@@ -215,6 +226,9 @@ def run(args: argparse.Namespace) -> int:
                 "contact_force_world": contact_force[0],
                 "contact_impulse_world": contact_force[0] * env.physics_dt,
                 "terminal_stable": stage["terminal_stable"][0],
+                "terminal_kinematic_pass": stage["terminal_kinematic_pass"][0],
+                "terminal_contact_pass": stage["terminal_contact_pass"][0],
+                "inter_finger_penetration_m": stage["inter_finger_penetration_m"][0],
                 "reason_code": stage["primary_reason_code"][0],
             }
             for name, value in row.items():
@@ -229,6 +243,15 @@ def run(args: argparse.Namespace) -> int:
                     "contact_recall": float(max_contact[env_id].cpu()),
                     "contact_causality_pass": bool(ever_causality[env_id].cpu()),
                     "terminal_stability_pass": bool(terminal_stable[env_id].cpu()),
+                    "terminal_kinematic_pass": bool(terminal_kinematic[env_id].cpu()),
+                    "terminal_contact_pass": bool(terminal_contact[env_id].cpu()),
+                    "max_inter_finger_penetration_m": float(
+                        max_inter_finger_penetration[env_id].cpu()
+                    ),
+                    "inter_finger_penetration_pass": bool(
+                        max_inter_finger_penetration[env_id]
+                        <= env._task_gates[args.clip].maximum_inter_finger_penetration_m
+                    ),
                     "numerical_pass": bool(numerical_pass[env_id].cpu()),
                     "complete_trajectory": not bool(early_failure[env_id].cpu()),
                     "termination_reason_code": int(first_reason[env_id].cpu()),
@@ -243,11 +266,20 @@ def run(args: argparse.Namespace) -> int:
         progress_rate = float(np.mean([row["semantic_progress"] >= 0.30 for row in episodes]))
         contact_rate = float(np.mean([row["contact_recall"] >= 0.50 for row in episodes]))
         nonzero_progress = max(row["semantic_progress"] for row in episodes) > 0.0
+        inter_finger_pass_rate = float(
+            np.mean([row["inter_finger_penetration_pass"] for row in episodes])
+        )
         empirical_class = (
             "EMPIRICAL_SEED_CANDIDATE_PENDING_GEOMETRY"
-            if success_rate >= 0.80 and progress_rate >= 0.80 and contact_rate >= 0.80
+            if success_rate >= 0.80
+            and progress_rate >= 0.80
+            and contact_rate >= 0.80
+            and inter_finger_pass_rate == 1.0
             else "EMPIRICAL_PARTIAL_CANDIDATE_PENDING_GEOMETRY"
-            if success_rate >= 0.30 and contact_rate >= 0.50 and nonzero_progress
+            if success_rate >= 0.30
+            and contact_rate >= 0.50
+            and nonzero_progress
+            and inter_finger_pass_rate == 1.0
             else "DEGENERATE_SEED"
         )
         payload = {
@@ -267,6 +299,16 @@ def run(args: argparse.Namespace) -> int:
             ),
             "terminal_stability_pass_rate": float(
                 np.mean([row["terminal_stability_pass"] for row in episodes])
+            ),
+            "terminal_kinematic_pass_rate": float(
+                np.mean([row["terminal_kinematic_pass"] for row in episodes])
+            ),
+            "terminal_contact_pass_rate": float(
+                np.mean([row["terminal_contact_pass"] for row in episodes])
+            ),
+            "inter_finger_penetration_pass_rate": inter_finger_pass_rate,
+            "maximum_inter_finger_penetration_m": max(
+                row["max_inter_finger_penetration_m"] for row in episodes
             ),
             "numerical_pass_rate": float(np.mean([row["numerical_pass"] for row in episodes])),
             "complete_trajectory_rate": float(

@@ -222,3 +222,21 @@ stability exceeded the frozen limits. `170650` never established its derived
 thumb/index/pinky topology. Eligible candidates and formal20 runs are both
 zero. The roadmap stops at `STAGE16D_STABLE_FREE_OBJECT_GRASP_CALIBRATION_BLOCKED`;
 V2 and D.3R3 through D.7 are not authorized.
+
+### D.4R4 self-collision and terminal-gate correction
+
+Stage16D now owns the versioned
+`stage16d_inter_finger_self_collision_v1` contract while the Stage16-C
+`self_collision=false` lineage remains unchanged. Live USD smoke confirms
+PhysX self-collision is enabled. A shared cross-finger capsule metric derived
+from the C.1 collision bodies contributes a -4.0 reward term and a 3 mm hard
+Gate. Terminal stability now requires a complete 20-step task-aware contact
+window and consecutive velocity stability; detached free-object steps use
+0.01 m/s and 0.25 rad/s thresholds.
+
+Requalifying the existing S3 actions under the new physics produced 0/20
+success and 0/20 terminal stability for both clips, with all replicas ending
+in timeout. Inter-finger penetration passed 20/20 (max 1.774 mm for `170105`
+and 0.265 mm for `170650`). These runs invalidate the former 15/20 terminal
+success as current evidence; they do not create a newly optimized trajectory
+or authorize PPO.

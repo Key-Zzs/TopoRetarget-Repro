@@ -85,12 +85,14 @@ DISPLAY=:1 XAUTHORITY=/run/user/1000/gdm/Xauthority \
 conda run --no-capture-output -n toporetarget-isaaclab \
 env OMNI_KIT_ACCEPT_EULA=YES \
 python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py \
-  --trace .local/reports/stage16d_physics_consistent_retargeting/trajectory_trace_170105_v3.npz \
+  --trace .local/reports/stage16d_self_collision_terminal_revision/final_trace_170105.npz \
   --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170105.world_wrist.stage16.npz \
-  --qualification .local/reports/stage16d_physics_consistent_retargeting/trajectory_qualification_170105_v3.json \
+  --qualification .local/reports/stage16d_self_collision_terminal_revision/final_qualification_170105.json \
   --object hocap_170105 --fps 20 --speed 0.5 --loop --accept-eula
 ```
 
-This trajectory is currently labelled
+This requalification is currently labelled
 `STAGE16D_TRAJECTORY_QUALIFICATION_BLOCKED`; replay availability does not change
-that qualification result.
+that result. The terminal reports the new `inter_finger` metric; reason 9 at the
+end is the expected timeout after the revised terminal contact and consecutive
+kinematic windows reject the old candidate.

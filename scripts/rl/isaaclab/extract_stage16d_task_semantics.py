@@ -21,6 +21,9 @@ from toporetarget.rl.physics_retargeting.contracts import derive_task_gate  # no
 from toporetarget.rl.physics_retargeting.rewards import (  # noqa: E402
     PhysicsConsistentRewardProfileV1,
 )
+from toporetarget.rl.physics_retargeting.self_collision import (  # noqa: E402
+    load_self_collision_contract,
+)
 from toporetarget.rl.physics_retargeting.task_semantics import (  # noqa: E402
     extract_task_semantics,
 )
@@ -125,6 +128,10 @@ def main() -> int:
         "reason": "both validated C3 traces are too sparse for high-confidence persistent topology",
     }
     reward = PhysicsConsistentRewardProfileV1()
+    self_collision = load_self_collision_contract(
+        REPO_ROOT / "configs/rl/stage16/stage16d_self_collision.yaml",
+        repo_root=REPO_ROOT,
+    )
     reward_contract = {
         "schema_version": "physics_consistent_retargeting_reward_v1",
         "selected_globally_before_optimization": True,
@@ -143,6 +150,7 @@ def main() -> int:
             "numerical_failure",
             "simulator_failure",
             "catastrophic_penetration",
+            "inter_finger_penetration",
             "object_leaves_workspace",
             "wrist_safety_violation",
             "joint_limit_safety_violation",
@@ -159,6 +167,8 @@ def main() -> int:
             "semantic_task_progress_complete",
             "required_contact_topology_satisfied",
             "stable_terminal_window",
+            "task_aware_terminal_contact",
+            "consecutive_terminal_kinematic_stability",
             "no_hard_failure",
         ],
     }
@@ -179,6 +189,11 @@ def main() -> int:
         overwrite=args.overwrite,
     )
     write(output / "reward_contract.json", reward_contract, overwrite=args.overwrite)
+    write(
+        output / "self_collision_contract.json",
+        self_collision.as_dict(),
+        overwrite=args.overwrite,
+    )
     write(output / "termination_contract.json", termination, overwrite=args.overwrite)
     write(output / "anti_degenerate_contract.json", anti, overwrite=args.overwrite)
     print(

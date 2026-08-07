@@ -21,12 +21,23 @@ from toporetarget.rl.physics_retargeting.rewards import (
     PhysicsConsistentRewardProfileV1,
     physics_consistent_reward_terms,
 )
+from toporetarget.rl.physics_retargeting.self_collision import (
+    InterFingerCapsulePenetrationV1,
+    load_self_collision_contract,
+)
+from toporetarget.rl.physics_retargeting.terminal_stability import (
+    terminal_contact_window_pass,
+    terminal_kinematic_step_pass,
+)
 from toporetarget.rl.physics_retargeting.termination import (
     STAGE16D_TERMINATION_REASONS,
     physics_consistent_termination,
 )
 
-from .physics_consistent_retargeting_env_cfg import IsaacPhysicsConsistentRetargetingEnvCfg
+from .physics_consistent_retargeting_env_cfg import (
+    REPO_ROOT,
+    IsaacPhysicsConsistentRetargetingEnvCfg,
+)
 from .tensor_math import quaternion_geodesic
 from .world_wrist_direct_env import (
     HAND_COLLISION_BODY_NAMES,
@@ -50,6 +61,15 @@ class IsaacPhysicsConsistentRetargetingEnv(IsaacWorldWristFingerDirectRLEnv):
     def __init__(
         self, cfg: IsaacPhysicsConsistentRetargetingEnvCfg, render_mode: str | None = None, **kwargs
     ) -> None:
+        self.self_collision_contract = load_self_collision_contract(
+            Path(cfg.self_collision_contract_path), repo_root=REPO_ROOT
+        )
+        configured_self_collision = bool(cfg.robot.spawn.articulation_props.enabled_self_collisions)
+        if configured_self_collision != self.self_collision_contract.enabled_self_collisions:
+            raise RuntimeError(
+                "SELF_COLLISION_RUNTIME_CONTRACT_MISMATCH: configure_stage16d_nominal "
+                "must apply the versioned contract before scene construction"
+            )
         super().__init__(cfg, render_mode, **kwargs)
         self._semantic_contracts = {
             clip: _read_json(path) for clip, path in cfg.semantic_contract_paths.items()
@@ -73,6 +93,16 @@ class IsaacPhysicsConsistentRetargetingEnv(IsaacWorldWristFingerDirectRLEnv):
             )
             for clip, row in gate_rows.items()
         }
+        for clip, gate in self._task_gates.items():
+            if not math.isclose(
+                gate.maximum_inter_finger_penetration_m,
+                self.self_collision_contract.maximum_inter_finger_penetration_m,
+                abs_tol=1.0e-12,
+            ):
+                raise ValueError(
+                    "SELF_COLLISION_GATE_CONTRACT_MISMATCH: "
+                    f"{clip}={gate.maximum_inter_finger_penetration_m}"
+                )
         profile_row = reward_payload.get("profile")
         if not isinstance(profile_row, dict):
             raise ValueError("Stage16D reward report has no frozen profile")
@@ -84,6 +114,17 @@ class IsaacPhysicsConsistentRetargetingEnv(IsaacWorldWristFingerDirectRLEnv):
             group = body_contact_group(name)
             if group is not None:
                 self._group_slots.setdefault(group, []).append(index)
+        self._hand_collision_body_ids = torch.tensor(
+            [self._robot.body_names.index(name) for name in HAND_COLLISION_BODY_NAMES],
+            dtype=torch.long,
+            device=self.device,
+        )
+        self._inter_finger_metric = InterFingerCapsulePenetrationV1.from_runtime_manifest(
+            REPO_ROOT / self.self_collision_contract.runtime_collision_manifest_path,
+            expected_body_names=HAND_COLLISION_BODY_NAMES,
+            radius_scale=self.self_collision_contract.capsule_radius_scale,
+            device=self.device,
+        )
         self._initial_object_position = self._state()["object_position_scene"].clone()
         self._contact_seen = torch.zeros((self.num_envs, 6), device=self.device)
         self._contact_run = torch.zeros_like(self._contact_seen)
@@ -93,6 +134,12 @@ class IsaacPhysicsConsistentRetargetingEnv(IsaacWorldWristFingerDirectRLEnv):
             self.num_envs, dtype=torch.bool, device=self.device
         )
         self._previous_object_twist = self._state()["object_twist_world"].clone()
+        self._terminal_observed_steps = torch.zeros(
+            self.num_envs, dtype=torch.long, device=self.device
+        )
+        self._terminal_kinematic_run = torch.zeros_like(self._terminal_observed_steps)
+        self._terminal_contact_steps = torch.zeros_like(self._terminal_observed_steps)
+        self._terminal_last_index = torch.full_like(self._terminal_observed_steps, -1)
         self._last_stage16d_metrics: dict[str, torch.Tensor] = {}
         fixed = getattr(cfg, "stage16d_fixed_clip", None)
         if fixed is not None:
@@ -191,8 +238,58 @@ class IsaacPhysicsConsistentRetargetingEnv(IsaacWorldWristFingerDirectRLEnv):
         )
         self._previous_object_twist.copy_(object_twist)
         final_step = index >= self.reference_bank.frame_count - 1
-        terminal_stable = (torch.linalg.vector_norm(object_twist[:, :3], dim=-1) <= 0.10) & (
-            torch.linalg.vector_norm(object_twist[:, 3:], dim=-1) <= 1.0
+        linear_speed = torch.linalg.vector_norm(object_twist[:, :3], dim=-1)
+        angular_speed = torch.linalg.vector_norm(object_twist[:, 3:], dim=-1)
+        terminal_kinematic_step = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        terminal_contact_pass = torch.zeros_like(terminal_kinematic_step)
+        terminal_window_steps = torch.ones(self.num_envs, dtype=torch.long, device=self.device)
+        for clip_index, clip in enumerate(self.reference_bank.clip_ids):
+            env_mask = self._clip_index == clip_index
+            if not bool(env_mask.any()):
+                continue
+            gate = self._task_gates[clip]
+            terminal_window_steps[env_mask] = gate.terminal_window_control_steps
+            terminal_kinematic_step[env_mask] = terminal_kinematic_step_pass(
+                linear_speed[env_mask], angular_speed[env_mask], any_contact[env_mask], gate
+            )
+        in_terminal_window = index >= self.reference_bank.frame_count - terminal_window_steps
+        new_step = index != self._terminal_last_index
+        update = in_terminal_window & new_step
+        self._terminal_observed_steps = torch.where(
+            update, self._terminal_observed_steps + 1, self._terminal_observed_steps
+        )
+        self._terminal_contact_steps = torch.where(
+            update & any_contact,
+            self._terminal_contact_steps + 1,
+            self._terminal_contact_steps,
+        )
+        self._terminal_kinematic_run = torch.where(
+            update & terminal_kinematic_step,
+            self._terminal_kinematic_run + 1,
+            torch.where(
+                update, torch.zeros_like(self._terminal_kinematic_run), self._terminal_kinematic_run
+            ),
+        )
+        self._terminal_last_index = torch.where(new_step, index, self._terminal_last_index)
+        for clip_index, clip in enumerate(self.reference_bank.clip_ids):
+            env_mask = self._clip_index == clip_index
+            if not bool(env_mask.any()):
+                continue
+            terminal_contact_pass[env_mask] = terminal_contact_window_pass(
+                self._terminal_contact_steps[env_mask],
+                self._terminal_observed_steps[env_mask],
+                self._task_gates[clip],
+            )
+        terminal_kinematic_pass = self._terminal_kinematic_run >= terminal_window_steps
+        terminal_stable = final_step & terminal_kinematic_pass & terminal_contact_pass
+        hand_position = self._robot.data.body_link_pos_w.index_select(
+            1, self._hand_collision_body_ids
+        )
+        hand_quaternion = self._robot.data.body_link_quat_w.index_select(
+            1, self._hand_collision_body_ids
+        )
+        inter_finger = self._inter_finger_metric.evaluate(
+            torch.cat((hand_position, hand_quaternion), dim=-1)
         )
         action_first = torch.linalg.vector_norm(self._actions - self._previous_actions, dim=-1)
         action_second = torch.linalg.vector_norm(
@@ -211,9 +308,10 @@ class IsaacPhysicsConsistentRetargetingEnv(IsaacWorldWristFingerDirectRLEnv):
             "contact_coverage": coverage,
             "contact_persistence": persistence,
             "contact_onset_alignment": any_contact.float(),
-            "final_topology": (coverage * final_step.float()),
+            "final_topology": terminal_contact_pass.float() * final_step.float(),
             "forbidden_contact": torch.zeros(self.num_envs, device=self.device),
             "penetration_m": torch.zeros(self.num_envs, device=self.device),
+            "inter_finger_penetration_m": inter_finger["maximum_penetration_m"],
             "impulse_outlier": (force_magnitude > 100.0).float(),
             "object_instability": torch.linalg.vector_norm(object_twist, dim=-1),
             "action_effort": self._robot.data.applied_torque.abs().mean(dim=-1),
@@ -235,10 +333,15 @@ class IsaacPhysicsConsistentRetargetingEnv(IsaacWorldWristFingerDirectRLEnv):
             ).all(dim=-1),
             "action_valid": torch.isfinite(self._actions).all(dim=-1)
             & (self._actions.abs() <= 1.0).all(dim=-1),
-            "object_speed_mps": torch.linalg.vector_norm(object_twist[:, :3], dim=-1),
+            "object_speed_mps": linear_speed,
             "contact_recall": coverage,
             "contact_causality": self._contact_driven_momentum,
             "terminal_stable": terminal_stable,
+            "terminal_kinematic_step": terminal_kinematic_step,
+            "terminal_kinematic_pass": terminal_kinematic_pass,
+            "terminal_contact_pass": terminal_contact_pass,
+            "terminal_observed_steps": self._terminal_observed_steps.float(),
+            "terminal_contact_steps": self._terminal_contact_steps.float(),
             "object_motion_m": object_motion,
             "final_step": final_step,
             "minimum_contact_recall": minimum_recall,
@@ -291,6 +394,11 @@ class IsaacPhysicsConsistentRetargetingEnv(IsaacWorldWristFingerDirectRLEnv):
             "contact_persistence": metrics["contact_persistence"].clone(),
             "contact_causality": metrics["contact_causality"].clone(),
             "terminal_stable": metrics["terminal_stable"].clone(),
+            "terminal_kinematic_pass": metrics["terminal_kinematic_pass"].clone(),
+            "terminal_contact_pass": metrics["terminal_contact_pass"].clone(),
+            "terminal_observed_steps": metrics["terminal_observed_steps"].clone(),
+            "terminal_contact_steps": metrics["terminal_contact_steps"].clone(),
+            "inter_finger_penetration_m": metrics["inter_finger_penetration_m"].clone(),
             "object_motion_m": metrics["object_motion_m"].clone(),
             "source_object_deviation_m": (
                 -torch.log(metrics["source_object_soft_prior"].clamp_min(1e-12)) * 0.10
@@ -313,6 +421,10 @@ class IsaacPhysicsConsistentRetargetingEnv(IsaacWorldWristFingerDirectRLEnv):
         self._contact_event_count[ids] = 0.0
         self._contact_driven_momentum[ids] = False
         self._previous_object_twist[ids] = self._state()["object_twist_world"][ids]
+        self._terminal_observed_steps[ids] = 0
+        self._terminal_kinematic_run[ids] = 0
+        self._terminal_contact_steps[ids] = 0
+        self._terminal_last_index[ids] = -1
         self._last_stage16d_metrics = {}
 
     def contract_report(self) -> dict[str, Any]:
@@ -330,6 +442,10 @@ class IsaacPhysicsConsistentRetargetingEnv(IsaacWorldWristFingerDirectRLEnv):
             ),
             "hidden_force": False,
             "hidden_attachment": False,
+            "self_collision": self.self_collision_contract.as_dict(),
+            "inter_finger_penetration_gate_m": (
+                self.self_collision_contract.maximum_inter_finger_penetration_m
+            ),
             "reward": self.stage16d_reward_profile.as_dict(),
         }
 

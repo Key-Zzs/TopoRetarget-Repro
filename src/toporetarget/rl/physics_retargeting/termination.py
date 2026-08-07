@@ -19,6 +19,7 @@ STAGE16D_TERMINATION_REASONS = (
     "FAILURE_ACTION_INVALID",
     "FAILURE_OBJECT_EXPLOSION",
     "TIMEOUT",
+    "FAILURE_INTER_FINGER_PENETRATION",
 )
 
 
@@ -31,6 +32,7 @@ def physics_consistent_termination(
     required = {
         "finite",
         "penetration_m",
+        "inter_finger_penetration_m",
         "workspace_distance_m",
         "wrist_safe",
         "joint_limits_safe",
@@ -48,12 +50,15 @@ def physics_consistent_termination(
     finite = metrics["finite"].bool()
     numerical = ~finite
     penetration = metrics["penetration_m"] > gate.catastrophic_penetration_m
+    inter_finger = metrics["inter_finger_penetration_m"] > gate.maximum_inter_finger_penetration_m
     workspace = metrics["workspace_distance_m"] > gate.workspace_radius_m
     wrist = ~metrics["wrist_safe"].bool()
     joints = ~metrics["joint_limits_safe"].bool()
     action = ~metrics["action_valid"].bool()
     explosion = metrics["object_speed_mps"] > 5.0
-    hard_failure = numerical | penetration | workspace | wrist | joints | action | explosion
+    hard_failure = (
+        numerical | penetration | inter_finger | workspace | wrist | joints | action | explosion
+    )
     semantic_success = (
         (metrics["semantic_progress"] >= gate.minimum_semantic_progress)
         & (metrics["contact_recall"] >= gate.minimum_contact_recall)
@@ -68,6 +73,7 @@ def physics_consistent_termination(
     ordered = (
         (timed_out, 9),
         (semantic_success, 1),
+        (inter_finger, 10),
         (explosion, 8),
         (action, 7),
         (joints, 6),
@@ -86,6 +92,7 @@ def physics_consistent_termination(
         "all_triggered": {
             "numerical": numerical,
             "catastrophic_penetration": penetration,
+            "inter_finger_penetration": inter_finger,
             "workspace": workspace,
             "wrist_safety": wrist,
             "joint_limits": joints,

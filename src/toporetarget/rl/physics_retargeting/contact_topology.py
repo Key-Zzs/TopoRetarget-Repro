@@ -11,8 +11,18 @@ from .contracts import ContactWindowV1, PersistentContactTopologyV1
 
 def body_contact_group(body_name: str) -> str | None:
     name = body_name.lower()
-    for group in ("thumb", "index", "middle", "ring", "pinky"):
-        if group in name:
+    # Match the anatomical prefix before segment labels such as ``_middle``.
+    # Substring ordering would otherwise classify ``r_ring_finger_middle`` as
+    # the middle finger and turn adjacent links into a fake inter-finger pair.
+    anatomical_markers = (
+        ("thumb", ("thumb",)),
+        ("index", ("index_finger",)),
+        ("middle", ("middle_finger",)),
+        ("ring", ("ring_finger",)),
+        ("pinky", ("pinky",)),
+    )
+    for group, markers in anatomical_markers:
+        if any(marker in name for marker in markers):
             return group
     if "palm" in name or "wrist" in name:
         return "palm"

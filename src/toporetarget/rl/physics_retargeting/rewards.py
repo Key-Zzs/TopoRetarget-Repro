@@ -20,6 +20,7 @@ class PhysicsConsistentRewardProfileV1:
     final_topology: float = 2.0
     forbidden_contact: float = -2.0
     penetration: float = -4.0
+    inter_finger_penetration: float = -4.0
     impulse_outlier: float = -1.0
     object_stability: float = -0.25
     action_effort: float = -0.01
@@ -59,6 +60,7 @@ def physics_consistent_reward_terms(
         "final_topology",
         "forbidden_contact",
         "penetration_m",
+        "inter_finger_penetration_m",
         "impulse_outlier",
         "object_instability",
         "action_effort",
@@ -85,6 +87,10 @@ def physics_consistent_reward_terms(
         "final_topology": profile.final_topology * metrics["final_topology"],
         "forbidden_contact": profile.forbidden_contact * metrics["forbidden_contact"],
         "penetration": profile.penetration * (metrics["penetration_m"] / 0.003).square(),
+        "inter_finger_penetration": (
+            profile.inter_finger_penetration
+            * (metrics["inter_finger_penetration_m"] / 0.003).square()
+        ),
         "impulse_outlier": profile.impulse_outlier * metrics["impulse_outlier"],
         "object_stability": profile.object_stability * metrics["object_instability"],
         "action_effort": profile.action_effort * metrics["action_effort"],

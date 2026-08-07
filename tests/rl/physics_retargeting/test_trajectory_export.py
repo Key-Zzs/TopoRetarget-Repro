@@ -69,6 +69,7 @@ def test_qualification_rejects_degenerate_no_contact() -> None:
         "contact_recall": 0.0,
         "max_penetration_m": 0.0,
         "p95_penetration_m": 0.0,
+        "max_inter_finger_penetration_m": 0.0,
         "no_hidden_control": True,
         "formal_object_state_writes": 0,
         "formal_wrist_state_writes": 0,

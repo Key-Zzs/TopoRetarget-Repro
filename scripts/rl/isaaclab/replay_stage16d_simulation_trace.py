@@ -133,6 +133,11 @@ def _status_line(trace: Stage16DSimulationTraceReplay, frame: int, replica: int)
     penetration = (
         "n/a" if row.worst_penetration_m is None else f"{row.worst_penetration_m * 1000.0:.3f} mm"
     )
+    inter_finger = (
+        "n/a"
+        if row.inter_finger_penetration_m is None
+        else f"{row.inter_finger_penetration_m * 1000.0:.3f} mm"
+    )
     groups = ",".join(row.contact_groups) or "none"
     return (
         f"kind={trace.trace_kind} qualification={trace.qualification_status} "
@@ -140,7 +145,8 @@ def _status_line(trace: Stage16DSimulationTraceReplay, frame: int, replica: int)
         f"contacts={row.contact_body_count} groups={groups} force={row.contact_force_norm_n:.3f} N "
         f"object_v={row.object_linear_speed_mps:.3f} m/s "
         f"object_w={row.object_angular_speed_radps:.3f} rad/s "
-        f"penetration={penetration} finite={row.finite} reason={row.reason_code}"
+        f"penetration={penetration} inter_finger={inter_finger} "
+        f"finite={row.finite} reason={row.reason_code}"
     )
 
 

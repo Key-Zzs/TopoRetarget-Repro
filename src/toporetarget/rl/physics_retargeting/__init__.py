@@ -10,6 +10,7 @@ from .recovery import (
     Stage16DGeometryAndPPORecoveryStateMachine,
     Stage16DRecoveryStateMachine,
 )
+from .self_collision import SelfCollisionPhysicsContractV1
 from .spline_actions import PiecewiseSplineResidualV1
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "PiecewiseSplineResidualV1",
     "Stage16DGeometryAndPPORecoveryStateMachine",
     "Stage16DRecoveryStateMachine",
+    "SelfCollisionPhysicsContractV1",
     "TaskSemanticContractV1",
 ]

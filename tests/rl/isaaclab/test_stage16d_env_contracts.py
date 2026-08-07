@@ -39,3 +39,27 @@ def test_stage16d_contract_does_not_mutate_c2_source() -> None:
     assert 'strict_source_object_world_tracking_hard_gate": False' in source
     assert "free_physx_rollout_output" in source
     assert 'object_rollout_state_writes": 0' in source
+
+
+def test_stage16d_owns_versioned_self_collision_and_terminal_windows() -> None:
+    cfg = (
+        REPO_ROOT
+        / "src/toporetarget/rl/environments/isaaclab_backend"
+        / "physics_consistent_retargeting_env_cfg.py"
+    ).read_text(encoding="utf-8")
+    env = (
+        REPO_ROOT
+        / "src/toporetarget/rl/environments/isaaclab_backend"
+        / "physics_consistent_retargeting_env.py"
+    ).read_text(encoding="utf-8")
+    base = (
+        REPO_ROOT
+        / "src/toporetarget/rl/environments/isaaclab_backend"
+        / "world_wrist_direct_env_cfg.py"
+    ).read_text(encoding="utf-8")
+
+    assert "stage16d_self_collision.yaml" in cfg
+    assert "enabled_self_collisions =" in cfg
+    assert "InterFingerCapsulePenetrationV1" in env
+    assert "_terminal_observed_steps" in env
+    assert "enabled_self_collisions=False" in base

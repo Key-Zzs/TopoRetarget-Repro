@@ -32,6 +32,7 @@ def _reward_metrics() -> dict[str, torch.Tensor]:
         "final_topology",
         "forbidden_contact",
         "penetration_m",
+        "inter_finger_penetration_m",
         "impulse_outlier",
         "object_instability",
         "action_effort",
@@ -77,6 +78,7 @@ def test_termination_has_no_strict_object_tracking_input() -> None:
     metrics = {
         "finite": torch.tensor([True]),
         "penetration_m": torch.tensor([0.0]),
+        "inter_finger_penetration_m": torch.tensor([0.0]),
         "workspace_distance_m": torch.tensor([0.1]),
         "wrist_safe": torch.tensor([True]),
         "joint_limits_safe": torch.tensor([True]),
@@ -90,6 +92,39 @@ def test_termination_has_no_strict_object_tracking_input() -> None:
     }
     result = physics_consistent_termination(metrics, _gate(), final_step=torch.tensor([True]))
     assert result["success"].item()
+
+
+def test_inter_finger_penetration_is_penalized_and_hard_gated() -> None:
+    profile = PhysicsConsistentRewardProfileV1()
+    safe = _reward_metrics()
+    unsafe = _reward_metrics()
+    safe["inter_finger_penetration_m"] = torch.zeros(2)
+    unsafe["inter_finger_penetration_m"] = torch.full((2,), 0.006)
+    assert torch.all(
+        physics_consistent_reward_terms(safe, profile)["total"]
+        > physics_consistent_reward_terms(unsafe, profile)["total"]
+    )
+
+    termination_metrics = {
+        "finite": torch.tensor([True]),
+        "penetration_m": torch.tensor([0.0]),
+        "inter_finger_penetration_m": torch.tensor([0.004]),
+        "workspace_distance_m": torch.tensor([0.1]),
+        "wrist_safe": torch.tensor([True]),
+        "joint_limits_safe": torch.tensor([True]),
+        "action_valid": torch.tensor([True]),
+        "object_speed_mps": torch.tensor([0.0]),
+        "semantic_progress": torch.tensor([1.0]),
+        "contact_recall": torch.tensor([1.0]),
+        "contact_causality": torch.tensor([True]),
+        "terminal_stable": torch.tensor([True]),
+        "object_motion_m": torch.tensor([0.02]),
+    }
+    result = physics_consistent_termination(
+        termination_metrics, _gate(), final_step=torch.tensor([True])
+    )
+    assert not result["success"].item()
+    assert result["primary_reason_code"].item() == 10
 
 
 def test_spline_is_bounded_continuous_and_complete() -> None:
