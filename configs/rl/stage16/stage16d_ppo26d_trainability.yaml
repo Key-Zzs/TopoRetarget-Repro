@@ -1,0 +1,9 @@
+schema_version: Stage16DPPO26DTrainabilityGateV1
+gate_a_only: true
+checks:
+  [reference, action, se3_adapter, finger_target, observation, reward, rsi, free_object,
+   contact_causality, self_collision, no_hidden_force, no_rollout_state_write, action_bounds,
+   joint_limits, physx_finite, vector_env, rollout_storage, gae, losses, actor_update,
+   critic_update, checkpoint_round_trip]
+post_ppo_only:
+  [terminal_contact, terminal_stability, final_success, hand_object_geometry, inter_finger_penetration]

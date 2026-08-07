@@ -1,0 +1,14 @@
+schema_version: Stage16DPPO26DTrainingConfigV1
+rollout_length: 40
+actor: {hidden: [512, 256, 128], activation: ELU}
+critic: {hidden: [512, 512, 256, 128], activation: ELU}
+optimizer: {name: Adam, learning_rate: 0.0001}
+gamma: 0.99
+gae_lambda: 0.95
+ppo_clip: 0.2
+epochs: 4
+minibatches: 32
+entropy_coefficient: 0.001
+observation_normalization: true
+advantage_normalization: true
+l0_minimum_samples: 1000000

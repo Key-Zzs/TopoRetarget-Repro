@@ -1,0 +1,15 @@
+schema_version: Stage16DPPO26DReferenceV1
+source: formal_factor8_stage16d_reference
+source_frames: 41
+runtime_samples: 321
+control_hz: 20
+reference_time_scale: 8
+fields:
+  - wrist_pose
+  - wrist_twist
+  - finger_q
+  - finger_qdot
+  - object_reference_pose
+  - object_axis_points
+  - tracked_link_reference
+forbidden_sources: [corrected_yellow_object_trajectory, cem_output_trajectory, ppo_rollout_trajectory]

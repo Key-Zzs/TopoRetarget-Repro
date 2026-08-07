@@ -150,6 +150,35 @@ def _status_line(trace: Stage16DSimulationTraceReplay, frame: int, replica: int)
     )
 
 
+def _ppo26d_embedded_reference(
+    trace_path: Path, *, expected_frames: int
+) -> tuple[np.ndarray | None, dict[str, str]]:
+    """Read optional PPO metadata without changing legacy trace interpretation."""
+
+    with np.load(trace_path, allow_pickle=False) as archive:
+        if "embedded_reference_object_pose" not in archive.files:
+            return None, {}
+        reference = np.asarray(archive["embedded_reference_object_pose"], dtype=np.float64)
+        if reference.shape != (expected_frames, 7) or not np.isfinite(reference).all():
+            raise ValueError("embedded_reference_object_pose must be finite [frames, 7]")
+        metadata = {
+            name: str(archive[name].item())
+            for name in (
+                "trace_type",
+                "action_contract",
+                "checkpoint_path",
+                "cumulative_training_samples",
+                "selected_num_envs",
+            )
+            if name in archive.files
+        }
+    if metadata.get("trace_type") != "stage16d_ppo26d":
+        raise ValueError("embedded PPO reference requires trace_type=stage16d_ppo26d")
+    if metadata.get("action_contract") != "26D_reference_residual":
+        raise ValueError("embedded PPO reference requires 26D reference-residual metadata")
+    return reference, metadata
+
+
 def main() -> int:
     args = parse_args()
     _validate_args(args)
@@ -166,17 +195,30 @@ def main() -> int:
         expected_body_names=[proxy.body_name for proxy in hand_proxies],
         qualification_path=args.qualification,
     )
+    embedded_reference, ppo_metadata = _ppo26d_embedded_reference(
+        args.trace, expected_frames=trace.frame_count
+    )
     reference_path = args.reference or (
         DEFAULT_REFERENCE_ROOT / f"{object_id}.world_wrist.stage16.npz"
     )
-    reference_object_pose = (
-        None
-        if args.no_reference_ghost
-        else load_factor8_hocap_reference_object_pose(
-            reference_path, expected_frames=trace.frame_count, time_scale=8
+    reference_object_pose = None
+    if not args.no_reference_ghost:
+        reference_object_pose = (
+            embedded_reference
+            if embedded_reference is not None
+            else load_factor8_hocap_reference_object_pose(
+                reference_path, expected_frames=trace.frame_count, time_scale=8
+            )
         )
-    )
     trace.validate_replica(args.replica)
+    if ppo_metadata:
+        print(
+            "PPO26D metadata "
+            f"samples={ppo_metadata.get('cumulative_training_samples')} "
+            f"envs={ppo_metadata.get('selected_num_envs')} "
+            f"checkpoint={ppo_metadata.get('checkpoint_path')}",
+            flush=True,
+        )
     if args.frame is not None:
         if not 0 <= args.frame < trace.frame_count:
             raise ValueError(f"--frame must be in [0, {trace.frame_count - 1}]")
@@ -278,7 +320,17 @@ def main() -> int:
                     object_color = (1.0, 0.42, 0.05)
             object_prim.color_attr.Set([Gf.Vec3f(*object_color)])
             sim.render()
-            print("\r" + _status_line(trace, frame, replica), end="", flush=True)
+            line = _status_line(trace, frame, replica)
+            if ppo_metadata:
+                action = np.asarray(trace.actions[frame])
+                if action.shape == (26,):
+                    line += (
+                        f" policy_action_norm={np.linalg.norm(action):.4f}"
+                        f" wrist_residual_norm={np.linalg.norm(action[:6]):.4f}"
+                        f" finger_residual_norm={np.linalg.norm(action[6:]):.4f}"
+                        " reference_frame=embedded_ppo"
+                    )
+            print("\r" + line, end="", flush=True)
 
         center, radius = trace.camera_bounds(args.replica, frames)
         if reference_object_pose is not None:
@@ -293,13 +345,24 @@ def main() -> int:
 
         qualification_metrics = trace.qualification_metrics or {}
         reference_label = (
-            str(reference_path.resolve()) if reference_object_pose is not None else "none"
+            "embedded_ppo_reference"
+            if embedded_reference is not None
+            else str(reference_path.resolve())
+            if reference_object_pose is not None
+            else "none"
+        )
+        ghost_kind = (
+            "embedded_ppo_reference"
+            if ppo_metadata
+            else "factor8_hocap_reference"
+            if reference_object_pose is not None
+            else "disabled"
         )
         print(
             f"REPLAY_INPUT kind={trace.trace_kind} frames={trace.frame_count} "
             f"qualification={trace.qualification_status} metrics={qualification_metrics} "
             "reference_ghost="
-            f"{'factor8_hocap_reference' if reference_object_pose is not None else 'disabled'} "
+            f"{ghost_kind} "
             f"reference={reference_label}",
             flush=True,
         )
