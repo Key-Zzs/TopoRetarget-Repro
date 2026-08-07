@@ -321,10 +321,18 @@ def _bounds(
     object_vertices: np.ndarray,
     object_poses: np.ndarray,
     profiles: dict[str, Any],
+    context_object_meshes: list[dict[str, Any]] | None = None,
 ) -> list[list[float]]:
     chunks = [np.asarray(source_vertices, dtype=np.float64).reshape(-1, 3)]
     if len(object_vertices):
         chunks.append(_transform_points(object_vertices, object_poses).reshape(-1, 3))
+    for context in context_object_meshes or []:
+        chunks.append(
+            _transform_points(
+                np.asarray(context["vertices"], dtype=np.float64),
+                np.asarray(context["poses"], dtype=np.float64),
+            ).reshape(-1, 3)
+        )
     for profile in profiles.values():
         for part in profile.get("robot_mesh", {}).get("parts", []):
             chunks.append(
@@ -363,13 +371,34 @@ def render_clip_html(
     model = get_robot_registry(repo_root=Path(__file__).resolve().parents[3]).load(
         clip.robot, asset_root=asset_root
     )
-    object_track = sequence.primary_rigid_object()
+    # ``clip.object_name`` is the selection contract.  A reused canonical may
+    # retain an older primary-object marker, so silently calling
+    # ``primary_rigid_object()`` can render one part while the interaction
+    # graph was built for another.  Resolve the selected id explicitly.
+    object_track = sequence.rigid_object(clip.object_name)
     object_vertices, object_faces = _clustered_mesh_preview(
         np.asarray(object_track.mesh.vertices_local, dtype=np.float64),
         np.asarray(object_track.mesh.faces, dtype=np.int64),
         max_faces=_MAX_OBJECT_FACES,
     )
     object_poses = np.asarray(object_track.pose_scene.pose_scene, dtype=np.float64)
+    context_object_meshes: list[dict[str, Any]] = []
+    for context_track in sequence.rigid_objects:
+        if context_track.object_id == object_track.object_id:
+            continue
+        context_vertices, context_faces = _clustered_mesh_preview(
+            np.asarray(context_track.mesh.vertices_local, dtype=np.float64),
+            np.asarray(context_track.mesh.faces, dtype=np.int64),
+            max_faces=_MAX_OBJECT_FACES,
+        )
+        context_object_meshes.append(
+            {
+                "object_id": context_track.object_id,
+                "vertices": _rounded(context_vertices),
+                "faces": context_faces.tolist(),
+                "poses": _rounded(context_track.pose_scene.pose_scene, digits=8),
+            }
+        )
     if len(source_keypoints) != clip.length or len(object_poses) != clip.length:
         raise ValueError("quality HTML expects a 60-frame canonical clip")
     source_vertices = np.asarray(hand.vertices_scene, dtype=np.float64)
@@ -449,7 +478,13 @@ def render_clip_html(
         if "paper_warm" in profiles
         else next(profile_id for profile_id in profiles if profile_id != "source_mano")
     )
-    scene_bounds = _bounds(source_vertices, object_vertices, object_poses, profiles)
+    scene_bounds = _bounds(
+        source_vertices,
+        object_vertices,
+        object_poses,
+        profiles,
+        context_object_meshes,
+    )
     robot_topology = _factor_robot_topology(profiles)
     payload = {
         "schema_version": QUALITY_SCHEMA_VERSION,
@@ -464,6 +499,7 @@ def render_clip_html(
         "interaction_provenance": interaction_provenance,
         "source_mesh": {"vertices": _rounded(source_vertices), "faces": source_faces.tolist()},
         "object_mesh": {
+            "object_id": object_track.object_id,
             "vertices": _rounded(object_vertices),
             "faces": object_faces.tolist(),
             "poses": _rounded(object_poses, digits=8),
@@ -473,6 +509,7 @@ def render_clip_html(
                 "face_count": int(len(object_faces)),
             },
         },
+        "context_object_meshes": context_object_meshes,
         "bounds": scene_bounds,
         "layers": [
             f"{source_label} triangular mesh",
@@ -494,7 +531,14 @@ def render_clip_html(
     return destination
 
 
-def smoke_html(path: str | Path, *, expected_frames: int = 60, profiles: int = 1) -> dict[str, Any]:
+def smoke_html(
+    path: str | Path,
+    *,
+    expected_frames: int = 60,
+    profiles: int = 1,
+    expected_object_id: str | None = None,
+    expected_context_object_ids: set[str] | None = None,
+) -> dict[str, Any]:
     source = Path(path).read_text(encoding="utf-8")
     required = {
         'id="frame"': "frame slider",
@@ -539,6 +583,16 @@ def smoke_html(path: str | Path, *, expected_frames: int = 60, profiles: int = 1
             data_ok = data_ok and bool(source_mesh.get("faces"))
             data_ok = data_ok and bool(object_mesh.get("vertices"))
             data_ok = data_ok and bool(object_mesh.get("faces"))
+            if expected_object_id is not None:
+                data_ok = data_ok and data.get("clip", {}).get("object_name") == expected_object_id
+                data_ok = data_ok and object_mesh.get("object_id") == expected_object_id
+            if expected_context_object_ids is not None:
+                context_ids = {
+                    str(item.get("object_id"))
+                    for item in data.get("context_object_meshes", [])
+                    if isinstance(item, dict)
+                }
+                data_ok = data_ok and context_ids == expected_context_object_ids
             data_ok = data_ok and bool(robot_topology.get("parts"))
             data_ok = data_ok and len(data.get("bounds", [])) == 2
             data_ok = data_ok and all(
@@ -591,14 +645,14 @@ _HTML_TEMPLATE = r"""<!doctype html>
 const DATA = __DATA__;
 const canvas=document.getElementById('scene'),ctx=canvas.getContext('2d'),frameInput=document.getElementById('frame'),frameLabel=document.getElementById('frameLabel'),metricsBox=document.getElementById('metrics'),modeInput=document.getElementById('mode'),profileSelect=document.getElementById('profileSelect');
 let frame=0,yaw=-0.75,pitch=0.3,zoom=1,playing=false,timer=null,dragging=false,lastX=0,lastY=0;
-const colors={source:'#3b82f6',warm:'#f59e0b',final:'#22c55e'},source=DATA.source_mesh,object=DATA.object_mesh,robotTopology=DATA.robot_topology,warmProfile=DATA.profiles[DATA.warm_profile];const objectSurfaceStatus=document.getElementById('objectSurfaceStatus');if(objectSurfaceStatus)objectSurfaceStatus.textContent=object?.vertices?.length&&object?.faces?.length?`loaded (${object.faces.length} faces)`:'missing';
+const colors={source:'#3b82f6',warm:'#f59e0b',final:'#22c55e'},source=DATA.source_mesh,object=DATA.object_mesh,contextObjects=DATA.context_object_meshes||[],robotTopology=DATA.robot_topology,warmProfile=DATA.profiles[DATA.warm_profile];const objectSurfaceStatus=document.getElementById('objectSurfaceStatus');if(objectSurfaceStatus)objectSurfaceStatus.textContent=object?.vertices?.length&&object?.faces?.length?`loaded primary ${object.object_id||'object'} (${object.faces.length} faces) + ${contextObjects.length} context`:'missing';
 const meshLayers={source:document.getElementById('meshSource'),warm:document.getElementById('meshWarm'),final:document.getElementById('meshFinal')},graphLayers={source:document.getElementById('graphSource'),warm:document.getElementById('graphWarm'),final:document.getElementById('graphFinal')},edgeLayers={0:document.getElementById('edgeHH'),1:document.getElementById('edgeHO'),2:document.getElementById('edgeOO')};
 const low=DATA.bounds[0],high=DATA.bounds[1],center=[(low[0]+high[0])/2,(low[1]+high[1])/2,(low[2]+high[2])/2],extent=Math.max(high[0]-low[0],high[1]-low[1],high[2]-low[2],1e-3);
 document.getElementById('title').textContent=DATA.title;frameInput.max=String(DATA.frame_count-1);const profileIds=Object.keys(DATA.profiles);profileIds.forEach(id=>{const option=document.createElement('option');option.value=id;option.textContent=DATA.profiles[id].label||id;profileSelect.appendChild(option)});profileSelect.value=DATA.recommended_profile in DATA.profiles&&DATA.recommended_profile!=='source_mano'?DATA.recommended_profile:(profileIds.find(id=>id!=='source_mano')||profileIds[0]);
 function activeProfile(){return DATA.profiles[profileSelect.value]||DATA.profiles[profileIds.find(id=>id!=='source_mano')||profileIds[0]]}function activeInteraction(){return DATA.interaction_profiles[profileSelect.value]||DATA.interaction_profiles[profileIds.find(id=>id!=='source_mano')||profileIds[0]]||null}
 function transformPoint(m,p){return[m[0][0]*p[0]+m[0][1]*p[1]+m[0][2]*p[2]+m[0][3],m[1][0]*p[0]+m[1][1]*p[1]+m[1][2]*p[2]+m[1][3],m[2][0]*p[0]+m[2][1]*p[1]+m[2][2]*p[2]+m[2][3]]}function rotate(p){let x=p[0]-center[0],y=p[1]-center[1],z=p[2]-center[2];const cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch),x1=cy*x+sy*z,z1=-sy*x+cy*z;return[x1,cp*y-sp*z1,sp*y+cp*z1]}function project(p,w,h){const q=rotate(p),camera=extent*3,scale=Math.min(w,h)*0.72*zoom/Math.max(0.15,camera-q[2]);return[w/2+q[0]*scale,h/2-q[1]*scale,q[2]]}
 function transformRobot(payload,index){return payload.parts.map((part,i)=>{const m=part.transforms[index];return robotTopology.parts[i].vertices.map(p=>transformPoint(m,p))})}function drawMesh(vertices,faces,color,alpha,w,h){if(!vertices?.length||!faces?.length)return;const projected=vertices.map(p=>project(p,w,h)),ordered=faces.map(face=>[face,(projected[face[0]][2]+projected[face[1]][2]+projected[face[2]][2])/3]);ordered.sort((a,b)=>a[1]-b[1]);ctx.fillStyle=color;ctx.strokeStyle=color;ctx.globalAlpha=alpha;ctx.lineWidth=0.25;for(const [face] of ordered){const a=projected[face[0]],b=projected[face[1]],c=projected[face[2]];ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.lineTo(c[0],c[1]);ctx.closePath();ctx.fill();ctx.stroke()}ctx.globalAlpha=1}function drawRobot(payload,index,color,alpha,w,h){const vertices=transformRobot(payload,index);payload.parts.forEach((part,i)=>drawMesh(vertices[i],robotTopology.parts[i].faces,color,alpha,w,h))}
-let objectCacheFrame=-1,objectCacheVertices=[];function objectSceneVertices(index){if(objectCacheFrame!==index){const pose=object.poses[index];objectCacheVertices=object.vertices.map(p=>transformPoint(pose,p));objectCacheFrame=index}return objectCacheVertices}function drawObjectContext(index,w,h){ctx.fillStyle='#64748b';ctx.globalAlpha=0.42;for(const p of objectSceneVertices(index)){const s=project(p,w,h);ctx.fillRect(s[0]-1,s[1]-1,2,2)}ctx.globalAlpha=1}function drawObjectSurface(index,w,h){drawMesh(objectSceneVertices(index),object.faces,'#7c3aed',0.62,w,h)}
+let objectCacheFrame=-1,objectCacheVertices=[],contextCacheVertices=[];function objectSceneVertices(index){if(objectCacheFrame!==index){const pose=object.poses[index];objectCacheVertices=object.vertices.map(p=>transformPoint(pose,p));contextCacheVertices=contextObjects.map(item=>item.vertices.map(p=>transformPoint(item.poses[index],p)));objectCacheFrame=index}return objectCacheVertices}function drawObjectContext(index,w,h){ctx.fillStyle='#64748b';ctx.globalAlpha=0.42;for(const points of [objectSceneVertices(index),...contextCacheVertices])for(const p of points){const s=project(p,w,h);ctx.fillRect(s[0]-1,s[1]-1,2,2)}ctx.globalAlpha=1}function drawObjectSurface(index,w,h){objectSceneVertices(index);contextObjects.forEach((item,i)=>drawMesh(contextCacheVertices[i],item.faces,'#94a3b8',0.20,w,h));drawMesh(objectCacheVertices,object.faces,'#7c3aed',0.68,w,h)}
 const handEdges=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],[0,17],[17,18],[18,19],[19,20]];
 function drawPoints(points,color,size,w,h){ctx.fillStyle=color;ctx.globalAlpha=0.9;(points||[]).forEach(p=>{const s=project(p,w,h);ctx.beginPath();ctx.arc(s[0],s[1],size,0,Math.PI*2);ctx.fill()});ctx.globalAlpha=1}function drawSkeleton(points,color,w,h){if(!points?.length)return;ctx.strokeStyle=color;ctx.lineWidth=1.5;for(const e of handEdges){const a=points[e[0]],b=points[e[1]];if(!a||!b)continue;const pa=project(a,w,h),pb=project(b,w,h);ctx.beginPath();ctx.moveTo(pa[0],pa[1]);ctx.lineTo(pb[0],pb[1]);ctx.stroke()}drawPoints(points,color,2.8,w,h)}function drawArrow(a,b,color,dashed,w,h){if(!a||!b)return;const pa=project(a,w,h),pb=project(b,w,h);ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=1.2;ctx.setLineDash(dashed?[5,4]:[]);ctx.beginPath();ctx.moveTo(pa[0],pa[1]);ctx.lineTo(pb[0],pb[1]);ctx.stroke();ctx.setLineDash([])}function drawContacts(profile,w,h){const s=DATA.profiles.source_mano.keypoints[frame]||[],r=profile.keypoints?.[frame]||[],c=profile.contact_points?.[frame]||[];for(let i=0;i<Math.min(s.length,r.length);i++){drawArrow(s[i],r[i],'#14b8a6',true,w,h);if(c[i])drawArrow(r[i],c[i],'#f97316',false,w,h)}drawPoints(c,'#f97316',3,w,h)}
 function categoryStyle(category){return category===0?[0.25,0.8]:category===1?[0.85,1.7]:[0.18,0.55]}function weightColor(weight){const t=Math.max(0,Math.min(1,weight/0.15)),hue=235-235*t;return`hsl(${hue},80%,50%)`}function drawEdge(points,edge,color,alpha,width,w,h){const a=project(points[edge[0]],w,h),b=project(points[edge[1]],w,h);ctx.strokeStyle=color;ctx.globalAlpha=alpha;ctx.lineWidth=width;ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();ctx.globalAlpha=1}function selectedEdges(graphFrame){const threshold=Number(document.getElementById('edgeThreshold').value),topK=Number(document.getElementById('topKEdges').value)||0,only=document.getElementById('handObjectOnly').checked,ids=[];for(let i=0;i<graphFrame.edges.length;i++){const category=graphFrame.categories[i];if(!edgeLayers[category].checked||only&&category!==1||graphFrame.weights[i]<threshold)continue;ids.push(i)}if(topK>0)ids.sort((a,b)=>graphFrame.weights[b]-graphFrame.weights[a]);return topK>0?ids.slice(0,topK):ids}
