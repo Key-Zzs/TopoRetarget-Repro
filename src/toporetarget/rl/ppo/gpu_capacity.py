@@ -55,14 +55,19 @@ def select_ppo26d_environment_capacity(
     eligible = [measurement for measurement in measurements if measurement.eligible]
     if not eligible:
         raise RuntimeError("ALL_GPU_CAPACITY_CANDIDATES_FAIL")
-    peak = max(float(measurement.samples_per_s) for measurement in eligible)
-    near_peak = [
-        measurement for measurement in eligible if float(measurement.samples_per_s) >= 0.95 * peak
-    ]
+    eligible_with_metrics: list[tuple[GpuCapacityMeasurement, float, float]] = []
+    for measurement in eligible:
+        if measurement.samples_per_s is None or measurement.free_vram_mib is None:
+            raise AssertionError("eligible capacity row is missing a measured metric")
+        eligible_with_metrics.append(
+            (measurement, measurement.samples_per_s, measurement.free_vram_mib)
+        )
+    peak = max(samples_per_s for _, samples_per_s, _ in eligible_with_metrics)
+    near_peak = [item for item in eligible_with_metrics if item[1] >= 0.95 * peak]
     selected = sorted(
         near_peak,
-        key=lambda measurement: (-float(measurement.free_vram_mib), measurement.num_envs),
-    )[0]
+        key=lambda item: (-item[2], item[0].num_envs),
+    )[0][0]
     return {
         "selector": "Stage16DPPOEnvCapacitySelectorV1",
         "selected_num_envs": selected.num_envs,

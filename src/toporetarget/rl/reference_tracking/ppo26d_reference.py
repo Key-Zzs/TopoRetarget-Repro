@@ -152,7 +152,7 @@ def export_factor8_reference(source: Path, destination: Path) -> dict[str, Any]:
         ),
     }
     destination.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(destination, **payload)
+    np.savez_compressed(destination, **payload)  # type: ignore[arg-type]
     return {
         "contract": Stage16DPPO26DReferenceV1().as_dict(),
         "source": inspection,

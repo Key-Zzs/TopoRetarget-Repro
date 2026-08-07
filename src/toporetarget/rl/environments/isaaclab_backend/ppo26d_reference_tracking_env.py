@@ -128,7 +128,8 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             (torch.cos(angle * 0.5), axis * torch.sin(angle * 0.5)), dim=-1
         )
         active_quaternion = self._quaternion_multiply(
-            self.reference_bank.object_pose_quaternion_world_ref[clips, frames], delta_quaternion
+            self.reference_bank.object_pose_quaternion_world_ref_wxyz[clips, frames],
+            delta_quaternion,
         )
         active_state = torch.cat(
             (
