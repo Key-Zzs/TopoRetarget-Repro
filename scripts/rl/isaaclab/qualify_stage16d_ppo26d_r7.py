@@ -203,12 +203,17 @@ def main() -> int:
     parser.add_argument("--topology", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--transitions", type=Path, required=True)
+    parser.add_argument(
+        "--formal-seed-set",
+        default="formal_holdout_seed_set_v1",
+        help="Exact reserved formal set expected in the evaluation artifact.",
+    )
     args = parser.parse_args()
     evaluation = _read_json(args.evaluation.resolve())
     clip = str(evaluation["requested_clip"])
     frame_zero = evaluation.get("frame_zero")
     if (
-        evaluation.get("seed_set", {}).get("identifier") != "formal_holdout_seed_set_v1"
+        evaluation.get("seed_set", {}).get("identifier") != args.formal_seed_set
         or not isinstance(frame_zero, list)
         or len(frame_zero) != 20
         or evaluation.get("rsi") != []
@@ -300,12 +305,13 @@ def main() -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     args.transitions.parent.mkdir(parents=True, exist_ok=True)
+    next_state = "R8_170105" if clip == "hocap_170650" else "D6_MULTICLIP"
     with args.transitions.open("a", encoding="utf-8") as stream:
         stream.write(
             json.dumps(
                 {
                     "from": "R7_POST_PPO_QUALIFICATION",
-                    "to": "R8_170105",
+                    "to": next_state,
                     "reason": status,
                     "qualification": str(args.output.resolve()),
                 },

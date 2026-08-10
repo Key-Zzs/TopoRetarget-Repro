@@ -79,8 +79,13 @@ requested/actual update counts, KL per epoch/minibatch, and the three action
 group diagnostics at every update.
 
 The frozen `development_eval_seed_set_v1` provides 20 deterministic
-frame-zero and 20 RSI episodes for L0/4M/16M/curriculum/Reward-V2 comparisons.
-`formal_holdout_seed_set_v1` is disjoint and prohibited before R7. The
+frame-zero and 20 RSI episodes for `hocap_170650`
+L0/4M/16M/curriculum/Reward-V2 comparisons. Its
+`formal_holdout_seed_set_v1` is disjoint and prohibited before R7.
+`hocap_170105` uses the separate
+`development_eval_seed_set_170105_v1` and
+`formal_holdout_seed_set_170105_v1` sets; cross-clip seed reuse is forbidden.
+The
 lexicographic best-checkpoint order is frame-zero task completion, terminal
 contact, terminal stability, continuous contact, lower object position/rotation
 error, RSI terminal contact, reward, action saturation, then earlier sample
