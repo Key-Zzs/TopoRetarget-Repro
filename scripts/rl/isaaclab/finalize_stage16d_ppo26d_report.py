@@ -146,6 +146,10 @@ def main() -> int:
     training = read_json(clip_root / "l0_training.json")
     evaluation = read_json(clip_root / "ppo_l0_eval_qualification.json")
     replay = read_json(root / "replay_validation.json")
+    geometry_path = clip_root / "ppo_l0_eval_geometry.json"
+    geometry = read_json(geometry_path) if geometry_path.is_file() else None
+    interactive_path = root / "replay_interactive_smoke.json"
+    interactive_replay = read_json(interactive_path) if interactive_path.is_file() else None
     tests = read_json(root / "tests.json")
     trace = trace_evidence(Path(str(evaluation["trace"])))
     commits = git_commits()
@@ -162,6 +166,39 @@ def main() -> int:
         },
     }
     failure_transitions = [
+        {
+            "failure_class": "PPO26D_FIXED_CLIP_IDENTITY_MISMATCH",
+            "attempt": 1,
+            "resolved": True,
+            "evidence": (
+                "fixed-clip assignment is enforced on construction and every reset; checkpoint, "
+                "evaluation, and trace all declare hocap_170650 / clip index 1"
+            ),
+        },
+        {
+            "failure_class": "PPO26D_REFERENCE_MATERIALIZATION_MISMATCH",
+            "attempt": 1,
+            "resolved": True,
+            "evidence": "factor-8 export now matches runtime Hermite/quaternion interpolation",
+        },
+        {
+            "failure_class": "PPO26D_EVALUATION_CONTACT_SEMANTICS",
+            "attempt": 1,
+            "resolved": True,
+            "evidence": (
+                "episode-any contact and final-step terminal contact are reported separately; "
+                "reference-end completion is derived from TIMEOUT_REFERENCE_END"
+            ),
+        },
+        {
+            "failure_class": "PPO26D_CORRECTED_GEOMETRY_REPLICA_AXIS",
+            "attempt": 1,
+            "resolved": True,
+            "evidence": (
+                "single-replica exact geometry arrays were serialized in the corrected-trace "
+                "shape expected by the existing replay loader"
+            ),
+        },
         {
             "failure_class": "PPO26D_BENCHMARK_JSON_SERIALIZATION",
             "attempt": 1,
@@ -207,6 +244,8 @@ def main() -> int:
         "evaluation": evaluation,
         "trace": trace,
         "replay": replay,
+        "interactive_replay": interactive_replay,
+        "post_ppo_geometry": geometry,
         "tests": tests,
         "git_commits": commits,
         "git_delivery": {
@@ -236,6 +275,14 @@ def main() -> int:
         f"`{trace['terminal_window_start_frame']}:{trace['terminal_window_end_exclusive']}`; "
         f"peak force frame: `{trace['peak_contact_force_frame']}`."
     )
+    geometry_summary = "Post-PPO exact geometry diagnostic: `not run`."
+    if geometry is not None:
+        aggregate = geometry["aggregate"]
+        geometry_summary = (
+            "Post-PPO exact geometry diagnostic: "
+            f"max penetration `{aggregate['max_penetration_m'] * 1000.0:.6f} mm`; "
+            f"frames over 3 mm `{aggregate['over_3mm_frame_replica_count']}`."
+        )
     markdown = f"""# Stage 16-D PPO-26D L0 Handoff
 
 Status: `{training["status"]}`
@@ -249,6 +296,8 @@ Collision-body pose source: `{evaluation["hand_collision_body_pose"]}`
 
 {contact_summary}
 
+{geometry_summary}
+
 | envs | samples/s | PPO update | peak VRAM MiB | free VRAM MiB | clean exit |
 |---:|---:|---|---:|---:|---|
 {table}
@@ -256,6 +305,8 @@ Collision-body pose source: `{evaluation["hand_collision_body_pose"]}`
 Checkpoint: `{training["l0_checkpoint"]}`
 
 Replay receipt: `{root / "replay_validation.json"}`
+
+Interactive replay receipt: `{interactive_path if interactive_replay is not None else "not run"}`
 """
     write_text(root / "final_summary.md", markdown)
     write_text(root / "handoff.md", markdown)

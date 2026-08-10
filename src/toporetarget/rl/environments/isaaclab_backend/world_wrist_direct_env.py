@@ -342,7 +342,9 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         self.termination_profile = Stage16TerminationProfileV1()
         self._reference_index = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self._clip_index = self.reference_bank.assignment(
-            self.num_envs, balanced=cfg.balanced_clip_assignment
+            self.num_envs,
+            balanced=cfg.balanced_clip_assignment,
+            fixed_clip=getattr(cfg, "stage16d_fixed_clip", None),
         )
         self._target_reference_index = torch.zeros_like(self._reference_index)
         self._actions = torch.zeros((self.num_envs, 26), dtype=torch.float32, device=self.device)
@@ -1636,7 +1638,10 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         self._object_170105.reset(env_ids)
         self._object_170650.reset(env_ids)
         super()._reset_idx(env_ids)
-        if self.cfg.alternate_clip_on_reset:
+        fixed_clip = getattr(self.cfg, "stage16d_fixed_clip", None)
+        if fixed_clip is not None:
+            self._clip_index[env_ids] = self.reference_bank.clip_index(fixed_clip)
+        elif self.cfg.alternate_clip_on_reset:
             self._clip_index[env_ids] = 1 - self._clip_index[env_ids]
         elif self.cfg.balanced_clip_assignment:
             self._clip_index[env_ids] = env_ids % 2
@@ -1746,6 +1751,7 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
     def contract_report(self) -> dict[str, object]:
         """Static/runtime contract evidence consumed by qualification scripts."""
 
+        active_clip_indices = sorted(set(self._clip_index.detach().cpu().tolist()))
         return {
             "environment": "IsaacWorldWristFingerDirectRLEnv",
             "action": self.action_adapter.contract.as_dict(),
@@ -1758,6 +1764,14 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
                 "source_npz_modified": False,
                 "source_keys_preserved": True,
                 "source_key_runtime_stride": self.cfg.reference_time_scale,
+            },
+            "clip_assignment": {
+                "fixed_clip": getattr(self.cfg, "stage16d_fixed_clip", None),
+                "balanced": bool(self.cfg.balanced_clip_assignment),
+                "active_clip_indices": active_clip_indices,
+                "active_clip_ids": [
+                    self.reference_bank.clip_ids[index] for index in active_clip_indices
+                ],
             },
             "joint_mapping": self.action_adapter.mapping_manifest(),
             "termination": self.termination_profile.as_dict(),

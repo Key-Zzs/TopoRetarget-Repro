@@ -180,11 +180,19 @@ def main() -> int:
             critical_dr=args.critical_dr,
         )
         env = IsaacPPO26DReferenceTrackingEnv(cfg)
+        active_clip_indices = sorted(set(env._clip_index.detach().cpu().tolist()))
+        expected_clip_index = env.reference_bank.clip_ids.index(args.clip)
+        if active_clip_indices != [expected_clip_index]:
+            raise RuntimeError(
+                "PPO26D_FIXED_CLIP_MISMATCH: "
+                f"requested={args.clip} active_indices={active_clip_indices}"
+            )
         trainer = PPO26DTrainer(observation_dim=764, device=str(env.device))
         write_json(
             output / "training_config.json",
             {
                 "clip": args.clip,
+                "active_clip_index": expected_clip_index,
                 "benchmark_selected_num_envs": benchmark_selected,
                 "selected_num_envs": num_envs,
                 "samples_per_iteration": samples_per_iteration,

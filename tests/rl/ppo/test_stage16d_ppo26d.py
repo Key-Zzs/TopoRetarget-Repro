@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 import torch
 
+from toporetarget.rl.environments.isaaclab_backend.reference_bank import WorldWristReferenceBank
 from toporetarget.rl.ppo.gpu_capacity import (
     GpuCapacityMeasurement,
     select_ppo26d_environment_capacity,
@@ -52,6 +53,8 @@ def _source_reference(path: Path) -> None:
         object_twist_world_ref=np.zeros((frames, 6), dtype=np.float32),
         object_axis_points_world_ref=np.zeros((frames, 6, 3), dtype=np.float32),
         tracked_link_positions_world_ref=np.zeros((frames, 16, 3), dtype=np.float32),
+        object_axis_points_wrist_ref=np.zeros((frames, 6, 3), dtype=np.float32),
+        tracked_link_positions_wrist_ref=np.zeros((frames, 16, 3), dtype=np.float32),
         metadata=np.asarray(json.dumps(metadata)),
     )
 
@@ -79,6 +82,49 @@ def test_factor8_reference_contract_exports_321_samples(tmp_path: Path) -> None:
         assert archive["timestamps"].shape == (321,)
         assert archive["q_finger_ref"].shape == (321, 20)
         assert archive["tracked_link_positions_world_ref"].shape == (321, 16, 3)
+
+
+def test_factor8_export_matches_runtime_reference_retiming(tmp_path: Path) -> None:
+    source = tmp_path / "source.npz"
+    destination = tmp_path / "derived.npz"
+    _source_reference(source)
+    with np.load(source, allow_pickle=False) as archive:
+        payload = {name: np.asarray(archive[name]).copy() for name in archive.files}
+    ramp = np.linspace(0.0, 1.0, 41, dtype=np.float32)
+    payload["object_pose_translation_world_ref"][:, 0] = ramp**2
+    payload["object_twist_world_ref"][:, 0] = np.linspace(0.2, 0.8, 41)
+    payload["wrist_pose_translation_world_ref"][:, 1] = ramp**3
+    payload["wrist_twist_world_ref"][:, 1] = np.linspace(-0.4, 0.6, 41)
+    payload["q_finger_ref"][:, 0] = ramp**2
+    payload["qdot_finger_ref"][:, 0] = np.linspace(0.1, 0.5, 41)
+    np.savez_compressed(source, **payload)
+    export_factor8_reference(source, destination)
+    bank = WorldWristReferenceBank({"hocap_170105": source, "hocap_170650": source}, device="cpu")
+    bank.apply_uniform_time_scale(8)
+    with np.load(destination, allow_pickle=False) as archive:
+        for field in (
+            "wrist_pose_translation_world_ref",
+            "wrist_pose_quaternion_world_ref_wxyz",
+            "wrist_twist_world_ref",
+            "q_finger_ref",
+            "qdot_finger_ref",
+            "object_pose_translation_world_ref",
+            "object_pose_quaternion_world_ref_wxyz",
+            "object_twist_world_ref",
+            "object_axis_points_world_ref",
+            "tracked_link_positions_world_ref",
+        ):
+            assert np.allclose(archive[field], getattr(bank, field)[0].numpy(), atol=1.0e-7)
+
+
+def test_fixed_clip_assignment_never_falls_back_to_zero(tmp_path: Path) -> None:
+    source = tmp_path / "source.npz"
+    _source_reference(source)
+    bank = WorldWristReferenceBank({"hocap_170105": source, "hocap_170650": source}, device="cpu")
+    assert bank.assignment(4, balanced=False).tolist() == [0, 0, 0, 0]
+    assert bank.assignment(4, balanced=False, fixed_clip="hocap_170650").tolist() == [1] * 4
+    with pytest.raises(ValueError, match="unknown fixed reference clip"):
+        bank.assignment(1, balanced=False, fixed_clip="hocap_missing")
 
 
 def test_rsi_samples_valid_full_reference_range() -> None:
@@ -140,6 +186,16 @@ def test_trace_capture_does_not_apply_canonical_joint_order_twice() -> None:
     capture = capture[: capture.index("def ", 4)]
     assert '"finger_q": state["finger_q"]' in capture
     assert 'isaac_to_canonical(state["finger_q"])' not in capture
+
+
+def test_ppo26d_evaluation_keeps_any_contact_distinct_from_terminal_contact() -> None:
+    source = (REPO_ROOT / "scripts/rl/isaaclab/evaluate_stage16d_ppo26d.py").read_text(
+        encoding="utf-8"
+    )
+    assert '"contact": contact_seen' in source
+    assert '"terminal_contact": terminal_contact' in source
+    assert '"terminal_contact": contact_seen' not in source
+    assert '"reached_final_reference": termination_reason == 7' in source
 
 
 def test_ppo26d_normalizer_uses_full_rollout_after_frozen_update(monkeypatch) -> None:

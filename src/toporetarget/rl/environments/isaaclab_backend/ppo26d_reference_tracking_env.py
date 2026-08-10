@@ -19,7 +19,7 @@ from toporetarget.rl.reference_tracking.ppo26d_reward import (
 
 from .ppo26d_reference_tracking_env_cfg import IsaacPPO26DReferenceTrackingEnvCfg
 from .reference_bank import quaternion_to_matrix_wxyz
-from .scene_frame import scene_to_global
+from .scene_frame import global_to_scene, scene_to_global
 from .tensor_math import relative_rotation_log_local
 from .world_wrist_direct_env import IsaacWorldWristFingerDirectRLEnv
 
@@ -467,7 +467,25 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             "terminated": terminated,
             "timed_out": timed_out,
             "action": self._actions,
+            "clip_index": self._clip_index,
             "reward_total": self._last_reward_terms["total"],
+            "reward_object": self._last_reward_terms["object"],
+            "reward_link": self._last_reward_terms["tracked_links"],
+            "reward_finger": self._last_reward_terms["finger_joints"],
+            "reward_wrist_translation": self._last_reward_terms["wrist_position"],
+            "reward_wrist_rotation": self._last_reward_terms["wrist_rotation"],
+            "reward_smoothness": self._last_reward_terms["smoothness"],
+            "wrist_residual": torch.cat(
+                (self._wrist_translation_residual, self._wrist_rotation_residual), dim=-1
+            ),
+            "wrist_target": torch.cat(
+                (
+                    global_to_scene(self._wrist_target_position, self.scene.env_origins),
+                    self._wrist_target_quaternion,
+                ),
+                dim=-1,
+            ),
+            "finger_target": self.action_adapter.isaac_to_canonical(self._joint_target_isaac),
             "object_reference": torch.cat(
                 (
                     self.reference_bank.gather(
@@ -482,6 +500,27 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
                     ),
                 ),
                 dim=-1,
+            ),
+            "wrist_reference": torch.cat(
+                (
+                    self.reference_bank.gather(
+                        "wrist_pose_translation_world_ref",
+                        self._clip_index,
+                        self._reference_index,
+                    ),
+                    self.reference_bank.gather(
+                        "wrist_pose_quaternion_world_ref_wxyz",
+                        self._clip_index,
+                        self._reference_index,
+                    ),
+                ),
+                dim=-1,
+            ),
+            "finger_reference": self.reference_bank.gather(
+                "q_finger_ref", self._clip_index, self._reference_index
+            ),
+            "tracked_link_reference": self.reference_bank.gather(
+                "tracked_link_positions_world_ref", self._clip_index, self._reference_index
             ),
             "reference_index": self._reference_index,
         }
@@ -558,6 +597,9 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
 
     def contract_report(self) -> dict[str, object]:
         report = super().contract_report()
+        clip_assignment = report.get("clip_assignment")
+        if not isinstance(clip_assignment, dict):
+            raise RuntimeError("PPO26D contract report is missing clip assignment evidence")
         report["ppo26d"] = {
             "action": self.action_adapter.contract.as_dict(),
             "action_semantic": "Stage16DReferenceResidualAction26DV1",
@@ -567,6 +609,9 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             "self_collision_enabled": bool(
                 self.cfg.robot.spawn.articulation_props.enabled_self_collisions
             ),
+            "fixed_clip": getattr(self.cfg, "stage16d_fixed_clip", None),
+            "active_clip_indices": clip_assignment["active_clip_indices"],
+            "active_clip_ids": clip_assignment["active_clip_ids"],
             **self.rollout_state_write_report(),
             "policy_direct_articulation_action": False,
             "policy_direct_object_action": False,

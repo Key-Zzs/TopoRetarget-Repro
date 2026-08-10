@@ -294,8 +294,13 @@ class PPO26DTrainer:
     def checkpoint_payload(
         self, *, environment_contract: dict[str, Any], selected_num_envs: int
     ) -> dict[str, Any]:
+        clip = environment_contract.get("ppo26d", {}).get("fixed_clip")
+        active_clips = environment_contract.get("ppo26d", {}).get("active_clip_ids")
+        if clip not in {"hocap_170105", "hocap_170650"} or active_clips != [clip]:
+            raise ValueError(f"PPO26D_FIXED_CLIP_MISMATCH: fixed={clip!r} active={active_clips!r}")
         return {
             "schema_version": "Stage16DPPO26DCheckpointV1",
+            "clip": clip,
             "actor_critic": self.model.state_dict(),
             "optimizer": self.trainer.optimizer.state_dict(),
             "observation_normalization": self.trainer.normalizer.state_dict(),

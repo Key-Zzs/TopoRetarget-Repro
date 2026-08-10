@@ -203,6 +203,8 @@ def _ppo26d_embedded_reference(
             name: str(archive[name].item())
             for name in (
                 "trace_type",
+                "clip",
+                "requested_clip",
                 "action_contract",
                 "checkpoint_path",
                 "cumulative_training_samples",
@@ -215,6 +217,11 @@ def _ppo26d_embedded_reference(
             if reward_total.shape != (expected_frames,) or not np.isfinite(reward_total).all():
                 raise ValueError("PPO reward_total must be finite [frames]")
             metadata["reward_total"] = reward_total
+        if "clip_index" in archive.files:
+            clip_index = np.asarray(archive["clip_index"], dtype=np.int64)
+            if clip_index.shape != (expected_frames,):
+                raise ValueError("PPO clip_index must have shape [frames]")
+            metadata["clip_index"] = clip_index
     if metadata.get("trace_type") != "stage16d_ppo26d":
         raise ValueError("embedded PPO reference requires trace_type=stage16d_ppo26d")
     if metadata.get("action_contract") != "26D_reference_residual":
@@ -241,6 +248,20 @@ def main() -> int:
     embedded_reference, ppo_metadata = _ppo26d_embedded_reference(
         args.trace, expected_frames=trace.frame_count
     )
+    if ppo_metadata:
+        trace_clip = ppo_metadata.get("clip")
+        if trace_clip != object_id:
+            raise ValueError(
+                f"PPO trace clip {trace_clip!r} does not match replay object {object_id!r}"
+            )
+        expected_clip_index = {"hocap_170105": 0, "hocap_170650": 1}[object_id]
+        clip_index = np.asarray(ppo_metadata.get("clip_index"), dtype=np.int64)
+        if clip_index.shape != (trace.frame_count,) or not np.all(
+            clip_index == expected_clip_index
+        ):
+            raise ValueError(
+                f"PPO trace clip_index does not match its declared clip: clip={trace_clip!r}"
+            )
     reference_path = args.reference or (
         DEFAULT_REFERENCE_ROOT / f"{object_id}.world_wrist.stage16.npz"
     )

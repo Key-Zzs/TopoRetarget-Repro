@@ -311,9 +311,23 @@ class WorldWristReferenceBank:
         clips, frames = self.indices(clip_index, reference_index)
         return getattr(self, field)[clips, frames]
 
-    def assignment(self, num_envs: int, *, balanced: bool) -> torch.Tensor:
+    def clip_index(self, clip_id: str) -> int:
+        """Resolve one clip identifier without silently falling back to index zero."""
+
+        try:
+            return self.clip_ids.index(clip_id)
+        except ValueError as error:
+            raise ValueError(f"unknown fixed reference clip: {clip_id}") from error
+
+    def assignment(
+        self, num_envs: int, *, balanced: bool, fixed_clip: str | None = None
+    ) -> torch.Tensor:
         if num_envs < 1:
             raise ValueError("num_envs must be positive")
+        if fixed_clip is not None:
+            return torch.full(
+                (num_envs,), self.clip_index(fixed_clip), dtype=torch.long, device=self.device
+            )
         if balanced:
             return torch.arange(num_envs, device=self.device) % len(self.clip_ids)
         return torch.zeros(num_envs, dtype=torch.long, device=self.device)

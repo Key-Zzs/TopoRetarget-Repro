@@ -108,6 +108,23 @@ def _interpolate_linear(values: np.ndarray, coordinates: np.ndarray) -> np.ndarr
     return (1.0 - alpha) * values[left] + alpha * values[left + 1]
 
 
+def _interpolate_hermite(
+    values: np.ndarray, derivatives: np.ndarray, coordinates: np.ndarray
+) -> np.ndarray:
+    left = np.floor(coordinates).astype(np.int64).clip(0, SOURCE_FRAMES - 2)
+    weight = (coordinates - left).reshape((RUNTIME_FRAMES,) + (1,) * (values.ndim - 1))
+    weight[-1] = 1.0
+    weight2 = weight * weight
+    weight3 = weight2 * weight
+    source_dt_s = 1.0 / CONTROL_HZ
+    return (
+        (2.0 * weight3 - 3.0 * weight2 + 1.0) * values[left]
+        + (weight3 - 2.0 * weight2 + weight) * source_dt_s * derivatives[left]
+        + (-2.0 * weight3 + 3.0 * weight2) * values[left + 1]
+        + (weight3 - weight2) * source_dt_s * derivatives[left + 1]
+    )
+
+
 def _interpolate_quaternion(values: np.ndarray, coordinates: np.ndarray) -> np.ndarray:
     left = np.floor(coordinates).astype(np.int64).clip(0, SOURCE_FRAMES - 2)
     alpha = (coordinates - left)[:, None]
@@ -124,14 +141,47 @@ def export_factor8_reference(source: Path, destination: Path) -> dict[str, Any]:
     inspection = inspect_source_reference(source)
     coordinates = np.arange(RUNTIME_FRAMES, dtype=np.float64) / REFERENCE_TIME_SCALE
     with np.load(source, allow_pickle=False) as archive:
-        arrays: dict[str, np.ndarray] = {}
-        for name in REFERENCE_FIELDS:
-            values = np.asarray(archive[name], dtype=np.float32)
-            arrays[name] = (
-                _interpolate_quaternion(values, coordinates).astype(np.float32)
-                if "quaternion" in name
-                else _interpolate_linear(values, coordinates).astype(np.float32)
+        source_arrays = {
+            name: np.asarray(archive[name], dtype=np.float32) for name in REFERENCE_FIELDS
+        }
+        arrays = {
+            "wrist_pose_translation_world_ref": _interpolate_hermite(
+                source_arrays["wrist_pose_translation_world_ref"],
+                source_arrays["wrist_twist_world_ref"][..., :3],
+                coordinates,
+            ),
+            "wrist_pose_quaternion_world_ref_wxyz": _interpolate_quaternion(
+                source_arrays["wrist_pose_quaternion_world_ref_wxyz"], coordinates
+            ),
+            "wrist_twist_world_ref": _interpolate_linear(
+                source_arrays["wrist_twist_world_ref"], coordinates
             )
+            / REFERENCE_TIME_SCALE,
+            "q_finger_ref": _interpolate_hermite(
+                source_arrays["q_finger_ref"], source_arrays["qdot_finger_ref"], coordinates
+            ),
+            "qdot_finger_ref": _interpolate_linear(source_arrays["qdot_finger_ref"], coordinates)
+            / REFERENCE_TIME_SCALE,
+            "object_pose_translation_world_ref": _interpolate_hermite(
+                source_arrays["object_pose_translation_world_ref"],
+                source_arrays["object_twist_world_ref"][..., :3],
+                coordinates,
+            ),
+            "object_pose_quaternion_world_ref_wxyz": _interpolate_quaternion(
+                source_arrays["object_pose_quaternion_world_ref_wxyz"], coordinates
+            ),
+            "object_twist_world_ref": _interpolate_linear(
+                source_arrays["object_twist_world_ref"], coordinates
+            )
+            / REFERENCE_TIME_SCALE,
+            "object_axis_points_world_ref": _interpolate_linear(
+                source_arrays["object_axis_points_world_ref"], coordinates
+            ),
+            "tracked_link_positions_world_ref": _interpolate_linear(
+                source_arrays["tracked_link_positions_world_ref"], coordinates
+            ),
+        }
+        arrays = {name: value.astype(np.float32) for name, value in arrays.items()}
         metadata = json.loads(str(archive["metadata"].item()))
     payload = {
         **arrays,

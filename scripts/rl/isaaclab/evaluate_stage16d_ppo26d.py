@@ -59,10 +59,17 @@ def checkpoint_hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def model_from_checkpoint(path: Path, device: str) -> tuple[PPO26DTrainer, dict[str, Any]]:
+def model_from_checkpoint(
+    path: Path, device: str, *, expected_clip: str
+) -> tuple[PPO26DTrainer, dict[str, Any]]:
     payload = load_checkpoint(path, map_location=device)
     if payload.get("schema_version") != "Stage16DPPO26DCheckpointV1":
         raise ValueError("CHECKPOINT_ROUNDTRIP_FAILURE: unexpected checkpoint schema")
+    if payload.get("clip") != expected_clip:
+        raise ValueError(
+            "PPO26D_CHECKPOINT_CLIP_MISMATCH: "
+            f"checkpoint={payload.get('clip')!r} requested={expected_clip!r}"
+        )
     trainer = PPO26DTrainer(observation_dim=764, device=device)
     trainer.model.load_state_dict(payload["actor_critic"])
     trainer.trainer.optimizer.load_state_dict(payload["optimizer"])
@@ -83,7 +90,9 @@ def _device_trace_to_numpy(trace: dict[str, torch.Tensor]) -> dict[str, np.ndarr
     return {name: value[:, 0].detach().cpu().numpy().copy() for name, value in trace.items()}
 
 
-def run_episode(env: Any, trainer: PPO26DTrainer, *, capture: bool) -> dict[str, Any]:
+def run_episode(
+    env: Any, trainer: PPO26DTrainer, *, capture: bool, expected_clip: str
+) -> dict[str, Any]:
     """Run one physical rollout without reading collision articulation tensors.
 
     ``start_trace_capture`` records post-physics wrist/finger/object state in
@@ -93,10 +102,20 @@ def run_episode(env: Any, trainer: PPO26DTrainer, *, capture: bool) -> dict[str,
     """
 
     observation, _ = env.reset()
+    active_clip_indices = sorted(set(env._clip_index.detach().cpu().tolist()))
+    expected_clip_index = env.reference_bank.clip_ids.index(expected_clip)
+    if active_clip_indices != [expected_clip_index]:
+        raise RuntimeError(
+            "PPO26D_FIXED_CLIP_MISMATCH_AFTER_RESET: "
+            f"expected={expected_clip_index} active={active_clip_indices}"
+        )
     if capture:
         env.start_trace_capture(capacity=env.reference_bank.frame_count)
+    start_reference_index = int(env._reference_index[0].item())
     total_reward = 0.0
     contact_seen = False
+    terminal_contact = False
+    contact_step_count = 0
     final_extras: dict[str, Any] = {}
     object_tracking_errors: list[float] = []
     wrist_position_errors: list[float] = []
@@ -108,12 +127,16 @@ def run_episode(env: Any, trainer: PPO26DTrainer, *, capture: bool) -> dict[str,
         with torch.no_grad():
             distribution = trainer.trainer.distribution(observation["policy"])
             action = distribution.mean
-        object_reference_position = env.reference_bank.object_pose_translation_world_ref[1, index]
-        wrist_reference_position = env.reference_bank.wrist_pose_translation_world_ref[1, index]
-        wrist_reference_quaternion = env.reference_bank.wrist_pose_quaternion_world_ref_wxyz[
-            1, index
+        object_reference_position = env.reference_bank.object_pose_translation_world_ref[
+            expected_clip_index, index
         ]
-        finger_reference = env.reference_bank.q_finger_ref[1, index]
+        wrist_reference_position = env.reference_bank.wrist_pose_translation_world_ref[
+            expected_clip_index, index
+        ]
+        wrist_reference_quaternion = env.reference_bank.wrist_pose_quaternion_world_ref_wxyz[
+            expected_clip_index, index
+        ]
+        finger_reference = env.reference_bank.q_finger_ref[expected_clip_index, index]
         object_tracking_errors.append(
             _to_float(
                 torch.linalg.vector_norm(
@@ -147,21 +170,33 @@ def run_episode(env: Any, trainer: PPO26DTrainer, *, capture: bool) -> dict[str,
         observation, reward, terminated, timed_out, extras = env.step(action)
         total_reward += _to_float(reward[0])
         final_extras = extras["ppo26d"]
-        contact_seen |= bool(final_extras["contact_any"][0].detach().cpu())
+        terminal_contact = bool(final_extras["contact_any"][0].detach().cpu())
+        contact_seen |= terminal_contact
+        contact_step_count += int(terminal_contact)
         if bool(terminated[0] | timed_out[0]):
             break
     trace = _device_trace_to_numpy(env.finish_trace_capture()) if capture else None
     linear_speed = _to_float(final_extras["object_linear_speed_mps"][0])
     angular_speed = _to_float(final_extras["object_angular_speed_radps"][0])
+    termination_reason = int(final_extras["primary_reason_code"][0].detach().cpu())
+    steps = len(object_tracking_errors)
     return {
-        "steps": len(object_tracking_errors),
-        "reached_final_reference": len(object_tracking_errors) == env.reference_bank.frame_count,
+        "steps": steps,
+        "start_reference_index": start_reference_index,
+        "final_reference_index": min(
+            start_reference_index + steps, env.reference_bank.frame_count - 1
+        ),
+        "clip": expected_clip,
+        "clip_index": expected_clip_index,
+        "reached_final_reference": termination_reason == 7,
         "total_reward": total_reward,
         "contact": contact_seen,
-        "terminal_contact": contact_seen,
+        "contact_step_count": contact_step_count,
+        "contact_fraction": contact_step_count / max(steps, 1),
+        "terminal_contact": terminal_contact,
         "terminal_object_linear_speed_mps": linear_speed,
         "terminal_object_angular_speed_radps": angular_speed,
-        "termination_reason": int(final_extras["primary_reason_code"][0].detach().cpu()),
+        "termination_reason": termination_reason,
         "object_tracking_error_m": {
             "mean": float(np.mean(object_tracking_errors)),
             "final": float(object_tracking_errors[-1]),
@@ -192,6 +227,14 @@ def validate_trace_rows(trace: dict[str, np.ndarray]) -> None:
         "terminated": (),
         "timed_out": (),
         "action": (26,),
+        "clip_index": (),
+        "object_reference": (7,),
+        "wrist_reference": (7,),
+        "finger_reference": (20,),
+        "tracked_link_reference": (16, 3),
+        "wrist_residual": (6,),
+        "wrist_target": (7,),
+        "finger_target": (20,),
     }
     for name, suffix in required.items():
         value = trace[name]
@@ -237,12 +280,14 @@ def main() -> int:
             cfg, num_envs=1, clip=args.clip, rsi=False, critical_dr=False
         )
         env = IsaacPPO26DReferenceTrackingEnv(cfg)
-        trainer, payload = model_from_checkpoint(checkpoint, str(env.device))
+        trainer, payload = model_from_checkpoint(
+            checkpoint, str(env.device), expected_clip=args.clip
+        )
         selected = int(payload["selected_num_envs"])
         write_progress(output, "checkpoint_loaded")
         write_progress(output, "frame_zero_evaluation_started")
         frame_zero = [
-            run_episode(env, trainer, capture=index == 0)
+            run_episode(env, trainer, capture=index == 0, expected_clip=args.clip)
             for index in range(args.frame_zero_replicas)
         ]
         trace_rows = frame_zero[0]["trace"]
@@ -253,9 +298,20 @@ def main() -> int:
             trace_rows["wrist_pose"], trace_rows["finger_q"], repo_root=REPO_ROOT
         ).astype(np.float32)
         validate_trace_rows(trace_rows)
+        clip_indices = np.unique(trace_rows["clip_index"])
+        expected_clip_index = env.reference_bank.clip_ids.index(args.clip)
+        if not np.array_equal(clip_indices, np.asarray([expected_clip_index])):
+            raise RuntimeError(
+                "PPO26D_TRACE_CLIP_MISMATCH: "
+                f"expected={expected_clip_index} captured={clip_indices.tolist()}"
+            )
+        actual_clip = env.reference_bank.clip_ids[expected_clip_index]
         write_progress(output, "trace_contract_validated")
         env.cfg.reset_reference_index = "uniform"
-        rsi = [run_episode(env, trainer, capture=False) for _ in range(args.rsi_replicas)]
+        rsi = [
+            run_episode(env, trainer, capture=False, expected_clip=args.clip)
+            for _ in range(args.rsi_replicas)
+        ]
         trace_path = output / "ppo_l0_eval_trace_replica0.npz"
         np.savez_compressed(
             trace_path,
@@ -272,11 +328,27 @@ def main() -> int:
             terminated=trace_rows["terminated"].astype(bool),
             timed_out=trace_rows["timed_out"].astype(bool),
             action=trace_rows["action"].astype(np.float32),
+            clip_index=trace_rows["clip_index"].astype(np.int64),
+            wrist_residual=trace_rows["wrist_residual"].astype(np.float32),
+            wrist_target_pose=trace_rows["wrist_target"].astype(np.float32),
+            finger_target_q=trace_rows["finger_target"].astype(np.float32),
             reward_total=trace_rows["reward_total"].astype(np.float32),
+            reward_object=trace_rows["reward_object"].astype(np.float32),
+            reward_link=trace_rows["reward_link"].astype(np.float32),
+            reward_finger=trace_rows["reward_finger"].astype(np.float32),
+            reward_wrist_translation=trace_rows["reward_wrist_translation"].astype(np.float32),
+            reward_wrist_rotation=trace_rows["reward_wrist_rotation"].astype(np.float32),
+            reward_smoothness=trace_rows["reward_smoothness"].astype(np.float32),
             reference_index=trace_rows["reference_index"].astype(np.int64),
             embedded_reference_object_pose=trace_rows["object_reference"].astype(np.float32),
+            embedded_reference_wrist_pose=trace_rows["wrist_reference"].astype(np.float32),
+            embedded_reference_finger_q=trace_rows["finger_reference"].astype(np.float32),
+            embedded_reference_tracked_links=trace_rows["tracked_link_reference"].astype(
+                np.float32
+            ),
             trace_type=np.asarray("stage16d_ppo26d"),
-            clip=np.asarray(args.clip),
+            clip=np.asarray(actual_clip),
+            requested_clip=np.asarray(args.clip),
             action_contract=np.asarray("26D_reference_residual"),
             checkpoint_path=np.asarray(str(checkpoint.resolve())),
             checkpoint_sha256=np.asarray(checkpoint_hash(checkpoint)),
@@ -287,7 +359,9 @@ def main() -> int:
         qualification = {
             "schema_version": "Stage16DPPO26DL0EvaluationV1",
             "status": "PPO_L0_COMPLETE_NOT_YET_QUALIFIED",
-            "clip": args.clip,
+            "clip": actual_clip,
+            "requested_clip": args.clip,
+            "clip_index": expected_clip_index,
             "checkpoint": str(checkpoint.resolve()),
             "checkpoint_sha256": checkpoint_hash(checkpoint),
             "cumulative_training_samples": int(payload["cumulative_samples"]),
