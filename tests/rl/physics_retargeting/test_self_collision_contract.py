@@ -13,6 +13,14 @@ from toporetarget.rl.physics_retargeting.self_collision import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+CONTRACT_PATH = REPO_ROOT / "configs/rl/stage16/stage16d_self_collision.yaml"
+LOCAL_AUTHORITIES = (
+    REPO_ROOT
+    / ".local/generated_assets/isaaclab/wuji_hand2_beta1/configuration/wujihand2_physics.usd",
+    REPO_ROOT
+    / ".local/reports/stage16d_metric_qualification_and_ppo"
+    / "runtime_collision_geometry_manifest.json",
+)
 
 
 def test_anatomical_grouping_does_not_confuse_middle_segment_names() -> None:
@@ -21,14 +29,25 @@ def test_anatomical_grouping_does_not_confuse_middle_segment_names() -> None:
     assert body_contact_group("r_middle_finger_distal") == "middle"
 
 
-def test_versioned_self_collision_contract_validates_frozen_authorities() -> None:
+def test_versioned_self_collision_contract_validates_frozen_schema() -> None:
     contract = load_self_collision_contract(
-        REPO_ROOT / "configs/rl/stage16/stage16d_self_collision.yaml",
+        CONTRACT_PATH,
         repo_root=REPO_ROOT,
+        validate_artifacts=False,
     )
 
     assert contract.enabled_self_collisions
     assert contract.maximum_inter_finger_penetration_m == pytest.approx(0.003)
+    assert contract.config_sha256
+
+
+@pytest.mark.skipif(
+    not all(path.is_file() for path in LOCAL_AUTHORITIES),
+    reason="requires generated Stage16-D self-collision authorities",
+)
+def test_versioned_self_collision_contract_validates_local_authorities() -> None:
+    contract = load_self_collision_contract(CONTRACT_PATH, repo_root=REPO_ROOT)
+
     assert contract.config_sha256
 
 
@@ -62,8 +81,7 @@ def test_inter_finger_capsule_metric_reports_only_configured_pair() -> None:
 
 
 def test_self_collision_contract_hash_drift_fails_closed(tmp_path: Path) -> None:
-    source = REPO_ROOT / "configs/rl/stage16/stage16d_self_collision.yaml"
-    text = source.read_text(encoding="utf-8").replace(
+    text = CONTRACT_PATH.read_text(encoding="utf-8").replace(
         "3ac2f64a2d80513570329b77d44ba0f8db6e60e971f71deaaec83e0b401f1926",
         "0" * 64,
     )
