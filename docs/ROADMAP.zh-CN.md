@@ -211,13 +211,13 @@ stability，全部 replica 以 timeout 结束。跨指穿透均为 20/20 通过�
 
 | 阶段 | 范围 | 状态 |
 | --- | --- | --- |
-| D.5-R0 | PPO entry-gate 修订与文档 | CURRENT |
-| D.5-R1 | 26D wrist-and-finger reference-residual contract | CURRENT |
-| D.5-R2 | IsaacLab PPO environment、RSI、reward 与 nominal DR | CURRENT |
-| D.5-R3 | Host-GPU 容量资格验证与自动 env 选择 | CURRENT |
-| D.5-R4 | Environment/trainability Gate A | CURRENT |
-| D.5-R5 | `hocap_170650` smoke 与 L0 PPO（至少 1M samples） | CURRENT |
-| D.5-R6 | 继续 single-clip sample ladder（4M、16M，必要时最多 67M） | FUTURE |
+| D.5-R0 | PPO entry-gate 修订与文档 | COMPLETE |
+| D.5-R1 | 26D wrist-and-finger reference-residual contract | COMPLETE |
+| D.5-R2 | IsaacLab PPO environment、RSI、reward 与 nominal DR | COMPLETE |
+| D.5-R3 | Host-GPU 容量资格验证与自动 env 选择 | COMPLETE |
+| D.5-R4 | Environment/trainability Gate A | COMPLETE |
+| D.5-R5 | `hocap_170650` smoke 与 L0 PPO（至少 1M samples） | COMPLETE_NOT_YET_QUALIFIED |
+| D.5-R6 | 继续 single-clip sample ladder（4M、16M，必要时最多 67M） | NEXT |
 | D.5-R7 | post-PPO formal physics qualification | FUTURE |
 | D.5-R8 | `hocap_170105` single-clip PPO-26D | FUTURE |
 | D.6 | multi-clip PPO | FUTURE |

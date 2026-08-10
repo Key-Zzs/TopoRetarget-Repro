@@ -672,3 +672,11 @@ The active route is `TOPORETARGET_PPO_REPRODUCTION_WITH_26D_WRIST_ADAPTATION`:
 the paper reference-tracking reward/PPO is retained, while the controllable
 virtual wrist, factor-8 timing, and IsaacLab backend are engineering
 adaptations. See [the PPO-26D contract](docs/rl/REFERENCE_TRACKING_PPO_26D.md).
+
+The corrected `hocap_170650` L0 run completed 1,024,000 physical rollout
+samples, checkpoint reload, deterministic/RSI evaluation, exact post-PPO
+geometry diagnostics, and replay validation. It remains
+`STAGE16D_PPO26D_L0_COMPLETE_NOT_YET_QUALIFIED`: the deterministic frame-zero
+trace reaches the reference end but has contact on only 2/320 control steps,
+no terminal contact, and 0.3364 m final object-position error. D.5-R6 is the
+next sample-ladder stage; Gate C physics qualification remains D.5-R7.

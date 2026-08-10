@@ -627,3 +627,10 @@ post-PPO physics qualification。已训练但尚未通过 Gate C 的策略报告
 reference-tracking reward/PPO，而可控 virtual wrist、factor-8 timing 与 IsaacLab
 backend 均明确为 engineering adaptation。详见
 [PPO-26D contract](docs/rl/REFERENCE_TRACKING_PPO_26D.md)。
+
+修复后的 `hocap_170650` L0 已完成 1,024,000 个真实物理 rollout samples、checkpoint
+reload、deterministic/RSI evaluation、post-PPO exact geometry diagnostic 与 replay
+validation。当前状态仍是 `STAGE16D_PPO26D_L0_COMPLETE_NOT_YET_QUALIFIED`：frame-zero
+确定性 trace 虽走到 reference 末端，但 320 个 control steps 中仅 2 步有 contact，末端
+无 contact，物体末端位置误差为 0.3364 m。下一步是 D.5-R6 sample ladder；Gate C 正式
+物理资格验证仍属于 D.5-R7。

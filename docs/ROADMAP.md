@@ -245,13 +245,13 @@ or authorize PPO.
 
 | Stage | Scope | Status |
 | --- | --- | --- |
-| D.5-R0 | PPO entry-gate revision and documentation | CURRENT |
-| D.5-R1 | 26D wrist-and-finger reference-residual contract | CURRENT |
-| D.5-R2 | IsaacLab PPO environment, RSI, reward and nominal DR | CURRENT |
-| D.5-R3 | Host-GPU capacity qualification and automatic env selection | CURRENT |
-| D.5-R4 | Environment/trainability Gate A | CURRENT |
-| D.5-R5 | `hocap_170650` smoke and L0 PPO (at least 1M samples) | CURRENT |
-| D.5-R6 | Continue the single-clip sample ladder (4M, 16M, at most 67M if justified) | FUTURE |
+| D.5-R0 | PPO entry-gate revision and documentation | COMPLETE |
+| D.5-R1 | 26D wrist-and-finger reference-residual contract | COMPLETE |
+| D.5-R2 | IsaacLab PPO environment, RSI, reward and nominal DR | COMPLETE |
+| D.5-R3 | Host-GPU capacity qualification and automatic env selection | COMPLETE |
+| D.5-R4 | Environment/trainability Gate A | COMPLETE |
+| D.5-R5 | `hocap_170650` smoke and L0 PPO (at least 1M samples) | COMPLETE_NOT_YET_QUALIFIED |
+| D.5-R6 | Continue the single-clip sample ladder (4M, 16M, at most 67M if justified) | NEXT |
 | D.5-R7 | Post-PPO formal physics qualification | FUTURE |
 | D.5-R8 | `hocap_170105` single-clip PPO-26D | FUTURE |
 | D.6 | Multi-clip PPO | FUTURE |
