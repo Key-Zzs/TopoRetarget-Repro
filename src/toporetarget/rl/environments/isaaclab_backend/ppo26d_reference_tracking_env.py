@@ -41,6 +41,12 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         self._ppo26d_safety_counts: dict[str, int] = {}
         self._ppo26d_object_write_baseline: torch.Tensor | None = None
         self._ppo26d_wrist_write_baseline: torch.Tensor | None = None
+        self._ppo26d_trace_capture: dict[str, torch.Tensor] | None = None
+        self._ppo26d_trace_enabled = False
+        self._ppo26d_trace_capacity = 0
+        self._ppo26d_trace_length = 0
+        self._ppo26d_last_terminated: torch.Tensor | None = None
+        self._ppo26d_last_timed_out: torch.Tensor | None = None
         super().__init__(cfg, render_mode, **kwargs)
         # The base implementation already supplies the required physical-state
         # reward inputs.  Install the explicit PPO contract so its paper terms
@@ -274,6 +280,22 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             "smoothness_finger": first_difference[:, 6:26].square().sum(dim=-1)
             + second_difference[:, 6:26].square().sum(dim=-1),
         }
+        first_force = self._object_contact_sensors["Object170105"].data.force_matrix_w
+        second_force = self._object_contact_sensors["Object170650"].data.force_matrix_w
+        if first_force is None or second_force is None:
+            raise RuntimeError("PPO26D reward requires object contact force matrices")
+        pair_force = torch.where(
+            (self._clip_index == 0)[:, None, None], first_force[:, 0], second_force[:, 0]
+        )
+        self.extras["ppo26d"].update(
+            {
+                "contact_any": (torch.linalg.vector_norm(pair_force, dim=-1) > 1.0e-4)
+                .any(dim=-1)
+                .clone(),
+                "actuator_effort": self._robot.data.applied_torque.clone(),
+            }
+        )
+        self._capture_ppo26d_trace_row()
         return reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -349,7 +371,7 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             for code, label in enumerate(labels)
             if code and bool((reason == code).any())
         }
-        self.extras["ppo26d"] = {
+        extras = {
             "primary_reason_code": reason.clone(),
             "termination_reasons": labels,
             "object_linear_speed_mps": object_speed.clone(),
@@ -362,7 +384,119 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             "terminal_stability_is_post_ppo_diagnostic": True,
             **write_report,
         }
+        self.extras["ppo26d"] = extras
+        self._ppo26d_last_terminated = terminated.clone()
+        self._ppo26d_last_timed_out = timed_out.clone()
         return terminated, timed_out
+
+    def start_trace_capture(self, *, capacity: int) -> None:
+        """Capture one post-physics row per PPO step without host transfers.
+
+        DirectRLEnv invokes ``_get_dones`` and ``_get_rewards`` on the
+        simulator thread.  Isaac Sim can terminate without a Python exception
+        when articulation collision-body tensors are accessed across the done
+        boundary or copied to CPU there.  Therefore this capture contains only
+        stable post-physics state (physical wrist, canonical fingers, object,
+        contacts, effort, and action) on the device.  The evaluator rebuilds
+        collision-body poses with offline FK after the rollout has ended.
+        """
+
+        if capacity <= 0:
+            raise ValueError("PPO26D trace capacity must be positive")
+        if self._ppo26d_trace_enabled:
+            raise RuntimeError("PPO26D trace capture is already active")
+        # Allocate lazily inside _get_rewards, after Isaac has completed its
+        # post-physics tensor update.  Device allocation immediately after
+        # reset can itself close an Isaac Sim 5 app without an exception.
+        self._ppo26d_trace_capture = None
+        self._ppo26d_trace_enabled = True
+        self._ppo26d_trace_capacity = capacity
+        self._ppo26d_trace_length = 0
+
+    def finish_trace_capture(self) -> dict[str, torch.Tensor]:
+        """Return device-resident rows captured since ``start_trace_capture``."""
+
+        capture = self._ppo26d_trace_capture
+        if not self._ppo26d_trace_enabled or capture is None:
+            raise RuntimeError("PPO26D trace capture was not started")
+        length = self._ppo26d_trace_length
+        self._ppo26d_trace_capture = None
+        self._ppo26d_trace_enabled = False
+        self._ppo26d_trace_capacity = 0
+        self._ppo26d_trace_length = 0
+        if length == 0:
+            raise RuntimeError("PPO26D trace capture contains no rollout rows")
+        return {name: rows[:length] for name, rows in capture.items()}
+
+    def _capture_ppo26d_trace_row(self) -> None:
+        if not self._ppo26d_trace_enabled:
+            return
+        step = self._ppo26d_trace_length
+        if step >= self._ppo26d_trace_capacity:
+            raise RuntimeError("PPO26D trace capacity exhausted")
+        state = self._state()
+        first_force = self._object_contact_sensors["Object170105"].data.force_matrix_w
+        second_force = self._object_contact_sensors["Object170650"].data.force_matrix_w
+        if first_force is None or second_force is None:
+            raise RuntimeError("PPO26D trace capture requires object contact force matrices")
+        pair_force = torch.where(
+            (self._clip_index == 0)[:, None, None], first_force[:, 0], second_force[:, 0]
+        )
+        effort = self._robot.data.applied_torque
+        terminated = self._ppo26d_last_terminated
+        timed_out = self._ppo26d_last_timed_out
+        if terminated is None or timed_out is None:
+            raise RuntimeError("PPO26D trace capture requires done flags")
+        if effort.shape != (self.num_envs, 26):
+            raise RuntimeError(f"PPO26D actuator effort has unexpected shape {tuple(effort.shape)}")
+        values = {
+            "object_pose": torch.cat(
+                (state["object_position_scene"], state["object_quaternion_wxyz"]), dim=-1
+            ),
+            "object_twist": state["object_twist_world"],
+            "wrist_pose": torch.cat(
+                (state["wrist_position_scene"], state["wrist_quaternion_wxyz"]), dim=-1
+            ),
+            "finger_q": self.action_adapter.isaac_to_canonical(state["finger_q"]),
+            "contact_force_world": pair_force.sum(dim=1),
+            "contact_pair_presence": torch.linalg.vector_norm(pair_force, dim=-1) > 1.0e-4,
+            "actuator_effort": effort,
+            "reason_code": self.extras["ppo26d"]["primary_reason_code"],
+            "terminated": terminated,
+            "timed_out": timed_out,
+            "action": self._actions,
+            "reward_total": self._last_reward_terms["total"],
+            "object_reference": torch.cat(
+                (
+                    self.reference_bank.gather(
+                        "object_pose_translation_world_ref",
+                        self._clip_index,
+                        self._reference_index,
+                    ),
+                    self.reference_bank.gather(
+                        "object_pose_quaternion_world_ref_wxyz",
+                        self._clip_index,
+                        self._reference_index,
+                    ),
+                ),
+                dim=-1,
+            ),
+            "reference_index": self._reference_index,
+        }
+        capture = self._ppo26d_trace_capture
+        if capture is None:
+            capture = {
+                name: torch.empty(
+                    (self._ppo26d_trace_capacity, *value.shape),
+                    device=self.device,
+                    dtype=value.dtype,
+                )
+                for name, value in values.items()
+            }
+            self._ppo26d_trace_capture = capture
+        for name, value in values.items():
+            capture[name][step].copy_(value.detach())
+        self._ppo26d_trace_length += 1
 
     def rollout_state_write_report(self) -> dict[str, int]:
         """Count state writes since each environment's most recent reset.

@@ -50,3 +50,19 @@ no terminal-contact, penetration, special-clip, or semantic task bonus.
 Gate A validates trainability and is the only PPO authorization. Gate B
 monitors safety during training. Gate C performs post-PPO
 task/contact/geometry qualification.
+
+## PPO replay trace lifecycle
+
+The deterministic L0 evaluator captures a post-physics row on the GPU for
+each control step: physical wrist pose, canonical 20-D finger state, object
+state, contact forces/presence, actuator effort, termination reason, action,
+reward, and embedded object reference. It does not read collision-body
+articulation tensors or make CPU copies from an Isaac callback: that access
+can make Isaac Sim 5.1 terminate without a Python exception.
+
+After the rollout, one bulk device-to-host export is made. The evaluator then
+uses the frozen Wuji hand FK and the captured physical wrist/finger state to
+reconstruct the ordered 21 collision-body poses. It rejects non-finite values
+and zero quaternions before writing the trace. The trace records this source
+as `offline_fk_from_captured_physical_wrist_and_finger_state`; it is physical
+rollout state reconstruction, not an injected reference pose.

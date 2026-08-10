@@ -69,11 +69,20 @@ def trace_evidence(trace_path: Path) -> dict[str, Any]:
         contact_force = np.asarray(archive["contact_force_world"], dtype=np.float64)
         contact_pairs = np.asarray(archive["contact_pair_presence"], dtype=bool)
         object_twist = np.asarray(archive["object_twist"], dtype=np.float64)
+        hand_pose = np.asarray(archive["hand_collision_body_pose"], dtype=np.float64)
         terminated = np.asarray(archive["terminated"], dtype=bool)
         timed_out = np.asarray(archive["timed_out"], dtype=bool)
         frames = int(contact_force.shape[0])
-        if contact_force.shape != (frames, 3) or contact_pairs.shape[0] != frames:
+        expected_hand_shape = (frames, contact_pairs.shape[-1], 7)
+        if (
+            contact_force.shape != (frames, 3)
+            or contact_pairs.shape[0] != frames
+            or hand_pose.shape != expected_hand_shape
+        ):
             raise ValueError("PPO trace contact shapes are invalid")
+        hand_quaternion_norm = np.linalg.vector_norm(hand_pose[..., 3:7], axis=-1)
+        if not np.isfinite(hand_pose).all() or np.any(hand_quaternion_norm < 1.0e-8):
+            raise ValueError("PPO trace contains an invalid hand collision-body pose")
         force_norm = np.linalg.vector_norm(contact_force, axis=-1)
         contact_mask = contact_pairs.any(axis=-1) | (force_norm > 1.0e-6)
         contact_frames = np.flatnonzero(contact_mask)
@@ -92,6 +101,7 @@ def trace_evidence(trace_path: Path) -> dict[str, Any]:
             "frames": frames,
             "action_dimension": int(np.asarray(archive["action"]).shape[-1]),
             "hand_collision_proxy_count": int(contact_pairs.shape[-1]),
+            "hand_collision_body_quaternion_min_norm": float(hand_quaternion_norm.min()),
             "finite": bool(
                 all(
                     np.isfinite(np.asarray(archive[name])).all()
@@ -168,6 +178,16 @@ def main() -> int:
                 "final six-size sweep records B0/B1/B2/B3 timings, memory, and NaN/Inf counts"
             ),
         },
+        {
+            "failure_class": "PPO26D_TRACE_ARTICULATION_CALLBACK_LIFECYCLE",
+            "attempt": 1,
+            "resolved": True,
+            "evidence": (
+                "post-physics GPU wrist/finger capture plus one post-rollout host export and "
+                "offline FK reconstruction produced a finite 21-body replay trace with no "
+                "zero quaternion"
+            ),
+        },
     ]
     summary = {
         "schema_version": "Stage16DPPO26DFinalSummaryV1",
@@ -223,6 +243,9 @@ Status: `{training["status"]}`
 Selected environments: `{selected["selected_num_envs"]}`
 
 Trace: `{trace["trace"]}` ({trace["frames"]} frames, action dim {trace["action_dimension"]})
+
+Collision-body pose source: `{evaluation["hand_collision_body_pose"]}`
+(`min quaternion norm = {trace["hand_collision_body_quaternion_min_norm"]:.8f}`)
 
 {contact_summary}
 
