@@ -217,12 +217,20 @@ stability，全部 replica 以 timeout 结束。跨指穿透均为 20/20 通过�
 | D.5-R3 | Host-GPU 容量资格验证与自动 env 选择 | COMPLETE |
 | D.5-R4 | Environment/trainability Gate A | COMPLETE |
 | D.5-R5 | `hocap_170650` smoke 与 L0 PPO（至少 1M samples） | COMPLETE_NOT_YET_QUALIFIED |
-| D.5-R6 | 继续 single-clip sample ladder（4M、16M，必要时最多 67M） | NEXT |
-| D.5-R7 | post-PPO formal physics qualification | FUTURE |
-| D.5-R8 | `hocap_170105` single-clip PPO-26D | FUTURE |
-| D.6 | multi-clip PPO | FUTURE |
-| D.7 | `PhysicsQualifiedIsaacTrajectory` export | FUTURE |
+| D.5-R6A | frozen-contract 170650 checkpoint resume，L0 1M -> 4M | CURRENT NEXT |
+| D.5-R6B | improving/selected-contract continuation 到 16M，随后有界 32M/67M | CONDITIONAL |
+| D.5-R6C | RSI-good/frame-zero-bad curriculum，随后进入 R6B ladder | CONDITIONAL |
+| D.5-R6D | plateau 且 update-bottleneck exclusion/probe 后的 versioned Reward V2 | CONDITIONAL |
+| D.5-R7 | 在未见 frame-zero holdout seeds 上进行 post-PPO formal physics qualification | AFTER BEST SINGLE POLICY |
+| D.5-R8 | 使用已选 global contract 的 fresh `hocap_170105` PPO-26D | AFTER 170650 R7 |
+| D.6 | balanced two-clip PPO；仅在两个 single clip physics-qualify 后 | GATE-CONDITIONAL |
+| D.7 | `PhysicsQualifiedIsaacTrajectory` export；仅 qualified episodes | GATE-CONDITIONAL |
 
 旧 S3/CEM actions 保留为 `PRE_PPO_BASELINE_FAILURE`（两条 clip 的 terminal contact、
 terminal stability 和 final success 均为 `0/20`），不阻塞 Gate A；terminal/contact/
 penetration qualification 是 PPO 训练后的 Gate C。
+
+固定 continuation 顺序为 `R6A -> (R6B | R6C | R6D) -> best single policy -> R7 -> R8 ->
+D.6 -> D.7`。R6A 对比使用冻结的 20-seed development frame-zero/RSI sets；独立的
+20-seed formal holdout 在 R7 前不使用。任何中间训练 checkpoint 都不要求在继续前通过
+terminal、penetration 或 success Gate。

@@ -156,3 +156,26 @@ rewards, vector rollouts, GAE, losses, parameter updates, and checkpoint
 round-trip. Gate B monitors numerical/safety failures during training. Gate C,
 after training, evaluates task/contact/geometry. Gate C failure yields
 `PPO_TRAINED_NOT_YET_PHYSICS_QUALIFIED`, not a pre-training block.
+
+## D.5-R5 completed baseline and R6 continuation
+
+`hocap_170650` completed D.5-R5 with 1,024,000 PPO-26D samples, 25 iterations,
+1024 selected environments, checkpoint reload, and a replayable physical trace.
+The L0 frame-zero trace reached the reference end in 4/4 runs but had terminal
+contact 0/4 and only 2/320 contact steps; its final object-position error was
+about 0.3364 m. RSI was materially better (terminal contact 8/20), so neither
+the old CEM/S3 failures nor the L0's zero frame-zero terminal contact is a PPO
+authorization blocker.
+
+R6A resumes that checkpoint under the exact L0 environment/physics/PPO
+contract to 4M cumulative samples. It first rebaselines with frozen 20
+development frame-zero and 20 development RSI seeds, while retaining a
+disjoint 20-seed formal frame-zero holdout for R7 only. Each 2M/3M/4M checkpoint
+has the same development diagnosis, including contact timing, final
+object/reference errors, reward terms, PPO KL/actual updates, and three action
+groups (wrist translation, wrist rotation, fingers). The pre-frozen branch is
+R6B for improvement, R6C for RSI-good/frame-zero-bad, or R6D only after a
+plateau and the one permitted LR-only update-bottleneck probe. R7 then runs
+full formal task, contact, stability, causality, self/inter-finger, action, and
+active `RuntimeCollisionProxyPenetration` geometry qualification on the unseen
+frame-zero seeds.

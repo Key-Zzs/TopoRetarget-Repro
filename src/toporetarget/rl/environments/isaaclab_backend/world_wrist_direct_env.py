@@ -1651,8 +1651,35 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             self._reference_index[env_ids] = torch.randint(
                 self.reference_bank.frame_count, (len(env_ids),), device=self.device
             )
+        elif self.cfg.reset_reference_index == "curriculum":
+            indices = getattr(self.cfg, "curriculum_reference_indices", None)
+            probabilities = getattr(self.cfg, "curriculum_reference_probabilities", None)
+            if indices is None or probabilities is None or len(indices) != len(probabilities):
+                raise ValueError(
+                    "curriculum reset needs paired reference indices and probabilities"
+                )
+            values = torch.as_tensor(indices, device=self.device, dtype=torch.long)
+            weights = torch.as_tensor(probabilities, device=self.device, dtype=torch.float32)
+            if values.numel() == 0 or bool(
+                ((values < 0) | (values >= self.reference_bank.frame_count)).any()
+            ):
+                raise ValueError("curriculum reset index outside the reference range")
+            if not bool(torch.isfinite(weights).all()) or bool((weights < 0.0).any()):
+                raise ValueError("curriculum reset probabilities must be finite and non-negative")
+            if float(weights.sum().item()) <= 0.0:
+                raise ValueError("curriculum reset probabilities must have positive mass")
+            sampled = torch.multinomial(weights, len(env_ids), replacement=True)
+            self._reference_index[env_ids] = values[sampled]
         else:
-            raise ValueError("reset_reference_index must be frame0 or uniform")
+            raise ValueError("reset_reference_index must be frame0, uniform, or curriculum")
+        evaluation_indices = getattr(self.cfg, "evaluation_reset_reference_indices", None)
+        if evaluation_indices is not None:
+            if len(evaluation_indices) != self.num_envs:
+                raise ValueError("evaluation reset indices must match the environment count")
+            values = torch.as_tensor(evaluation_indices, device=self.device, dtype=torch.long)
+            if bool(((values < 0) | (values >= self.reference_bank.frame_count)).any()):
+                raise ValueError("evaluation reset index outside the reference range")
+            self._reference_index[env_ids] = values[env_ids]
         self._target_reference_index[env_ids] = self._reference_index[env_ids]
         self._previous_actions[env_ids] = 0.0
         self._second_previous_actions[env_ids] = 0.0

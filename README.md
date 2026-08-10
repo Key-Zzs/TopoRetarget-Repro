@@ -680,3 +680,36 @@ geometry diagnostics, and replay validation. It remains
 trace reaches the reference end but has contact on only 2/320 control steps,
 no terminal contact, and 0.3364 m final object-position error. D.5-R6 is the
 next sample-ladder stage; Gate C physics qualification remains D.5-R7.
+
+## Stage 16-D.5 PPO-26D continuation
+
+D.5-R5 is complete at 1,024,000 samples. The current next stage is D.5-R6A:
+resume its actual checkpoint under the unchanged L0 contract to at least
+4,194,304 cumulative samples. It keeps `hocap_170650`, factor-8 321 samples,
+20 Hz control / 120 Hz PhysX / decimation 6, the 764-D observation, zero
+gravity free object, 0.05 kg mass, unit friction, self-collision, the
+3P+3R SE(3) adapter, the 26-D action scale, network, LR, target KL, RSI, and
+Reward V1. It is a resume, never a restart.
+
+The frozen development evaluation uses 20 frame-zero and 20 RSI seeds; a
+separate 20-seed formal holdout is forbidden until R7. Each checkpoint records
+contact timing/duration, terminal contact, object position/rotation/axis error,
+terminal twist, reward terms, PPO losses/KL, actual update epochs/minibatches,
+and wrist-translation/wrist-rotation/finger action-group diagnostics. Contact,
+penetration, terminal stability, and success remain post-PPO qualification;
+zero success alone never reintroduces `PPO_NOT_AUTHORIZED`.
+
+The frozen decision tree is:
+
+```text
+R6A 4M diagnosis
+  improving -> R6B frozen/selected-contract PPO to 16M (then bounded 32M/67M)
+  RSI-good/frame-zero-bad -> R6C RSI curriculum, then the R6B ladder
+  plateau -> PPO update diagnosis, then the one LR-only 1e-4 -> 5e-5 probe or R6D Reward V2
+  all branches -> best single policy -> R7 formal Gate C -> R8 170105 -> D.6 -> D.7
+```
+
+R7 is frame-zero-only on the unseen formal seeds and uses the active
+`RuntimeCollisionProxyPenetration` contract. R8 uses the global contract chosen
+on 170650 but starts a fresh 170105 policy. D.6 is authorized only when both
+single clips are physics-qualified; D.7 exports only qualified rollouts.

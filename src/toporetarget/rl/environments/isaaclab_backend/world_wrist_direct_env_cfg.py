@@ -150,6 +150,14 @@ class IsaacWorldWristFingerDirectRLEnvCfg(DirectRLEnvCfg):
     balanced_clip_assignment = True
     alternate_clip_on_reset = False
     reset_reference_index = "frame0"
+    # Evaluation-only explicit reset indices.  Training leaves this as None and
+    # therefore retains the frozen frame-zero or uniform RSI distribution.
+    evaluation_reset_reference_indices: tuple[int, ...] | None = None
+    # R6C-only reset distribution.  Its support and probabilities are derived
+    # from evaluated RSI contact telemetry, never from fixed clip frame ranges.
+    curriculum_reference_indices: tuple[int, ...] | None = None
+    curriculum_reference_probabilities: tuple[float, ...] | None = None
+    curriculum_phase: str | None = None
     # A value greater than one materializes a derived 20 Hz reference view.
     # Source key k is preserved exactly at runtime key k * scale.  This is a
     # global structural choice shared by both clips, never policy-controlled.

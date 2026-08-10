@@ -232,6 +232,10 @@ class PPO26DTrainer:
             )
             / 2**20
         )
+        with torch.no_grad():
+            distribution_before = self.trainer.distribution(storage.observations.flatten(0, 1))
+            policy_mean_before = distribution_before.mean.detach().clone()
+            policy_std_before = distribution_before.std.detach().clone()
         actor_before = parameter_hash(self.model, "actor")
         critic_before = parameter_hash(self.model, "critic")
         update_started = time.perf_counter()
@@ -244,13 +248,45 @@ class PPO26DTrainer:
             storage.observations,
             phase="after_update_before_normalizer_refresh",
         )
+        with torch.no_grad():
+            distribution_after = self.trainer.distribution(storage.observations.flatten(0, 1))
+            policy_mean_after = distribution_after.mean
+            policy_std_after = distribution_after.std
+            policy_mean_delta = policy_mean_after - policy_mean_before
+            # This is the exact diagonal-Gaussian KL proxy before tanh squashing.
+            policy_kl = (
+                torch.log(policy_std_after / policy_std_before)
+                + (policy_std_before.square() + policy_mean_delta.square())
+                / (2.0 * policy_std_after.square())
+                - 0.5
+            )
+
+        def action_group_diagnostic(start: int, end: int) -> dict[str, float]:
+            return {
+                "mean_policy_mean_change": float(
+                    policy_mean_delta[:, start:end].abs().mean().detach().cpu()
+                ),
+                "normalized_action_delta": float(
+                    (policy_mean_delta[:, start:end].abs() / policy_std_before[:, start:end])
+                    .mean()
+                    .detach()
+                    .cpu()
+                ),
+                "approximate_group_kl_proxy": float(policy_kl[:, start:end].mean().detach().cpu()),
+            }
+
+        action_group_diagnostics = {
+            "wrist_translation_3d": action_group_diagnostic(0, 3),
+            "wrist_rotation_3d": action_group_diagnostic(3, 6),
+            "finger_20d": action_group_diagnostic(6, 26),
+        }
         self.trainer.update_observation_normalizer(storage.observations)
         normalizer_count_after_refresh = float(self.trainer.normalizer.count)
         actor_after = parameter_hash(self.model, "actor")
         critic_after = parameter_hash(self.model, "critic")
         self.cumulative_samples += storage.sample_count
         elapsed = time.perf_counter() - started
-        if not all(torch.isfinite(torch.tensor(value)) for value in update.values()):
+        if not all(bool(torch.isfinite(torch.as_tensor(value)).all()) for value in update.values()):
             raise FloatingPointError("PPO26D losses contain NaN/Inf")
         return {
             "rollout_length": storage.rollout_steps,
@@ -275,6 +311,7 @@ class PPO26DTrainer:
                 "normalizer_frozen_during_rollout_and_update": True,
             },
             "ppo": update,
+            "action_group_diagnostics": action_group_diagnostics,
             "actor_parameter_hash_before": actor_before,
             "actor_parameter_hash_after": actor_after,
             "critic_parameter_hash_before": critic_before,

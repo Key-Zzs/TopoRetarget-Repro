@@ -606,6 +606,11 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             "observation": self._observation_contract.as_dict(),
             "reward": self._reward_contract.as_dict(),
             "rsi": self.rsi_report(),
+            "rsi_curriculum": {
+                "phase": getattr(self.cfg, "curriculum_phase", None),
+                "reset_reference_index": self.cfg.reset_reference_index,
+                "support_count": len(getattr(self.cfg, "curriculum_reference_indices", ()) or ()),
+            },
             "self_collision_enabled": bool(
                 self.cfg.robot.spawn.articulation_props.enabled_self_collisions
             ),

@@ -66,3 +66,24 @@ reconstruct the ordered 21 collision-body poses. It rejects non-finite values
 and zero quaternions before writing the trace. The trace records this source
 as `offline_fk_from_captured_physical_wrist_and_finger_state`; it is physical
 rollout state reconstruction, not an injected reference pose.
+
+## Bounded continuation and qualification
+
+D.5-R5 is a completed 1,024,000-sample `hocap_170650` L0 checkpoint, not a
+qualification result. R6A resumes its actor, critic, optimizer, normalizer,
+RNG state, and sample count under the unchanged V1 contract to 4M cumulative
+samples. The runner refuses a changed fixed clip, 26-D/764-D/PPO contract,
+environment count, missing checkpoint state, or a V1 budget above 67,108,864
+samples. It writes checkpoint reload receipts, reward components, PPO
+requested/actual update counts, KL per epoch/minibatch, and the three action
+group diagnostics at every update.
+
+The frozen `development_eval_seed_set_v1` provides 20 deterministic
+frame-zero and 20 RSI episodes for L0/4M/16M/curriculum/Reward-V2 comparisons.
+`formal_holdout_seed_set_v1` is disjoint and prohibited before R7. The
+lexicographic best-checkpoint order is frame-zero task completion, terminal
+contact, terminal stability, continuous contact, lower object position/rotation
+error, RSI terminal contact, reward, action saturation, then earlier sample
+count. Formal R7 is frame-zero only and uses the active runtime collision-proxy
+geometry contract; an unqualified trained policy remains a preserved
+post-PPO-failure result rather than an authorization failure.

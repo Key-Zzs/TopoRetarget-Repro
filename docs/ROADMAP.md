@@ -251,12 +251,21 @@ or authorize PPO.
 | D.5-R3 | Host-GPU capacity qualification and automatic env selection | COMPLETE |
 | D.5-R4 | Environment/trainability Gate A | COMPLETE |
 | D.5-R5 | `hocap_170650` smoke and L0 PPO (at least 1M samples) | COMPLETE_NOT_YET_QUALIFIED |
-| D.5-R6 | Continue the single-clip sample ladder (4M, 16M, at most 67M if justified) | NEXT |
-| D.5-R7 | Post-PPO formal physics qualification | FUTURE |
-| D.5-R8 | `hocap_170105` single-clip PPO-26D | FUTURE |
-| D.6 | Multi-clip PPO | FUTURE |
-| D.7 | `PhysicsQualifiedIsaacTrajectory` export | FUTURE |
+| D.5-R6A | Frozen-contract 170650 checkpoint resume, L0 1M -> 4M | CURRENT NEXT |
+| D.5-R6B | Improving/selected-contract continuation to 16M, then bounded 32M/67M | CONDITIONAL |
+| D.5-R6C | RSI-good/frame-zero-bad curriculum, then R6B ladder | CONDITIONAL |
+| D.5-R6D | Versioned Reward V2 after plateau and update-bottleneck exclusion/probe | CONDITIONAL |
+| D.5-R7 | Post-PPO formal physics qualification on unseen frame-zero holdout seeds | AFTER BEST SINGLE POLICY |
+| D.5-R8 | Fresh `hocap_170105` PPO-26D using the selected global contract | AFTER 170650 R7 |
+| D.6 | Balanced two-clip PPO; only after both single clips physics-qualify | GATE-CONDITIONAL |
+| D.7 | `PhysicsQualifiedIsaacTrajectory` export; qualified episodes only | GATE-CONDITIONAL |
 
 Old S3/CEM actions are `PRE_PPO_BASELINE_FAILURE` (`0/20` terminal contact,
 terminal stability, and final success for both clips). They do not block Gate
 A; terminal/contact/penetration qualification is Gate C after PPO training.
+
+The fixed continuation ordering is `R6A -> (R6B | R6C | R6D) -> best single
+policy -> R7 -> R8 -> D.6 -> D.7`. R6A comparisons use the frozen 20-seed
+development frame-zero/RSI sets; the separate 20-seed formal holdout is not
+used before R7. No intermediate training checkpoint is required to pass a
+terminal, penetration, or success gate before it can continue.

@@ -33,6 +33,11 @@ PHYSX_PATTERN = re.compile(r"physx.*fatal|physx.*error", re.IGNORECASE)
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--accept-eula", action="store_true")
+    parser.add_argument(
+        "--critical-dr",
+        action="store_true",
+        help="Use the frozen PPO training reset-noise contract during the bounded smoke.",
+    )
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--env-counts", nargs="+", type=int, default=list(CANDIDATES))
     parser.add_argument(
@@ -101,7 +106,7 @@ def child_main(args: argparse.Namespace) -> int:
 
         cfg = ppo26d_cfg.IsaacPPO26DReferenceTrackingEnvCfg()
         ppo26d_cfg.configure_stage16d_ppo26d(
-            cfg, num_envs=args.child_num_envs, rsi=True, critical_dr=False
+            cfg, num_envs=args.child_num_envs, rsi=True, critical_dr=args.critical_dr
         )
         startup_started = time.perf_counter()
         env = IsaacPPO26DReferenceTrackingEnv(cfg)
@@ -172,6 +177,7 @@ def child_main(args: argparse.Namespace) -> int:
             "ppo_peak_allocated_mib": torch.cuda.max_memory_allocated(env.device) / 2**20,
             "cpu_rss_mib": _rss_mib(os.getpid()),
             "rsi": env.rsi_report(),
+            "critical_dr": args.critical_dr,
             "contract": env.contract_report(),
         }
         write_json(args.child_output, result)
@@ -215,6 +221,7 @@ def run_child(args: argparse.Namespace, count: int, root: Path) -> dict[str, Any
         "--accept-eula",
         "--output-root",
         str(root),
+        *(["--critical-dr"] if args.critical_dr else []),
         "--child-num-envs",
         str(count),
         "--child-output",

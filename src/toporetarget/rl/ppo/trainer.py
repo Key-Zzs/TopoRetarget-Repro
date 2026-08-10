@@ -71,7 +71,7 @@ class PPOTrainer:
         action = distribution.mean if deterministic else distribution.sample()
         return action, distribution.log_prob(action), values
 
-    def update(self, storage: RolloutStorage, last_value: torch.Tensor) -> dict[str, float | bool]:
+    def update(self, storage: RolloutStorage, last_value: torch.Tensor) -> dict[str, Any]:
         advantages, returns = generalized_advantage_estimate(
             storage.rewards,
             storage.values,
@@ -104,7 +104,14 @@ class PPOTrainer:
         updates = 0
         kl_early_stop = False
         completed_epochs = 0
+        executed_epochs = 0
+        kl_per_epoch: list[float] = []
+        kl_per_minibatch: list[float] = []
+        minibatches_per_epoch: list[int] = []
         for _ in range(self.config.epochs):
+            executed_epochs += 1
+            epoch_kl: list[float] = []
+            epoch_updates = 0
             order = torch.randperm(count, generator=generator, device=self.device)
             for indices in order.chunk(self.config.minibatches):
                 observations = flat["observations"][indices].to(self.device)
@@ -154,9 +161,17 @@ class PPOTrainer:
                 accumulators["ratio"] += float(ratio.mean().detach())
                 accumulators["action_std"] += float(distribution.std.mean().detach())
                 updates += 1
+                epoch_updates += 1
+                kl_value = float(approximate_kl.detach())
+                epoch_kl.append(kl_value)
+                kl_per_minibatch.append(kl_value)
                 if float(approximate_kl) > self.config.target_kl:
                     kl_early_stop = True
                     break
+            if not epoch_kl:
+                raise RuntimeError("PPO epoch executed no minibatches")
+            kl_per_epoch.append(sum(epoch_kl) / len(epoch_kl))
+            minibatches_per_epoch.append(epoch_updates)
             if kl_early_stop:
                 break
             completed_epochs += 1
@@ -169,6 +184,13 @@ class PPOTrainer:
             "sample_count": float(count),
             "updates": float(updates),
             "completed_epochs": float(completed_epochs),
+            "requested_epochs": float(self.config.epochs),
+            "actual_epochs_executed": float(executed_epochs),
+            "requested_minibatches": float(self.config.epochs * self.config.minibatches),
+            "actual_minibatches_updated": float(updates),
+            "minibatches_per_epoch": minibatches_per_epoch,
+            "kl_per_epoch": kl_per_epoch,
+            "kl_per_minibatch": kl_per_minibatch,
             "kl_early_stop": kl_early_stop,
             "target_kl": self.config.target_kl,
             "old_value_mean": float(old_values.mean()),

@@ -12,6 +12,16 @@ from toporetarget.rl.ppo.gpu_capacity import (
     GpuCapacityMeasurement,
     select_ppo26d_environment_capacity,
 )
+from toporetarget.rl.ppo.ppo26d_continuation import (
+    R6ADecision,
+    RSICurriculumPhase,
+    build_rsi_curriculum_distribution,
+    classify_ppo_update_bottleneck,
+    classify_r6a,
+    generate_frozen_seed_set,
+    rank_development_checkpoints,
+    summarize_episodes,
+)
 from toporetarget.rl.ppo.ppo26d_contract import (
     Stage16DPPO26DObservationV2,
     Stage16DReferenceResidualAction26DV1,
@@ -255,3 +265,232 @@ def test_ppo26d_normalizer_uses_full_rollout_after_frozen_update(monkeypatch) ->
 
 def test_torch_is_available_for_ppo26d_pure_contracts() -> None:
     assert torch.isfinite(torch.tensor([0.0])).all()
+
+
+def _evaluation_summary(
+    *, terminal: float, contact_steps: float, last_contact: float, object_error: float
+) -> dict[str, object]:
+    return {
+        "terminal_contact_rate": terminal,
+        "contact_steps": {"median": contact_steps},
+        "last_contact_index": {"p75": last_contact},
+        "final_object_position_error_m": {"median": object_error},
+    }
+
+
+def test_r6a_decision_gives_rsi_branch_precedence_over_improvement() -> None:
+    baseline = _evaluation_summary(
+        terminal=0.0, contact_steps=2.0, last_contact=3.0, object_error=0.3
+    )
+    result = classify_r6a(
+        baseline_frame_zero=baseline,
+        baseline_rsi=baseline,
+        four_m_frame_zero=_evaluation_summary(
+            terminal=0.15, contact_steps=20.0, last_contact=40.0, object_error=0.2
+        ),
+        four_m_rsi=_evaluation_summary(
+            terminal=0.65, contact_steps=20.0, last_contact=40.0, object_error=0.2
+        ),
+        late_object_reward_baseline=1.0,
+        late_object_reward_four_m=1.3,
+        no_new_safety_failure=True,
+        no_reward_exploit=True,
+    )
+    assert result.decision is R6ADecision.RSI_GOOD_FRAME_ZERO_BAD
+
+
+def test_r6a_plateau_and_one_time_extension_are_bounded() -> None:
+    baseline = _evaluation_summary(
+        terminal=0.0, contact_steps=2.0, last_contact=3.0, object_error=0.3
+    )
+    plateau = classify_r6a(
+        baseline_frame_zero=baseline,
+        baseline_rsi=baseline,
+        four_m_frame_zero=baseline,
+        four_m_rsi=baseline,
+        late_object_reward_baseline=1.0,
+        late_object_reward_four_m=1.0,
+        no_new_safety_failure=True,
+        no_reward_exploit=True,
+    )
+    assert plateau.decision is R6ADecision.PLATEAU
+    ambiguous = classify_r6a(
+        baseline_frame_zero=baseline,
+        baseline_rsi=baseline,
+        four_m_frame_zero=_evaluation_summary(
+            terminal=0.11, contact_steps=5.0, last_contact=10.0, object_error=0.28
+        ),
+        four_m_rsi=baseline,
+        late_object_reward_baseline=1.0,
+        late_object_reward_four_m=1.05,
+        no_new_safety_failure=True,
+        no_reward_exploit=True,
+        extension_already_used=True,
+    )
+    assert ambiguous.decision is R6ADecision.AMBIGUOUS_ONE_TIME_EXTENSION
+    assert not ambiguous.extension_allowed
+
+
+def test_seed_sets_are_reproducible_and_formal_is_distinct() -> None:
+    development = generate_frozen_seed_set("dev", base_seed=7, count=20, purpose="development")
+    assert development == generate_frozen_seed_set(
+        "dev", base_seed=7, count=20, purpose="development"
+    )
+    formal = generate_frozen_seed_set("formal", base_seed=8, count=20, purpose="formal")
+    assert not set(development.seeds).intersection(formal.seeds)
+
+
+def test_rsi_curriculum_is_telemetry_derived_and_preserves_frame_zero_coverage() -> None:
+    rows = [
+        {
+            "start_reference_index": 20,
+            "first_contact_index": 5,
+            "last_contact_index": 14,
+        },
+        {
+            "start_reference_index": 50,
+            "first_contact_index": 2,
+            "last_contact_index": 8,
+        },
+    ]
+    c0 = build_rsi_curriculum_distribution(rows, frame_count=80, phase=RSICurriculumPhase.C0)
+    c2 = build_rsi_curriculum_distribution(rows, frame_count=80, phase=RSICurriculumPhase.C2)
+    assert c0["contract"] == "Stage16DPPO26DRSICurriculumV1"
+    assert c0["regions"]["contact_persistent"] == list(range(25, 35)) + list(range(52, 59))
+    assert c0["frame_zero_probability"] == pytest.approx(0.1)
+    assert c2["frame_zero_probability"] >= 0.5
+    assert sum(c2["probabilities"]) == pytest.approx(1.0)
+
+
+def test_checkpoint_selection_keeps_frame_zero_lexicographic_precedence() -> None:
+    def episode(
+        *, completion: bool, terminal: bool, error: float, reward: float
+    ) -> dict[str, object]:
+        return {
+            "contact": terminal,
+            "terminal_contact": terminal,
+            "contact_step_count": 20 if terminal else 5,
+            "first_contact_index": 4,
+            "last_contact_index": 30,
+            "longest_continuous_contact_window": 20 if terminal else 5,
+            "object_tracking_error_m": {"final": error},
+            "final_object_rotation_error_rad": error,
+            "final_object_axis_error_m": error,
+            "terminal_object_linear_speed_mps": 0.01,
+            "terminal_object_angular_speed_radps": 0.1,
+            "reached_final_reference": completion,
+            "total_reward": reward,
+        }
+
+    poor_frame_zero = episode(completion=False, terminal=False, error=0.4, reward=100.0)
+    good_frame_zero = episode(completion=True, terminal=True, error=0.3, reward=10.0)
+    better_rsi = episode(completion=True, terminal=True, error=0.1, reward=100.0)
+    ranked = rank_development_checkpoints(
+        [
+            {
+                "checkpoint": "later.pt",
+                "cumulative_training_samples": 2_000_000,
+                "frame_zero": [poor_frame_zero],
+                "rsi": [better_rsi],
+            },
+            {
+                "checkpoint": "earlier.pt",
+                "cumulative_training_samples": 1_000_000,
+                "frame_zero": [good_frame_zero],
+                "rsi": [poor_frame_zero],
+            },
+        ]
+    )
+    assert ranked[0]["checkpoint"] == "earlier.pt"
+
+
+def test_episode_summary_and_ppo_update_bottleneck_diagnostic() -> None:
+    summary = summarize_episodes(
+        [
+            {
+                "contact": True,
+                "terminal_contact": True,
+                "contact_step_count": 12,
+                "first_contact_index": 4,
+                "last_contact_index": 25,
+                "longest_continuous_contact_window": 10,
+                "object_tracking_error_m": {"final": 0.1},
+            },
+            {
+                "contact": False,
+                "terminal_contact": False,
+                "contact_step_count": 0,
+                "first_contact_index": None,
+                "last_contact_index": None,
+                "longest_continuous_contact_window": 0,
+                "object_tracking_error_m": {"final": 0.3},
+            },
+        ]
+    )
+    assert summary["ever_contact_rate"] == pytest.approx(0.5)
+    rows = [
+        {
+            "ppo": {
+                "kl_early_stop": True,
+                "actual_epochs_executed": 1.0,
+                "kl_per_epoch": [0.05],
+                "target_kl": 0.03,
+            }
+        }
+        for _ in range(9)
+    ] + [
+        {
+            "ppo": {
+                "kl_early_stop": False,
+                "actual_epochs_executed": 1.0,
+                "kl_per_epoch": [0.05],
+                "target_kl": 0.03,
+            }
+        }
+    ]
+    diagnosis = classify_ppo_update_bottleneck(rows)
+    assert diagnosis["classification"] == "POSSIBLE_PPO_UPDATE_BOTTLENECK"
+
+
+def test_ppo26d_update_accepts_per_epoch_diagnostic_lists(monkeypatch) -> None:
+    class ReferenceBank:
+        frame_count = 321
+
+    class FakeEnv:
+        num_envs = 2
+        reference_bank = ReferenceBank()
+        _reference_index = torch.zeros(2, dtype=torch.long)
+        _last_reward_terms = {"total": torch.ones(2)}
+
+        def reset(self):
+            return {"policy": torch.zeros(2, 764)}, {}
+
+        def step(self, action):
+            del action
+            done = torch.zeros(2, dtype=torch.bool)
+            return {"policy": torch.zeros(2, 764)}, torch.ones(2), done, done, {}
+
+        def rsi_report(self):
+            return {}
+
+    trainer = PPO26DTrainer(observation_dim=764, device="cpu")
+
+    def diagnostic_update(storage, last_value):
+        del storage, last_value
+        return {
+            "actor_loss": 0.0,
+            "value_loss": 0.0,
+            "entropy": 0.0,
+            "kl": 0.0,
+            "clip_fraction": 0.0,
+            "grad_norm": 0.0,
+            "ratio": 1.0,
+            "action_std": 1.0,
+            "kl_per_epoch": [0.01, 0.02],
+            "kl_per_minibatch": [0.01, 0.02, 0.03],
+            "minibatches_per_epoch": [2, 1],
+        }
+
+    monkeypatch.setattr(trainer.trainer, "update", diagnostic_update)
+    result = trainer.collect_and_update(FakeEnv())
+    assert result["ppo"]["kl_per_epoch"] == [0.01, 0.02]

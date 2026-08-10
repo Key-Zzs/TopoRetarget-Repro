@@ -39,11 +39,28 @@ def configure_stage16d_ppo26d(
     clip: str = "hocap_170650",
     rsi: bool = True,
     critical_dr: bool = False,
+    curriculum_reference_indices: tuple[int, ...] | None = None,
+    curriculum_reference_probabilities: tuple[float, ...] | None = None,
+    curriculum_phase: str | None = None,
 ) -> None:
     """Apply the immutable Stage16-D physics contract without clip-specific code."""
 
     configure_stage16d_nominal(cfg, num_envs=num_envs, clip=clip)
-    cfg.reset_reference_index = "uniform" if rsi else "frame0"
+    if (curriculum_reference_indices is None) != (curriculum_reference_probabilities is None):
+        raise ValueError("R6C needs both curriculum reset indices and probabilities")
+    if curriculum_reference_indices is not None:
+        if not rsi or curriculum_phase not in {"C0", "C1", "C2"}:
+            raise ValueError("R6C curriculum requires RSI and an explicit C0/C1/C2 phase")
+        cfg.reset_reference_index = "curriculum"
+        cfg.curriculum_reference_indices = curriculum_reference_indices
+        cfg.curriculum_reference_probabilities = curriculum_reference_probabilities
+        cfg.curriculum_phase = curriculum_phase
+    else:
+        cfg.reset_reference_index = "uniform" if rsi else "frame0"
+        cfg.curriculum_reference_indices = None
+        cfg.curriculum_reference_probabilities = None
+        cfg.curriculum_phase = None
+    cfg.evaluation_reset_reference_indices = None
     cfg.ppo26d_rsi_enabled = rsi
     cfg.ppo26d_enable_critical_dr = critical_dr
     cfg.contact_telemetry = "aggregate"
