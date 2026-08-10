@@ -27,6 +27,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", type=Path, default=DEFAULT_ROOT)
     parser.add_argument("--selected-capacity", type=Path)
     parser.add_argument("--num-envs", type=int)
+    parser.add_argument(
+        "--diagnostic-phase",
+        choices=("contact", "t0", "t1", "t2"),
+        help="Run one real Gate-A rollout phase only, without producing a gate verdict.",
+    )
+    parser.add_argument(
+        "--diagnostic-steps",
+        type=int,
+        help="Override the step count for --diagnostic-phase to measure progress safely.",
+    )
     return parser.parse_args()
 
 
@@ -60,6 +70,7 @@ def contact_force(env: Any) -> tuple[bool, float]:
 
 def rollout_gate(
     *,
+    phase: str,
     num_envs: int,
     steps: int,
     rsi: bool,
@@ -79,6 +90,11 @@ def rollout_gate(
     ppo26d_cfg.configure_stage16d_ppo26d(cfg, num_envs=num_envs, rsi=rsi, critical_dr=critical_dr)
     env = IsaacPPO26DReferenceTrackingEnv(cfg)
     try:
+        print(
+            f"{phase}: scene ready; envs={num_envs}; steps={steps}; "
+            f"rsi={rsi}; critical_dr={critical_dr}; contact_probe={contact_probe}",
+            flush=True,
+        )
         observation, _ = env.reset(seed=20260808)
         action = torch.zeros((num_envs, 26), device=env.device)
         if contact_probe:
@@ -92,7 +108,8 @@ def rollout_gate(
         seen_contact = False
         maximum_force = 0.0
         started = time.perf_counter()
-        for _ in range(steps):
+        progress_interval = min(25, steps)
+        for step_index in range(steps):
             observation, reward, terminated, timed_out, _ = env.step(action)
             reward_values.append(reward.detach())
             contact, force = contact_force(env)
@@ -106,6 +123,13 @@ def rollout_gate(
                 torch.isfinite(terminated.float()).all() & torch.isfinite(timed_out.float()).all()
             ):
                 raise FloatingPointError("PPO26D done flags became non-finite")
+            if (step_index + 1) % progress_interval == 0:
+                elapsed = time.perf_counter() - started
+                print(
+                    f"{phase}: {step_index + 1}/{steps} control steps; "
+                    f"{num_envs * (step_index + 1) / max(elapsed, 1.0e-12):.1f} samples/s",
+                    flush=True,
+                )
         elapsed = time.perf_counter() - started
         rewards = torch.stack(reward_values)
         object_motion = torch.linalg.vector_norm(
@@ -148,6 +172,89 @@ def rollout_gate(
         close_env(env)
 
 
+def contact_causality_gate() -> dict[str, Any]:
+    """Verify a free object receives a non-gravity contact impulse.
+
+    The one object-pose write is a pre-rollout reset fixture, which the Stage
+    16-D contract explicitly permits.  It is never reachable from the PPO
+    environment action path and is recorded separately from rollout writes.
+    """
+    from toporetarget.rl.environments.isaaclab_backend import (
+        ppo26d_reference_tracking_env_cfg as ppo26d_cfg,
+    )
+    from toporetarget.rl.environments.isaaclab_backend.ppo26d_reference_tracking_env import (
+        IsaacPPO26DReferenceTrackingEnv,
+    )
+
+    cfg = ppo26d_cfg.IsaacPPO26DReferenceTrackingEnvCfg()
+    ppo26d_cfg.configure_stage16d_ppo26d(
+        cfg, num_envs=1, clip="hocap_170650", rsi=False, critical_dr=False
+    )
+    print("contact: constructing fixed hocap_170650 environment", flush=True)
+    env = IsaacPPO26DReferenceTrackingEnv(cfg)
+    try:
+        print("contact: environment ready", flush=True)
+        env.reset(seed=20260808)
+        print("contact: reset complete", flush=True)
+        finger_body_id = env._robot.body_names.index("r_index_finger_distal")
+        fixture_state = env._object_170650.data.root_state_w.clone()
+        fixture_state[:, :3] = env._robot.data.body_pos_w[:, finger_body_id]
+        fixture_state[:, 7:].zero_()
+        # Reset-time fixture only: it establishes a measured physical contact
+        # before the 26-D zero residual action is executed through env.step().
+        env._object_170650.write_root_state_to_sim(fixture_state)
+        env.scene.write_data_to_sim()
+        env.sim.step(render=False)
+        env.scene.update(env.physics_dt)
+        print("contact: preload physics step complete", flush=True)
+        pre_state = env._state()
+        pre_position = pre_state["object_position_scene"].clone()
+        pre_velocity = pre_state["object_twist_world"][:, :3].clone()
+        pre_contact, pre_force = contact_force(env)
+        action = torch.zeros((1, 26), device=env.device)
+        env.step(action)
+        print("contact: 26D policy-path step complete", flush=True)
+        post_state = env._state()
+        post_position = post_state["object_position_scene"]
+        post_velocity = post_state["object_twist_world"][:, :3]
+        post_contact, post_force = contact_force(env)
+        control_dt = env.cfg.sim.dt * env.cfg.decimation
+        print("contact: calculating gravity-adjusted object response", flush=True)
+        gravity_delta = torch.tensor(
+            env.cfg.sim.gravity, dtype=torch.float32, device=env.device
+        ).unsqueeze(0) * control_dt
+        non_gravity_velocity_delta = torch.linalg.vector_norm(
+            (post_velocity - pre_velocity) - gravity_delta, dim=-1
+        )
+        object_motion = torch.linalg.vector_norm(post_position - pre_position, dim=-1)
+        writes = env.rollout_state_write_report()
+        print("contact: collecting rollout-write report", flush=True)
+        contact_seen = pre_contact or post_contact
+        maximum_force = max(pre_force, post_force)
+        result = {
+            "fixture": "single_finger_preload_before_rollout_only",
+            "fixture_object": "Object170650",
+            "fixture_hand_body": "r_index_finger_distal",
+            "pre_rollout_object_state_writes": 1,
+            "policy_action": "zero_26d_reference_residual_through_env_step",
+            "object_is_free_rigid_body": not env.contract_report()["diagnostic_kinematic_object"],
+            "contact_seen": contact_seen,
+            "maximum_contact_force_n": maximum_force,
+            "object_motion_after_policy_step_m": float(object_motion.max()),
+            "non_gravity_velocity_delta_mps": float(non_gravity_velocity_delta.max()),
+            "object_rollout_state_writes": writes["object_rollout_state_writes"],
+            "wrist_root_state_writes_during_step": writes[
+                "wrist_root_state_writes_during_step"
+            ],
+            "contact_can_change_object_state": contact_seen
+            and bool(object_motion.max() > 1.0e-6),
+        }
+        print(f"contact: result ready {json.dumps(result, sort_keys=True)}", flush=True)
+        return result
+    finally:
+        close_env(env)
+
+
 def ppo_gate(*, num_envs: int, checkpoint: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     from toporetarget.rl.environments.isaaclab_backend import (
         ppo26d_reference_tracking_env_cfg as ppo26d_cfg,
@@ -185,7 +292,47 @@ def main() -> int:
     selected = selected_num_envs(args)
     app = AppLauncher(headless=True).app
     try:
+        diagnostic_phases = {
+            "t0": {
+                "num_envs": 1,
+                "steps": 100,
+                "rsi": False,
+                "critical_dr": False,
+                "measurement": False,
+                "contact_probe": True,
+            },
+            "t1": {
+                "num_envs": 128,
+                "steps": 500,
+                "rsi": True,
+                "critical_dr": True,
+                "measurement": False,
+                "contact_probe": True,
+            },
+            "t2": {
+                "num_envs": selected,
+                "steps": 500,
+                "warmup_steps": 100,
+                "rsi": True,
+                "critical_dr": False,
+                "measurement": True,
+                "contact_probe": False,
+            },
+        }
+        if args.diagnostic_phase is not None:
+            phase = args.diagnostic_phase
+            if phase == "contact":
+                result = contact_causality_gate()
+                print(json.dumps({"diagnostic_phase": phase, **result}, sort_keys=True))
+                return 0
+            settings = diagnostic_phases[phase]
+            if args.diagnostic_steps is not None:
+                settings = {**settings, "steps": args.diagnostic_steps}
+            result = rollout_gate(phase=phase, **settings)
+            print(json.dumps({"diagnostic_phase": phase, **result}, sort_keys=True))
+            return 0
         t0 = rollout_gate(
+            phase="t0",
             num_envs=1,
             steps=100,
             rsi=False,
@@ -194,7 +341,10 @@ def main() -> int:
             contact_probe=True,
         )
         write_json(root / "trainability" / "t0_single_env.json", t0)
+        contact_causality = contact_causality_gate()
+        write_json(root / "trainability" / "contact_causality.json", contact_causality)
         t1 = rollout_gate(
+            phase="t1",
             num_envs=128,
             steps=500,
             rsi=True,
@@ -204,6 +354,7 @@ def main() -> int:
         )
         write_json(root / "trainability" / "t1_rsi_128env.json", t1)
         t2 = rollout_gate(
+            phase="t2",
             num_envs=selected,
             steps=500,
             warmup_steps=100,
@@ -229,7 +380,7 @@ def main() -> int:
         "reward_non_constant": t0["reward_non_constant"],
         "rsi_effective": t1["rsi_report"]["sample_count"] >= 128,
         "object_free_rigid_body": not t0["contract"]["diagnostic_kinematic_object"],
-        "contact_can_change_object_state": t0["contact_can_change_object_state"],
+        "contact_can_change_object_state": contact_causality["contact_can_change_object_state"],
         "self_collision_enabled": t0["contract"]["ppo26d"]["self_collision_enabled"],
         "no_hidden_force": not t0["contract"]["ppo26d"]["hidden_force_or_attachment"],
         "no_rollout_object_state_write": t0["contract"]["object_rollout_state_writes"] == 0,
