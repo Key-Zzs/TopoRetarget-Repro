@@ -316,16 +316,6 @@ def main() -> int:
     os.environ["OMNI_KIT_ACCEPT_EULA"] = "YES"
     from isaaclab.app import AppLauncher
 
-    from toporetarget.rl.environments.isaaclab_backend import (
-        ppo26d_reference_tracking_env_cfg as ppo26d_cfg,
-    )
-    from toporetarget.rl.environments.isaaclab_backend.ppo26d_reference_tracking_env import (
-        IsaacPPO26DReferenceTrackingEnv,
-    )
-    from toporetarget.rl.environments.isaaclab_backend.world_wrist_direct_env import (
-        HAND_COLLISION_BODY_NAMES,
-    )
-
     root = args.output_root.resolve()
     output = root / args.clip
     checkpoint = (
@@ -336,6 +326,18 @@ def main() -> int:
     app = AppLauncher(headless=True).app
     env = None
     try:
+        # Isaac modules import Omniverse extensions such as pxr; load them
+        # only after AppLauncher owns the SimulationApp lifecycle.
+        from toporetarget.rl.environments.isaaclab_backend import (
+            ppo26d_reference_tracking_env_cfg as ppo26d_cfg,
+        )
+        from toporetarget.rl.environments.isaaclab_backend.ppo26d_reference_tracking_env import (
+            IsaacPPO26DReferenceTrackingEnv,
+        )
+        from toporetarget.rl.environments.isaaclab_backend.world_wrist_direct_env import (
+            HAND_COLLISION_BODY_NAMES,
+        )
+
         cfg = ppo26d_cfg.IsaacPPO26DReferenceTrackingEnvCfg()
         ppo26d_cfg.configure_stage16d_ppo26d(cfg, num_envs=1, clip=args.clip, rsi=False)
         env = IsaacPPO26DReferenceTrackingEnv(cfg)

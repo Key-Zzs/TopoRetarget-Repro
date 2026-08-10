@@ -142,13 +142,6 @@ def main() -> int:
     os.environ["OMNI_KIT_ACCEPT_EULA"] = "YES"
     from isaaclab.app import AppLauncher
 
-    from toporetarget.rl.environments.isaaclab_backend import (
-        ppo26d_reference_tracking_env_cfg as ppo26d_cfg,
-    )
-    from toporetarget.rl.environments.isaaclab_backend.ppo26d_reference_tracking_env import (
-        IsaacPPO26DReferenceTrackingEnv,
-    )
-
     root = args.output_root.resolve()
     output = root / args.clip
     gpu_probe = pretraining_gpu_probe()
@@ -169,6 +162,15 @@ def main() -> int:
     app = AppLauncher(headless=True).app
     env = None
     try:
+        # Isaac modules import Omniverse extensions such as pxr; load them
+        # only after AppLauncher owns the SimulationApp lifecycle.
+        from toporetarget.rl.environments.isaaclab_backend import (
+            ppo26d_reference_tracking_env_cfg as ppo26d_cfg,
+        )
+        from toporetarget.rl.environments.isaaclab_backend.ppo26d_reference_tracking_env import (
+            IsaacPPO26DReferenceTrackingEnv,
+        )
+
         cfg = ppo26d_cfg.IsaacPPO26DReferenceTrackingEnvCfg()
         ppo26d_cfg.configure_stage16d_ppo26d(
             cfg,
