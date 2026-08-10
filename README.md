@@ -679,17 +679,47 @@ geometry diagnostics, and replay validation. It remains
 `STAGE16D_PPO26D_L0_COMPLETE_NOT_YET_QUALIFIED`: the deterministic frame-zero
 trace reaches the reference end but has contact on only 2/320 control steps,
 no terminal contact, and 0.3364 m final object-position error. D.5-R6 is the
-next sample-ladder stage; Gate C physics qualification remains D.5-R7.
+historical post-L0 sample ladder; the completed continuation and Gate C results
+are recorded below.
 
 ## Stage 16-D.5 PPO-26D continuation
 
-D.5-R5 is complete at 1,024,000 samples. The current next stage is D.5-R6A:
-resume its actual checkpoint under the unchanged L0 contract to at least
-4,194,304 cumulative samples. It keeps `hocap_170650`, factor-8 321 samples,
-20 Hz control / 120 Hz PhysX / decimation 6, the 764-D observation, zero
-gravity free object, 0.05 kg mass, unit friction, self-collision, the
-3P+3R SE(3) adapter, the 26-D action scale, network, LR, target KL, RSI, and
-Reward V1. It is a resume, never a restart.
+`hocap_170650` completed R6A/R6B under the unchanged L0 contract. R6B reached
+16,793,600 cumulative samples with finite PPO updates, zero object/wrist
+rollout writes, and deterministic checkpoint reload. Its frozen 4M-to-16M
+development comparison improved only final object-position error (14.26%);
+frame-zero terminal contact, median contact duration, last-contact p75, and
+RSI terminal contact regressed. The frozen decision is therefore
+`STOP_AT_BEST_CHECKPOINT`, not a 32M continuation.
+
+Development-only lexicographic selection chose the 2,007,040-sample R6A
+checkpoint. Its unseen 20-seed R7 formal result is
+`STAGE16D_170650_PPO_TRAINED_NOT_PHYSICS_QUALIFIED`: task success and terminal
+stability were both 0.70 (required 0.80), and the active geometry contract
+failed its relative penetration comparison, although absolute geometry,
+action-bound, causality, and no-hidden-control gates passed. Success and
+typical-failure replay receipts are retained. This is a post-PPO qualification
+failure, never `PPO_NOT_AUTHORIZED`.
+
+Fresh-policy R8 on `hocap_170105` then followed the same global V1 contract
+(factor-8 321 samples, 20 Hz control / 120 Hz PhysX / decimation 6, 764-D
+observation, zero-gravity free object, 0.05 kg mass, unit friction,
+self-collision, the 3P+3R SE(3) adapter, 26-D action scale, network, LR,
+target KL, RSI, and Reward V1), with no 170650 actor transfer. Its 4M result
+was ambiguous, the one permitted unchanged-contract 5M extension was
+`IMPROVING`, and R6B reached 16,793,600 samples. The frozen 4M-to-16M decision
+found only one of five continuation improvements (median frame-zero contact
+duration), so it is `STOP_AT_BEST_CHECKPOINT`, not a 32M continuation.
+
+Development-only selection chose its 1,024,000-sample L0 checkpoint. On 20
+unseen frame-zero holdout seeds, reference completion and terminal contact were
+both 1.00 but terminal stability and PPO task success were both 0.00. Its
+absolute geometry gates passed (max 0.825 mm and active p95 0.765 mm), while
+the active source-relative geometry comparison failed. Its R7 status is
+`STAGE16D_170105_PPO_TRAINED_NOT_PHYSICS_QUALIFIED`; best-progress and typical
+failure replay receipts are retained. Consequently D.6 is
+`STAGE16D_D6_MULTICLIP_NOT_AUTHORIZED_SINGLE_CLIP_R7_FAILED` and D.7 is
+`STAGE16D_D7_EXPORT_NOT_AUTHORIZED_D6_BLOCKED`. Neither is a PPO entry failure.
 
 The frozen development evaluation uses 20 frame-zero and 20 RSI seeds; a
 separate 20-seed formal holdout is forbidden until R7. Each checkpoint records
@@ -712,4 +742,5 @@ R6A 4M diagnosis
 R7 is frame-zero-only on the unseen formal seeds and uses the active
 `RuntimeCollisionProxyPenetration` contract. R8 uses the global contract chosen
 on 170650 but starts a fresh 170105 policy. D.6 is authorized only when both
-single clips are physics-qualified; D.7 exports only qualified rollouts.
+single clips are physics-qualified; D.7 exports only qualified rollouts. R6C,
+R6D, D.6 training, and D.7 export are `NOT_RUN_GATE_CONDITION` for this run.

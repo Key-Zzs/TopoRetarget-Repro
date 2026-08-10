@@ -92,3 +92,24 @@ error, RSI terminal contact, reward, action saturation, then earlier sample
 count. Formal R7 is frame-zero only and uses the active runtime collision-proxy
 geometry contract; an unqualified trained policy remains a preserved
 post-PPO-failure result rather than an authorization failure.
+
+For the completed 170650 ladder, R6B reached 16,793,600 cumulative samples.
+The frozen 4M-to-16M gate found only the 14.26% final-object-error improvement;
+terminal contact, contact duration, last-contact p75, and RSI terminal contact
+did not improve, so the branch stopped at best checkpoint rather than extend to
+32M. Development-only selection chose the R6A 2,007,040-sample checkpoint.
+Formal R7 classified it as `STAGE16D_170650_PPO_TRAINED_NOT_PHYSICS_QUALIFIED`
+(0.70 task success/stability and failed relative geometry comparison). The
+subsequent 170105 R8 policy must be fresh and use the unchanged V1 contract.
+
+That fresh 170105 route took the bounded `AMBIGUOUS_ONE_TIME_EXTENSION` at 4M,
+then `IMPROVING` at the one permitted 5M extension, and R6B reached 16,793,600
+samples. Its 4M-to-16M decision found only the median frame-zero contact-
+duration criterion and stopped at the selected best checkpoint. Development
+selection chose the 1,024,000-sample L0 checkpoint. Its 20-seed formal R7
+result was `STAGE16D_170105_PPO_TRAINED_NOT_PHYSICS_QUALIFIED`: reference
+completion and terminal contact were 1.00, but task success and terminal
+stability were 0.00, and the relative geometry comparison failed despite
+passing the absolute geometry limits. R6C/R6D were not entered; because neither
+single-clip R7 physics-qualified, D.6 multi-clip training and D.7 export are
+not authorized.

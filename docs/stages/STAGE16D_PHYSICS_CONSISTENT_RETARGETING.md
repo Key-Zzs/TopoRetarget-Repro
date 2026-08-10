@@ -167,8 +167,8 @@ about 0.3364 m. RSI was materially better (terminal contact 8/20), so neither
 the old CEM/S3 failures nor the L0's zero frame-zero terminal contact is a PPO
 authorization blocker.
 
-R6A resumes that checkpoint under the exact L0 environment/physics/PPO
-contract to 4M cumulative samples. It first rebaselines with frozen 20
+R6A resumed that checkpoint under the exact L0 environment/physics/PPO
+contract to 4M cumulative samples. It first rebaselined with frozen 20
 development frame-zero and 20 development RSI seeds, while retaining a
 disjoint 20-seed formal frame-zero holdout for R7 only. Each 2M/3M/4M checkpoint
 has the same development diagnosis, including contact timing, final
@@ -178,4 +178,21 @@ R6B for improvement, R6C for RSI-good/frame-zero-bad, or R6D only after a
 plateau and the one permitted LR-only update-bottleneck probe. R7 then runs
 full formal task, contact, stability, causality, self/inter-finger, action, and
 active `RuntimeCollisionProxyPenetration` geometry qualification on the unseen
-frame-zero seeds.
+frame-zero seeds. R6B then reached 16,793,600 samples but met only one
+4M-to-16M continuation improvement (14.26% lower final object error); it was
+stopped at the selected best checkpoint. Development-only selection chose the
+2,007,040-sample R6A checkpoint. Its 170650 R7 formal status is
+`STAGE16D_170650_PPO_TRAINED_NOT_PHYSICS_QUALIFIED`: success/stability were
+0.70 and the active geometry relative comparison failed, while absolute
+geometry and all action/causality/no-hidden-control gates passed. The next
+single-clip step was fresh-policy 170105 R8 under the same V1 contract. Its
+4M comparison was ambiguous, its one allowed 5M extension was improving, and
+R6B reached 16,793,600 samples. Only the median frame-zero contact-duration
+criterion improved from 4M to 16M, so the frozen decision stopped at the best
+checkpoint. Development selection chose 170105 L0 (1,024,000 samples); its
+formal 20-seed R7 run had reference completion and terminal contact of 1.00,
+but task success and terminal stability of 0.00. The current runtime geometry
+audit passed absolute limits (0.825 mm max, 0.765 mm active p95) but failed the
+source-relative gates. It is therefore
+`STAGE16D_170105_PPO_TRAINED_NOT_PHYSICS_QUALIFIED`, which leaves D.6
+multi-clip PPO and D.7 qualified export unauthorized.

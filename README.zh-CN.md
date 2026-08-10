@@ -632,17 +632,40 @@ backend 均明确为 engineering adaptation。详见
 reload、deterministic/RSI evaluation、post-PPO exact geometry diagnostic 与 replay
 validation。当前状态仍是 `STAGE16D_PPO26D_L0_COMPLETE_NOT_YET_QUALIFIED`：frame-zero
 确定性 trace 虽走到 reference 末端，但 320 个 control steps 中仅 2 步有 contact，末端
-无 contact，物体末端位置误差为 0.3364 m。下一步是 D.5-R6 sample ladder；Gate C 正式
-物理资格验证仍属于 D.5-R7。
+无 contact，物体末端位置误差为 0.3364 m。此处仅保留历史 L0 证据；已完成的 D.5-R6
+sample ladder 与 Gate C 正式资格结果见下文。
 
 ## Stage 16-D.5 PPO-26D continuation
 
-D.5-R5 已在 1,024,000 samples 完成。当前下一阶段为 D.5-R6A：必须从实际 checkpoint
-resume，并在不改变 L0 contract 的条件下继续到至少 4,194,304 cumulative samples。它保持
-`hocap_170650`、factor-8 的 321 samples、20 Hz control / 120 Hz PhysX / decimation 6、
-764-D observation、zero-gravity free object、0.05 kg mass、unit friction、self-collision、
-3P+3R SE(3) adapter、26-D action scale、network、LR、target KL、RSI 和 Reward V1。它是
-resume，不是 restart。
+`hocap_170650` 已在不改变 L0 contract 的条件下完成 R6A/R6B。R6B 达到
+16,793,600 cumulative samples，PPO updates 全部 finite、rollout object/wrist writes 为零，
+且 checkpoint deterministic reload 通过。冻结的 4M→16M development 对比仅 final object
+position error 改善 14.26%；frame-zero terminal contact、median contact duration、last-contact
+p75 与 RSI terminal contact 均退化。因此冻结结论为 `STOP_AT_BEST_CHECKPOINT`，不进入 32M。
+
+仅用 development 的词典序选择了 2,007,040-sample R6A checkpoint。其未见的 20-seed R7
+formal 结果为 `STAGE16D_170650_PPO_TRAINED_NOT_PHYSICS_QUALIFIED`：task success 与
+terminal stability 均为 0.70（要求 0.80），并且 active geometry contract 的相对 penetration
+比较失败；但绝对 geometry、action bound、causality 与 no-hidden-control gates 均通过。成功与
+典型失败 replay receipts 均已保存。这是 post-PPO qualification failure，绝不是
+`PPO_NOT_AUTHORIZED`。
+
+随后 fresh-policy 的 `hocap_170105` R8 使用同一 global V1 contract（factor-8 321
+samples、20 Hz control / 120 Hz PhysX / decimation 6、764-D observation、zero-gravity
+free object、0.05 kg mass、unit friction、self-collision、3P+3R SE(3) adapter、26-D action
+scale、network、LR、target KL、RSI 与 Reward V1），且未迁移 170650 actor。其 4M 结果为
+ambiguous；唯一一次合同不变的 5M extension 为 `IMPROVING`，之后 R6B 达到 16,793,600
+samples。冻结的 4M→16M 决策仅命中 5 项继续指标中的 1 项（frame-zero median contact
+duration），因此为 `STOP_AT_BEST_CHECKPOINT`，不进入 32M。
+
+仅使用 development 的选择确定其 1,024,000-sample L0 checkpoint 为最优。未见的 20 个
+frame-zero holdout seeds 上，reference completion 与 terminal contact 均为 1.00，但
+terminal stability 与 PPO task success 均为 0.00。absolute geometry gates 通过（max 0.825
+mm、active p95 0.765 mm），但现行 source-relative geometry 比较失败。因此 R7 状态为
+`STAGE16D_170105_PPO_TRAINED_NOT_PHYSICS_QUALIFIED`；best-progress 与 typical-failure
+replay receipts 均已保存。由此 D.6 为
+`STAGE16D_D6_MULTICLIP_NOT_AUTHORIZED_SINGLE_CLIP_R7_FAILED`，D.7 为
+`STAGE16D_D7_EXPORT_NOT_AUTHORIZED_D6_BLOCKED`；两者都不是 PPO entry failure。
 
 冻结的 development evaluation 使用 20 个 frame-zero 和 20 个 RSI seeds；另一组 20-seed
 formal holdout 在 R7 前禁止使用。每个 checkpoint 记录 contact timing/duration、terminal
@@ -664,4 +687,5 @@ R6A 4M diagnosis
 R7 仅在未见的 formal seeds 上运行 frame-zero，并使用现行
 `RuntimeCollisionProxyPenetration` contract。R8 使用 170650 最终选定的 global contract，
 但从 fresh 170105 policy 开始。仅当两个 single clip 都 physics-qualified 时 D.6 才获授权；
-D.7 仅导出 qualified rollouts。
+D.7 仅导出 qualified rollouts。本次的 R6C、R6D、D.6 training 与 D.7 export 均为
+`NOT_RUN_GATE_CONDITION`。

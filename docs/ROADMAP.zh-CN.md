@@ -217,14 +217,14 @@ stability，全部 replica 以 timeout 结束。跨指穿透均为 20/20 通过�
 | D.5-R3 | Host-GPU 容量资格验证与自动 env 选择 | COMPLETE |
 | D.5-R4 | Environment/trainability Gate A | COMPLETE |
 | D.5-R5 | `hocap_170650` smoke 与 L0 PPO（至少 1M samples） | COMPLETE_NOT_YET_QUALIFIED |
-| D.5-R6A | frozen-contract 170650 checkpoint resume，L0 1M -> 4M | CURRENT NEXT |
-| D.5-R6B | improving/selected-contract continuation 到 16M，随后有界 32M/67M | CONDITIONAL |
-| D.5-R6C | RSI-good/frame-zero-bad curriculum，随后进入 R6B ladder | CONDITIONAL |
-| D.5-R6D | plateau 且 update-bottleneck exclusion/probe 后的 versioned Reward V2 | CONDITIONAL |
-| D.5-R7 | 在未见 frame-zero holdout seeds 上进行 post-PPO formal physics qualification | AFTER BEST SINGLE POLICY |
-| D.5-R8 | 使用已选 global contract 的 fresh `hocap_170105` PPO-26D | AFTER 170650 R7 |
-| D.6 | balanced two-clip PPO；仅在两个 single clip physics-qualify 后 | GATE-CONDITIONAL |
-| D.7 | `PhysicsQualifiedIsaacTrajectory` export；仅 qualified episodes | GATE-CONDITIONAL |
+| D.5-R6A | frozen-contract 170650 checkpoint resume，L0 1M -> 4M | COMPLETE |
+| D.5-R6B | improving/selected-contract continuation 到 16M，随后有界 32M/67M | COMPLETE / 16.794M 时 STOP_AT_BEST_CHECKPOINT |
+| D.5-R6C | RSI-good/frame-zero-bad curriculum，随后进入 R6B ladder | NOT_RUN_GATE_CONDITION |
+| D.5-R6D | plateau 且 update-bottleneck exclusion/probe 后的 versioned Reward V2 | NOT_RUN_GATE_CONDITION |
+| D.5-R7 | 在未见 frame-zero holdout seeds 上进行 post-PPO formal physics qualification | COMPLETE / 170650 TRAINED_NOT_PHYSICS_QUALIFIED |
+| D.5-R8 | 使用已选 global contract 的 fresh `hocap_170105` PPO-26D | COMPLETE / R6A AMBIGUOUS -> 5M IMPROVING -> R6B 在 16.794M 时 STOP_AT_BEST_CHECKPOINT；R7 TRAINED_NOT_PHYSICS_QUALIFIED |
+| D.6 | balanced two-clip PPO；仅在两个 single clip physics-qualify 后 | NOT_RUN_GATE_CONDITION / 两个 single-clip R7 都未合格 |
+| D.7 | `PhysicsQualifiedIsaacTrajectory` export；仅 qualified episodes | NOT_RUN_GATE_CONDITION / D6 未授权 |
 
 旧 S3/CEM actions 保留为 `PRE_PPO_BASELINE_FAILURE`（两条 clip 的 terminal contact、
 terminal stability 和 final success 均为 `0/20`），不阻塞 Gate A；terminal/contact/

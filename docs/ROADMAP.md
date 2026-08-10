@@ -251,14 +251,14 @@ or authorize PPO.
 | D.5-R3 | Host-GPU capacity qualification and automatic env selection | COMPLETE |
 | D.5-R4 | Environment/trainability Gate A | COMPLETE |
 | D.5-R5 | `hocap_170650` smoke and L0 PPO (at least 1M samples) | COMPLETE_NOT_YET_QUALIFIED |
-| D.5-R6A | Frozen-contract 170650 checkpoint resume, L0 1M -> 4M | CURRENT NEXT |
-| D.5-R6B | Improving/selected-contract continuation to 16M, then bounded 32M/67M | CONDITIONAL |
-| D.5-R6C | RSI-good/frame-zero-bad curriculum, then R6B ladder | CONDITIONAL |
-| D.5-R6D | Versioned Reward V2 after plateau and update-bottleneck exclusion/probe | CONDITIONAL |
-| D.5-R7 | Post-PPO formal physics qualification on unseen frame-zero holdout seeds | AFTER BEST SINGLE POLICY |
-| D.5-R8 | Fresh `hocap_170105` PPO-26D using the selected global contract | AFTER 170650 R7 |
-| D.6 | Balanced two-clip PPO; only after both single clips physics-qualify | GATE-CONDITIONAL |
-| D.7 | `PhysicsQualifiedIsaacTrajectory` export; qualified episodes only | GATE-CONDITIONAL |
+| D.5-R6A | Frozen-contract 170650 checkpoint resume, L0 1M -> 4M | COMPLETE |
+| D.5-R6B | Improving/selected-contract continuation to 16M, then bounded 32M/67M | COMPLETE / STOP_AT_BEST_CHECKPOINT at 16.794M |
+| D.5-R6C | RSI-good/frame-zero-bad curriculum, then R6B ladder | NOT_RUN_GATE_CONDITION |
+| D.5-R6D | Versioned Reward V2 after plateau and update-bottleneck exclusion/probe | NOT_RUN_GATE_CONDITION |
+| D.5-R7 | Post-PPO formal physics qualification on unseen frame-zero holdout seeds | COMPLETE / 170650 TRAINED_NOT_PHYSICS_QUALIFIED |
+| D.5-R8 | Fresh `hocap_170105` PPO-26D using the selected global contract | COMPLETE / R6A AMBIGUOUS -> 5M IMPROVING -> R6B STOP_AT_BEST_CHECKPOINT at 16.794M; R7 TRAINED_NOT_PHYSICS_QUALIFIED |
+| D.6 | Balanced two-clip PPO; only after both single clips physics-qualify | NOT_RUN_GATE_CONDITION / both single-clip R7 results unqualified |
+| D.7 | `PhysicsQualifiedIsaacTrajectory` export; qualified episodes only | NOT_RUN_GATE_CONDITION / D6 not authorized |
 
 Old S3/CEM actions are `PRE_PPO_BASELINE_FAILURE` (`0/20` terminal contact,
 terminal stability, and final success for both clips). They do not block Gate
