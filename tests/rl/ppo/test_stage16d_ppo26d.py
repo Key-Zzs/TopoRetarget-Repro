@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -338,6 +340,56 @@ def test_seed_sets_are_reproducible_and_formal_is_distinct() -> None:
     )
     formal = generate_frozen_seed_set("formal", base_seed=8, count=20, purpose="formal")
     assert not set(development.seeds).intersection(formal.seeds)
+
+
+def test_d6_and_d7_gates_preserve_failed_single_clip_evidence(tmp_path: Path) -> None:
+    def write_r7(clip: str, qualified: bool) -> Path:
+        path = tmp_path / f"{clip}.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "Stage16DPPO26DR7FormalQualificationV1",
+                    "clip": clip,
+                    "physics_qualified": qualified,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    transitions = tmp_path / "transitions.jsonl"
+    d6 = tmp_path / "d6.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts/rl/isaaclab/gate_stage16d_ppo26d_d6.py"),
+            "--qualification-170650",
+            str(write_r7("hocap_170650", True)),
+            "--qualification-170105",
+            str(write_r7("hocap_170105", False)),
+            "--output",
+            str(d6),
+            "--transitions",
+            str(transitions),
+        ],
+        check=True,
+    )
+    assert json.loads(d6.read_text(encoding="utf-8"))["multiclip_training_authorized"] is False
+    d7 = tmp_path / "d7.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts/rl/isaaclab/gate_stage16d_ppo26d_d7.py"),
+            "--d6-authorization",
+            str(d6),
+            "--output",
+            str(d7),
+            "--transitions",
+            str(transitions),
+        ],
+        check=True,
+    )
+    assert json.loads(d7.read_text(encoding="utf-8"))["d7_export_authorized"] is False
 
 
 def test_rsi_curriculum_is_telemetry_derived_and_preserves_frame_zero_coverage() -> None:
