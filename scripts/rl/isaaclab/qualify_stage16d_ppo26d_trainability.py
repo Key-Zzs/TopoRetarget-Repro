@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -37,6 +38,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         help="Override the step count for --diagnostic-phase to measure progress safely.",
     )
+    parser.add_argument(
+        "--child-phase",
+        choices=("contact", "t0", "t1", "t2", "t3"),
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument("--phase-output", type=Path, help=argparse.SUPPRESS)
     return parser.parse_args()
 
 
@@ -220,9 +227,10 @@ def contact_causality_gate() -> dict[str, Any]:
         post_contact, post_force = contact_force(env)
         control_dt = env.cfg.sim.dt * env.cfg.decimation
         print("contact: calculating gravity-adjusted object response", flush=True)
-        gravity_delta = torch.tensor(
-            env.cfg.sim.gravity, dtype=torch.float32, device=env.device
-        ).unsqueeze(0) * control_dt
+        gravity_delta = (
+            torch.tensor(env.cfg.sim.gravity, dtype=torch.float32, device=env.device).unsqueeze(0)
+            * control_dt
+        )
         non_gravity_velocity_delta = torch.linalg.vector_norm(
             (post_velocity - pre_velocity) - gravity_delta, dim=-1
         )
@@ -243,11 +251,8 @@ def contact_causality_gate() -> dict[str, Any]:
             "object_motion_after_policy_step_m": float(object_motion.max()),
             "non_gravity_velocity_delta_mps": float(non_gravity_velocity_delta.max()),
             "object_rollout_state_writes": writes["object_rollout_state_writes"],
-            "wrist_root_state_writes_during_step": writes[
-                "wrist_root_state_writes_during_step"
-            ],
-            "contact_can_change_object_state": contact_seen
-            and bool(object_motion.max() > 1.0e-6),
+            "wrist_root_state_writes_during_step": writes["wrist_root_state_writes_during_step"],
+            "contact_can_change_object_state": contact_seen and bool(object_motion.max() > 1.0e-6),
         }
         print(f"contact: result ready {json.dumps(result, sort_keys=True)}", flush=True)
         return result
@@ -281,94 +286,139 @@ def ppo_gate(*, num_envs: int, checkpoint: Path) -> tuple[dict[str, Any], dict[s
         close_env(env)
 
 
+def phase_settings(phase: str, selected: int) -> dict[str, Any]:
+    settings = {
+        "t0": {
+            "num_envs": 1,
+            "steps": 100,
+            "rsi": False,
+            "critical_dr": False,
+            "measurement": False,
+            "contact_probe": True,
+        },
+        "t1": {
+            "num_envs": 128,
+            "steps": 500,
+            "rsi": True,
+            "critical_dr": True,
+            "measurement": False,
+            "contact_probe": True,
+        },
+        "t2": {
+            "num_envs": selected,
+            "steps": 500,
+            "warmup_steps": 100,
+            "rsi": True,
+            "critical_dr": False,
+            "measurement": True,
+            "contact_probe": False,
+        },
+    }
+    return settings[phase]
+
+
+def execute_phase(
+    phase: str, root: Path, selected: int, diagnostic_steps: int | None
+) -> dict[str, Any]:
+    if phase == "contact":
+        return contact_causality_gate()
+    if phase == "t3":
+        checkpoint = root / "trainability" / "t4_checkpoint_roundtrip.pt"
+        t3, t4 = ppo_gate(num_envs=selected, checkpoint=checkpoint)
+        return {"t3": t3, "t4": t4}
+    settings = phase_settings(phase, selected)
+    if diagnostic_steps is not None:
+        settings = {**settings, "steps": diagnostic_steps}
+    return rollout_gate(phase=phase, **settings)
+
+
+def execute_phase_in_fresh_app(
+    phase: str,
+    root: Path,
+    selected: int,
+    diagnostic_steps: int | None,
+    output: Path | None,
+) -> dict[str, Any]:
+    """Run exactly one phase per Isaac process.
+
+    Isaac's simulator singleton cannot reliably construct a second vector
+    scene after ``clear_instance()`` in the same App process.  Fresh child
+    processes keep every Gate phase physical while avoiding that lifecycle
+    deadlock; the JSON receipt is written before the App closes.
+    """
+    from isaaclab.app import AppLauncher
+
+    app = AppLauncher(headless=True).app
+    try:
+        result = execute_phase(phase, root, selected, diagnostic_steps)
+        if output is not None:
+            write_json(output, result)
+        print(
+            json.dumps(
+                {"phase": phase, "output": str(output) if output is not None else None},
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+        return result
+    finally:
+        app.close(wait_for_replicator=False)
+
+
+def run_phase_child(args: argparse.Namespace, phase: str, output: Path) -> dict[str, Any]:
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "--accept-eula",
+        "--output-root",
+        str(args.output_root.resolve()),
+        "--num-envs",
+        str(selected_num_envs(args)),
+        "--child-phase",
+        phase,
+        "--phase-output",
+        str(output),
+    ]
+    completed = subprocess.run(command, cwd=REPO_ROOT, env=os.environ.copy(), check=False)
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"PPO26D_GATE_PHASE_FAILED: phase={phase} returncode={completed.returncode}"
+        )
+    if not output.exists():
+        raise RuntimeError(f"PPO26D_GATE_PHASE_NO_RECEIPT: phase={phase} output={output}")
+    return json.loads(output.read_text(encoding="utf-8"))
+
+
 def main() -> int:
     args = parse_args()
     if not args.accept_eula:
         raise ValueError("--accept-eula is required")
     os.environ["OMNI_KIT_ACCEPT_EULA"] = "YES"
-    from isaaclab.app import AppLauncher
-
     root = args.output_root.resolve()
     selected = selected_num_envs(args)
-    app = AppLauncher(headless=True).app
-    try:
-        diagnostic_phases = {
-            "t0": {
-                "num_envs": 1,
-                "steps": 100,
-                "rsi": False,
-                "critical_dr": False,
-                "measurement": False,
-                "contact_probe": True,
-            },
-            "t1": {
-                "num_envs": 128,
-                "steps": 500,
-                "rsi": True,
-                "critical_dr": True,
-                "measurement": False,
-                "contact_probe": True,
-            },
-            "t2": {
-                "num_envs": selected,
-                "steps": 500,
-                "warmup_steps": 100,
-                "rsi": True,
-                "critical_dr": False,
-                "measurement": True,
-                "contact_probe": False,
-            },
-        }
-        if args.diagnostic_phase is not None:
-            phase = args.diagnostic_phase
-            if phase == "contact":
-                result = contact_causality_gate()
-                print(json.dumps({"diagnostic_phase": phase, **result}, sort_keys=True))
-                return 0
-            settings = diagnostic_phases[phase]
-            if args.diagnostic_steps is not None:
-                settings = {**settings, "steps": args.diagnostic_steps}
-            result = rollout_gate(phase=phase, **settings)
-            print(json.dumps({"diagnostic_phase": phase, **result}, sort_keys=True))
-            return 0
-        t0 = rollout_gate(
-            phase="t0",
-            num_envs=1,
-            steps=100,
-            rsi=False,
-            critical_dr=False,
-            measurement=False,
-            contact_probe=True,
+    if args.child_phase is not None:
+        if args.phase_output is None:
+            raise ValueError("--phase-output is required with --child-phase")
+        execute_phase_in_fresh_app(args.child_phase, root, selected, None, args.phase_output)
+        return 0
+    if args.diagnostic_phase is not None:
+        result = execute_phase_in_fresh_app(
+            args.diagnostic_phase, root, selected, args.diagnostic_steps, None
         )
-        write_json(root / "trainability" / "t0_single_env.json", t0)
-        contact_causality = contact_causality_gate()
-        write_json(root / "trainability" / "contact_causality.json", contact_causality)
-        t1 = rollout_gate(
-            phase="t1",
-            num_envs=128,
-            steps=500,
-            rsi=True,
-            critical_dr=True,
-            measurement=False,
-            contact_probe=True,
-        )
-        write_json(root / "trainability" / "t1_rsi_128env.json", t1)
-        t2 = rollout_gate(
-            phase="t2",
-            num_envs=selected,
-            steps=500,
-            warmup_steps=100,
-            rsi=True,
-            critical_dr=False,
-            measurement=True,
-        )
-        write_json(root / "trainability" / "t2_selected_env.json", t2)
-        checkpoint = root / "trainability" / "t4_checkpoint_roundtrip.pt"
-        t3, t4 = ppo_gate(num_envs=selected, checkpoint=checkpoint)
-        write_json(root / "trainability" / "t3_ppo_update.json", t3)
-        write_json(root / "trainability" / "t4_checkpoint_reload.json", t4)
-    finally:
-        app.close(wait_for_replicator=False)
+        print(json.dumps({"diagnostic_phase": args.diagnostic_phase, **result}, sort_keys=True))
+        return 0
+    trainability_root = root / "trainability"
+    t0 = run_phase_child(args, "t0", trainability_root / "t0_single_env.json")
+    contact_causality = run_phase_child(
+        args, "contact", trainability_root / "contact_causality.json"
+    )
+    t1 = run_phase_child(args, "t1", trainability_root / "t1_rsi_128env.json")
+    t2 = run_phase_child(args, "t2", trainability_root / "t2_selected_env.json")
+    ppo_update = run_phase_child(args, "t3", trainability_root / "t3_t4.json")
+    t3 = ppo_update["t3"]
+    t4 = ppo_update["t4"]
+    write_json(trainability_root / "t3_ppo_update.json", t3)
+    write_json(trainability_root / "t4_checkpoint_reload.json", t4)
     checks = {
         "reference_loaded_correctly": t0["contract"]["reference_bank"]["frame_count"] == 321,
         "action_contract_26d": t0["contract"]["ppo26d"]["action_semantic"]
