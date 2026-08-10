@@ -21,7 +21,9 @@ def test_table_six_networks_and_softplus_distribution() -> None:
     model = ActorCritic(7, 3)
     assert ACTOR_HIDDEN == (512, 256, 128)
     assert CRITIC_HIDDEN == (512, 512, 256, 128)
-    distribution = SoftplusGaussian(model.mean(torch.zeros(2, 7)), model.log_std_parameter)
+    distribution = SoftplusGaussian(
+        model.action_location(torch.zeros(2, 7)), model.log_std_parameter
+    )
     assert torch.all(distribution.std > 0.0)
     assert distribution.log_prob(torch.zeros(2, 3)).shape == (2,)
 

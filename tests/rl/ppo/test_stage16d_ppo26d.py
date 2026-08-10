@@ -15,6 +15,7 @@ from toporetarget.rl.ppo.ppo26d_contract import (
     Stage16DPPO26DObservationV2,
     Stage16DReferenceResidualAction26DV1,
 )
+from toporetarget.rl.ppo.ppo26d_trainer import PPO26DTrainer
 from toporetarget.rl.reference_tracking.ppo26d_reference import (
     export_factor8_reference,
     inspect_source_reference,
@@ -127,6 +128,73 @@ def test_ppo26d_runtime_has_no_rollout_state_write_in_action_method() -> None:
         "direct_articulation_action"
         in (REPO_ROOT / "src/toporetarget/rl/ppo/ppo26d_contract.py").read_text()
     )
+
+
+def test_trace_capture_does_not_apply_canonical_joint_order_twice() -> None:
+    path = (
+        REPO_ROOT
+        / "src/toporetarget/rl/environments/isaaclab_backend/ppo26d_reference_tracking_env.py"
+    )
+    source = path.read_text(encoding="utf-8")
+    capture = source[source.index("def _capture_ppo26d_trace_row") :]
+    capture = capture[: capture.index("def ", 4)]
+    assert '"finger_q": state["finger_q"]' in capture
+    assert 'isaac_to_canonical(state["finger_q"])' not in capture
+
+
+def test_ppo26d_normalizer_uses_full_rollout_after_frozen_update(monkeypatch) -> None:
+    class ReferenceBank:
+        frame_count = 321
+
+    class FakeEnv:
+        def __init__(self) -> None:
+            self.num_envs = 2
+            self.reference_bank = ReferenceBank()
+            self._reference_index = torch.zeros(2, dtype=torch.long)
+            self._last_reward_terms = {"total": torch.ones(2)}
+            self.step_index = 0
+
+        def reset(self):
+            self.step_index = 0
+            return {"policy": torch.zeros(2, 764)}, {}
+
+        def step(self, action):
+            assert torch.isfinite(action).all()
+            assert torch.all(action.abs() <= 1.0)
+            self.step_index += 1
+            self._reference_index += 1
+            observation = torch.full((2, 764), self.step_index * 0.01)
+            done = torch.zeros(2, dtype=torch.bool)
+            return {"policy": observation}, torch.ones(2), done, done, {}
+
+        def rsi_report(self):
+            return {"sample_count": self.num_envs}
+
+    trainer = PPO26DTrainer(observation_dim=764, device="cpu")
+    count_during_update: list[float] = []
+
+    def fake_update(storage, last_value):
+        del last_value
+        count_during_update.append(float(trainer.trainer.normalizer.count))
+        return {
+            "actor_loss": 0.0,
+            "value_loss": 0.0,
+            "entropy": 0.0,
+            "kl": 0.0,
+            "clip_fraction": 0.0,
+            "grad_norm": 0.0,
+            "ratio": 1.0,
+            "action_std": 1.0,
+            "sample_count": float(storage.sample_count),
+            "updates": 1.0,
+        }
+
+    monkeypatch.setattr(trainer.trainer, "update", fake_update)
+    result = trainer.collect_and_update(FakeEnv())
+    assert count_during_update == [pytest.approx(1.0e-8)]
+    assert result["safety"]["normalizer_frozen_during_rollout_and_update"]
+    assert result["safety"]["normalizer_samples_added"] == pytest.approx(80.0)
+    assert trainer.trainer.normalizer.mean.mean().item() == pytest.approx(0.195)
 
 
 def test_torch_is_available_for_ppo26d_pure_contracts() -> None:

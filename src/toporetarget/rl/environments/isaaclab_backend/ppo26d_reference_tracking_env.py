@@ -457,7 +457,9 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             "wrist_pose": torch.cat(
                 (state["wrist_position_scene"], state["wrist_quaternion_wxyz"]), dim=-1
             ),
-            "finger_q": self.action_adapter.isaac_to_canonical(state["finger_q"]),
+            # _state() already gathers _joint_ids in canonical reference order.
+            # Re-applying isaac_to_canonical here silently permutes trace joints twice.
+            "finger_q": state["finger_q"],
             "contact_force_world": pair_force.sum(dim=1),
             "contact_pair_presence": torch.linalg.vector_norm(pair_force, dim=-1) > 1.0e-4,
             "actuator_effort": effort,

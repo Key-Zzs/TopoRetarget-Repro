@@ -122,6 +122,10 @@ class Stage16DPPO26DTrainingConfigV1:
     minibatches: int = 32
     entropy_coefficient: float = 0.001
     max_grad_norm: float = 1.0
+    target_kl: float = 0.03
+    normalized_observation_abs_limit: float = 100.0
+    action_saturation_absolute_threshold: float = 0.98
+    action_saturation_fraction_limit: float = 0.25
     observation_normalization: bool = True
     advantage_normalization: bool = True
     actor_hidden: tuple[int, ...] = (512, 256, 128)
@@ -139,6 +143,10 @@ class Stage16DPPO26DTrainingConfigV1:
             raise ValueError("PPO26D uses the paper 4-epoch/32-minibatch update")
         if self.runtime_reference_samples != 321 or self.decimation != 6:
             raise ValueError("PPO26D must preserve the Stage16-D factor-8 timing contract")
+        if not 0.0 < self.target_kl < 1.0:
+            raise ValueError("PPO26D target KL must be in (0, 1)")
+        if not 0.0 < self.action_saturation_fraction_limit < 1.0:
+            raise ValueError("PPO26D action saturation fraction limit must be in (0, 1)")
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -107,7 +107,7 @@ def run_episode(env: Any, trainer: PPO26DTrainer, *, capture: bool) -> dict[str,
         index = int(env._reference_index[0].item())
         with torch.no_grad():
             distribution = trainer.trainer.distribution(observation["policy"])
-            action = distribution.mean.clamp(-1.0, 1.0)
+            action = distribution.mean
         object_reference_position = env.reference_bank.object_pose_translation_world_ref[1, index]
         wrist_reference_position = env.reference_bank.wrist_pose_translation_world_ref[1, index]
         wrist_reference_quaternion = env.reference_bank.wrist_pose_quaternion_world_ref_wxyz[

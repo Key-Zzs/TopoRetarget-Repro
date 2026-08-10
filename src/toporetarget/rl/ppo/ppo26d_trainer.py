@@ -55,6 +55,7 @@ class PPO26DTrainer:
             entropy_coefficient=self.training_contract.entropy_coefficient,
             clip_epsilon=self.training_contract.ppo_clip,
             max_grad_norm=self.training_contract.max_grad_norm,
+            target_kl=self.training_contract.target_kl,
         )
         self.trainer = PPOTrainer(
             observation_dim=observation_dim,
@@ -68,10 +69,87 @@ class PPO26DTrainer:
     def model(self) -> torch.nn.Module:
         return self.trainer.model
 
+    @torch.no_grad()
+    def _policy_safety_metrics(
+        self,
+        observations: torch.Tensor,
+        *,
+        sampled_actions: torch.Tensor | None = None,
+        phase: str,
+    ) -> dict[str, float | bool | str]:
+        normalized_abs_max = 0.0
+        normalized_abs_sum = 0.0
+        normalized_count = 0
+        deterministic_saturated = 0
+        action_count = 0
+        finite = True
+        for observation in observations:
+            normalized = self.trainer.normalizer.normalize(observation)
+            finite = finite and bool(torch.isfinite(normalized).all())
+            normalized_abs = normalized.abs()
+            normalized_abs_max = max(normalized_abs_max, float(normalized_abs.max().detach().cpu()))
+            normalized_abs_sum += float(normalized_abs.sum().detach().cpu())
+            normalized_count += normalized.numel()
+            deterministic_action = self.trainer.distribution(observation).mean
+            deterministic_saturated += int(
+                (
+                    deterministic_action.abs()
+                    >= self.training_contract.action_saturation_absolute_threshold
+                )
+                .sum()
+                .detach()
+                .cpu()
+            )
+            action_count += deterministic_action.numel()
+        deterministic_fraction = deterministic_saturated / max(action_count, 1)
+        sampled_fraction = 0.0
+        if sampled_actions is not None:
+            sampled_fraction = float(
+                (
+                    sampled_actions.abs()
+                    >= self.training_contract.action_saturation_absolute_threshold
+                )
+                .float()
+                .mean()
+                .detach()
+                .cpu()
+            )
+        metrics: dict[str, float | bool | str] = {
+            "phase": phase,
+            "normalized_observation_finite": finite,
+            "normalized_observation_abs_max": normalized_abs_max,
+            "normalized_observation_abs_mean": normalized_abs_sum / max(normalized_count, 1),
+            "normalized_observation_abs_limit": (
+                self.training_contract.normalized_observation_abs_limit
+            ),
+            "deterministic_action_saturation_fraction": deterministic_fraction,
+            "sampled_action_saturation_fraction": sampled_fraction,
+            "action_saturation_absolute_threshold": (
+                self.training_contract.action_saturation_absolute_threshold
+            ),
+            "action_saturation_fraction_limit": (
+                self.training_contract.action_saturation_fraction_limit
+            ),
+        }
+        if (
+            not finite
+            or normalized_abs_max > self.training_contract.normalized_observation_abs_limit
+        ):
+            raise FloatingPointError(
+                "PPO26D_NORMALIZED_OBSERVATION_FAIL_FAST: "
+                f"phase={phase} finite={finite} abs_max={normalized_abs_max:.6g}"
+            )
+        if deterministic_fraction > self.training_contract.action_saturation_fraction_limit:
+            raise FloatingPointError(
+                "PPO26D_ACTION_SATURATION_FAIL_FAST: "
+                f"phase={phase} fraction={deterministic_fraction:.6f}"
+            )
+        return metrics
+
     def collect_and_update(self, env: Any) -> dict[str, Any]:
         observation, _ = env.reset()
         policy_observation = _policy_observation(observation)
-        self.trainer.update_observation_normalizer(policy_observation)
+        normalizer_count_before = float(self.trainer.normalizer.count)
         rows: dict[str, list[torch.Tensor]] = {
             "observations": [],
             "actions": [],
@@ -86,11 +164,7 @@ class PPO26DTrainer:
         reference_index_count = 0
         for _ in range(self.training_contract.rollout_length):
             policy_observation = _policy_observation(observation)
-            action, _, value = self.trainer.act(policy_observation)
-            # The contract is bounded in policy space.  The environment validates
-            # the same bound before using the existing SE3/finger adapter.
-            action = action.clamp(-1.0, 1.0)
-            log_prob = self.trainer.distribution(policy_observation).log_prob(action)
+            action, log_prob, value = self.trainer.act(policy_observation)
             next_observation, reward, terminated, timed_out, _ = env.step(action)
             done = terminated | timed_out
             for key, value_tensor in (
@@ -139,6 +213,11 @@ class PPO26DTrainer:
         }
         if not all(finite.values()):
             raise FloatingPointError("PPO26D rollout or GAE contains NaN/Inf")
+        safety_before_update = self._policy_safety_metrics(
+            storage.observations,
+            sampled_actions=storage.actions,
+            phase="before_update",
+        )
         rollout_storage_mib = (
             sum(
                 value.numel() * value.element_size()
@@ -158,6 +237,15 @@ class PPO26DTrainer:
         update_started = time.perf_counter()
         update = self.trainer.update(storage, last_value)
         ppo_update_s = time.perf_counter() - update_started
+        normalizer_count_after_ppo = float(self.trainer.normalizer.count)
+        if normalizer_count_after_ppo != normalizer_count_before:
+            raise RuntimeError("PPO26D observation statistics changed during rollout/update")
+        safety_after_update = self._policy_safety_metrics(
+            storage.observations,
+            phase="after_update_before_normalizer_refresh",
+        )
+        self.trainer.update_observation_normalizer(storage.observations)
+        normalizer_count_after_refresh = float(self.trainer.normalizer.count)
         actor_after = parameter_hash(self.model, "actor")
         critic_after = parameter_hash(self.model, "critic")
         self.cumulative_samples += storage.sample_count
@@ -175,6 +263,17 @@ class PPO26DTrainer:
             "samples_per_s": storage.sample_count / max(elapsed, 1.0e-12),
             "rollout_storage_mib": rollout_storage_mib,
             "finite": finite,
+            "safety": {
+                "before_update": safety_before_update,
+                "after_update": safety_after_update,
+                "normalizer_count_before": normalizer_count_before,
+                "normalizer_count_after_ppo": normalizer_count_after_ppo,
+                "normalizer_count_after_refresh": normalizer_count_after_refresh,
+                "normalizer_samples_added": (
+                    normalizer_count_after_refresh - normalizer_count_after_ppo
+                ),
+                "normalizer_frozen_during_rollout_and_update": True,
+            },
             "ppo": update,
             "actor_parameter_hash_before": actor_before,
             "actor_parameter_hash_after": actor_after,
