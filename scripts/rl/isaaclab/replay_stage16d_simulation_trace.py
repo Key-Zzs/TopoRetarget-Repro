@@ -386,7 +386,7 @@ def main() -> int:
             sim.render()
             line = _status_line(trace, frame, replica)
             if ppo_metadata:
-                action = np.asarray(trace.actions[frame])
+                action = np.asarray(trace.policy_action(frame, args.replica))
                 if action.shape == (26,):
                     line += (
                         f" policy_action_norm={np.linalg.norm(action):.4f}"

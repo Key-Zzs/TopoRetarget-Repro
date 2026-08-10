@@ -252,6 +252,89 @@ def classify_r6a(
     )
 
 
+def decide_r6b_post_16m(
+    *,
+    four_m_frame_zero: dict[str, object],
+    four_m_rsi: dict[str, object],
+    sixteen_m_frame_zero: dict[str, object],
+    sixteen_m_rsi: dict[str, object],
+    no_safety_regression: bool,
+) -> dict[str, object]:
+    """Apply the frozen 4M-to-16M continuation gate for the R6B branch.
+
+    The rule intentionally reports every threshold, including failed ones, so
+    the later 32M decision cannot be reconstructed from a reward-only claim.
+    """
+
+    fz_terminal_delta = _metric(sixteen_m_frame_zero, "terminal_contact_rate") - _metric(
+        four_m_frame_zero, "terminal_contact_rate"
+    )
+    contact_before = _metric(four_m_frame_zero, "contact_steps", "median")
+    contact_after = _metric(sixteen_m_frame_zero, "contact_steps", "median")
+    contact_relative_increase = (contact_after - contact_before) / max(abs(contact_before), 1.0e-12)
+    error_before = _metric(four_m_frame_zero, "final_object_position_error_m", "median")
+    error_after = _metric(sixteen_m_frame_zero, "final_object_position_error_m", "median")
+    error_relative_reduction = (error_before - error_after) / max(abs(error_before), 1.0e-12)
+
+    def last_contact_p75_or_no_contact(summary: dict[str, object]) -> float:
+        """Map the evaluator's unavailable no-contact quantile to index ``-1``.
+
+        The 4M-to-16M rule evaluates a *change* in the late-contact quantile.
+        A rollout set with no contact has no p75 by definition, rather than an
+        invalid continuation decision.  The index immediately before frame zero
+        makes that absence explicit and only counts a later real contact if it
+        clears the frozen 20-frame threshold.
+        """
+
+        value = summary.get("last_contact_index", {})
+        if not isinstance(value, dict) or value.get("p75") is None:
+            return -1.0
+        p75 = value["p75"]
+        if not isinstance(p75, (int, float)):
+            raise ValueError("last contact p75 must be numeric or unavailable")
+        return float(p75)
+
+    last_contact_delta = last_contact_p75_or_no_contact(
+        sixteen_m_frame_zero
+    ) - last_contact_p75_or_no_contact(four_m_frame_zero)
+    rsi_terminal_delta = _metric(sixteen_m_rsi, "terminal_contact_rate") - _metric(
+        four_m_rsi, "terminal_contact_rate"
+    )
+    tolerance = 1.0e-12
+    criteria = {
+        "terminal_contact_absolute_increase_at_least_0_10": (fz_terminal_delta + tolerance >= 0.10),
+        "median_contact_duration_relative_increase_at_least_0_20": (
+            contact_relative_increase + tolerance >= 0.20
+        ),
+        "median_final_object_error_relative_reduction_at_least_0_10": (
+            error_relative_reduction + tolerance >= 0.10
+        ),
+        "last_contact_p75_increase_at_least_20_frames": (last_contact_delta + tolerance >= 20.0),
+        "rsi_terminal_contact_absolute_increase_at_least_0_10": (
+            rsi_terminal_delta + tolerance >= 0.10
+        ),
+    }
+    improvements = [name for name, passed in criteria.items() if passed]
+    authorized = len(improvements) >= 2 and no_safety_regression
+    return {
+        "schema_version": "Stage16DPPO26DR6B16MDecisionV1",
+        "comparison": "development_only_4M_to_16M",
+        "deltas": {
+            "frame_zero_terminal_contact_absolute": fz_terminal_delta,
+            "median_contact_duration_relative_increase": contact_relative_increase,
+            "median_final_object_error_relative_reduction": error_relative_reduction,
+            "last_contact_p75_frames": last_contact_delta,
+            "rsi_terminal_contact_absolute": rsi_terminal_delta,
+        },
+        "criteria": criteria,
+        "improvement_count": len(improvements),
+        "improvements": improvements,
+        "no_safety_regression": no_safety_regression,
+        "decision": "CONTINUE_TO_32M" if authorized else "STOP_AT_BEST_CHECKPOINT",
+        "continue_to_32m_authorized": authorized,
+    }
+
+
 def classify_ppo_update_bottleneck(iterations: Iterable[dict[str, Any]]) -> dict[str, object]:
     """Determine whether the one allowed LR-only fallback is authorized."""
 

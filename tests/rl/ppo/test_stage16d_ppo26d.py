@@ -20,6 +20,7 @@ from toporetarget.rl.ppo.ppo26d_continuation import (
     build_rsi_curriculum_distribution,
     classify_ppo_update_bottleneck,
     classify_r6a,
+    decide_r6b_post_16m,
     generate_frozen_seed_set,
     rank_development_checkpoints,
     summarize_episodes,
@@ -333,6 +334,32 @@ def test_r6a_plateau_and_one_time_extension_are_bounded() -> None:
     assert not ambiguous.extension_allowed
 
 
+def test_r6b_16m_gate_needs_two_improvements_and_safety() -> None:
+    baseline = _evaluation_summary(
+        terminal=0.20, contact_steps=10.0, last_contact=80.0, object_error=0.50
+    )
+    improved = _evaluation_summary(
+        terminal=0.30, contact_steps=12.0, last_contact=100.0, object_error=0.45
+    )
+    decision = decide_r6b_post_16m(
+        four_m_frame_zero=baseline,
+        four_m_rsi=baseline,
+        sixteen_m_frame_zero=improved,
+        sixteen_m_rsi=baseline,
+        no_safety_regression=True,
+    )
+    assert decision["improvement_count"] == 4
+    assert decision["decision"] == "CONTINUE_TO_32M"
+    unsafe = decide_r6b_post_16m(
+        four_m_frame_zero=baseline,
+        four_m_rsi=baseline,
+        sixteen_m_frame_zero=improved,
+        sixteen_m_rsi=baseline,
+        no_safety_regression=False,
+    )
+    assert unsafe["decision"] == "STOP_AT_BEST_CHECKPOINT"
+
+
 def test_seed_sets_are_reproducible_and_formal_is_distinct() -> None:
     development = generate_frozen_seed_set("dev", base_seed=7, count=20, purpose="development")
     assert development == generate_frozen_seed_set(
@@ -454,6 +481,144 @@ def test_checkpoint_selection_keeps_frame_zero_lexicographic_precedence() -> Non
         ]
     )
     assert ranked[0]["checkpoint"] == "earlier.pt"
+
+
+def test_clip_scoped_development_seed_set_is_accepted_but_formal_is_rejected(
+    tmp_path: Path,
+) -> None:
+    development_seed_set = "development_eval_seed_set_170105_v1"
+
+    def episode(*, terminal: bool, error: float) -> dict[str, object]:
+        return {
+            "contact": terminal,
+            "terminal_contact": terminal,
+            "terminal_stable": terminal,
+            "contact_step_count": 20 if terminal else 5,
+            "first_contact_index": 4 if terminal else None,
+            "last_contact_index": 30 if terminal else None,
+            "longest_continuous_contact_window": 20 if terminal else 5,
+            "object_tracking_error_m": {"final": error},
+            "final_object_rotation_error_rad": error,
+            "final_object_axis_error_m": error,
+            "terminal_object_linear_speed_mps": 0.01,
+            "terminal_object_angular_speed_radps": 0.1,
+            "reached_final_reference": terminal,
+            "total_reward": 1.0,
+        }
+
+    def evaluation(path: Path, *, samples: int, terminal: bool, error: float) -> None:
+        frame_zero = [episode(terminal=terminal, error=error)]
+        rsi = [episode(terminal=terminal, error=error)]
+        path.write_text(
+            json.dumps(
+                {
+                    "requested_clip": "hocap_170105",
+                    "checkpoint": f"checkpoint_{samples}.pt",
+                    "checkpoint_sha256": f"hash_{samples}",
+                    "cumulative_training_samples": samples,
+                    "seed_set": {"identifier": development_seed_set},
+                    "frame_zero": frame_zero,
+                    "rsi": rsi,
+                    "frame_zero_summary": summarize_episodes(frame_zero),
+                    "rsi_summary": summarize_episodes(rsi),
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    four_m = tmp_path / "four_m.json"
+    sixteen_m = tmp_path / "sixteen_m.json"
+    evaluation(four_m, samples=4_194_304, terminal=False, error=0.4)
+    evaluation(sixteen_m, samples=16_793_600, terminal=True, error=0.3)
+    metrics = tmp_path / "metrics.jsonl"
+    metrics.write_text(
+        json.dumps(
+            {
+                "cumulative_samples": 16_793_600,
+                "finite": {"reward": True},
+                "reference": {
+                    "rsi": {
+                        "rollout_object_state_writes": 0,
+                        "rollout_wrist_root_state_writes": 0,
+                    }
+                },
+                "safety": {
+                    "before_update": {
+                        "sampled_action_saturation_fraction": 0.0,
+                        "action_saturation_fraction_limit": 0.25,
+                    },
+                    "after_update": {"deterministic_action_saturation_fraction": 0.0},
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    selection = tmp_path / "selection.json"
+    subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts/rl/isaaclab/select_stage16d_ppo26d_checkpoint.py"),
+            "--evaluation",
+            str(four_m),
+            "--evaluation",
+            str(sixteen_m),
+            "--training-metrics",
+            str(metrics),
+            "--development-seed-set",
+            development_seed_set,
+            "--output",
+            str(selection),
+        ],
+        check=True,
+    )
+    assert json.loads(selection.read_text(encoding="utf-8"))["seed_set"] == development_seed_set
+
+    decision = tmp_path / "decision.json"
+    transitions = tmp_path / "transitions.jsonl"
+    subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts/rl/isaaclab/decide_stage16d_ppo26d_r6b_16m.py"),
+            "--four-m-evaluation",
+            str(four_m),
+            "--sixteen-m-evaluation",
+            str(sixteen_m),
+            "--training-metrics",
+            str(metrics),
+            "--development-seed-set",
+            development_seed_set,
+            "--output",
+            str(decision),
+            "--transitions",
+            str(transitions),
+        ],
+        check=True,
+    )
+    assert (
+        json.loads(decision.read_text(encoding="utf-8"))["development_seed_set"]
+        == development_seed_set
+    )
+
+    rejected = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts/rl/isaaclab/select_stage16d_ppo26d_checkpoint.py"),
+            "--evaluation",
+            str(four_m),
+            "--training-metrics",
+            str(metrics),
+            "--development-seed-set",
+            "formal_holdout_seed_set_170105_v1",
+            "--output",
+            str(tmp_path / "forbidden.json"),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert rejected.returncode != 0
+    assert "formal holdout evidence is forbidden" in rejected.stderr
 
 
 def test_episode_summary_and_ppo_update_bottleneck_diagnostic() -> None:

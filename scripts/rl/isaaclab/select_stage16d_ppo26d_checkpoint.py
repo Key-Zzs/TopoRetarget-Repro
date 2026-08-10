@@ -38,13 +38,24 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evaluation", type=Path, action="append", required=True)
     parser.add_argument("--training-metrics", type=Path, action="append", required=True)
+    parser.add_argument(
+        "--development-seed-set",
+        default="development_eval_seed_set_v1",
+        help="Exact frozen development-only seed-set identifier required in every evaluation.",
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if "formal" in args.development_seed_set.lower():
+        raise ValueError("formal holdout evidence is forbidden for checkpoint selection")
     candidates = []
     for evaluation_path in args.evaluation:
         payload = read_json(evaluation_path.resolve())
-        if payload.get("seed_set", {}).get("identifier") != "development_eval_seed_set_v1":
-            raise ValueError("formal holdout evidence is forbidden for checkpoint selection")
+        actual_seed_set = payload.get("seed_set", {}).get("identifier")
+        if actual_seed_set != args.development_seed_set:
+            raise ValueError(
+                "checkpoint selection requires the requested development-only seed set; "
+                f"expected {args.development_seed_set!r}, got {actual_seed_set!r}"
+            )
         sample_count = int(payload["cumulative_training_samples"])
         matching_metrics = [
             path.resolve()
@@ -64,7 +75,7 @@ def main() -> int:
     ranked = rank_development_checkpoints(candidates)
     result = {
         "schema_version": "Stage16DPPO26DCheckpointSelectionV1",
-        "seed_set": "development_eval_seed_set_v1",
+        "seed_set": args.development_seed_set,
         "selection_rule": [
             "frame_zero_reference_completion",
             "terminal_contact_rate",

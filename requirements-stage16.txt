@@ -11,6 +11,8 @@ zarr==2.18.7
 numcodecs==0.15.1
 imageio==2.37.0
 imageio-ffmpeg==0.6.0
+# Stage 16-D formal RuntimeCollisionProxyPenetration signed-query backend.
+python-fcl==0.7.0.11
 
 # Developer/test pins used by the closeout environment.
 pytest==9.1.1

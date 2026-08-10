@@ -80,6 +80,52 @@ def _write_corrected_trace(path: Path, *, frames: int = 3, bodies: int = 2) -> N
     )
 
 
+def _write_corrected_geometry(path: Path, *, frames: int = 3, bodies: int = 2) -> None:
+    penetration = np.zeros((frames, bodies), dtype=np.float64)
+    penetration[1, bodies - 1] = 0.004
+    np.savez_compressed(
+        path,
+        penetration_depth_m=penetration,
+        frame_worst_penetration_m=penetration.max(axis=-1),
+        frame_worst_pair_index=penetration.argmax(axis=-1),
+    )
+
+
+def _write_corrected_multi_replica_trace(
+    path: Path, *, frames: int = 3, replicas: int = 2, bodies: int = 2
+) -> None:
+    object_pose = np.zeros((frames, replicas, 7), dtype=np.float32)
+    hand_pose = np.zeros((frames, replicas, bodies, 7), dtype=np.float32)
+    object_pose[..., 3] = 1.0
+    hand_pose[..., 3] = 1.0
+    contact = np.zeros((frames, replicas, bodies), dtype=bool)
+    contact[1, 1, 1] = True
+    force = np.zeros((frames, replicas, 3), dtype=np.float32)
+    force[1, 1, 0] = 4.5
+    action = np.zeros((frames, replicas, 26), dtype=np.float32)
+    action[1, 1, 0] = 0.25
+    np.savez_compressed(
+        path,
+        object_pose=object_pose[:, 0],
+        object_twist=np.zeros((frames, 6), dtype=np.float32),
+        hand_collision_body_pose=hand_pose[:, 0],
+        hand_collision_body_names=np.asarray(["r_wrist", "r_thumb_distal"]),
+        contact_force_world=force[:, 0],
+        contact_pair_presence=contact[:, 0],
+        actuator_effort=np.zeros((frames, 26), dtype=np.float32),
+        reason_code=np.zeros(frames, dtype=np.int64),
+        action=action[:, 0],
+        replica_object_pose=object_pose,
+        replica_hand_collision_body_pose=hand_pose,
+        replica_contact_force_world=force,
+        replica_contact_pair_presence=contact,
+        replica_object_twist=np.zeros((frames, replicas, 6), dtype=np.float32),
+        replica_actuator_effort=np.zeros((frames, replicas, 26), dtype=np.float32),
+        replica_reason_code=np.zeros((frames, replicas), dtype=np.int64),
+        replica_action=action,
+    )
+
+
 def test_load_trace_and_frame_diagnostics(tmp_path: Path) -> None:
     trace_path = tmp_path / "calibration_dev_hocap_170105_test.npz"
     geometry_path = tmp_path / "calibration_dev_hocap_170105_test_geometry.npz"
@@ -146,8 +192,10 @@ def test_object_id_inference_is_explicit_and_unambiguous() -> None:
 
 def test_load_corrected_nominal_trace_and_qualification(tmp_path: Path) -> None:
     trace_path = tmp_path / "trajectory_trace_hocap_170105_v3.npz"
+    geometry_path = tmp_path / "trajectory_trace_hocap_170105_v3_geometry.npz"
     qualification = tmp_path / "trajectory_qualification_hocap_170105_v3.json"
     _write_corrected_trace(trace_path)
+    _write_corrected_geometry(geometry_path)
     qualification.write_text(
         '{"status":"STAGE16D_TRAJECTORY_QUALIFICATION_BLOCKED",'
         '"success_rate":0.75,"semantic_reach_rate":1.0}',
@@ -156,6 +204,7 @@ def test_load_corrected_nominal_trace_and_qualification(tmp_path: Path) -> None:
 
     trace = load_stage16d_simulation_trace(
         trace_path,
+        geometry_path=geometry_path,
         expected_body_names=("r_wrist", "r_thumb_distal"),
     )
 
@@ -168,6 +217,8 @@ def test_load_corrected_nominal_trace_and_qualification(tmp_path: Path) -> None:
     assert row.contact_groups == ("thumb",)
     assert row.contact_force_norm_n == pytest.approx(3.5)
     assert row.mean_absolute_effort == pytest.approx(0.5)
+    assert row.worst_penetration_m == pytest.approx(0.004)
+    assert row.worst_pair_index == 1
     assert row.inter_finger_penetration_m == pytest.approx(0.004)
 
 
@@ -178,6 +229,24 @@ def test_corrected_trace_rejects_replica_without_frame_telemetry(tmp_path: Path)
 
     with pytest.raises(ValueError, match="replica"):
         trace.validate_replica(1)
+
+
+def test_corrected_multi_replica_trace_replays_recorded_replica_data(tmp_path: Path) -> None:
+    trace_path = tmp_path / "ppo_hocap_170105_formal_trace.npz"
+    geometry_path = tmp_path / "ppo_hocap_170105_formal_geometry.npz"
+    _write_corrected_multi_replica_trace(trace_path)
+    _write_geometry(geometry_path)
+
+    trace = load_stage16d_simulation_trace(trace_path, geometry_path=geometry_path)
+
+    assert trace.trace_kind == "physics_consistent_corrected_multi_replica"
+    assert trace.replica_count == 2
+    row = trace.diagnostics(1, 1)
+    assert row.contact_groups == ("thumb",)
+    assert row.contact_force_norm_n == pytest.approx(4.5)
+    assert row.worst_penetration_m == pytest.approx(0.0)
+    assert row.worst_pair_index == 0
+    assert trace.policy_action(1, 1)[0] == pytest.approx(0.25)
 
 
 def _write_hocap_reference(path: Path) -> tuple[np.ndarray, np.ndarray]:

@@ -182,6 +182,16 @@ class Stage16DSimulationTraceReplay:
             inter_finger_penetration_m=inter_finger,
         )
 
+    def policy_action(self, frame: int, replica: int) -> np.ndarray:
+        """Return the recorded policy action for one replayed replica."""
+
+        self.validate_replica(replica)
+        if not 0 <= frame < self.frame_count:
+            raise ValueError(f"frame must be in [0, {self.frame_count - 1}]")
+        if self.actions.ndim == 2:
+            return self.actions[frame]
+        return self.actions[frame, replica]
+
     def camera_bounds(self, replica: int, frames: Sequence[int]) -> tuple[np.ndarray, float]:
         self.validate_replica(replica)
         indices = np.asarray(list(frames), dtype=np.int64)
@@ -295,6 +305,96 @@ def _load_corrected_trace(
         if not np.isfinite(arrays[name]).all():
             raise ValueError(f"{name} contains non-finite values")
 
+    status, selected_qualification, metrics = _load_qualification(trace_path, qualification_path)
+    replica_fields = {
+        "replica_object_pose",
+        "replica_hand_collision_body_pose",
+        "replica_contact_force_world",
+        "replica_contact_pair_presence",
+        "replica_object_twist",
+        "replica_actuator_effort",
+        "replica_reason_code",
+        "replica_action",
+    }
+    present_replica_fields = replica_fields.intersection(arrays)
+    if present_replica_fields and present_replica_fields != replica_fields:
+        missing_replica_fields = sorted(replica_fields - present_replica_fields)
+        raise ValueError(
+            f"corrected multi-replica trace is missing fields: {missing_replica_fields}"
+        )
+    if present_replica_fields:
+        multi_object_pose = arrays["replica_object_pose"]
+        multi_hand_pose = arrays["replica_hand_collision_body_pose"]
+        if (
+            multi_object_pose.ndim != 3
+            or multi_object_pose.shape[0] != frames
+            or multi_object_pose.shape[-1] != 7
+        ):
+            raise ValueError("replica_object_pose must be [frames, replicas, 7]")
+        replicas = multi_object_pose.shape[1]
+        if multi_hand_pose.ndim != 4 or multi_hand_pose.shape != (frames, replicas, bodies, 7):
+            raise ValueError(
+                "replica_hand_collision_body_pose must be [frames, replicas, bodies, 7]"
+            )
+        expected_replica_shapes = {
+            "replica_contact_force_world": (frames, replicas, 3),
+            "replica_contact_pair_presence": (frames, replicas, bodies),
+            "replica_object_twist": (frames, replicas, 6),
+            "replica_actuator_effort": (frames, replicas, 26),
+            "replica_reason_code": (frames, replicas),
+            "replica_action": (frames, replicas, 26),
+        }
+        for name, expected in expected_replica_shapes.items():
+            if arrays[name].shape != expected:
+                raise ValueError(f"{name} must have shape {expected}, got {arrays[name].shape}")
+        for name in (
+            "replica_object_pose",
+            "replica_hand_collision_body_pose",
+            "replica_contact_force_world",
+            "replica_object_twist",
+            "replica_actuator_effort",
+            "replica_action",
+        ):
+            if not np.isfinite(arrays[name]).all():
+                raise ValueError(f"{name} contains non-finite values")
+        _validate_pose_array("replica_object_pose", multi_object_pose, (frames, replicas, 7))
+        _validate_pose_array(
+            "replica_hand_collision_body_pose", multi_hand_pose, (frames, replicas, bodies, 7)
+        )
+        if not np.allclose(multi_object_pose[:, 0], object_pose) or not np.allclose(
+            multi_hand_pose[:, 0], hand_pose
+        ):
+            raise ValueError("replica zero pose does not match the representative trace")
+        multi_pair_presence = arrays["replica_contact_pair_presence"].astype(bool, copy=False)
+        multi_group_presence = _contact_group_presence(multi_pair_presence, body_names)
+        multi_finite = np.logical_and.reduce(
+            (
+                np.isfinite(multi_object_pose).reshape(frames, replicas, -1).all(axis=-1),
+                np.isfinite(multi_hand_pose).reshape(frames, replicas, -1).all(axis=-1),
+                np.isfinite(arrays["replica_object_twist"]).all(axis=-1),
+                np.isfinite(arrays["replica_action"]).all(axis=-1),
+            )
+        )
+        return Stage16DSimulationTraceReplay(
+            trace_path=trace_path,
+            trace_kind="physics_consistent_corrected_multi_replica",
+            object_pose=multi_object_pose,
+            hand_collision_body_pose=multi_hand_pose,
+            hand_collision_body_names=body_names,
+            contact_force_world=arrays["replica_contact_force_world"],
+            contact_pair_presence=multi_pair_presence,
+            contact_group_presence=multi_group_presence,
+            contact_group_names=CONTACT_GROUP_NAMES,
+            object_twist=arrays["replica_object_twist"],
+            mean_absolute_effort=np.mean(np.abs(arrays["replica_actuator_effort"]), axis=-1),
+            finite=multi_finite,
+            reason_code=arrays["replica_reason_code"],
+            actions=arrays["replica_action"],
+            qualification_status=status,
+            qualification_path=selected_qualification,
+            qualification_metrics=metrics,
+        )
+
     pair_presence = arrays["contact_pair_presence"].astype(bool, copy=False)
     group_presence = _contact_group_presence(pair_presence, body_names)
     finite = np.logical_and.reduce(
@@ -305,7 +405,6 @@ def _load_corrected_trace(
             np.isfinite(arrays["action"]).all(axis=1),
         )
     )
-    status, selected_qualification, metrics = _load_qualification(trace_path, qualification_path)
     inter_finger = arrays.get("inter_finger_penetration_m")
     if inter_finger is not None:
         if inter_finger.shape != (frames,) or not np.isfinite(inter_finger).all():
@@ -332,6 +431,54 @@ def _load_corrected_trace(
     )
 
 
+def _attach_corrected_geometry(
+    trace: Stage16DSimulationTraceReplay, geometry_path: Path
+) -> Stage16DSimulationTraceReplay:
+    """Attach a geometry sidecar with the same replica axes as a corrected trace.
+
+    Historical nominal corrected traces have one implicit replica and stored
+    their geometry without that axis.  Preserve that schema only for a
+    single-replica trace; multi-replica geometry must retain every replica so
+    a replay cannot silently color it with replica zero's penetration values.
+    """
+
+    geometry = _load_npz(geometry_path)
+    required_geometry = {
+        "penetration_depth_m",
+        "frame_worst_penetration_m",
+        "frame_worst_pair_index",
+    }
+    missing_geometry = sorted(required_geometry - geometry.keys())
+    if missing_geometry:
+        raise ValueError(f"geometry trace is missing required arrays: {missing_geometry}")
+    expected_shapes = {
+        "penetration_depth_m": (trace.frame_count, trace.replica_count, trace.body_count),
+        "frame_worst_penetration_m": (trace.frame_count, trace.replica_count),
+        "frame_worst_pair_index": (trace.frame_count, trace.replica_count),
+    }
+    if trace.replica_count == 1 and geometry["penetration_depth_m"].shape == (
+        trace.frame_count,
+        trace.body_count,
+    ):
+        geometry["penetration_depth_m"] = geometry["penetration_depth_m"][:, None, :]
+        geometry["frame_worst_penetration_m"] = geometry["frame_worst_penetration_m"][:, None]
+        geometry["frame_worst_pair_index"] = geometry["frame_worst_pair_index"][:, None]
+    for name, shape in expected_shapes.items():
+        if geometry[name].shape != shape:
+            raise ValueError(f"{name} must have shape {shape}, got {geometry[name].shape}")
+    if (
+        not np.isfinite(geometry["penetration_depth_m"]).all()
+        or not np.isfinite(geometry["frame_worst_penetration_m"]).all()
+    ):
+        raise ValueError("geometry trace contains non-finite penetration values")
+    return replace(
+        trace,
+        penetration_depth_m=geometry["penetration_depth_m"],
+        frame_worst_penetration_m=geometry["frame_worst_penetration_m"],
+        frame_worst_pair_index=geometry["frame_worst_pair_index"],
+    )
+
+
 def load_stage16d_simulation_trace(
     trace_path: Path,
     *,
@@ -349,31 +496,9 @@ def load_stage16d_simulation_trace(
             expected_body_names=expected_body_names,
             qualification_path=qualification_path,
         )
-        if geometry_path is not None:
-            geometry = _load_npz(geometry_path)
-            required_geometry = {
-                "penetration_depth_m",
-                "frame_worst_penetration_m",
-                "frame_worst_pair_index",
-            }
-            missing_geometry = sorted(required_geometry - geometry.keys())
-            if missing_geometry:
-                raise ValueError(f"geometry trace is missing required arrays: {missing_geometry}")
-            corrected_geometry_shapes = {
-                "penetration_depth_m": (trace.frame_count, trace.body_count),
-                "frame_worst_penetration_m": (trace.frame_count,),
-                "frame_worst_pair_index": (trace.frame_count,),
-            }
-            for name, shape in corrected_geometry_shapes.items():
-                if geometry[name].shape != shape:
-                    raise ValueError(f"{name} must have shape {shape}, got {geometry[name].shape}")
-            trace = replace(
-                trace,
-                penetration_depth_m=geometry["penetration_depth_m"][:, None, :],
-                frame_worst_penetration_m=geometry["frame_worst_penetration_m"][:, None],
-                frame_worst_pair_index=geometry["frame_worst_pair_index"][:, None],
-            )
-        return trace
+        return (
+            _attach_corrected_geometry(trace, geometry_path) if geometry_path is not None else trace
+        )
 
     missing = sorted(set(TRACE_REQUIRED_ARRAYS) - arrays.keys())
     if missing:

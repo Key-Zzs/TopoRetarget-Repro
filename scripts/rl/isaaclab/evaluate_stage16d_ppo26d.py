@@ -756,10 +756,19 @@ def main() -> int:
                 else {
                     "replica_object_pose": all_replica_trace["object_pose"].astype(np.float32),
                     "replica_hand_collision_body_pose": replica_hand,
+                    "replica_contact_force_world": all_replica_trace["contact_force_world"].astype(
+                        np.float32
+                    ),
                     "replica_contact_pair_presence": all_replica_trace[
                         "contact_pair_presence"
                     ].astype(bool),
                     "replica_object_twist": all_replica_trace["object_twist"].astype(np.float32),
+                    "replica_actuator_effort": all_replica_trace["actuator_effort"].astype(
+                        np.float32
+                    ),
+                    "replica_reason_code": all_replica_trace["reason_code"].astype(np.int64),
+                    "replica_terminated": all_replica_trace["terminated"].astype(bool),
+                    "replica_timed_out": all_replica_trace["timed_out"].astype(bool),
                     "replica_action": all_replica_trace["action"].astype(np.float32),
                 }
             ),
