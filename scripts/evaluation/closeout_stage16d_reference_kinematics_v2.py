@@ -129,6 +129,7 @@ def main() -> int:
         "formal_suite": formal / "reward_v2_p1_formal_evaluation_suite_v2.json",
         "formal_geometry": REPO_ROOT / ".local/reports/stage16d_metric_qualification_and_ppo/"
         "geometry_qualification_170650_reward_v2_p1_formal.json",
+        "failure_transitions": root / "failure_transitions.jsonl",
         "comparison_csv": root / "phase3/comparison.csv",
         "comparison_markdown": root / "phase3/comparison.md",
         "best_trace": phase3_root / "best_trace.npz",
@@ -142,7 +143,7 @@ def main() -> int:
     entry = _read(paths["entry_decision"])
     decision = _read(paths["p1_decision"])
     selection = _read(paths["selection"])
-    formal_qualification = _read(paths["formal_qualification"])
+    formal_qualification_data = _read(paths["formal_qualification"])
     formal_suite = _read(paths["formal_suite"])
     training = _metrics(paths["training_metrics"])
     if reference.get("status") != "STAGE16D_REFERENCE_KINEMATICS_V2_VALIDATED":
@@ -155,21 +156,23 @@ def main() -> int:
         raise ValueError("STAGE16D_CLOSEOUT_FORMAL_RESELECTION_FORBIDDEN")
     aggregate = formal_suite["aggregate"]
     formal_metrics = {
-        "terminal_contact_rate": float(formal_qualification["terminal_contact_rate"]),
-        "terminal_stability_rate": float(formal_qualification["terminal_stability_rate"]),
+        "terminal_contact_rate": float(formal_qualification_data["terminal_contact_rate"]),
+        "terminal_stability_rate": float(formal_qualification_data["terminal_stability_rate"]),
         "SR_kinematic": float(aggregate["kinematic_success"]["rate"]),
         "SR_physics": float(aggregate["physics_success"]["rate"]),
         "SR_qualified": float(aggregate["qualified_success"]["rate"]),
         "Delta_v_median_mps": float(
-            formal_qualification["twist_residuals"]["terminal_delta_v_mps"]["per_episode_median"]
-        ),
-        "Delta_omega_median_radps": float(
-            formal_qualification["twist_residuals"]["terminal_delta_omega_radps"][
+            formal_qualification_data["twist_residuals"]["terminal_delta_v_mps"][
                 "per_episode_median"
             ]
         ),
-        "absolute_geometry_pass": bool(formal_qualification["geometry_absolute_pass"]),
-        "source_relative_geometry_diagnostic": formal_qualification[
+        "Delta_omega_median_radps": float(
+            formal_qualification_data["twist_residuals"]["terminal_delta_omega_radps"][
+                "per_episode_median"
+            ]
+        ),
+        "absolute_geometry_pass": bool(formal_qualification_data["geometry_absolute_pass"]),
+        "source_relative_geometry_diagnostic": formal_qualification_data[
             "source_relative_geometry_diagnostic"
         ],
     }
@@ -177,7 +180,7 @@ def main() -> int:
     final_head = _git("rev-parse", "HEAD")
     commits = _git("log", "--oneline", f"{args.start_head}..HEAD").splitlines()
     trace_root = ".local/reports/stage16d_reference_kinematics_v2/phase3/hocap_170650"
-    formal_qualification = (
+    formal_qualification_path = (
         f"{trace_root}/runs/p1_post_capacity/formal_evaluations/hocap_170650/"
         "reward_v2_p1_formal_qualification.json"
     )
@@ -224,16 +227,16 @@ def main() -> int:
         },
         "replay_commands": [
             f"{replay_prefix} --trace {trace_root}/best_trace.npz "
-            f"--qualification {formal_qualification} --object hocap_170650 --replica 8 "
+            f"--qualification {formal_qualification_path} --object hocap_170650 --replica 8 "
             "--start-frame 0 --end-frame 321",
             f"{replay_prefix} --trace {trace_root}/best_trace.npz "
-            f"--qualification {formal_qualification} --object hocap_170650 --replica 8 "
+            f"--qualification {formal_qualification_path} --object hocap_170650 --replica 8 "
             "--no-reference-ghost --start-frame 0 --end-frame 321",
             f"{replay_prefix} --trace {trace_root}/best_trace.npz "
-            f"--qualification {formal_qualification} --object hocap_170650 --replica 8 "
+            f"--qualification {formal_qualification_path} --object hocap_170650 --replica 8 "
             "--start-frame 300 --end-frame 321",
             f"{replay_prefix} --trace {trace_root}/failure_trace.npz "
-            f"--qualification {formal_qualification} --object hocap_170650 --replica 2 "
+            f"--qualification {formal_qualification_path} --object hocap_170650 --replica 2 "
             "--frame 295",
         ],
     }
