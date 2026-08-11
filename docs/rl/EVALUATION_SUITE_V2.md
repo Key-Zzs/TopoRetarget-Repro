@@ -40,3 +40,12 @@ Source-relative geometry fidelity remains a separate legacy diagnostic.
 
 `SR_qualified = SR_kinematic AND SR_physics`. Future bimanual trajectories
 require the object metrics and the joint/fingertip pass for both hands.
+
+## Reference-kinematics V2 traces
+
+Phase 3 traces carry `reference_kinematics_version=2`, signed world-frame
+actual and reference object twists, their residual norms, and the two frozen
+Reward V2 components.  These fields are additional diagnostics: they do not
+replace `E_r`, `E_t`, `E_j`, `E_ft`, or any physics gate.  A terminal reference
+that is still moving must be reported as a terminal-semantics mismatch rather
+than silently changing the absolute terminal-stability definition.

@@ -1,0 +1,8 @@
+schema_version: Stage16DReferenceKinematicsV2ConfigV1
+reference_kinematics_version: 2
+runtime_control_hz: 20.0
+runtime_samples: 321
+source_samples: 41
+time_scale: 8
+angular_velocity_convention: "world: [omega]_x = R_dot @ R_T"
+reference_root: .local/reports/stage16d_reference_kinematics_v2/references

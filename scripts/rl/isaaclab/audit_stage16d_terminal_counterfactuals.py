@@ -187,7 +187,9 @@ def _apply_gravity_only(cfg: Any) -> None:
     cfg.object_170650.spawn.rigid_props.disable_gravity = False
 
 
-def _configure_env(*, clip: str, count: int, gravity: bool) -> tuple[Any, Any]:
+def _configure_env(
+    *, clip: str, count: int, gravity: bool, reference_kinematics_v2_root: Path | None
+) -> tuple[Any, Any]:
     from toporetarget.rl.environments.isaaclab_backend import (
         ppo26d_reference_tracking_env_cfg as ppo_cfg,
     )
@@ -197,6 +199,10 @@ def _configure_env(*, clip: str, count: int, gravity: bool) -> tuple[Any, Any]:
 
     cfg = ppo_cfg.IsaacPPO26DReferenceTrackingEnvCfg()
     ppo_cfg.configure_stage16d_ppo26d(cfg, num_envs=count, clip=clip, rsi=False, critical_dr=False)
+    if reference_kinematics_v2_root is not None:
+        ppo_cfg.configure_stage16d_reference_kinematics_v2(
+            cfg, reference_root=reference_kinematics_v2_root
+        )
     if gravity:
         _apply_gravity_only(cfg)
     return cfg, IsaacPPO26DReferenceTrackingEnv(cfg)
@@ -225,7 +231,12 @@ def _gravity_replay(
     try:
         import torch
 
-        cfg, env = _configure_env(clip=args.clip, count=len(selections), gravity=True)
+        cfg, env = _configure_env(
+            clip=args.clip,
+            count=len(selections),
+            gravity=True,
+            reference_kinematics_v2_root=args.reference_kinematics_v2_root,
+        )
         env.reset(seed=20260811)
         selection_replicas = [int(row["replica"]) for row in selections]
         selected_actions = torch.as_tensor(
@@ -360,7 +371,12 @@ def _free_drift(
             initial_twist = np.repeat(reference_twist[-1:, :], len(selections), axis=0)
         else:
             raise ValueError(f"unknown initial state: {initial_kind}")
-        cfg, env = _configure_env(clip=args.clip, count=len(selections), gravity=args.gravity)
+        cfg, env = _configure_env(
+            clip=args.clip,
+            count=len(selections),
+            gravity=args.gravity,
+            reference_kinematics_v2_root=args.reference_kinematics_v2_root,
+        )
         env.reset(seed=20260811)
         object_state = torch.as_tensor(
             np.concatenate((initial_pose, initial_twist), axis=-1),
@@ -453,6 +469,11 @@ def main() -> int:
     parser.add_argument("--trace", type=Path, required=True)
     parser.add_argument("--qualification", type=Path, required=True)
     parser.add_argument("--reference", type=Path, required=True)
+    parser.add_argument(
+        "--reference-kinematics-v2-root",
+        type=Path,
+        help="Bind V2 during the bounded counterfactual; required when --reference is V2.",
+    )
     parser.add_argument("--mode", choices=("gravity_replay", "free_drift"), required=True)
     parser.add_argument("--initial-state", choices=("last_contact", "reference_terminal"))
     parser.add_argument("--gravity", action="store_true")

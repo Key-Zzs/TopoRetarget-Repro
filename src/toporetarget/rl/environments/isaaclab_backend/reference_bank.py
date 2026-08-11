@@ -82,6 +82,9 @@ class WorldWristReferenceBank:
         link_order: tuple[str, ...] | None = None
         frame_count: int | None = None
         timestamps: np.ndarray | None = None
+        source_frame_count: int | None = None
+        reference_time_scale: int | None = None
+        identifier: str | None = None
         for clip_id in sorted(paths):
             path = Path(paths[clip_id])
             if not path.is_file():
@@ -96,26 +99,59 @@ class WorldWristReferenceBank:
                 current_link_order = tuple(metadata["tracked_link_names"])
                 source_timestamps = np.asarray(source["timestamps"], dtype=np.float64)
                 current_timestamps = source_timestamps.astype(np.float32)
+                kinematics_version = int(metadata.get("reference_kinematics_version", 1))
+                current_scale = int(metadata.get("time_scale", 1))
+                current_source_frames = int(metadata.get("source_frames", source_timestamps.size))
+                expected_frames = 321 if kinematics_version == 2 else 41
                 if (
-                    current_timestamps.shape != (41,)
+                    current_timestamps.shape != (expected_frames,)
                     or not np.all(np.diff(source_timestamps) > 0.0)
                     or not np.isclose(np.median(np.diff(source_timestamps)), 0.05, atol=1.0e-8)
                 ):
-                    raise ValueError(f"{path} is not the frozen 41-frame, 20 Hz reference")
+                    raise ValueError(f"{path} is not a valid 20 Hz Stage 16 reference")
+                if kinematics_version == 2 and (
+                    current_scale != 8
+                    or current_source_frames != 41
+                    or metadata.get("angular_velocity_convention")
+                    != "world: [omega]_x = R_dot @ R_T"
+                ):
+                    raise ValueError(f"{path} is not a valid Stage16DReferenceKinematicsV2")
                 if joint_order is None:
-                    joint_order, link_order, frame_count, timestamps = (
+                    (
+                        joint_order,
+                        link_order,
+                        frame_count,
+                        timestamps,
+                        source_frame_count,
+                        reference_time_scale,
+                        identifier,
+                    ) = (
                         current_joint_order,
                         current_link_order,
                         current_timestamps.size,
                         current_timestamps,
+                        current_source_frames,
+                        current_scale,
+                        (
+                            "world_wrist_reference_bank_kinematics_v2"
+                            if kinematics_version == 2
+                            else "world_wrist_reference_bank_v1"
+                        ),
                     )
                 else:
-                    assert link_order is not None and timestamps is not None
+                    assert (
+                        link_order is not None
+                        and timestamps is not None
+                        and source_frame_count is not None
+                        and reference_time_scale is not None
+                    )
                     if (
                         current_joint_order != joint_order
                         or current_link_order != link_order
                         or current_timestamps.shape != timestamps.shape
                         or not np.allclose(current_timestamps, timestamps)
+                        or current_source_frames != source_frame_count
+                        or current_scale != reference_time_scale
                     ):
                         raise ValueError(
                             "reference clips do not share the frozen Stage 16-C contract"
@@ -125,7 +161,14 @@ class WorldWristReferenceBank:
                     if not np.isfinite(value).all():
                         raise ValueError(f"{path} has non-finite {field}")
                     arrays[field].append(value)
-        assert joint_order is not None and link_order is not None and frame_count is not None
+        assert (
+            joint_order is not None
+            and link_order is not None
+            and frame_count is not None
+            and source_frame_count is not None
+            and reference_time_scale is not None
+            and identifier is not None
+        )
         if len(joint_order) != 20 or len(link_order) != 16:
             raise ValueError("reference bank requires 20 joints and 16 tracked links")
         self.device = torch.device(device)
@@ -137,13 +180,16 @@ class WorldWristReferenceBank:
             setattr(self, field, torch.as_tensor(np.stack(values), device=self.device))
         self.valid_mask = torch.ones((2, self.frame_count), dtype=torch.bool, device=self.device)
         self.manifest = WorldWristReferenceBankManifest(
-            identifier="world_wrist_reference_bank_v1",
+            identifier=identifier,
             frame_count=self.frame_count,
             control_hz=20.0,
             clip_ids=self.clip_ids,
             joint_order=self.joint_order,
             tracked_link_names=self.tracked_link_names,
             hashes=dict(self.hashes),
+            source_frame_count=source_frame_count,
+            source_control_hz=20.0,
+            reference_time_scale=reference_time_scale,
         )
         self.object_axis_points_local = self._local_axis_points()
 
@@ -204,7 +250,7 @@ class WorldWristReferenceBank:
 
         if isinstance(time_scale, bool) or not isinstance(time_scale, int) or time_scale < 1:
             raise ValueError("reference_time_scale must be a positive integer")
-        if time_scale == 1:
+        if time_scale == self.manifest.reference_time_scale:
             return
         if self.manifest.reference_time_scale != 1:
             raise RuntimeError("reference bank has already been retimed")
