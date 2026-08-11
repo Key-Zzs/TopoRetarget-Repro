@@ -55,7 +55,7 @@ only the bounded `hocap_170650` Reward V2 experiment.
 The terminal residual/contact attribution rerun is complete.  It is an
 evaluation gate, not a policy-training phase.
 
-### Phase 3 — Object Twist Reward (REWARD_V2_PARTIAL; P1 INSUFFICIENT)
+### Object Twist Reward V2 (COMPLETED / PARTIAL)
 
 Only after Phases 1–2 establish that reference twist is a valid target and
 residual object dynamics are a material terminal failure, version the PPO
@@ -69,7 +69,30 @@ sample gate because terminal contact and stability regressed against the frozen
 V1 4M baseline. This result does not authorize a 4M/16M continuation or any
 reward/physics-contract expansion.
 
-### Phase 4 — Causal Decision Tree (FUTURE)
+### Reference-Gated Contact Reward V3 (CURRENT)
+
+Reward V3 is the current single-variable causal experiment:
+
+```text
+Reward V3 = Reward V2 + reference-gated fingertip-to-active-object contact reward
+```
+
+It retains Reference Kinematics V2, the 764-D observation, 26-D action,
+physics, controller, and PPO hyperparameters. The mask is reference-only
+Wuji distal-root proximity to the visual object surface; the actual signal is
+strictly a current filtered fingertip--active-object PhysX pair force. It adds
+neither contact-loss termination, terminal/penetration reward, guidance, nor a
+physics curriculum. Signal qualification is fail-closed: historical aggregate
+force telemetry cannot substitute for exact pair force.
+
+If V3 is sufficient, freeze the causal reward contract before deciding between
+the second clip/multi-clip route and a later causal physics curriculum. If
+persistent contact loss remains, hysteretic contact-loss termination is a
+future separate version. If contact is good but terminal dynamics remain weak,
+Contact-ready RSI V2 plus gravity/friction curriculum is future work. H2R
+remains an optional separate lane only after bounded causal corrections fail.
+
+### Causal Decision Tree (FUTURE)
 
 | Observation | Next causal correction |
 | --- | --- |
@@ -108,3 +131,4 @@ and sensitivity analysis.
 - [Evaluation Suite V2](rl/EVALUATION_SUITE_V2.md)
 - [Reference Kinematics V2 contract](rl/REFERENCE_KINEMATICS_CONTRACT.md)
 - [Phase 3 object-dynamics reward](stages/STAGE16D_PHASE3_OBJECT_DYNAMICS_REWARD.md)
+- [Reference-gated contact reward V3](stages/STAGE16D_CONTACT_REWARD_V3.md)

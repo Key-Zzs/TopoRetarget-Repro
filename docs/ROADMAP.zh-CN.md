@@ -46,7 +46,7 @@ tracking error 分开，只授权有界的 `hocap_170650` Reward V2 experiment�
 
 terminal residual/contact attribution rerun 已完成。它是 evaluation gate，不是 policy-training phase。
 
-### Phase 3 — Object Twist Reward（REWARD_V2_PARTIAL；P1 INSUFFICIENT）
+### Object Twist Reward V2（COMPLETED / PARTIAL）
 
 仅在 Phase 1–2 证明 reference twist 是可信 target，且 residual object dynamics 是重要 terminal
 failure 后，才对 PPO tracking reward 版本化，加入 object linear-velocity 和 angular-velocity
@@ -58,7 +58,27 @@ Reference Kinematics V2 与 Phase 1-R attribution 已通过 entry gates。获授
 V1 4M baseline，terminal contact 与 stability 发生回退。该结果不授权继续到 4M/16M，
 也不授权扩展 reward 或 physics contract。
 
-### Phase 4 — Causal Decision Tree（FUTURE）
+### Reference-Gated Contact Reward V3（CURRENT）
+
+Reward V3 是当前唯一的因果单变量实验：
+
+```text
+Reward V3 = Reward V2 + reference-gated fingertip-to-active-object contact reward
+```
+
+它保留 Reference Kinematics V2、764-D observation、26-D action、physics、controller 和 PPO
+hyperparameters。mask 只由 Wuji distal-root 到 visual object surface 的 reference proximity
+决定；actual signal 严格是当前经 filter 的 fingertip--active-object PhysX pair force。不加入
+contact-loss termination、terminal/penetration reward、guidance 或 physics curriculum。signal
+qualification 采用 fail-closed：历史 aggregate force telemetry 不能替代精确 pair force。
+
+如果 V3 足够有效，先冻结 causal reward contract，再决定 second-clip/multi-clip 路线或后续的
+causal physics curriculum。若 persistent contact loss 仍存在，hysteretic contact-loss termination
+是未来独立版本；若 contact 良好但 terminal dynamics 仍弱，Contact-ready RSI V2 加
+gravity/friction curriculum 属于未来工作。只有有界 causal correction 全部失败时，H2R 才是可选的
+独立路线。
+
+### Causal Decision Tree（FUTURE）
 
 | 观察 | 下一项因果修正 |
 | --- | --- |
@@ -96,3 +116,4 @@ curricula、mass/inertia uncertainty、dynamics randomization 和 sensitivity an
 - [Evaluation Suite V2](rl/EVALUATION_SUITE_V2.md)
 - [Reference Kinematics V2 contract](rl/REFERENCE_KINEMATICS_CONTRACT.md)
 - [Phase 3 object-dynamics reward](stages/STAGE16D_PHASE3_OBJECT_DYNAMICS_REWARD.md)
+- [Reference-gated contact reward V3](stages/STAGE16D_CONTACT_REWARD_V3.md)

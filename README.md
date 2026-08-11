@@ -128,6 +128,12 @@ rates. Trajectory metrics use a common world/env frame with the environment
 origin removed; legacy metrics remain available for comparison but are not
 silently redefined.
 
+The Stage 16-D causal PPO pipeline supports reference pose and object-twist
+tracking together with a reference-gated contact-consistency reward. The latter
+uses reference Wuji fingertip proximity and current PhysX fingertip-to-active-
+object pair force only during policy optimization; it never directly controls
+the object.
+
 Phase-specific terminal-dynamics attribution and detailed results are recorded
 in stage and RL documentation, with machine-readable artifacts kept in ignored
 local storage.
@@ -143,6 +149,8 @@ local storage.
   observation, RSI, reward, and gate contracts.
 - [Physics-correction PPO](docs/rl/PHYSICS_CORRECTION_PPO.md) — causal training
   boundary and decision tree.
+- [Reference-gated contact reward](docs/rl/REFERENCE_GATED_CONTACT_REWARD.md)
+  — V3 contact signal and causal boundary.
 - [Evaluation Suite V2](docs/rl/EVALUATION_SUITE_V2.md) — shared metric and
   success contract.
 - [Paper fidelity and engineering adaptations](docs/PAPER_FIDELITY.md) — what

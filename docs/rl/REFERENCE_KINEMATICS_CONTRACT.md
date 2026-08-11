@@ -36,3 +36,9 @@ terminal-stability gate.
 V1 policies retain their V1 provenance.  A V2 consumer must assert
 `reference_kinematics_version == 2` before loading V2 twists.  The metadata,
 not a filename convention, is the authoritative version check.
+
+Reward V3 is also a V2 consumer. Its reference expected-contact mask uses the
+five shared Evaluation Suite V2 distal-root landmarks and the V2 reference
+object pose with the visual object surface. The mask is materialized before
+PPO and is reference-only: actual contact or force can never select whether
+contact was expected.

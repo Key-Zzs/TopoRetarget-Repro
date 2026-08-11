@@ -41,6 +41,18 @@ Source-relative geometry fidelity remains a separate legacy diagnostic.
 `SR_qualified = SR_kinematic AND SR_physics`. Future bimanual trajectories
 require the object metrics and the joint/fingertip pass for both hands.
 
+## Reference-contact evaluation V1
+
+Reward V3 adds diagnostic contact behaviour without redefining any success
+gate: reference expected-contact fraction, actual fingertip--active-object
+contact fraction, expected-contact recall, per-finger recall, unexpected-
+contact rate, persistent-contact recall, longest loss gap, loss/recontact
+counts, terminal contact/expected-contact, and force mean/p95/max plus total
+impulse. A persistent reference-contact window is any run of at least three
+control steps with one or more active reference mask entries. Actual contact
+uses the same pair-specific filtered PhysX force source as the reward and its
+pre-frozen numerical floor.
+
 ## Reference-kinematics V2 traces
 
 Phase 3 traces carry `reference_kinematics_version=2`, signed world-frame
@@ -49,3 +61,8 @@ Reward V2 components.  These fields are additional diagnostics: they do not
 replace `E_r`, `E_t`, `E_j`, `E_ft`, or any physics gate.  A terminal reference
 that is still moving must be reported as a terminal-semantics mismatch rather
 than silently changing the absolute terminal-stability definition.
+
+Reward V3 traces additionally carry the reference mask, actual five-fingertip
+mask, exact fingertip-object pair force, force magnitude/scale, and
+`r_contact`. These are diagnostics and replay fields; they do not grant an
+episode physics qualification by themselves.

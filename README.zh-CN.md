@@ -114,6 +114,11 @@ rotation/translation tracking、retargeted-hand joint/fingertip tracking，以�
 kinematic、physics 和 qualified success rate。轨迹指标使用移除 environment origin 后的共同
 world/env frame；legacy metrics 仍会保留，但不会被静默重定义。
 
+Stage 16-D 因果 PPO pipeline 支持 reference pose、object twist tracking，以及
+reference-gated contact consistency reward。后者只在 policy optimization 中使用 reference
+Wuji fingertip proximity 和当前 PhysX fingertip-to-active-object pair force；它不直接控制
+object。
+
 阶段性的 terminal-dynamics attribution 与详细结果进入 stage/RL 文档；machine-readable
 artifact 保留在忽略的本地存储中。
 
@@ -127,6 +132,8 @@ artifact 保留在忽略的本地存储中。
 - [PPO-26D reference tracking](docs/rl/REFERENCE_TRACKING_PPO_26D.md) — action、
   observation、RSI、reward 与 gate 合同。
 - [Physics-correction PPO](docs/rl/PHYSICS_CORRECTION_PPO.md) — 因果训练边界与决策树。
+- [Reference-gated contact reward](docs/rl/REFERENCE_GATED_CONTACT_REWARD.md) — V3 contact
+  signal 与因果边界。
 - [Evaluation Suite V2](docs/rl/EVALUATION_SUITE_V2.md) — 共享指标与 success 合同。
 - [Paper fidelity and engineering adaptations](docs/PAPER_FIDELITY.md) — 论文一致性与
   明确的工程适配。
