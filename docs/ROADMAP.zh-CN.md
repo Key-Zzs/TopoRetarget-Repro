@@ -19,24 +19,29 @@ robot action -> hand-object contact -> object dynamics
 main causal lane 禁止 object guidance force、hidden controller、object-state correction、
 attachment 和 suction。
 
-### Phase 1 — Terminal Drift / Support / RSI Attribution（CURRENT）
+### Phase 1 — Terminal Drift / Support / RSI Attribution（VALIDATED）
 
 使用冻结 PPO checkpoint 和正式 frame-zero episodes 确定 terminal drift 的来源。审计
 reference terminal twist、actual/residual object twist、contact impulse/loss、zero-gravity
 persistence、source/support metadata 和 RSI implementation/state quality。本阶段不训练 policy。
 
-### Phase 2 — Evaluation Suite V2（CURRENT）
+### Phase 2 — Evaluation Suite V2（VALIDATED）
 
 冻结一个可加的统一评价合同，用于 single-clip PPO、Multi-Clip PPO、未来 adapter 和 physical
 curriculum。它报告 `E_r`、`E_t`、`E_j`、`E_ft`、`SR_kinematic`、`SR_physics` 和
 `SR_qualified`，同时以原名保留 legacy metrics。用该合同重新评价现有两条冻结 frame-zero baseline。
 
-### Phase 3 — Object Twist Reward（NEXT IF AUTHORIZED）
+### Phase 3 — Object Twist Reward（P1 INSUFFICIENT）
 
 仅在 Phase 1–2 证明 reference twist 是可信 target，且 residual object dynamics 是重要 terminal
 failure 后，才对 PPO tracking reward 版本化，加入 object linear-velocity 和 angular-velocity
 tracking。本阶段从一条 causal single-clip 的 retraining/visualization/evaluation 开始；不包含
 contact reward、external guidance 或 curriculum。
+
+Reference Kinematics V2 与 Phase 1-R attribution 已通过 entry gates。获授权的
+`hocap_170650` Reward V2 P1 probe 在第一个 1,048,576 sample gate 停止：相对冻结的
+V1 4M baseline，terminal contact 与 stability 发生回退。该结果不授权继续到 4M/16M，
+也不授权扩展 reward 或 physics contract。
 
 ### Phase 4 — Causal Decision Tree（FUTURE）
 
@@ -74,3 +79,5 @@ curricula、mass/inertia uncertainty、dynamics randomization 和 sensitivity an
 - [Terminal dynamics attribution](stages/STAGE16D_PHASE1_TERMINAL_DYNAMICS.md)
 - [PPO-26D contract](rl/REFERENCE_TRACKING_PPO_26D.md)
 - [Evaluation Suite V2](rl/EVALUATION_SUITE_V2.md)
+- [Reference Kinematics V2 contract](rl/REFERENCE_KINEMATICS_CONTRACT.md)
+- [Phase 3 object-dynamics reward](stages/STAGE16D_PHASE3_OBJECT_DYNAMICS_REWARD.md)

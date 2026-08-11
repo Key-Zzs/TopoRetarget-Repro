@@ -22,14 +22,14 @@ robot action -> hand-object contact -> object dynamics
 No object guidance force, hidden controller, object-state correction,
 attachment, or suction is part of the main causal lane.
 
-### Phase 1 — Terminal Drift / Support / RSI Attribution (CURRENT)
+### Phase 1 — Terminal Drift / Support / RSI Attribution (VALIDATED)
 
 Determine terminal-drift provenance with frozen PPO checkpoints and formal
 frame-zero episodes. Audit reference terminal twist, actual/residual object
 twist, contact impulse/loss, zero-gravity persistence, source/support metadata,
 and RSI implementation/state quality. This phase does not train a policy.
 
-### Phase 2 — Evaluation Suite V2 (CURRENT)
+### Phase 2 — Evaluation Suite V2 (VALIDATED)
 
 Freeze one additive evaluation contract for single-clip PPO, multi-clip PPO,
 future adapters, and physical curricula. It reports `E_r`, `E_t`, `E_j`,
@@ -37,13 +37,19 @@ future adapters, and physical curricula. It reports `E_r`, `E_t`, `E_j`,
 metrics under their original names. Re-evaluate the existing two frozen
 frame-zero baselines with this contract.
 
-### Phase 3 — Object Twist Reward (NEXT IF AUTHORIZED)
+### Phase 3 — Object Twist Reward (P1 INSUFFICIENT)
 
 Only after Phases 1–2 establish that reference twist is a valid target and
 residual object dynamics are a material terminal failure, version the PPO
 tracking reward to add object linear-velocity and angular-velocity tracking.
 This phase starts with one causal single-clip retraining/visualization/evaluation
 cycle; it does not include contact reward, external guidance, or curricula.
+
+Reference Kinematics V2 and the Phase 1-R attribution passed their entry gates.
+The authorized `hocap_170650` Reward V2 P1 probe stopped at its first 1,048,576
+sample gate because terminal contact and stability regressed against the frozen
+V1 4M baseline. This result does not authorize a 4M/16M continuation or any
+reward/physics-contract expansion.
 
 ### Phase 4 — Causal Decision Tree (FUTURE)
 
@@ -82,3 +88,5 @@ and sensitivity analysis.
 - [Terminal dynamics attribution](stages/STAGE16D_PHASE1_TERMINAL_DYNAMICS.md)
 - [PPO-26D contract](rl/REFERENCE_TRACKING_PPO_26D.md)
 - [Evaluation Suite V2](rl/EVALUATION_SUITE_V2.md)
+- [Reference Kinematics V2 contract](rl/REFERENCE_KINEMATICS_CONTRACT.md)
+- [Phase 3 object-dynamics reward](stages/STAGE16D_PHASE3_OBJECT_DYNAMICS_REWARD.md)
