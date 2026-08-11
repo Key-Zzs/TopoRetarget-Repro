@@ -196,3 +196,22 @@ audit passed absolute limits (0.825 mm max, 0.765 mm active p95) but failed the
 source-relative gates. It is therefore
 `STAGE16D_170105_PPO_TRAINED_NOT_PHYSICS_QUALIFIED`, which leaves D.6
 multi-clip PPO and D.7 qualified export unauthorized.
+
+## D.5-R7 Phase 1 / Evaluation Suite V2 reading
+
+The frozen R7 traces are now evaluated by the versioned Evaluation Suite V2,
+which keeps kinematic tracking, absolute physical safety, and qualified success
+as separate outcomes.  This does not revise the historical R7 qualification:
+source-relative geometry remains a separate legacy diagnostic.  It makes the
+absolute hand-object penetration gate explicit and avoids treating a legacy
+source-relative mismatch as an object collision.
+
+Before any object-twist reward proposal, the factor-8 reference must satisfy
+the pose/timestamp-to-twist finite-difference contract.  Both frozen clips
+currently fail that contract for stored linear and world-angular twist.  The
+stored terminal motion is therefore evidence of a defective reward target, not
+evidence that a velocity reward should be tuned.  The admissible decision is
+`PHASE3_OBJECT_TWIST_REWARD_NOT_RECOMMENDED` until a versioned reference repair
+and fresh RSI/support diagnostics pass their predeclared checks.  This result
+does not authorize PPO retraining, a contact reward, a termination change, a
+support/gravity curriculum, or H2R guidance.

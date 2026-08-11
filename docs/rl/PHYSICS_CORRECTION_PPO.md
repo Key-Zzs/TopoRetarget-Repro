@@ -74,6 +74,21 @@ conda run -n toporetarget-rl python scripts/rl/isaaclab/train_stage16d_two_clip_
 Today every command above exits with its explicit `NOT_RUN` or
 `NOT_AUTHORIZED` record. None silently starts workers or creates a checkpoint.
 
+## Phase 1 precondition for any future correction
+
+An object-twist term is only meaningful when reference pose, timestamps, and
+stored linear/world-angular twist agree under the declared finite-difference
+and quaternion-frame convention.  Stage 16-D's frozen factor-8 references do
+not currently meet that precondition.  Consequently, this document is a
+future-correction design record, not authority to edit the reward: the current
+evidence-based decision is `PHASE3_OBJECT_TWIST_REWARD_NOT_RECOMMENDED`.
+
+Any reconsideration must first version and validate the reference repair, then
+complete fresh bounded RSI state-quality and gravity/support counterfactual
+diagnostics.  It must preserve the causal 26-D `env.step(action)` pathway and
+cannot use contact shaping, contact termination, curriculum physics, attachment,
+or external H2R actions as a substitute for that evidence.
+
 ## D.4R2 superseding entry decision
 
 `STAGE16D_GEOMETRY_GATE_REVISION_BLOCKED` now precedes all commands above.

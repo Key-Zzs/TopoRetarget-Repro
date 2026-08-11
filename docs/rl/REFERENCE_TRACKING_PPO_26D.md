@@ -113,3 +113,18 @@ stability were 0.00, and the relative geometry comparison failed despite
 passing the absolute geometry limits. R6C/R6D were not entered; because neither
 single-clip R7 physics-qualified, D.6 multi-clip training and D.7 export are
 not authorized.
+
+## Frozen-reference twist sanity boundary
+
+The 26-D policy contract above remains a record of the frozen R7 baseline; it
+does not assert that every stored reference derivative is a valid reward target.
+The subsequent Phase 1 audit compares factor-8 pose finite differences against
+stored linear and world-angular object twist and finds the contract invalid for
+both formal clips.  In particular, terminal stored twist must not be interpreted
+as a verified physical desired velocity.
+
+Evaluation Suite V2 can still report tracking and absolute safety from the
+frozen physical traces, but any Phase 3 object-twist reward is blocked until a
+new reference version passes the sanity checks and bounded RSI/support
+counterfactuals are complete.  No policy training or reward modification is
+implied by this documentation update.
