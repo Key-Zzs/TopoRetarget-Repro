@@ -10,6 +10,10 @@ from toporetarget.rl.environments.isaaclab_backend.reward_terms import (
     Stage16WorldWristRewardProfileV1,
     world_wrist_reward_terms,
 )
+from toporetarget.rl.reference_tracking.reference_gated_contact import (
+    ReferenceGatedContactRewardContractV1,
+    reference_gated_contact_reward,
+)
 
 
 @dataclass(frozen=True)
@@ -198,9 +202,69 @@ def ppo26d_reward_v2_object_twist_terms(
     return terms
 
 
+@dataclass(frozen=True)
+class TopoRetargetReferenceTrackingReward26DV3(TopoRetargetReferenceTrackingReward26DV2):
+    """Reward V2 plus exactly one reference-gated fingertip-contact term."""
+
+    identifier: str = "TopoRetargetReferenceTrackingReward26DV3"
+    contact_weight: float = 1.0
+    contact_distance_threshold_m: float = 0.03
+    contact_epsilon_n: float = 1.0e-5
+    contact_force_scale_lambda_n: float = 0.0
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.contact_weight != 1.0:
+            raise ValueError("Reward V3 contact weight is frozen at 1.0")
+        if self.contact_distance_threshold_m != 0.03:
+            raise ValueError("Reward V3 contact threshold is frozen at 0.03 m")
+        if self.contact_epsilon_n != 1.0e-5:
+            raise ValueError("Reward V3 contact epsilon is frozen at 1e-5")
+        if self.contact_force_scale_lambda_n <= self.contact_epsilon_n:
+            raise ValueError("Reward V3 requires a frozen positive contact-force scale")
+
+    def contact_contract(self) -> ReferenceGatedContactRewardContractV1:
+        return ReferenceGatedContactRewardContractV1(
+            xi_c_m=self.contact_distance_threshold_m,
+            contact_weight=self.contact_weight,
+            epsilon_n=self.contact_epsilon_n,
+        )
+
+
+def ppo26d_reward_v3_reference_gated_contact_terms(
+    *,
+    object_twist_world: torch.Tensor,
+    object_twist_world_ref: torch.Tensor,
+    reference_expected_contact_mask: torch.Tensor,
+    fingertip_object_pair_force_world: torch.Tensor,
+    profile: TopoRetargetReferenceTrackingReward26DV3,
+    **kwargs: torch.Tensor,
+) -> dict[str, torch.Tensor]:
+    """Return the untouched V2 terms and the sole V3 additive term."""
+
+    v2 = ppo26d_reward_v2_object_twist_terms(
+        object_twist_world=object_twist_world,
+        object_twist_world_ref=object_twist_world_ref,
+        profile=profile,
+        **kwargs,
+    )
+    contact = reference_gated_contact_reward(
+        reference_expected_mask=reference_expected_contact_mask,
+        fingertip_object_pair_force_world=fingertip_object_pair_force_world,
+        lambda_c_n=profile.contact_force_scale_lambda_n,
+        contract=profile.contact_contract(),
+    )
+    total = v2["total"] + contact["r_contact"]
+    if not bool(torch.isfinite(total).all()):
+        raise FloatingPointError("Stage 16-D Reward V3 became non-finite")
+    return {**v2, **contact, "total": total}
+
+
 __all__ = [
     "TopoRetargetReferenceTrackingReward26DV1",
     "TopoRetargetReferenceTrackingReward26DV2",
+    "TopoRetargetReferenceTrackingReward26DV3",
     "ppo26d_reward_terms",
     "ppo26d_reward_v2_object_twist_terms",
+    "ppo26d_reward_v3_reference_gated_contact_terms",
 ]

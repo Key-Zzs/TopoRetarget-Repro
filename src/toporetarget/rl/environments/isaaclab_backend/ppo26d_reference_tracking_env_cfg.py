@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from isaaclab.utils import configclass
@@ -22,6 +23,8 @@ class IsaacPPO26DReferenceTrackingEnvCfg(IsaacPhysicsConsistentRetargetingEnvCfg
     ppo26d_observation_contract = "Stage16DPPO26DObservationV2"
     ppo26d_action_contract = "Stage16DReferenceResidualAction26DV1"
     ppo26d_reward_contract = "TopoRetargetReferenceTrackingReward26DV1"
+    ppo26d_reference_contact_mask_paths: dict[str, str] | None = None
+    ppo26d_contact_reward_contract_path: str | None = None
     reference_kinematics_version = 1
     ppo26d_workspace_radius_m = 0.75
     ppo26d_object_linear_speed_max_mps = 10.0
@@ -98,9 +101,44 @@ def configure_stage16d_phase3_object_twist_reward(
     cfg.ppo26d_reward_contract = "TopoRetargetReferenceTrackingReward26DV2"
 
 
+def configure_stage16d_reference_gated_contact_reward(
+    cfg: IsaacPPO26DReferenceTrackingEnvCfg,
+    *,
+    reference_root: Path,
+    contact_reward_contract: Path,
+    contact_mask_root: Path,
+) -> None:
+    """Bind a fully frozen V3 reward without changing physics or observations."""
+
+    configure_stage16d_phase3_object_twist_reward(cfg, reference_root=reference_root)
+    receipt_path = contact_reward_contract.resolve()
+    payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    if payload.get("status") != "CONTACT_REWARD_CONTRACT_FROZEN":
+        raise ValueError("PPO26D_REWARD_V3_CONTACT_CONTRACT_NOT_FROZEN")
+    parameters = payload.get("frozen_parameters")
+    if not isinstance(parameters, dict) or not isinstance(
+        parameters.get("lambda_c_n"), (int, float)
+    ):
+        raise ValueError("PPO26D_REWARD_V3_CONTACT_LAMBDA_MISSING")
+    if float(parameters["lambda_c_n"]) <= 1.0e-5:
+        raise ValueError("PPO26D_REWARD_V3_CONTACT_LAMBDA_INVALID")
+    paths = {
+        clip: contact_mask_root.resolve()
+        / f"reference_contact_mask_{clip.removeprefix('hocap_')}.npz"
+        for clip in ("hocap_170105", "hocap_170650")
+    }
+    missing = [str(path) for path in paths.values() if not path.is_file()]
+    if missing:
+        raise FileNotFoundError(f"PPO26D_REWARD_V3_CONTACT_MASK_MISSING:{missing}")
+    cfg.ppo26d_reward_contract = "TopoRetargetReferenceTrackingReward26DV3"
+    cfg.ppo26d_contact_reward_contract_path = str(receipt_path)
+    cfg.ppo26d_reference_contact_mask_paths = {clip: str(path) for clip, path in paths.items()}
+
+
 __all__ = [
     "IsaacPPO26DReferenceTrackingEnvCfg",
     "configure_stage16d_ppo26d",
     "configure_stage16d_reference_kinematics_v2",
     "configure_stage16d_phase3_object_twist_reward",
+    "configure_stage16d_reference_gated_contact_reward",
 ]

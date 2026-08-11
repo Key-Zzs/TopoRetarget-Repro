@@ -7,16 +7,25 @@ terminal/contact/geometry PPO blocking with training-time numerical safety.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 
+from toporetarget.rl.geometry_audit.hand_collision_reconstruction import HAND_COLLISION_BODY_NAMES
 from toporetarget.rl.ppo.ppo26d_contract import Stage16DPPO26DObservationV2
 from toporetarget.rl.reference_tracking.ppo26d_reward import (
     TopoRetargetReferenceTrackingReward26DV1,
     TopoRetargetReferenceTrackingReward26DV2,
+    TopoRetargetReferenceTrackingReward26DV3,
     ppo26d_reward_v2_object_twist_terms,
+    ppo26d_reward_v3_reference_gated_contact_terms,
+)
+from toporetarget.rl.reference_tracking.reference_gated_contact import (
+    fingertip_force_indices,
 )
 
 from .ppo26d_reference_tracking_env_cfg import IsaacPPO26DReferenceTrackingEnvCfg
@@ -39,9 +48,33 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
     ) -> None:
         self._observation_contract = Stage16DPPO26DObservationV2()
         self._reward_contract: (
-            TopoRetargetReferenceTrackingReward26DV1 | TopoRetargetReferenceTrackingReward26DV2
+            TopoRetargetReferenceTrackingReward26DV1
+            | TopoRetargetReferenceTrackingReward26DV2
+            | TopoRetargetReferenceTrackingReward26DV3
         )
-        if cfg.ppo26d_reward_contract == "TopoRetargetReferenceTrackingReward26DV2":
+        self._reference_contact_mask_by_clip: torch.Tensor | None = None
+        self._fingertip_force_sensor_indices: torch.Tensor | None = None
+        self._contact_reward_receipt: dict[str, object] | None = None
+        if cfg.ppo26d_reward_contract == "TopoRetargetReferenceTrackingReward26DV3":
+            if cfg.reference_kinematics_version != 2:
+                raise RuntimeError("PPO26D_REWARD_V3_REQUIRES_REFERENCE_KINEMATICS_V2")
+            if cfg.ppo26d_contact_reward_contract_path is None:
+                raise RuntimeError("PPO26D_REWARD_V3_CONTACT_CONTRACT_PATH_MISSING")
+            receipt = json.loads(
+                Path(cfg.ppo26d_contact_reward_contract_path).read_text(encoding="utf-8")
+            )
+            parameters = receipt.get("frozen_parameters")
+            if (
+                receipt.get("status") != "CONTACT_REWARD_CONTRACT_FROZEN"
+                or not isinstance(parameters, dict)
+                or not isinstance(parameters.get("lambda_c_n"), (int, float))
+            ):
+                raise RuntimeError("PPO26D_REWARD_V3_CONTACT_CONTRACT_INVALID")
+            self._contact_reward_receipt = receipt
+            self._reward_contract = TopoRetargetReferenceTrackingReward26DV3(
+                contact_force_scale_lambda_n=float(parameters["lambda_c_n"])
+            )
+        elif cfg.ppo26d_reward_contract == "TopoRetargetReferenceTrackingReward26DV2":
             if cfg.reference_kinematics_version != 2:
                 raise RuntimeError("PPO26D_REWARD_V2_REQUIRES_REFERENCE_KINEMATICS_V2")
             self._reward_contract = TopoRetargetReferenceTrackingReward26DV2()
@@ -60,7 +93,10 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         self._ppo26d_last_terminated: torch.Tensor | None = None
         self._ppo26d_last_timed_out: torch.Tensor | None = None
         super().__init__(cfg, render_mode, **kwargs)
-        if isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV2) and (
+        if isinstance(
+            self._reward_contract,
+            (TopoRetargetReferenceTrackingReward26DV2, TopoRetargetReferenceTrackingReward26DV3),
+        ) and (
             self.reference_bank.manifest.identifier != "world_wrist_reference_bank_kinematics_v2"
             or self.reference_bank.manifest.reference_time_scale != 8
             or self.reference_bank.frame_count != 321
@@ -75,6 +111,30 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         )
         self._ppo26d_object_write_baseline = self._object_state_write_count.clone()
         self._ppo26d_wrist_write_baseline = self._wrist_step_state_write_count.clone()
+        if isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV3):
+            paths = cfg.ppo26d_reference_contact_mask_paths
+            if paths is None or set(paths) != set(self.reference_bank.clip_ids):
+                raise RuntimeError("PPO26D_REWARD_V3_CONTACT_MASK_PATHS_INVALID")
+            masks: list[np.ndarray] = []
+            for clip in self.reference_bank.clip_ids:
+                with np.load(Path(paths[clip]), allow_pickle=False) as archive:
+                    if "reference_expected_contact_mask" not in archive.files:
+                        raise RuntimeError("PPO26D_REWARD_V3_CONTACT_MASK_FIELD_MISSING")
+                    mask = np.asarray(archive["reference_expected_contact_mask"], dtype=bool)
+                if mask.shape != (self.reference_bank.frame_count, 5):
+                    raise RuntimeError(
+                        "PPO26D_REWARD_V3_CONTACT_MASK_SHAPE_INVALID:"
+                        f"clip={clip}:shape={mask.shape}"
+                    )
+                masks.append(mask)
+            self._reference_contact_mask_by_clip = torch.as_tensor(
+                np.stack(masks), dtype=torch.bool, device=self.device
+            )
+            self._fingertip_force_sensor_indices = torch.as_tensor(
+                fingertip_force_indices(HAND_COLLISION_BODY_NAMES),
+                dtype=torch.long,
+                device=self.device,
+            )
 
     def _reset_idx(self, env_ids: Sequence[int] | torch.Tensor | None) -> None:
         super()._reset_idx(env_ids)
@@ -278,12 +338,86 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             )
         return {"policy": observation}
 
+    def _active_object_pair_force_matrix(self) -> torch.Tensor:
+        """Return `[N,21,3]` forces on the active object from each hand body.
+
+        The object-side filtered sensor excludes self-collision, inactive object,
+        palm-only aggregation, and scene/support contacts by construction.
+        """
+
+        first_force = self._object_contact_sensors["Object170105"].data.force_matrix_w
+        second_force = self._object_contact_sensors["Object170650"].data.force_matrix_w
+        if first_force is None or second_force is None:
+            raise RuntimeError("PPO26D reward requires object contact force matrices")
+        expected = (self.num_envs, 1, len(HAND_COLLISION_BODY_NAMES), 3)
+        if tuple(first_force.shape) != expected or tuple(second_force.shape) != expected:
+            raise RuntimeError(
+                "PPO26D_CONTACT_PAIR_FORCE_SHAPE_INVALID:"
+                f"first={tuple(first_force.shape)} second={tuple(second_force.shape)}"
+            )
+        pair_force = torch.where(
+            (self._clip_index == 0)[:, None, None], first_force[:, 0], second_force[:, 0]
+        )
+        if not bool(torch.isfinite(pair_force).all()):
+            raise FloatingPointError("PPO26D_CONTACT_PAIR_FORCE_NONFINITE")
+        return pair_force
+
+    def _reference_expected_contact_mask(self, index: torch.Tensor) -> torch.Tensor:
+        masks = self._reference_contact_mask_by_clip
+        if masks is None:
+            raise RuntimeError("PPO26D_REWARD_V3_CONTACT_MASK_NOT_INITIALIZED")
+        return masks[self._clip_index, index]
+
     def _get_rewards(self) -> torch.Tensor:
         first_difference = self._actions - self._previous_actions
         second_difference = (
             self._actions - 2.0 * self._previous_actions + self._second_previous_actions
         )
-        if isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV2):
+        if isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV3):
+            state = self._state()
+            index = self._target_reference_index
+            force_indices = self._fingertip_force_sensor_indices
+            if force_indices is None:
+                raise RuntimeError("PPO26D_REWARD_V3_FINGERTIP_FORCE_MAPPING_NOT_INITIALIZED")
+            pair_force = self._active_object_pair_force_matrix()
+            terms = ppo26d_reward_v3_reference_gated_contact_terms(
+                object_axis_points=state["object_axis_points_scene"],
+                object_axis_points_ref=self.reference_bank.gather(
+                    "object_axis_points_world_ref", self._clip_index, index
+                ),
+                tracked_links=state["tracked_links_scene"],
+                tracked_links_ref=self.reference_bank.gather(
+                    "tracked_link_positions_world_ref", self._clip_index, index
+                ),
+                finger_q=state["finger_q"],
+                finger_q_ref=self.reference_bank.gather("q_finger_ref", self._clip_index, index),
+                joint_lower=self.joint_lower,
+                joint_upper=self.joint_upper,
+                wrist_position=state["wrist_position_scene"],
+                wrist_quaternion_wxyz=state["wrist_quaternion_wxyz"],
+                wrist_position_ref=self.reference_bank.gather(
+                    "wrist_pose_translation_world_ref", self._clip_index, index
+                ),
+                wrist_quaternion_ref_wxyz=self.reference_bank.gather(
+                    "wrist_pose_quaternion_world_ref", self._clip_index, index
+                ),
+                action=self._actions,
+                previous_action=self._previous_actions,
+                second_previous_action=self._second_previous_actions,
+                object_twist_world=state["object_twist_world"],
+                object_twist_world_ref=self.reference_bank.gather(
+                    "object_twist_world_ref", self._clip_index, index
+                ),
+                reference_expected_contact_mask=self._reference_expected_contact_mask(index),
+                fingertip_object_pair_force_world=pair_force.index_select(1, force_indices),
+                profile=self._reward_contract,
+            )
+            self._last_reward_terms = terms
+            self._second_previous_actions.copy_(self._previous_actions)
+            self._previous_actions.copy_(self._actions)
+            self._reference_index.copy_(self._target_reference_index)
+            reward = terms["total"]
+        elif isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV2):
             state = self._state()
             index = self._target_reference_index
             terms = ppo26d_reward_v2_object_twist_terms(
@@ -337,13 +471,7 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             "smoothness_finger": first_difference[:, 6:26].square().sum(dim=-1)
             + second_difference[:, 6:26].square().sum(dim=-1),
         }
-        first_force = self._object_contact_sensors["Object170105"].data.force_matrix_w
-        second_force = self._object_contact_sensors["Object170650"].data.force_matrix_w
-        if first_force is None or second_force is None:
-            raise RuntimeError("PPO26D reward requires object contact force matrices")
-        pair_force = torch.where(
-            (self._clip_index == 0)[:, None, None], first_force[:, 0], second_force[:, 0]
-        )
+        pair_force = self._active_object_pair_force_matrix()
         self.extras["ppo26d"].update(
             {
                 "contact_any": (torch.linalg.vector_norm(pair_force, dim=-1) > 1.0e-4)
@@ -352,6 +480,18 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
                 "actuator_effort": self._robot.data.applied_torque.clone(),
             }
         )
+        if isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV3):
+            self.extras["ppo26d"].update(
+                {
+                    "reference_expected_contact_mask": self._last_reward_terms[
+                        "reference_expected_contact_mask"
+                    ].clone(),
+                    "actual_fingertip_object_contact_mask": self._last_reward_terms[
+                        "actual_fingertip_object_contact_mask"
+                    ].clone(),
+                    "contact_reward": self._last_reward_terms["r_contact"].clone(),
+                }
+            )
         self._capture_ppo26d_trace_row()
         return reward
 
@@ -492,13 +632,7 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         if step >= self._ppo26d_trace_capacity:
             raise RuntimeError("PPO26D trace capacity exhausted")
         state = self._state()
-        first_force = self._object_contact_sensors["Object170105"].data.force_matrix_w
-        second_force = self._object_contact_sensors["Object170650"].data.force_matrix_w
-        if first_force is None or second_force is None:
-            raise RuntimeError("PPO26D trace capture requires object contact force matrices")
-        pair_force = torch.where(
-            (self._clip_index == 0)[:, None, None], first_force[:, 0], second_force[:, 0]
-        )
+        pair_force = self._active_object_pair_force_matrix()
         effort = self._robot.data.applied_torque
         terminated = self._ppo26d_last_terminated
         timed_out = self._ppo26d_last_timed_out
@@ -591,6 +725,26 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
                     "reward_obj_ang_vel": self._last_reward_terms["r_obj_ang_vel"],
                     "error_obj_vel": self._last_reward_terms["e_obj_vel"],
                     "error_obj_ang_vel": self._last_reward_terms["e_obj_ang_vel"],
+                }
+            )
+        if isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV3):
+            force_indices = self._fingertip_force_sensor_indices
+            if force_indices is None:
+                raise RuntimeError("PPO26D_REWARD_V3_FINGERTIP_FORCE_MAPPING_NOT_INITIALIZED")
+            values.update(
+                {
+                    "reference_contact_mask": self._last_reward_terms[
+                        "reference_expected_contact_mask"
+                    ],
+                    "actual_contact_mask": self._last_reward_terms[
+                        "actual_fingertip_object_contact_mask"
+                    ],
+                    "fingertip_object_pair_force_world": pair_force.index_select(1, force_indices),
+                    "fingertip_object_force_magnitude": self._last_reward_terms[
+                        "fingertip_object_force_magnitude_n"
+                    ],
+                    "contact_reward": self._last_reward_terms["r_contact"],
+                    "contact_force_scale": self._last_reward_terms["contact_force_scale_n"],
                 }
             )
         capture = self._ppo26d_trace_capture

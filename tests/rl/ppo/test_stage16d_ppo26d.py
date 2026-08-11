@@ -37,10 +37,22 @@ from toporetarget.rl.reference_tracking.ppo26d_reference import (
 )
 from toporetarget.rl.reference_tracking.ppo26d_reward import (
     TopoRetargetReferenceTrackingReward26DV1,
+    TopoRetargetReferenceTrackingReward26DV2,
+    TopoRetargetReferenceTrackingReward26DV3,
+    ppo26d_reward_v2_object_twist_terms,
+    ppo26d_reward_v3_reference_gated_contact_terms,
 )
 from toporetarget.rl.reference_tracking.ppo26d_rsi import (
     rsi_histogram,
     sample_uniform_reference_indices,
+)
+from toporetarget.rl.reference_tracking.reference_gated_contact import (
+    CONTACT_FINGER_ORDER,
+    EVALUATION_FINGERTIP_LINKS,
+    exact_pair_force_trace_status,
+    fingertip_force_indices,
+    reference_expected_contact_mask,
+    reference_gated_contact_reward,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -161,6 +173,95 @@ def test_reward_excludes_post_ppo_bonus_leakage() -> None:
     assert profile.inter_finger_penalty == 0.0
     with pytest.raises(ValueError, match="post-PPO"):
         TopoRetargetReferenceTrackingReward26DV1(terminal_contact_bonus=1.0)
+
+
+def test_reference_gated_contact_reward_is_explicitly_zero_without_reference_mask() -> None:
+    profile = TopoRetargetReferenceTrackingReward26DV3(contact_force_scale_lambda_n=0.02)
+    mask = torch.tensor([[False, False, False, False, False], [True, False, False, False, False]])
+    force = torch.zeros((2, 5, 3))
+    force[0, :, 0] = 99.0
+    force[1, 0, 0] = 0.02
+    result = reference_gated_contact_reward(
+        reference_expected_mask=mask,
+        fingertip_object_pair_force_world=force,
+        lambda_c_n=profile.contact_force_scale_lambda_n,
+        contract=profile.contact_contract(),
+    )
+    assert result["r_contact"][0].item() == 0.0
+    assert result["r_contact"][1].item() == pytest.approx(np.exp(-0.02 / 0.02001), abs=1.0e-6)
+
+
+def test_reference_gated_contact_reward_is_monotonic_bounded_and_saturating() -> None:
+    profile = TopoRetargetReferenceTrackingReward26DV3(contact_force_scale_lambda_n=0.02)
+    mask = torch.tensor([[True, False, False, False, False]] * 4)
+    force = torch.zeros((4, 5, 3))
+    force[:, 0, 0] = torch.tensor([0.0, 0.01, 0.02, 2.0])
+    result = reference_gated_contact_reward(
+        reference_expected_mask=mask,
+        fingertip_object_pair_force_world=force,
+        lambda_c_n=profile.contact_force_scale_lambda_n,
+        contract=profile.contact_contract(),
+    )["r_contact"]
+    assert torch.all(result[1:] > result[:-1])
+    assert torch.all(result >= 0.0)
+    assert torch.all(result <= 1.0)
+    assert result[-1].item() > 0.98
+
+
+def test_contact_mask_uses_strict_3cm_threshold_and_shared_mapping() -> None:
+    distances = np.array([[0.029999, 0.03, 0.02, 0.031, 0.0]])
+    mask = reference_expected_contact_mask(distances)
+    assert mask.tolist() == [[True, False, True, False, True]]
+    assert CONTACT_FINGER_ORDER == ("thumb", "index", "middle", "ring", "pinky")
+    names = ("r_wrist", *EVALUATION_FINGERTIP_LINKS)
+    assert fingertip_force_indices(names) == (1, 2, 3, 4, 5)
+
+
+def test_aggregate_historical_force_is_rejected_for_reward_scale_calibration() -> None:
+    result = exact_pair_force_trace_status(("contact_force_world", "contact_pair_presence"))
+    assert result["status"] == "CONTACT_REWARD_PAIR_FORCE_UNRESOLVED"
+    assert result["aggregate_force_is_not_used"] is True
+    available = exact_pair_force_trace_status(("fingertip_object_pair_force_world",))
+    assert available["status"] == "PAIR_FORCE_AVAILABLE"
+
+
+def test_v3_is_v2_plus_only_contact_reward() -> None:
+    v2 = TopoRetargetReferenceTrackingReward26DV2()
+    v3 = TopoRetargetReferenceTrackingReward26DV3(contact_force_scale_lambda_n=0.02)
+    common = {
+        "object_axis_points": torch.zeros((2, 6, 3)),
+        "object_axis_points_ref": torch.zeros((2, 6, 3)),
+        "tracked_links": torch.zeros((2, 16, 3)),
+        "tracked_links_ref": torch.zeros((2, 16, 3)),
+        "finger_q": torch.zeros((2, 20)),
+        "finger_q_ref": torch.zeros((2, 20)),
+        "joint_lower": torch.full((20,), -1.0),
+        "joint_upper": torch.full((20,), 1.0),
+        "wrist_position": torch.zeros((2, 3)),
+        "wrist_quaternion_wxyz": torch.tensor([[1.0, 0.0, 0.0, 0.0]] * 2),
+        "wrist_position_ref": torch.zeros((2, 3)),
+        "wrist_quaternion_ref_wxyz": torch.tensor([[1.0, 0.0, 0.0, 0.0]] * 2),
+        "action": torch.zeros((2, 26)),
+        "previous_action": torch.zeros((2, 26)),
+        "second_previous_action": torch.zeros((2, 26)),
+        "object_twist_world": torch.zeros((2, 6)),
+        "object_twist_world_ref": torch.zeros((2, 6)),
+    }
+    baseline = ppo26d_reward_v2_object_twist_terms(profile=v2, **common)
+    result = ppo26d_reward_v3_reference_gated_contact_terms(
+        profile=v3,
+        reference_expected_contact_mask=torch.tensor(
+            [[True, False, False, False, False], [False, False, False, False, False]]
+        ),
+        fingertip_object_pair_force_world=torch.tensor(
+            [[[0.02, 0.0, 0.0]] * 5, [[1.0, 0.0, 0.0]] * 5]
+        ),
+        **common,
+    )
+    for key, value in baseline.items():
+        if key != "total":
+            assert torch.allclose(value, result[key])
+    assert torch.allclose(result["total"], baseline["total"] + result["r_contact"])
 
 
 def test_gpu_capacity_requires_update_headroom_and_95_percent_rule() -> None:
