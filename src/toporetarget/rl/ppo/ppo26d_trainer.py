@@ -146,7 +146,17 @@ class PPO26DTrainer:
             )
         return metrics
 
-    def collect_and_update(self, env: Any) -> dict[str, Any]:
+    def collect_and_update(self, env: Any, *, rollout_length: int | None = None) -> dict[str, Any]:
+        """Collect one PPO update, optionally ending a fixed-budget run exactly.
+
+        Normal Stage 16-D updates always use the frozen 40-control-step rollout.
+        A caller may request a shorter final rollout only to consume the exact
+        remaining per-environment sample budget without exceeding a hard cap.
+        """
+        frozen_rollout_length = self.training_contract.rollout_length
+        steps = frozen_rollout_length if rollout_length is None else int(rollout_length)
+        if not 1 <= steps <= frozen_rollout_length:
+            raise ValueError("PPO26D_ROLLOUT_LENGTH_MUST_BE_BETWEEN_ONE_AND_FROZEN_CONTRACT")
         observation, _ = env.reset()
         policy_observation = _policy_observation(observation)
         normalizer_count_before = float(self.trainer.normalizer.count)
@@ -162,7 +172,7 @@ class PPO26DTrainer:
         started = time.perf_counter()
         reference_index_sum = 0.0
         reference_index_count = 0
-        for _ in range(self.training_contract.rollout_length):
+        for _ in range(steps):
             policy_observation = _policy_observation(observation)
             action, log_prob, value = self.trainer.act(policy_observation)
             next_observation, reward, terminated, timed_out, _ = env.step(action)
@@ -329,13 +339,17 @@ class PPO26DTrainer:
         }
 
     def checkpoint_payload(
-        self, *, environment_contract: dict[str, Any], selected_num_envs: int
+        self,
+        *,
+        environment_contract: dict[str, Any],
+        selected_num_envs: int,
+        extra_payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         clip = environment_contract.get("ppo26d", {}).get("fixed_clip")
         active_clips = environment_contract.get("ppo26d", {}).get("active_clip_ids")
         if clip not in {"hocap_170105", "hocap_170650"} or active_clips != [clip]:
             raise ValueError(f"PPO26D_FIXED_CLIP_MISMATCH: fixed={clip!r} active={active_clips!r}")
-        return {
+        payload = {
             "schema_version": "Stage16DPPO26DCheckpointV1",
             "clip": clip,
             "actor_critic": self.model.state_dict(),
@@ -353,14 +367,29 @@ class PPO26DTrainer:
             "cumulative_samples": self.cumulative_samples,
             "rng": rng_state(),
         }
+        if extra_payload:
+            overlap = set(payload).intersection(extra_payload)
+            if overlap:
+                raise ValueError(
+                    f"PPO26D checkpoint metadata collides with reserved keys: {sorted(overlap)}"
+                )
+            payload.update(extra_payload)
+        return payload
 
     def save(
-        self, path: Path, *, environment_contract: dict[str, Any], selected_num_envs: int
+        self,
+        path: Path,
+        *,
+        environment_contract: dict[str, Any],
+        selected_num_envs: int,
+        extra_payload: dict[str, Any] | None = None,
     ) -> Path:
         return save_checkpoint(
             path,
             self.checkpoint_payload(
-                environment_contract=environment_contract, selected_num_envs=selected_num_envs
+                environment_contract=environment_contract,
+                selected_num_envs=selected_num_envs,
+                extra_payload=extra_payload,
             ),
         )
 

@@ -17,7 +17,10 @@ class RunningObservationNormalizer:
             return
         values = (
             observations.detach()
-            .to(dtype=torch.float64, device="cpu")
+            # Use keywords: ``Tensor.to(dtype, device)`` selects the dtype
+            # overload and treats the second positional argument as a
+            # non-blocking flag, leaving CUDA observations on-device.
+            .to(device="cpu", dtype=torch.float64)
             .reshape(-1, self.mean.numel())
         )
         batch_count = torch.tensor(float(values.shape[0]), dtype=torch.float64)
@@ -47,9 +50,13 @@ class RunningObservationNormalizer:
         }
 
     def load_state_dict(self, state: dict[str, torch.Tensor | bool]) -> None:
-        self.count = torch.as_tensor(state["count"], dtype=torch.float64)
-        self.mean = torch.as_tensor(state["mean"], dtype=torch.float64)
-        self.variance = torch.as_tensor(state["variance"], dtype=torch.float64)
+        # Running statistics are intentionally maintained on CPU by ``update``.
+        # Checkpoints can be restored with ``map_location=cuda`` for the model,
+        # so detach these small bookkeeping tensors back to their invariant
+        # host location instead of creating a later CPU/CUDA arithmetic mix.
+        self.count = torch.as_tensor(state["count"], dtype=torch.float64).detach().cpu()
+        self.mean = torch.as_tensor(state["mean"], dtype=torch.float64).detach().cpu()
+        self.variance = torch.as_tensor(state["variance"], dtype=torch.float64).detach().cpu()
         self.training = bool(state["training"])
 
 

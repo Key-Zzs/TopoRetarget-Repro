@@ -15,6 +15,8 @@ import torch
 from toporetarget.rl.ppo.ppo26d_contract import Stage16DPPO26DObservationV2
 from toporetarget.rl.reference_tracking.ppo26d_reward import (
     TopoRetargetReferenceTrackingReward26DV1,
+    TopoRetargetReferenceTrackingReward26DV2,
+    ppo26d_reward_v2_object_twist_terms,
 )
 
 from .ppo26d_reference_tracking_env_cfg import IsaacPPO26DReferenceTrackingEnvCfg
@@ -36,7 +38,17 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         **kwargs: Any,
     ) -> None:
         self._observation_contract = Stage16DPPO26DObservationV2()
-        self._reward_contract = TopoRetargetReferenceTrackingReward26DV1()
+        self._reward_contract: (
+            TopoRetargetReferenceTrackingReward26DV1 | TopoRetargetReferenceTrackingReward26DV2
+        )
+        if cfg.ppo26d_reward_contract == "TopoRetargetReferenceTrackingReward26DV2":
+            if cfg.reference_kinematics_version != 2:
+                raise RuntimeError("PPO26D_REWARD_V2_REQUIRES_REFERENCE_KINEMATICS_V2")
+            self._reward_contract = TopoRetargetReferenceTrackingReward26DV2()
+        elif cfg.ppo26d_reward_contract == "TopoRetargetReferenceTrackingReward26DV1":
+            self._reward_contract = TopoRetargetReferenceTrackingReward26DV1()
+        else:
+            raise ValueError(f"unknown PPO26D reward contract: {cfg.ppo26d_reward_contract}")
         self._rsi_start_counts: torch.Tensor | None = None
         self._ppo26d_safety_counts: dict[str, int] = {}
         self._ppo26d_object_write_baseline: torch.Tensor | None = None
@@ -48,6 +60,12 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         self._ppo26d_last_terminated: torch.Tensor | None = None
         self._ppo26d_last_timed_out: torch.Tensor | None = None
         super().__init__(cfg, render_mode, **kwargs)
+        if isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV2) and (
+            self.reference_bank.manifest.identifier != "world_wrist_reference_bank_kinematics_v2"
+            or self.reference_bank.manifest.reference_time_scale != 8
+            or self.reference_bank.frame_count != 321
+        ):
+            raise RuntimeError("PPO26D_REWARD_V2_REQUIRES_MATERIALIZED_REFERENCE_KINEMATICS_V2")
         # The base implementation already supplies the required physical-state
         # reward inputs.  Install the explicit PPO contract so its paper terms
         # and the added controllable-wrist terms are the single source of truth.
@@ -265,7 +283,46 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         second_difference = (
             self._actions - 2.0 * self._previous_actions + self._second_previous_actions
         )
-        reward = super()._get_rewards()
+        if isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV2):
+            state = self._state()
+            index = self._target_reference_index
+            terms = ppo26d_reward_v2_object_twist_terms(
+                object_axis_points=state["object_axis_points_scene"],
+                object_axis_points_ref=self.reference_bank.gather(
+                    "object_axis_points_world_ref", self._clip_index, index
+                ),
+                tracked_links=state["tracked_links_scene"],
+                tracked_links_ref=self.reference_bank.gather(
+                    "tracked_link_positions_world_ref", self._clip_index, index
+                ),
+                finger_q=state["finger_q"],
+                finger_q_ref=self.reference_bank.gather("q_finger_ref", self._clip_index, index),
+                joint_lower=self.joint_lower,
+                joint_upper=self.joint_upper,
+                wrist_position=state["wrist_position_scene"],
+                wrist_quaternion_wxyz=state["wrist_quaternion_wxyz"],
+                wrist_position_ref=self.reference_bank.gather(
+                    "wrist_pose_translation_world_ref", self._clip_index, index
+                ),
+                wrist_quaternion_ref_wxyz=self.reference_bank.gather(
+                    "wrist_pose_quaternion_world_ref_wxyz", self._clip_index, index
+                ),
+                action=self._actions,
+                previous_action=self._previous_actions,
+                second_previous_action=self._second_previous_actions,
+                object_twist_world=state["object_twist_world"],
+                object_twist_world_ref=self.reference_bank.gather(
+                    "object_twist_world_ref", self._clip_index, index
+                ),
+                profile=self._reward_contract,
+            )
+            self._last_reward_terms = terms
+            self._second_previous_actions.copy_(self._previous_actions)
+            self._previous_actions.copy_(self._actions)
+            self._reference_index.copy_(self._target_reference_index)
+            reward = terms["total"]
+        else:
+            reward = super()._get_rewards()
         self._last_reward_terms = {
             **self._last_reward_terms,
             "r_object": self._last_reward_terms["object"],
@@ -524,6 +581,18 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             ),
             "reference_index": self._reference_index,
         }
+        if isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV2):
+            values.update(
+                {
+                    "object_twist_reference": self.reference_bank.gather(
+                        "object_twist_world_ref", self._clip_index, self._reference_index
+                    ),
+                    "reward_obj_vel": self._last_reward_terms["r_obj_vel"],
+                    "reward_obj_ang_vel": self._last_reward_terms["r_obj_ang_vel"],
+                    "error_obj_vel": self._last_reward_terms["e_obj_vel"],
+                    "error_obj_ang_vel": self._last_reward_terms["e_obj_ang_vel"],
+                }
+            )
         capture = self._ppo26d_trace_capture
         if capture is None:
             capture = {

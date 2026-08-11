@@ -30,6 +30,7 @@ from toporetarget.rl.ppo.ppo26d_continuation import summarize_episodes
 from toporetarget.rl.ppo.ppo26d_trainer import PPO26DTrainer
 
 DEFAULT_ROOT = REPO_ROOT / ".local/reports/stage16d_ppo26d"
+PHASE3_CHECKPOINT_SCHEMA = "Stage16DPhase3RewardV2CheckpointV1"
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,6 +39,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--clip", choices=("hocap_170105", "hocap_170650"), default="hocap_170650")
     parser.add_argument("--output-root", type=Path, default=DEFAULT_ROOT)
     parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument(
+        "--reference-kinematics-v2-root",
+        type=Path,
+        help="Use the explicitly materialized V2 references for diagnostic or Phase 3 evaluation.",
+    )
+    parser.add_argument(
+        "--object-twist-reward-v2",
+        action="store_true",
+        help="Evaluate a Phase 3 Reward V2 checkpoint; requires --reference-kinematics-v2-root.",
+    )
     parser.add_argument("--selected-capacity", type=Path)
     parser.add_argument("--frame-zero-replicas", type=int, default=4)
     parser.add_argument("--rsi-replicas", type=int, default=20)
@@ -117,20 +128,37 @@ def model_from_checkpoint(
     path: Path, device: str, *, expected_clip: str
 ) -> tuple[PPO26DTrainer, dict[str, Any]]:
     payload = load_checkpoint(path, map_location=device)
-    if payload.get("schema_version") != "Stage16DPPO26DCheckpointV1":
+    schema = payload.get("schema_version")
+    if schema not in {"Stage16DPPO26DCheckpointV1", PHASE3_CHECKPOINT_SCHEMA}:
         raise ValueError("CHECKPOINT_ROUNDTRIP_FAILURE: unexpected checkpoint schema")
-    if payload.get("clip") != expected_clip:
+    checkpoint_clip = payload.get("clip")
+    # The frozen V1 L0 artifact was created before clip metadata became part
+    # of the checkpoint contract.  Its filename/location are clip-specific;
+    # allow only that absent legacy field, never a conflicting value.
+    if checkpoint_clip not in {None, expected_clip}:
         raise ValueError(
             "PPO26D_CHECKPOINT_CLIP_MISMATCH: "
-            f"checkpoint={payload.get('clip')!r} requested={expected_clip!r}"
+            f"checkpoint={checkpoint_clip!r} requested={expected_clip!r}"
         )
     trainer = PPO26DTrainer(observation_dim=764, device=device)
     trainer.model.load_state_dict(payload["actor_critic"])
     trainer.trainer.optimizer.load_state_dict(payload["optimizer"])
     trainer.trainer.normalizer.load_state_dict(payload["observation_normalization"])
-    trainer.cumulative_samples = int(payload["cumulative_samples"])
+    trainer.cumulative_samples = int(
+        payload["reward_v2_samples"]
+        if schema == PHASE3_CHECKPOINT_SCHEMA
+        else payload["cumulative_samples"]
+    )
     trainer.trainer.freeze_observation_normalizer()
     return trainer, payload
+
+
+def checkpoint_sample_counter(payload: dict[str, Any]) -> tuple[str, int]:
+    """Keep Reward V2 sample accounting distinct from V1 cumulative samples."""
+
+    if payload.get("schema_version") == PHASE3_CHECKPOINT_SCHEMA:
+        return "reward_v2_samples", int(payload["reward_v2_samples"])
+    return "cumulative_training_samples", int(payload["cumulative_samples"])
 
 
 def _to_float(value: torch.Tensor) -> float:
@@ -212,6 +240,18 @@ def _initial_trace_snapshot(env: Any) -> dict[str, np.ndarray]:
         ),
         "reference_index": indices,
     }
+    if env.cfg.ppo26d_reward_contract == "TopoRetargetReferenceTrackingReward26DV2":
+        values.update(
+            {
+                "object_twist_reference": env.reference_bank.gather(
+                    "object_twist_world_ref", clips, indices
+                ),
+                "reward_obj_vel": torch.zeros(count, device=device),
+                "reward_obj_ang_vel": torch.zeros(count, device=device),
+                "error_obj_vel": torch.zeros(count, device=device),
+                "error_obj_ang_vel": torch.zeros(count, device=device),
+            }
+        )
     return {name: value.detach().cpu().numpy().copy() for name, value in values.items()}
 
 
@@ -612,6 +652,8 @@ def main() -> int:
     args = parse_args()
     if not args.accept_eula:
         raise ValueError("--accept-eula is required")
+    if args.object_twist_reward_v2 and args.reference_kinematics_v2_root is None:
+        raise ValueError("PPO26D_REWARD_V2_REQUIRES_REFERENCE_KINEMATICS_V2")
     if args.frame_zero_replicas <= 0 or args.rsi_replicas < 0:
         raise ValueError("--frame-zero-replicas must be positive and --rsi-replicas non-negative")
     if not args.artifact_label.replace("_", "").isalnum():
@@ -644,10 +686,20 @@ def main() -> int:
         ppo26d_cfg.configure_stage16d_ppo26d(
             cfg, num_envs=evaluation_num_envs, clip=args.clip, rsi=False, critical_dr=False
         )
+        if args.object_twist_reward_v2:
+            assert args.reference_kinematics_v2_root is not None
+            ppo26d_cfg.configure_stage16d_phase3_object_twist_reward(
+                cfg, reference_root=args.reference_kinematics_v2_root
+            )
+        elif args.reference_kinematics_v2_root is not None:
+            ppo26d_cfg.configure_stage16d_reference_kinematics_v2(
+                cfg, reference_root=args.reference_kinematics_v2_root
+            )
         env = IsaacPPO26DReferenceTrackingEnv(cfg)
         trainer, payload = model_from_checkpoint(
             checkpoint, str(env.device), expected_clip=args.clip
         )
+        sample_counter_name, sample_counter = checkpoint_sample_counter(payload)
         selected = int(payload["selected_num_envs"])
         write_progress(output, "checkpoint_loaded")
         write_progress(output, "frame_zero_evaluation_started")
@@ -747,9 +799,43 @@ def main() -> int:
             action_contract=np.asarray("26D_reference_residual"),
             checkpoint_path=np.asarray(str(checkpoint.resolve())),
             checkpoint_sha256=np.asarray(checkpoint_hash(checkpoint)),
-            cumulative_training_samples=np.asarray(int(payload["cumulative_samples"])),
+            **{sample_counter_name: np.asarray(sample_counter)},
             selected_num_envs=np.asarray(selected),
             reference_hash=np.asarray(json.dumps(payload["reference_hash"], sort_keys=True)),
+            reference_kinematics_version=np.asarray(int(cfg.reference_kinematics_version)),
+            **(
+                {}
+                if not args.object_twist_reward_v2
+                else {
+                    "object_twist_reference": trace_rows["object_twist_reference"].astype(
+                        np.float32
+                    ),
+                    "object_linear_velocity_world": trace_rows["object_twist"][:, :3].astype(
+                        np.float32
+                    ),
+                    "object_angular_velocity_world": trace_rows["object_twist"][:, 3:].astype(
+                        np.float32
+                    ),
+                    "object_linear_velocity_reference_world": trace_rows["object_twist_reference"][
+                        :, :3
+                    ].astype(np.float32),
+                    "object_angular_velocity_reference_world": trace_rows["object_twist_reference"][
+                        :, 3:
+                    ].astype(np.float32),
+                    "delta_object_linear_velocity_world": (
+                        trace_rows["object_twist"][:, :3]
+                        - trace_rows["object_twist_reference"][:, :3]
+                    ).astype(np.float32),
+                    "delta_object_angular_velocity_world": (
+                        trace_rows["object_twist"][:, 3:]
+                        - trace_rows["object_twist_reference"][:, 3:]
+                    ).astype(np.float32),
+                    "reward_obj_vel": trace_rows["reward_obj_vel"].astype(np.float32),
+                    "reward_obj_ang_vel": trace_rows["reward_obj_ang_vel"].astype(np.float32),
+                    "error_obj_vel": trace_rows["error_obj_vel"].astype(np.float32),
+                    "error_obj_ang_vel": trace_rows["error_obj_ang_vel"].astype(np.float32),
+                }
+            ),
             **(
                 {}
                 if all_replica_trace is None or replica_hand is None
@@ -777,12 +863,14 @@ def main() -> int:
             "schema_version": "Stage16DPPO26DEvaluationV2",
             "status": "PPO_DEVELOPMENT_EVALUATION_COMPLETE",
             "artifact_label": args.artifact_label,
+            "reference_kinematics_version": int(cfg.reference_kinematics_version),
+            "reward_contract": env.contract_report()["ppo26d"]["reward"],
             "clip": actual_clip,
             "requested_clip": args.clip,
             "clip_index": expected_clip_index,
             "checkpoint": str(checkpoint.resolve()),
             "checkpoint_sha256": checkpoint_hash(checkpoint),
-            "cumulative_training_samples": int(payload["cumulative_samples"]),
+            sample_counter_name: sample_counter,
             "selected_num_envs": selected,
             "frame_zero": [
                 {

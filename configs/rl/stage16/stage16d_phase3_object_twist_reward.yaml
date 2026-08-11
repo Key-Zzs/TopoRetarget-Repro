@@ -1,0 +1,14 @@
+schema_version: Stage16DPhase3ObjectTwistRewardConfigV1
+reward_contract: TopoRetargetReferenceTrackingReward26DV2
+reference_kinematics_version: 2
+object_velocity_weight: 0.5
+object_velocity_sigma_mps: 0.075
+object_angular_velocity_weight: 0.5
+object_angular_velocity_sigma_radps: 0.125
+combined_maximum_contribution: 1.0
+forbidden_terms:
+  - contact_reward
+  - terminal_reward
+  - penetration_reward
+  - guidance_reward
+  - gravity_reward

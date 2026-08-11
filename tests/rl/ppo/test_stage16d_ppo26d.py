@@ -14,6 +14,7 @@ from toporetarget.rl.ppo.gpu_capacity import (
     GpuCapacityMeasurement,
     select_ppo26d_environment_capacity,
 )
+from toporetarget.rl.ppo.normalization import RunningObservationNormalizer
 from toporetarget.rl.ppo.ppo26d_continuation import (
     R6ADecision,
     RSICurriculumPhase,
@@ -264,6 +265,12 @@ def test_ppo26d_normalizer_uses_full_rollout_after_frozen_update(monkeypatch) ->
     assert result["safety"]["normalizer_frozen_during_rollout_and_update"]
     assert result["safety"]["normalizer_samples_added"] == pytest.approx(80.0)
     assert trainer.trainer.normalizer.mean.mean().item() == pytest.approx(0.195)
+    partial = trainer.collect_and_update(FakeEnv(), rollout_length=3)
+    assert partial["rollout_length"] == 3
+    assert partial["samples"] == 6
+    assert partial["cumulative_samples"] == 86
+    with pytest.raises(ValueError, match="PPO26D_ROLLOUT_LENGTH"):
+        trainer.collect_and_update(FakeEnv(), rollout_length=41)
 
 
 def test_torch_is_available_for_ppo26d_pure_contracts() -> None:
@@ -711,3 +718,23 @@ def test_ppo26d_update_accepts_per_epoch_diagnostic_lists(monkeypatch) -> None:
     monkeypatch.setattr(trainer.trainer, "update", diagnostic_update)
     result = trainer.collect_and_update(FakeEnv())
     assert result["ppo"]["kl_per_epoch"] == [0.01, 0.02]
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires a CUDA-mapped checkpoint")
+def test_normalizer_restores_cuda_checkpoint_statistics_to_cpu() -> None:
+    """Model checkpoint loading may map all tensors to CUDA; stats must not."""
+
+    normalizer = RunningObservationNormalizer(3)
+    normalizer.load_state_dict(
+        {
+            "count": torch.tensor(4.0, device="cuda"),
+            "mean": torch.tensor([1.0, 2.0, 3.0], device="cuda"),
+            "variance": torch.tensor([2.0, 3.0, 4.0], device="cuda"),
+            "training": True,
+        }
+    )
+    assert normalizer.count.device.type == "cpu"
+    assert normalizer.mean.device.type == "cpu"
+    assert normalizer.variance.device.type == "cpu"
+    normalizer.update(torch.ones((2, 3), device="cuda"))
+    assert normalizer.count.item() == pytest.approx(6.0)

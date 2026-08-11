@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from isaaclab.utils import configclass
 
 from .physics_consistent_retargeting_env_cfg import (
@@ -20,6 +22,7 @@ class IsaacPPO26DReferenceTrackingEnvCfg(IsaacPhysicsConsistentRetargetingEnvCfg
     ppo26d_observation_contract = "Stage16DPPO26DObservationV2"
     ppo26d_action_contract = "Stage16DReferenceResidualAction26DV1"
     ppo26d_reward_contract = "TopoRetargetReferenceTrackingReward26DV1"
+    reference_kinematics_version = 1
     ppo26d_workspace_radius_m = 0.75
     ppo26d_object_linear_speed_max_mps = 10.0
     ppo26d_object_angular_speed_max_radps = 500.0
@@ -67,4 +70,37 @@ def configure_stage16d_ppo26d(
     cfg.scene.lazy_sensor_update = True
 
 
-__all__ = ["IsaacPPO26DReferenceTrackingEnvCfg", "configure_stage16d_ppo26d"]
+def configure_stage16d_reference_kinematics_v2(
+    cfg: IsaacPPO26DReferenceTrackingEnvCfg, *, reference_root: Path
+) -> None:
+    """Bind an explicitly materialized V2 reference; never rewrite V1 inputs."""
+
+    root = reference_root.resolve()
+    paths = {
+        clip: root / f"{clip}.reference_kinematics_v2.npz"
+        for clip in ("hocap_170105", "hocap_170650")
+    }
+    missing = [str(path) for path in paths.values() if not path.is_file()]
+    if missing:
+        raise FileNotFoundError(f"STAGE16D_REFERENCE_KINEMATICS_V2_MISSING: {missing}")
+    cfg.reference_paths = {clip: str(path) for clip, path in paths.items()}
+    cfg.reference_time_scale = 8
+    cfg.reference_kinematics_version = 2
+    cfg.episode_length_s = 321 / 20.0
+
+
+def configure_stage16d_phase3_object_twist_reward(
+    cfg: IsaacPPO26DReferenceTrackingEnvCfg, *, reference_root: Path
+) -> None:
+    """Enable the gated Phase 3 reward without changing actor observations."""
+
+    configure_stage16d_reference_kinematics_v2(cfg, reference_root=reference_root)
+    cfg.ppo26d_reward_contract = "TopoRetargetReferenceTrackingReward26DV2"
+
+
+__all__ = [
+    "IsaacPPO26DReferenceTrackingEnvCfg",
+    "configure_stage16d_ppo26d",
+    "configure_stage16d_reference_kinematics_v2",
+    "configure_stage16d_phase3_object_twist_reward",
+]
