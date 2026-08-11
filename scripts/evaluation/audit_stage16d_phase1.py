@@ -45,6 +45,30 @@ def _series(values: np.ndarray) -> dict[str, float]:
     }
 
 
+def _twist_residual(actual_twist: np.ndarray, reference_twist: np.ndarray) -> np.ndarray:
+    """Return the signed linear-then-angular residual in the declared world frame."""
+
+    actual = np.asarray(actual_twist, dtype=np.float64)
+    reference = np.asarray(reference_twist, dtype=np.float64)
+    if actual.shape != reference.shape or actual.ndim != 2 or actual.shape[1] != 6:
+        raise ValueError("twist residual requires matching [T, 6] tensors")
+    return actual - reference
+
+
+def _classify_source_support(
+    *, explicit_support: bool, inferred_support: bool, explicit_absence: bool
+) -> str:
+    """Keep source support provenance distinct from simulator configuration."""
+
+    if explicit_support:
+        return "SUPPORT_EXPLICIT"
+    if explicit_absence:
+        return "SUPPORT_ABSENT"
+    if inferred_support:
+        return "SUPPORT_INFERRED"
+    return "SUPPORT_UNKNOWN"
+
+
 def _matrix(quaternion: np.ndarray) -> np.ndarray:
     values = np.asarray(quaternion, dtype=np.float64)
     values = values / np.linalg.norm(values, axis=-1, keepdims=True)
@@ -173,7 +197,7 @@ def _actual_drift(
     terminal_steps = int(qualification["task_gate"]["terminal_window_control_steps"])
     rows: list[dict[str, object]] = []
     for replica, episode in enumerate(episodes):
-        residual = twist[:, replica] - ref_twist
+        residual = _twist_residual(twist[:, replica], ref_twist)
         contact_indices = np.flatnonzero(contact[:, replica])
         segments = np.split(contact_indices, np.where(np.diff(contact_indices) != 1)[0] + 1)
         longest = max((len(segment) for segment in segments), default=0)
@@ -233,7 +257,9 @@ def _support_audit() -> dict[str, object]:
         value = _read_json(manifest)
         rigid = value["rigid_body"]
         clips[clip] = {
-            "source_support_status": "SUPPORT_UNKNOWN",
+            "source_support_status": _classify_source_support(
+                explicit_support=False, inferred_support=False, explicit_absence=False
+            ),
             "source_evidence": "canonical/reference metadata contains no table/support annotation",
             "simulator_support_status": "SUPPORT_ABSENT",
             "simulator_evidence": rigid,
@@ -243,13 +269,50 @@ def _support_audit() -> dict[str, object]:
     return {"schema_version": "Stage16DSupportProvenanceAuditV1", "clips": clips}
 
 
-def _rsi_audit() -> tuple[dict[str, object], list[dict[str, object]]]:
+def _rsi_phase(index: int, topology: dict[str, object]) -> str:
+    """Classify uniform reset indices with the frozen reference topology."""
+
+    onset = topology["source_onset_window"]
+    hold = topology["final_hold_window"]
+    if index >= 280:
+        return "terminal"
+    if index < int(onset["start"]) - 16:
+        return "pre_contact"
+    if index < int(onset["start"]):
+        return "near_contact"
+    if index <= int(onset["end"]):
+        return "contact_onset"
+    if index <= int(hold["end"]):
+        return "persistent_contact"
+    return "manipulation"
+
+
+def _rsi_audit(
+    topologies: dict[str, dict[str, object]],
+) -> tuple[dict[str, object], list[dict[str, object]]]:
     rng = np.random.default_rng(20260811)
     values = sample_uniform_reference_indices(rng, count=10_000, frame_count=321)
     histogram = rsi_histogram(values, frame_count=321)
     quantiles = {
         str(q): float(np.quantile(values, q)) for q in (0.0, 0.05, 0.25, 0.5, 0.75, 0.95, 1.0)
     }
+    phase_counts: dict[str, dict[str, object]] = {}
+    for clip, topology in topologies.items():
+        counts = {
+            phase: int(sum(_rsi_phase(int(index), topology) == phase for index in values))
+            for phase in (
+                "pre_contact",
+                "near_contact",
+                "contact_onset",
+                "persistent_contact",
+                "manipulation",
+                "terminal",
+            )
+        }
+        phase_counts[clip] = {
+            "counts": counts,
+            "fractions": {phase: count / len(values) for phase, count in counts.items()},
+        }
     rows = [
         {"reference_index": index, "count": count}
         for index, count in enumerate(histogram["counts"])
@@ -264,7 +327,11 @@ def _rsi_audit() -> tuple[dict[str, object], list[dict[str, object]]]:
                 "rollout_object_state_writes": 0,
                 "rollout_wrist_root_state_writes": 0,
             },
-            "dynamic_sampling": {**histogram, "quantiles": quantiles},
+            "dynamic_sampling": {
+                **histogram,
+                "quantiles": quantiles,
+                "phase_counts_by_clip": phase_counts,
+            },
         },
         rows,
     )
@@ -313,7 +380,12 @@ def main() -> int:
             "rsi_contract": "Stage16DPPO26DRSIV1",
         }
     support = _support_audit()
-    rsi, histogram_rows = _rsi_audit()
+    rsi, histogram_rows = _rsi_audit(
+        {
+            clip: _read_json(source / clip / "r7_formal_qualification.json")["contact_topology"]
+            for clip in ("hocap_170105", "hocap_170650")
+        }
+    )
     (phase / "support_audit.json").write_text(
         json.dumps(support, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )

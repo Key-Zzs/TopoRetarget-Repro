@@ -58,6 +58,21 @@ def _read_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def _reset_only_write_report(object_writes: int, wrist_writes: int) -> dict[str, object]:
+    """Reject a diagnostic that wrote object or wrist-root state during rollout."""
+
+    if object_writes != 0 or wrist_writes != 0:
+        raise RuntimeError(
+            "RSI state-quality diagnostic observed prohibited rollout state writes: "
+            f"object={object_writes}, wrist_root={wrist_writes}"
+        )
+    return {
+        "object_rollout": object_writes,
+        "wrist_root_rollout": wrist_writes,
+        "pass": True,
+    }
+
+
 def _run(args: argparse.Namespace) -> dict[str, object]:
     os.environ["OMNI_KIT_ACCEPT_EULA"] = "YES"
     from isaaclab.app import AppLauncher
@@ -75,7 +90,7 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
         )
 
         topology = _read_json(args.qualification)["contact_topology"]
-        selected = _indices(topology)
+        selected = _indices(topology)[: args.max_states]
         reset_indices = tuple(index for index in selected for _ in range(4))
         cfg = ppo_cfg.IsaacPPO26DReferenceTrackingEnvCfg()
         ppo_cfg.configure_stage16d_ppo26d(
@@ -98,40 +113,41 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
         any_contact = np.zeros(len(reset_indices), dtype=bool)
         terminal_position = initial_position.copy()
         terminal_twist = np.zeros((len(reset_indices), 6), dtype=np.float64)
+        position_before_first_contact = initial_position.copy()
         zero = torch.zeros((len(reset_indices), 26), device=env.device)
         for step in range(20):
-            env._pre_physics_step(zero)
-            for _ in range(env.cfg.decimation):
-                env._apply_action()
-                env.scene.write_data_to_sim()
-                env.sim.step(render=False)
-                env.scene.update(env.physics_dt)
-            env._get_rewards()
-            env._get_dones()
-            contact = env.extras["ppo26d"]["contact_any"].detach().cpu().numpy().astype(bool)
-            first_contact[(first_contact < 0) & contact] = step
+            _, _, _, _, extras = env.step(zero)
+            contact = extras["ppo26d"]["contact_any"].detach().cpu().numpy().astype(bool)
+            first_contact_now = (first_contact < 0) & contact
+            first_contact[first_contact_now] = step
             any_contact |= contact
             measured = env._state()
             terminal_position = measured["object_position_scene"].detach().cpu().numpy()
             terminal_twist = measured["object_twist_world"].detach().cpu().numpy()
+            position_before_first_contact[first_contact_now] = terminal_position[first_contact_now]
+            position_before_first_contact[first_contact < 0] = terminal_position[first_contact < 0]
         object_writes = env.rollout_state_write_report()["object_rollout_state_writes"]
         wrist_writes = env.rollout_state_write_report()["wrist_root_state_writes_during_step"]
         rows: list[dict[str, object]] = []
         for group, frame in enumerate(selected):
             start, end = group * 4, (group + 1) * 4
             for replica in range(start, end):
-                before = first_contact[replica] if first_contact[replica] >= 0 else 20
-                vertical = float(terminal_position[replica, 2] - initial_position[replica, 2])
+                vertical = float(
+                    position_before_first_contact[replica, 2] - initial_position[replica, 2]
+                )
                 displacement = float(
-                    np.linalg.norm(terminal_position[replica] - initial_position[replica])
+                    np.linalg.norm(
+                        position_before_first_contact[replica] - initial_position[replica]
+                    )
                 )
                 phase = _phase(frame, topology)
                 if phase == "pre_contact":
-                    label = (
-                        "PRE_CONTACT_UNSUPPORTED"
-                        if displacement > 0.005
-                        else "PRE_CONTACT_STABLE_UNDER_ZERO_G"
-                    )
+                    if displacement > 0.005:
+                        label = "PRE_CONTACT_UNSUPPORTED"
+                    elif args.gravity:
+                        label = "AMBIGUOUS"
+                    else:
+                        label = "PRE_CONTACT_STABLE_UNDER_ZERO_G"
                 elif phase == "near_contact":
                     label = "NEAR_OBJECT"
                 elif phase == "contact_onset" and any_contact[replica]:
@@ -152,12 +168,8 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
                         "first_actual_contact_step": None
                         if first_contact[replica] < 0
                         else int(first_contact[replica]),
-                        "object_vertical_displacement_before_contact_m": vertical
-                        if before
-                        else 0.0,
-                        "object_total_displacement_before_contact_m": displacement
-                        if before
-                        else 0.0,
+                        "object_vertical_displacement_before_contact_m": vertical,
+                        "object_total_displacement_before_contact_m": displacement,
                         "contact_achieved": bool(any_contact[replica]),
                         "reference_expected_contact": phase
                         in {"contact_onset", "persistent_contact", "manipulation", "terminal"},
@@ -173,19 +185,24 @@ def _run(args: argparse.Namespace) -> dict[str, object]:
                         "penetration": "NOT_CAPTURED_IN_BOUNDED_RSI_DIAGNOSTIC",
                     }
                 )
-        return {
+        result: dict[str, object] = {
             "schema_version": "RSIStateQualityAuditV1",
             "clip": args.clip,
             "gravity": [0.0, 0.0, -9.81] if args.gravity else [0.0, 0.0, 0.0],
             "replicas_per_state": 4,
             "control_steps": 20,
             "zero_residual_action": True,
-            "reset_only_state_writes": {
-                "object_rollout": object_writes,
-                "wrist_root_rollout": wrist_writes,
-            },
+            "reset_only_state_writes": _reset_only_write_report(object_writes, wrist_writes),
             "rows": rows,
         }
+        result["status"] = "COMPLETE"
+        args.output.write_text(
+            json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        print(
+            json.dumps({"output": str(args.output.resolve()), "row_count": len(rows)}), flush=True
+        )
+        return result
     finally:
         if env is not None:
             env.close()
@@ -200,12 +217,20 @@ def main() -> int:
     parser.add_argument("--clip", choices=("hocap_170105", "hocap_170650"), required=True)
     parser.add_argument("--qualification", type=Path, required=True)
     parser.add_argument("--gravity", action="store_true")
+    parser.add_argument(
+        "--max-states",
+        type=int,
+        default=64,
+        help="Bounded debug override; the formal audit uses the default stratified set.",
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if not args.accept_eula:
         raise ValueError("--accept-eula is required")
+    if not 1 <= args.max_states <= 64:
+        raise ValueError("--max-states must be in [1, 64]")
     topology = _read_json(args.qualification)["contact_topology"]
-    selected = _indices(topology)
+    selected = _indices(topology)[: args.max_states]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     # Isaac can terminate a process during scene construction without returning
     # a Python exception.  Persist the requested bounded experiment first so a
@@ -223,10 +248,7 @@ def main() -> int:
         "note": "Replaced only if the fresh Isaac process returns a completed rows payload.",
     }
     args.output.write_text(json.dumps(preflight, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    result = _run(args)
-    result["status"] = "COMPLETE"
-    args.output.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(json.dumps({"output": str(args.output.resolve()), "row_count": len(result["rows"])}))
+    _run(args)
     return 0
 
 

@@ -94,6 +94,18 @@ def main() -> int:
         )
         summaries[clip] = _read_json(summary)
         rows.append(_comparison_row(clip, summaries[clip]))
+    for key, filename in (
+        ("contract", "evaluation_suite_v2_contract.json"),
+        ("joint_set", "evaluation_joint_set.json"),
+        ("fingertip_set", "evaluation_fingertip_set.json"),
+    ):
+        first = summaries["hocap_170105"][key]
+        second = summaries["hocap_170650"][key]
+        if first != second:
+            raise RuntimeError(f"Evaluation Suite V2 {key} differs between frozen clips")
+        (output_root / filename).write_text(
+            json.dumps(first, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
     comparison_csv = output_root / "baseline_comparison.csv"
     with comparison_csv.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
