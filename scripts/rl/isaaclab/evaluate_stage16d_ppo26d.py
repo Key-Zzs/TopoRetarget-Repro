@@ -28,9 +28,14 @@ from toporetarget.rl.geometry_audit.hand_collision_reconstruction import (
 from toporetarget.rl.ppo.checkpoint import load_checkpoint
 from toporetarget.rl.ppo.ppo26d_continuation import summarize_episodes
 from toporetarget.rl.ppo.ppo26d_trainer import PPO26DTrainer
+from toporetarget.rl.reference_tracking.reference_gated_contact import (
+    EVALUATION_FINGERTIP_LINKS,
+    fingertip_force_indices,
+)
 
 DEFAULT_ROOT = REPO_ROOT / ".local/reports/stage16d_ppo26d"
 PHASE3_CHECKPOINT_SCHEMA = "Stage16DPhase3RewardV2CheckpointV1"
+REWARD_V3_CHECKPOINT_SCHEMA = "Stage16DRewardV3CheckpointV1"
 
 
 def parse_args() -> argparse.Namespace:
@@ -49,6 +54,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Evaluate a Phase 3 Reward V2 checkpoint; requires --reference-kinematics-v2-root.",
     )
+    parser.add_argument(
+        "--reference-gated-contact-reward-v3",
+        action="store_true",
+        help=(
+            "Evaluate a frozen Reward V3 checkpoint; requires V2 references, a frozen "
+            "pair-force contact contract, and the frozen reference-contact masks."
+        ),
+    )
+    parser.add_argument("--contact-reward-contract", type=Path)
+    parser.add_argument("--contact-mask-root", type=Path)
     parser.add_argument("--selected-capacity", type=Path)
     parser.add_argument("--frame-zero-replicas", type=int, default=4)
     parser.add_argument("--rsi-replicas", type=int, default=20)
@@ -72,6 +87,19 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Export all frame-zero physical states for R7 exact-geometry qualification.",
     )
+    parser.add_argument(
+        "--capture-exact-fingertip-object-pair-force",
+        action="store_true",
+        help=(
+            "Record the current object-side filtered PhysX force vector from each of the "
+            "five named fingertips. This is trace-only telemetry and does not change the "
+            "active reward, policy, physics, or actions."
+        ),
+    )
+    parser.add_argument(
+        "--trace-name",
+        help="Optional trace filename under the selected clip output directory.",
+    )
     return parser.parse_args()
 
 
@@ -89,6 +117,12 @@ def write_progress(output: Path, phase: str) -> None:
 
 def checkpoint_hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def canonical_json_hash(value: object) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 def evaluation_seeds(args: argparse.Namespace) -> tuple[list[int], list[int]]:
@@ -129,7 +163,11 @@ def model_from_checkpoint(
 ) -> tuple[PPO26DTrainer, dict[str, Any]]:
     payload = load_checkpoint(path, map_location=device)
     schema = payload.get("schema_version")
-    if schema not in {"Stage16DPPO26DCheckpointV1", PHASE3_CHECKPOINT_SCHEMA}:
+    if schema not in {
+        "Stage16DPPO26DCheckpointV1",
+        PHASE3_CHECKPOINT_SCHEMA,
+        REWARD_V3_CHECKPOINT_SCHEMA,
+    }:
         raise ValueError("CHECKPOINT_ROUNDTRIP_FAILURE: unexpected checkpoint schema")
     checkpoint_clip = payload.get("clip")
     # The frozen V1 L0 artifact was created before clip metadata became part
@@ -147,7 +185,11 @@ def model_from_checkpoint(
     trainer.cumulative_samples = int(
         payload["reward_v2_samples"]
         if schema == PHASE3_CHECKPOINT_SCHEMA
-        else payload["cumulative_samples"]
+        else (
+            payload["reward_v3_samples"]
+            if schema == REWARD_V3_CHECKPOINT_SCHEMA
+            else payload["cumulative_samples"]
+        )
     )
     trainer.trainer.freeze_observation_normalizer()
     return trainer, payload
@@ -158,6 +200,8 @@ def checkpoint_sample_counter(payload: dict[str, Any]) -> tuple[str, int]:
 
     if payload.get("schema_version") == PHASE3_CHECKPOINT_SCHEMA:
         return "reward_v2_samples", int(payload["reward_v2_samples"])
+    if payload.get("schema_version") == REWARD_V3_CHECKPOINT_SCHEMA:
+        return "reward_v3_samples", int(payload["reward_v3_samples"])
     return "cumulative_training_samples", int(payload["cumulative_samples"])
 
 
@@ -177,7 +221,9 @@ def _device_trace_to_numpy(
     }
 
 
-def _initial_trace_snapshot(env: Any) -> dict[str, np.ndarray]:
+def _initial_trace_snapshot(
+    env: Any, *, capture_exact_fingertip_object_pair_force: bool
+) -> dict[str, np.ndarray]:
     """Capture the physical reset state as trace frame zero without collision reads.
 
     The simulator callback can safely collect post-physics control rows, but a
@@ -205,6 +251,9 @@ def _initial_trace_snapshot(env: Any) -> dict[str, np.ndarray]:
         ),
         dim=-1,
     )
+    virtual_wrist_ids = env._virtual_wrist_joint_ids
+    if len(virtual_wrist_ids) != 6:
+        raise RuntimeError("PPO26D trace export requires the finite six-DoF virtual wrist")
     values = {
         "object_pose": torch.cat(
             (state["object_position_scene"], state["object_quaternion_wxyz"]), dim=-1
@@ -214,6 +263,14 @@ def _initial_trace_snapshot(env: Any) -> dict[str, np.ndarray]:
             (state["wrist_position_scene"], state["wrist_quaternion_wxyz"]), dim=-1
         ),
         "finger_q": state["finger_q"],
+        "finger_qdot": state["finger_qdot"],
+        "wrist_twist_world": state["wrist_twist_world"],
+        "virtual_wrist_q": env._robot.data.joint_pos[:, virtual_wrist_ids],
+        "virtual_wrist_qdot": env._robot.data.joint_vel[:, virtual_wrist_ids],
+        "virtual_wrist_target_q": env._explicit_wrist_joint_target,
+        "virtual_wrist_target_qdot": env._explicit_wrist_joint_velocity_target,
+        "object_axis_points": state["object_axis_points_scene"],
+        "tracked_link_positions": state["tracked_links_scene"],
         "contact_force_world": torch.zeros((count, 3), device=device),
         "contact_pair_presence": torch.zeros((count, 21), dtype=torch.bool, device=device),
         "actuator_effort": torch.zeros((count, 26), device=device),
@@ -230,6 +287,7 @@ def _initial_trace_snapshot(env: Any) -> dict[str, np.ndarray]:
         "reward_wrist_rotation": torch.zeros(count, device=device),
         "reward_smoothness": torch.zeros(count, device=device),
         "wrist_residual": torch.zeros((count, 6), device=device),
+        "finger_residual": torch.zeros((count, 20), device=device),
         "wrist_target": wrist_reference,
         "finger_target": env.reference_bank.gather("q_finger_ref", clips, indices),
         "object_reference": object_reference,
@@ -240,7 +298,10 @@ def _initial_trace_snapshot(env: Any) -> dict[str, np.ndarray]:
         ),
         "reference_index": indices,
     }
-    if env.cfg.ppo26d_reward_contract == "TopoRetargetReferenceTrackingReward26DV2":
+    if env.cfg.ppo26d_reward_contract in {
+        "TopoRetargetReferenceTrackingReward26DV2",
+        "TopoRetargetReferenceTrackingReward26DV3",
+    }:
         values.update(
             {
                 "object_twist_reference": env.reference_bank.gather(
@@ -250,6 +311,32 @@ def _initial_trace_snapshot(env: Any) -> dict[str, np.ndarray]:
                 "reward_obj_ang_vel": torch.zeros(count, device=device),
                 "error_obj_vel": torch.zeros(count, device=device),
                 "error_obj_ang_vel": torch.zeros(count, device=device),
+            }
+        )
+    if env.cfg.ppo26d_reward_contract == "TopoRetargetReferenceTrackingReward26DV3":
+        # Like pair force, these are a reset snapshot rather than a sensor/reward
+        # callback row.  Keep their dimensions aligned with V3 post-physics trace
+        # capture; frame zero's force-derived terms are deliberately all zero.
+        values.update(
+            {
+                "reference_contact_mask": env._reference_expected_contact_mask(indices),
+                "actual_contact_mask": torch.zeros((count, 5), dtype=torch.bool, device=device),
+                "fingertip_object_pair_force_world": torch.zeros((count, 5, 3), device=device),
+                "fingertip_object_force_magnitude": torch.zeros((count, 5), device=device),
+                "contact_reward": torch.zeros(count, device=device),
+                "contact_force_scale": torch.zeros(count, device=device),
+            }
+        )
+    if capture_exact_fingertip_object_pair_force:
+        # Frame zero is a physical reset state, not a post-physics sensor read.
+        # Preserve the 321-key state trace while preventing this placeholder from
+        # entering any contact-force calibration.
+        values.update(
+            {
+                "fingertip_object_pair_force_world": torch.zeros((count, 5, 3), device=device),
+                "fingertip_object_pair_force_valid": torch.zeros(
+                    count, dtype=torch.bool, device=device
+                ),
             }
         )
     return {name: value.detach().cpu().numpy().copy() for name, value in values.items()}
@@ -270,7 +357,12 @@ def _prepend_initial_trace(
 
 
 def run_episode(
-    env: Any, trainer: PPO26DTrainer, *, capture: bool, expected_clip: str
+    env: Any,
+    trainer: PPO26DTrainer,
+    *,
+    capture: bool,
+    capture_exact_fingertip_object_pair_force: bool,
+    expected_clip: str,
 ) -> dict[str, Any]:
     """Run one physical rollout without reading collision articulation tensors.
 
@@ -289,7 +381,10 @@ def run_episode(
             f"expected={expected_clip_index} active={active_clip_indices}"
         )
     if capture:
-        env.start_trace_capture(capacity=env.reference_bank.frame_count)
+        env.start_trace_capture(
+            capacity=env.reference_bank.frame_count,
+            capture_exact_fingertip_object_pair_force=capture_exact_fingertip_object_pair_force,
+        )
     start_reference_index = int(env._reference_index[0].item())
     total_reward = 0.0
     contact_seen = False
@@ -444,6 +539,7 @@ def run_parallel_episodes(
     *,
     capture: bool,
     capture_all_replicas: bool,
+    capture_exact_fingertip_object_pair_force: bool,
     expected_clip: str,
     seeds: list[int],
 ) -> list[dict[str, Any]]:
@@ -461,9 +557,19 @@ def run_parallel_episodes(
     active_clip_indices = sorted(set(env._clip_index.detach().cpu().tolist()))
     if active_clip_indices != [expected_clip_index]:
         raise RuntimeError("PPO26D_FIXED_CLIP_MISMATCH_AFTER_RESET")
-    initial_trace = _initial_trace_snapshot(env) if capture else None
+    initial_trace = (
+        _initial_trace_snapshot(
+            env,
+            capture_exact_fingertip_object_pair_force=capture_exact_fingertip_object_pair_force,
+        )
+        if capture
+        else None
+    )
     if capture:
-        env.start_trace_capture(capacity=env.reference_bank.frame_count)
+        env.start_trace_capture(
+            capacity=env.reference_bank.frame_count,
+            capture_exact_fingertip_object_pair_force=capture_exact_fingertip_object_pair_force,
+        )
     device = env.device
     count = env.num_envs
     active = torch.ones(count, dtype=torch.bool, device=device)
@@ -652,12 +758,26 @@ def main() -> int:
     args = parse_args()
     if not args.accept_eula:
         raise ValueError("--accept-eula is required")
-    if args.object_twist_reward_v2 and args.reference_kinematics_v2_root is None:
+    if (
+        args.object_twist_reward_v2 or args.reference_gated_contact_reward_v3
+    ) and args.reference_kinematics_v2_root is None:
         raise ValueError("PPO26D_REWARD_V2_REQUIRES_REFERENCE_KINEMATICS_V2")
+    if args.object_twist_reward_v2 and args.reference_gated_contact_reward_v3:
+        raise ValueError("PPO26D_REWARD_V2_AND_V3_ARE_MUTUALLY_EXCLUSIVE")
+    if args.reference_gated_contact_reward_v3 and (
+        args.contact_reward_contract is None or args.contact_mask_root is None
+    ):
+        raise ValueError("PPO26D_REWARD_V3_REQUIRES_FROZEN_CONTACT_INPUTS")
     if args.frame_zero_replicas <= 0 or args.rsi_replicas < 0:
         raise ValueError("--frame-zero-replicas must be positive and --rsi-replicas non-negative")
     if not args.artifact_label.replace("_", "").isalnum():
         raise ValueError("--artifact-label must be alphanumeric/underscore")
+    if args.capture_exact_fingertip_object_pair_force and not args.capture_all_frame_zero_replicas:
+        raise ValueError("PPO26D_PAIR_FORCE_CAPTURE_REQUIRES_ALL_FRAME_ZERO_REPLICAS")
+    if args.trace_name is not None and (
+        Path(args.trace_name).name != args.trace_name or not args.trace_name.endswith(".npz")
+    ):
+        raise ValueError("PPO26D_TRACE_NAME_MUST_BE_A_LOCAL_NPZ_FILENAME")
     frame_zero_seeds, rsi_seeds = evaluation_seeds(args)
     os.environ["OMNI_KIT_ACCEPT_EULA"] = "YES"
     from isaaclab.app import AppLauncher
@@ -686,7 +806,17 @@ def main() -> int:
         ppo26d_cfg.configure_stage16d_ppo26d(
             cfg, num_envs=evaluation_num_envs, clip=args.clip, rsi=False, critical_dr=False
         )
-        if args.object_twist_reward_v2:
+        if args.reference_gated_contact_reward_v3:
+            assert args.reference_kinematics_v2_root is not None
+            assert args.contact_reward_contract is not None
+            assert args.contact_mask_root is not None
+            ppo26d_cfg.configure_stage16d_reference_gated_contact_reward(
+                cfg,
+                reference_root=args.reference_kinematics_v2_root,
+                contact_reward_contract=args.contact_reward_contract,
+                contact_mask_root=args.contact_mask_root,
+            )
+        elif args.object_twist_reward_v2:
             assert args.reference_kinematics_v2_root is not None
             ppo26d_cfg.configure_stage16d_phase3_object_twist_reward(
                 cfg, reference_root=args.reference_kinematics_v2_root
@@ -699,6 +829,15 @@ def main() -> int:
         trainer, payload = model_from_checkpoint(
             checkpoint, str(env.device), expected_clip=args.clip
         )
+        if args.reference_gated_contact_reward_v3:
+            if payload.get("schema_version") != REWARD_V3_CHECKPOINT_SCHEMA:
+                raise ValueError("PPO26D_REWARD_V3_EVALUATION_REQUIRES_V3_CHECKPOINT")
+            assert args.contact_reward_contract is not None
+            checkpoint_entry = payload.get("reward_v3_contact_entry", {}).get("contract", {})
+            if checkpoint_entry.get("sha256") != checkpoint_hash(args.contact_reward_contract):
+                raise ValueError("PPO26D_REWARD_V3_CONTACT_CONTRACT_HASH_MISMATCH")
+        elif payload.get("schema_version") == REWARD_V3_CHECKPOINT_SCHEMA:
+            raise ValueError("PPO26D_V3_CHECKPOINT_REQUIRES_V3_EVALUATION_MODE")
         sample_counter_name, sample_counter = checkpoint_sample_counter(payload)
         selected = int(payload["selected_num_envs"])
         write_progress(output, "checkpoint_loaded")
@@ -708,6 +847,7 @@ def main() -> int:
             trainer,
             capture=True,
             capture_all_replicas=args.capture_all_frame_zero_replicas,
+            capture_exact_fingertip_object_pair_force=args.capture_exact_fingertip_object_pair_force,
             expected_clip=args.clip,
             seeds=pad_parallel_seeds(frame_zero_seeds, count=evaluation_num_envs),
         )[: args.frame_zero_replicas]
@@ -754,12 +894,14 @@ def main() -> int:
                 trainer,
                 capture=False,
                 capture_all_replicas=False,
+                capture_exact_fingertip_object_pair_force=False,
                 expected_clip=args.clip,
                 seeds=rsi_parallel_seeds,
             )[: args.rsi_replicas]
         else:
             rsi = []
-        trace_path = output / f"ppo_{args.artifact_label}_trace_replica0.npz"
+        trace_path = output / (args.trace_name or f"ppo_{args.artifact_label}_trace_replica0.npz")
+        environment_contract = env.contract_report()
         np.savez_compressed(
             trace_path,
             object_pose=trace_rows["object_pose"].astype(np.float32),
@@ -768,6 +910,14 @@ def main() -> int:
             hand_collision_body_names=np.asarray(HAND_COLLISION_BODY_NAMES),
             wrist_pose=trace_rows["wrist_pose"].astype(np.float32),
             finger_q=trace_rows["finger_q"].astype(np.float32),
+            finger_qdot=trace_rows["finger_qdot"].astype(np.float32),
+            wrist_twist_world=trace_rows["wrist_twist_world"].astype(np.float32),
+            virtual_wrist_q=trace_rows["virtual_wrist_q"].astype(np.float32),
+            virtual_wrist_qdot=trace_rows["virtual_wrist_qdot"].astype(np.float32),
+            virtual_wrist_target_q=trace_rows["virtual_wrist_target_q"].astype(np.float32),
+            virtual_wrist_target_qdot=trace_rows["virtual_wrist_target_qdot"].astype(np.float32),
+            object_axis_points=trace_rows["object_axis_points"].astype(np.float32),
+            tracked_link_positions=trace_rows["tracked_link_positions"].astype(np.float32),
             contact_force_world=trace_rows["contact_force_world"].astype(np.float32),
             contact_pair_presence=trace_rows["contact_pair_presence"].astype(bool),
             actuator_effort=trace_rows["actuator_effort"].astype(np.float32),
@@ -777,6 +927,7 @@ def main() -> int:
             action=trace_rows["action"].astype(np.float32),
             clip_index=trace_rows["clip_index"].astype(np.int64),
             wrist_residual=trace_rows["wrist_residual"].astype(np.float32),
+            finger_residual=trace_rows["finger_residual"].astype(np.float32),
             wrist_target_pose=trace_rows["wrist_target"].astype(np.float32),
             finger_target_q=trace_rows["finger_target"].astype(np.float32),
             reward_total=trace_rows["reward_total"].astype(np.float32),
@@ -803,9 +954,14 @@ def main() -> int:
             selected_num_envs=np.asarray(selected),
             reference_hash=np.asarray(json.dumps(payload["reference_hash"], sort_keys=True)),
             reference_kinematics_version=np.asarray(int(cfg.reference_kinematics_version)),
+            simulation_data_capture_version=np.asarray(
+                "Stage16DRewardV3SimulationDataV1"
+                if args.reference_gated_contact_reward_v3
+                else "Stage16DPPO26DTraceV2"
+            ),
             **(
                 {}
-                if not args.object_twist_reward_v2
+                if not (args.object_twist_reward_v2 or args.reference_gated_contact_reward_v3)
                 else {
                     "object_twist_reference": trace_rows["object_twist_reference"].astype(
                         np.float32
@@ -838,10 +994,56 @@ def main() -> int:
             ),
             **(
                 {}
+                if not args.reference_gated_contact_reward_v3
+                else {
+                    "reference_contact_mask": trace_rows["reference_contact_mask"].astype(bool),
+                    "actual_contact_mask": trace_rows["actual_contact_mask"].astype(bool),
+                    "fingertip_object_force_magnitude": trace_rows[
+                        "fingertip_object_force_magnitude"
+                    ].astype(np.float32),
+                    "contact_reward": trace_rows["contact_reward"].astype(np.float32),
+                    "contact_force_scale": trace_rows["contact_force_scale"].astype(np.float32),
+                    **(
+                        {}
+                        if args.capture_exact_fingertip_object_pair_force
+                        else {
+                            "fingertip_object_pair_force_world": trace_rows[
+                                "fingertip_object_pair_force_world"
+                            ].astype(np.float32)
+                        }
+                    ),
+                }
+            ),
+            **(
+                {}
                 if all_replica_trace is None or replica_hand is None
                 else {
                     "replica_object_pose": all_replica_trace["object_pose"].astype(np.float32),
                     "replica_hand_collision_body_pose": replica_hand,
+                    "replica_wrist_pose": all_replica_trace["wrist_pose"].astype(np.float32),
+                    "replica_wrist_twist_world": all_replica_trace["wrist_twist_world"].astype(
+                        np.float32
+                    ),
+                    "replica_virtual_wrist_q": all_replica_trace["virtual_wrist_q"].astype(
+                        np.float32
+                    ),
+                    "replica_virtual_wrist_qdot": all_replica_trace["virtual_wrist_qdot"].astype(
+                        np.float32
+                    ),
+                    "replica_virtual_wrist_target_q": all_replica_trace[
+                        "virtual_wrist_target_q"
+                    ].astype(np.float32),
+                    "replica_virtual_wrist_target_qdot": all_replica_trace[
+                        "virtual_wrist_target_qdot"
+                    ].astype(np.float32),
+                    "replica_finger_q": all_replica_trace["finger_q"].astype(np.float32),
+                    "replica_finger_qdot": all_replica_trace["finger_qdot"].astype(np.float32),
+                    "replica_object_axis_points": all_replica_trace["object_axis_points"].astype(
+                        np.float32
+                    ),
+                    "replica_tracked_link_positions": all_replica_trace[
+                        "tracked_link_positions"
+                    ].astype(np.float32),
                     "replica_contact_force_world": all_replica_trace["contact_force_world"].astype(
                         np.float32
                     ),
@@ -856,6 +1058,120 @@ def main() -> int:
                     "replica_terminated": all_replica_trace["terminated"].astype(bool),
                     "replica_timed_out": all_replica_trace["timed_out"].astype(bool),
                     "replica_action": all_replica_trace["action"].astype(np.float32),
+                    "replica_wrist_residual": all_replica_trace["wrist_residual"].astype(
+                        np.float32
+                    ),
+                    "replica_finger_residual": all_replica_trace["finger_residual"].astype(
+                        np.float32
+                    ),
+                    "replica_wrist_target_pose": all_replica_trace["wrist_target"].astype(
+                        np.float32
+                    ),
+                    "replica_finger_target_q": all_replica_trace["finger_target"].astype(
+                        np.float32
+                    ),
+                    "replica_reference_index": all_replica_trace["reference_index"].astype(
+                        np.int64
+                    ),
+                    "replica_embedded_reference_object_pose": all_replica_trace[
+                        "object_reference"
+                    ].astype(np.float32),
+                    "replica_embedded_reference_wrist_pose": all_replica_trace[
+                        "wrist_reference"
+                    ].astype(np.float32),
+                    "replica_embedded_reference_finger_q": all_replica_trace[
+                        "finger_reference"
+                    ].astype(np.float32),
+                    "replica_embedded_reference_tracked_links": all_replica_trace[
+                        "tracked_link_reference"
+                    ].astype(np.float32),
+                    "replica_reward_total": all_replica_trace["reward_total"].astype(np.float32),
+                    "replica_reward_object": all_replica_trace["reward_object"].astype(np.float32),
+                    "replica_reward_link": all_replica_trace["reward_link"].astype(np.float32),
+                    "replica_reward_finger": all_replica_trace["reward_finger"].astype(np.float32),
+                    "replica_reward_wrist_translation": all_replica_trace[
+                        "reward_wrist_translation"
+                    ].astype(np.float32),
+                    "replica_reward_wrist_rotation": all_replica_trace[
+                        "reward_wrist_rotation"
+                    ].astype(np.float32),
+                    "replica_reward_smoothness": all_replica_trace["reward_smoothness"].astype(
+                        np.float32
+                    ),
+                    **(
+                        {}
+                        if not args.reference_gated_contact_reward_v3
+                        else {
+                            "replica_reference_contact_mask": all_replica_trace[
+                                "reference_contact_mask"
+                            ].astype(bool),
+                            "replica_actual_contact_mask": all_replica_trace[
+                                "actual_contact_mask"
+                            ].astype(bool),
+                            "replica_fingertip_object_force_magnitude": all_replica_trace[
+                                "fingertip_object_force_magnitude"
+                            ].astype(np.float32),
+                            "replica_contact_reward": all_replica_trace["contact_reward"].astype(
+                                np.float32
+                            ),
+                            "replica_contact_force_scale": all_replica_trace[
+                                "contact_force_scale"
+                            ].astype(np.float32),
+                            "replica_object_twist_reference": all_replica_trace[
+                                "object_twist_reference"
+                            ].astype(np.float32),
+                            "replica_reward_obj_vel": all_replica_trace["reward_obj_vel"].astype(
+                                np.float32
+                            ),
+                            "replica_reward_obj_ang_vel": all_replica_trace[
+                                "reward_obj_ang_vel"
+                            ].astype(np.float32),
+                            "replica_error_obj_vel": all_replica_trace["error_obj_vel"].astype(
+                                np.float32
+                            ),
+                            "replica_error_obj_ang_vel": all_replica_trace[
+                                "error_obj_ang_vel"
+                            ].astype(np.float32),
+                        }
+                    ),
+                    **(
+                        {}
+                        if not args.capture_exact_fingertip_object_pair_force
+                        else {
+                            "replica_fingertip_object_pair_force_world": all_replica_trace[
+                                "fingertip_object_pair_force_world"
+                            ].astype(np.float32),
+                            "replica_fingertip_object_pair_force_valid": all_replica_trace[
+                                "fingertip_object_pair_force_valid"
+                            ].astype(bool),
+                        }
+                    ),
+                }
+            ),
+            **(
+                {}
+                if not args.capture_exact_fingertip_object_pair_force
+                else {
+                    "fingertip_object_pair_force_world": trace_rows[
+                        "fingertip_object_pair_force_world"
+                    ].astype(np.float32),
+                    "fingertip_object_pair_force_valid": trace_rows[
+                        "fingertip_object_pair_force_valid"
+                    ].astype(bool),
+                    "fingertip_link_names": np.asarray(EVALUATION_FINGERTIP_LINKS),
+                    "fingertip_force_sensor_indices": np.asarray(
+                        fingertip_force_indices(HAND_COLLISION_BODY_NAMES), dtype=np.int64
+                    ),
+                    "pair_force_frame": np.asarray("world"),
+                    "pair_force_units": np.asarray("N"),
+                    "pair_force_semantics": np.asarray(
+                        "force on active object from named filtered hand collision body"
+                    ),
+                    "pair_force_capture": np.asarray(
+                        "V3_PPO_EVALUATION"
+                        if args.reference_gated_contact_reward_v3
+                        else "V1_PAIRFORCE_REEXPORT_DIAGNOSTIC"
+                    ),
                 }
             ),
         )
@@ -864,7 +1180,9 @@ def main() -> int:
             "status": "PPO_DEVELOPMENT_EVALUATION_COMPLETE",
             "artifact_label": args.artifact_label,
             "reference_kinematics_version": int(cfg.reference_kinematics_version),
-            "reward_contract": env.contract_report()["ppo26d"]["reward"],
+            "reward_contract": environment_contract["ppo26d"]["reward"],
+            "physics_contract": environment_contract,
+            "physics_contract_sha256": canonical_json_hash(environment_contract),
             "clip": actual_clip,
             "requested_clip": args.clip,
             "clip_index": expected_clip_index,

@@ -31,6 +31,22 @@ world physics.
 V3 has no contact termination. Contact-loss termination, contact-ready RSI V2,
 gravity/friction curriculum, and H2R are deliberately outside this stage.
 
+## V1 exact-pair-force calibration
+
+V1 replays both frozen Formal20 sets only to add missing telemetry. At every
+control frame it records `[T, R, F, 3] = [321, 20, 5, 3]` pair-force vectors
+from the object-side filtered PhysX force matrix, in world-frame N. The five
+fingers are thumb/index/middle/ring/pinky, mapped by the runtime asset manifest
+to `r_thumb_distal:20`, `r_index_finger_distal:4`,
+`r_middle_finger_distal:8`, `r_ring_finger_distal:16`, and
+`r_pinky_distal:12`. Each vector is force on the active object from the named
+hand collision body.
+
+Frame zero is explicitly invalid rather than treated as a zero-force sample.
+Calibration pools only valid frames with an expected finger and positive
+`S_contact`, then freezes the cross-clip median once. Aggregate contact force,
+contact presence, V2 data, and V3 outcomes are not calibration substitutes.
+
 ## Fair protocol
 
 The two clips use their own V1-L0 actor and normalizer, fresh critic and

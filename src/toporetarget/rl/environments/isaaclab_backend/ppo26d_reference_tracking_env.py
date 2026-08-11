@@ -54,6 +54,7 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         )
         self._reference_contact_mask_by_clip: torch.Tensor | None = None
         self._fingertip_force_sensor_indices: torch.Tensor | None = None
+        self._ppo26d_trace_capture_exact_pair_force = False
         self._contact_reward_receipt: dict[str, object] | None = None
         if cfg.ppo26d_reward_contract == "TopoRetargetReferenceTrackingReward26DV3":
             if cfg.reference_kinematics_version != 2:
@@ -111,6 +112,14 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         )
         self._ppo26d_object_write_baseline = self._object_state_write_count.clone()
         self._ppo26d_wrist_write_baseline = self._wrist_step_state_write_count.clone()
+        # This name-derived mapping is telemetry infrastructure, not a V3 reward
+        # input.  Keeping it available to all reward versions lets a frozen V1
+        # policy be re-evaluated with an exact, read-only contact trace.
+        self._fingertip_force_sensor_indices = torch.as_tensor(
+            fingertip_force_indices(HAND_COLLISION_BODY_NAMES),
+            dtype=torch.long,
+            device=self.device,
+        )
         if isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV3):
             paths = cfg.ppo26d_reference_contact_mask_paths
             if paths is None or set(paths) != set(self.reference_bank.clip_ids):
@@ -129,11 +138,6 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
                 masks.append(mask)
             self._reference_contact_mask_by_clip = torch.as_tensor(
                 np.stack(masks), dtype=torch.bool, device=self.device
-            )
-            self._fingertip_force_sensor_indices = torch.as_tensor(
-                fingertip_force_indices(HAND_COLLISION_BODY_NAMES),
-                dtype=torch.long,
-                device=self.device,
             )
 
     def _reset_idx(self, env_ids: Sequence[int] | torch.Tensor | None) -> None:
@@ -399,7 +403,7 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
                     "wrist_pose_translation_world_ref", self._clip_index, index
                 ),
                 wrist_quaternion_ref_wxyz=self.reference_bank.gather(
-                    "wrist_pose_quaternion_world_ref", self._clip_index, index
+                    "wrist_pose_quaternion_world_ref_wxyz", self._clip_index, index
                 ),
                 action=self._actions,
                 previous_action=self._previous_actions,
@@ -586,7 +590,9 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         self._ppo26d_last_timed_out = timed_out.clone()
         return terminated, timed_out
 
-    def start_trace_capture(self, *, capacity: int) -> None:
+    def start_trace_capture(
+        self, *, capacity: int, capture_exact_fingertip_object_pair_force: bool = False
+    ) -> None:
         """Capture one post-physics row per PPO step without host transfers.
 
         DirectRLEnv invokes ``_get_dones`` and ``_get_rewards`` on the
@@ -607,6 +613,7 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         # reset can itself close an Isaac Sim 5 app without an exception.
         self._ppo26d_trace_capture = None
         self._ppo26d_trace_enabled = True
+        self._ppo26d_trace_capture_exact_pair_force = capture_exact_fingertip_object_pair_force
         self._ppo26d_trace_capacity = capacity
         self._ppo26d_trace_length = 0
 
@@ -619,6 +626,7 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         length = self._ppo26d_trace_length
         self._ppo26d_trace_capture = None
         self._ppo26d_trace_enabled = False
+        self._ppo26d_trace_capture_exact_pair_force = False
         self._ppo26d_trace_capacity = 0
         self._ppo26d_trace_length = 0
         if length == 0:
@@ -640,6 +648,11 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             raise RuntimeError("PPO26D trace capture requires done flags")
         if effort.shape != (self.num_envs, 26):
             raise RuntimeError(f"PPO26D actuator effort has unexpected shape {tuple(effort.shape)}")
+        virtual_wrist_ids = self._virtual_wrist_joint_ids
+        if len(virtual_wrist_ids) != 6:
+            raise RuntimeError(
+                "PPO26D trace capture requires the finite six-DoF virtual wrist actuator"
+            )
         values = {
             "object_pose": torch.cat(
                 (state["object_position_scene"], state["object_quaternion_wxyz"]), dim=-1
@@ -651,6 +664,14 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             # _state() already gathers _joint_ids in canonical reference order.
             # Re-applying isaac_to_canonical here silently permutes trace joints twice.
             "finger_q": state["finger_q"],
+            "finger_qdot": state["finger_qdot"],
+            "wrist_twist_world": state["wrist_twist_world"],
+            "virtual_wrist_q": self._robot.data.joint_pos[:, virtual_wrist_ids],
+            "virtual_wrist_qdot": self._robot.data.joint_vel[:, virtual_wrist_ids],
+            "virtual_wrist_target_q": self._explicit_wrist_joint_target,
+            "virtual_wrist_target_qdot": self._explicit_wrist_joint_velocity_target,
+            "object_axis_points": state["object_axis_points_scene"],
+            "tracked_link_positions": state["tracked_links_scene"],
             "contact_force_world": pair_force.sum(dim=1),
             "contact_pair_presence": torch.linalg.vector_norm(pair_force, dim=-1) > 1.0e-4,
             "actuator_effort": effort,
@@ -669,6 +690,7 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             "wrist_residual": torch.cat(
                 (self._wrist_translation_residual, self._wrist_rotation_residual), dim=-1
             ),
+            "finger_residual": self._actions[:, 6:],
             "wrist_target": torch.cat(
                 (
                     global_to_scene(self._wrist_target_position, self.scene.env_origins),
@@ -745,6 +767,22 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
                     ],
                     "contact_reward": self._last_reward_terms["r_contact"],
                     "contact_force_scale": self._last_reward_terms["contact_force_scale_n"],
+                }
+            )
+        if self._ppo26d_trace_capture_exact_pair_force:
+            force_indices = self._fingertip_force_sensor_indices
+            if force_indices is None:
+                raise RuntimeError("PPO26D_TRACE_PAIR_FORCE_MAPPING_NOT_INITIALIZED")
+            values.update(
+                {
+                    "fingertip_object_pair_force_world": pair_force.index_select(1, force_indices),
+                    # Every post-physics row is a direct finite read from the
+                    # active object-side filtered force matrix.  The evaluator
+                    # supplies an explicitly-invalid reset row when it needs a
+                    # 321-key trace.
+                    "fingertip_object_pair_force_valid": torch.ones(
+                        self.num_envs, dtype=torch.bool, device=self.device
+                    ),
                 }
             )
         capture = self._ppo26d_trace_capture

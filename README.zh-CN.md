@@ -116,8 +116,8 @@ world/env frame；legacy metrics 仍会保留，但不会被静默重定义。
 
 Stage 16-D 因果 PPO pipeline 支持 reference pose、object twist tracking，以及
 reference-gated contact consistency reward。后者只在 policy optimization 中使用 reference
-Wuji fingertip proximity 和当前 PhysX fingertip-to-active-object pair force；它不直接控制
-object。
+Wuji fingertip proximity 和当前 PhysX fingertip-to-active-object pair force；其共享 force scale
+由精确的 V1 Formal20 pair-force trace 冻结；它不直接控制 object。
 
 阶段性的 terminal-dynamics attribution 与详细结果进入 stage/RL 文档；machine-readable
 artifact 保留在忽略的本地存储中。

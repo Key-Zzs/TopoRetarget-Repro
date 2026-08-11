@@ -10,6 +10,7 @@ import pytest
 import torch
 
 from toporetarget.rl.environments.isaaclab_backend.reference_bank import WorldWristReferenceBank
+from toporetarget.rl.ppo.checkpoint import restore_rng_state, rng_state
 from toporetarget.rl.ppo.gpu_capacity import (
     GpuCapacityMeasurement,
     select_ppo26d_environment_capacity,
@@ -225,6 +226,45 @@ def test_aggregate_historical_force_is_rejected_for_reward_scale_calibration() -
     assert available["status"] == "PAIR_FORCE_AVAILABLE"
 
 
+def test_v1_pairforce_telemetry_is_reward_independent_and_world_frame_only() -> None:
+    environment = (
+        REPO_ROOT
+        / "src/toporetarget/rl/environments/isaaclab_backend/ppo26d_reference_tracking_env.py"
+    ).read_text(encoding="utf-8")
+    evaluator = (REPO_ROOT / "scripts/rl/isaaclab/evaluate_stage16d_ppo26d.py").read_text(
+        encoding="utf-8"
+    )
+    freezer = (
+        REPO_ROOT / "scripts/rl/isaaclab/freeze_stage16d_reward_v3_contact_contract.py"
+    ).read_text(encoding="utf-8")
+    capture = environment[environment.index("def _capture_ppo26d_trace_row") :]
+    v3_capture = capture.index(
+        "if isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV3)"
+    )
+    exact_capture = capture.index("if self._ppo26d_trace_capture_exact_pair_force")
+    assert exact_capture > v3_capture
+    assert '"fingertip_object_pair_force_valid": torch.ones(' in capture[exact_capture:]
+    assert "pair_force.index_select(1, force_indices)" in capture[exact_capture:]
+    assert "replica_fingertip_object_pair_force_world" in evaluator
+    assert '"pair_force_frame": np.asarray("world")' in evaluator
+    assert "V1_PAIRFORCE_REEXPORT_DIAGNOSTIC" in evaluator
+    assert '"required_shape": [321, 20, 5, 3]' in freezer
+    assert 'aggregate_force_permitted_for_calibration": False' in freezer
+
+
+def test_reward_v3_trainer_defaults_to_each_clip_own_v1_l0() -> None:
+    trainer = (REPO_ROOT / "scripts/rl/isaaclab/train_stage16d_ppo26d_object_twist.py").read_text(
+        encoding="utf-8"
+    )
+    assert "DEFAULT_L0_CHECKPOINT_170650" in trainer
+    assert "stage16d_ppo26d_clip_repair/hocap_170650" in trainer
+    assert "DEFAULT_L0_CHECKPOINT_170105" in trainer
+    assert "stage16d_ppo26d_continuation/hocap_170105" in trainer
+    assert '"hocap_170650": DEFAULT_L0_CHECKPOINT_170650' in trainer
+    assert '"hocap_170105": DEFAULT_L0_CHECKPOINT_170105' in trainer
+    assert "REWARD_V3_CHECKPOINT_SCHEMA" in trainer
+
+
 def test_v3_is_v2_plus_only_contact_reward() -> None:
     v2 = TopoRetargetReferenceTrackingReward26DV2()
     v3 = TopoRetargetReferenceTrackingReward26DV3(contact_force_scale_lambda_n=0.02)
@@ -322,7 +362,10 @@ def test_ppo26d_normalizer_uses_full_rollout_after_frozen_update(monkeypatch) ->
             self.num_envs = 2
             self.reference_bank = ReferenceBank()
             self._reference_index = torch.zeros(2, dtype=torch.long)
-            self._last_reward_terms = {"total": torch.ones(2)}
+            self._last_reward_terms = {
+                "total": torch.ones(2),
+                "reference_expected_contact_mask": torch.tensor([True, False]),
+            }
             self.step_index = 0
 
         def reset(self):
@@ -365,6 +408,7 @@ def test_ppo26d_normalizer_uses_full_rollout_after_frozen_update(monkeypatch) ->
     assert count_during_update == [pytest.approx(1.0e-8)]
     assert result["safety"]["normalizer_frozen_during_rollout_and_update"]
     assert result["safety"]["normalizer_samples_added"] == pytest.approx(80.0)
+    assert result["reward"]["reference_expected_contact_mask"] == pytest.approx(0.5)
     assert trainer.trainer.normalizer.mean.mean().item() == pytest.approx(0.195)
     partial = trainer.collect_and_update(FakeEnv(), rollout_length=3)
     assert partial["rollout_length"] == 3
@@ -839,3 +883,19 @@ def test_normalizer_restores_cuda_checkpoint_statistics_to_cpu() -> None:
     assert normalizer.variance.device.type == "cpu"
     normalizer.update(torch.ones((2, 3), device="cuda"))
     assert normalizer.count.item() == pytest.approx(6.0)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA RNG state mapping")
+def test_restore_rng_state_recovers_cuda_mapped_byte_tensors() -> None:
+    """Resuming a CUDA-mapped checkpoint must restore CPU and CUDA RNG byte state."""
+
+    captured = rng_state()
+    expected_cpu = captured["torch_cpu"].clone()
+    mapped = {
+        **captured,
+        "torch_cpu": captured["torch_cpu"].to("cuda"),
+        "torch_cuda": [value.to("cuda") for value in captured["torch_cuda"]],
+    }
+    torch.rand(3)
+    restore_rng_state(mapped)
+    assert torch.equal(torch.get_rng_state(), expected_cpu)

@@ -58,7 +58,7 @@ Reference Kinematics V2 与 Phase 1-R attribution 已通过 entry gates。获授
 V1 4M baseline，terminal contact 与 stability 发生回退。该结果不授权继续到 4M/16M，
 也不授权扩展 reward 或 physics contract。
 
-### Reference-Gated Contact Reward V3（CURRENT）
+### Reference-Gated Contact Reward V3（PARTIAL）
 
 Reward V3 是当前唯一的因果单变量实验：
 
@@ -72,11 +72,14 @@ hyperparameters。mask 只由 Wuji distal-root 到 visual object surface 的 ref
 contact-loss termination、terminal/penetration reward、guidance 或 physics curriculum。signal
 qualification 采用 fail-closed：历史 aggregate force telemetry 不能替代精确 pair force。
 
-如果 V3 足够有效，先冻结 causal reward contract，再决定 second-clip/multi-clip 路线或后续的
-causal physics curriculum。若 persistent contact loss 仍存在，hysteretic contact-loss termination
-是未来独立版本；若 contact 良好但 terminal dynamics 仍弱，Contact-ready RSI V2 加
-gravity/friction curriculum 属于未来工作。只有有界 causal correction 全部失败时，H2R 才是可选的
-独立路线。
+两个 clip 的精确 V1 Formal20 pair-force re-export 均已验证，并以其 pooled
+positive-contact median 一次性冻结共享 V3 force scale。有界 V3 结果为 partial：
+`hocap_170105` 的 Formal20 qualified success 从 0/20 提升至 19/20，且
+free-flight re-catch 减少；`hocap_170650` 从 14/20 提升至 16/20，但
+free-flight re-catch 仍存在。这不授权 multi-clip PPO、reward-contract 扩展、
+contact-loss termination 或 physics curriculum。下一步是审查冻结的
+contact-reward contract 及 170650 的剩余失败模式；任何修正都必须是独立版本化的
+causal experiment。
 
 ### Causal Decision Tree（FUTURE）
 

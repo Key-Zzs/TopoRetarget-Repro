@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "src"))
@@ -29,12 +30,20 @@ from toporetarget.rl.reference_tracking.ppo26d_reward import (
 )
 
 PHASE3_CHECKPOINT_SCHEMA = "Stage16DPhase3RewardV2CheckpointV1"
+REWARD_V3_CHECKPOINT_SCHEMA = "Stage16DRewardV3CheckpointV1"
 L0_SAMPLES = 1_024_000
 DEFAULT_ROOT = REPO_ROOT / ".local/reports/stage16d_reference_kinematics_v2"
 DEFAULT_REFERENCE_ROOT = DEFAULT_ROOT / "references"
-DEFAULT_L0_CHECKPOINT = (
+DEFAULT_V3_ROOT = REPO_ROOT / ".local/reports/stage16d_reward_v3_pairforce_unblock"
+DEFAULT_V3_CONTACT_CONTRACT = DEFAULT_V3_ROOT / "reward_v3_contract.json"
+DEFAULT_V3_CONTACT_MASK_ROOT = REPO_ROOT / ".local/reports/stage16d_reward_v3_contact"
+DEFAULT_L0_CHECKPOINT_170650 = (
     REPO_ROOT
     / ".local/reports/stage16d_ppo26d_clip_repair/hocap_170650/stage16d_ppo26d_170650_l0.pt"
+)
+DEFAULT_L0_CHECKPOINT_170105 = (
+    REPO_ROOT
+    / ".local/reports/stage16d_ppo26d_continuation/hocap_170105/stage16d_ppo26d_170105_l0.pt"
 )
 
 
@@ -81,6 +90,40 @@ def _require_phase3_entry(root: Path, *, clip: str) -> dict[str, Any]:
         "path": str(decision_path),
         "sha256": _sha256(decision_path),
         "status": decision["status"],
+    }
+
+
+def _require_reward_v3_entry(contract_path: Path) -> dict[str, Any]:
+    """Refuse V3 PPO unless its exact-pair-force preflight is frozen and authorized."""
+
+    resolved_contract = contract_path.resolve()
+    contract = json.loads(resolved_contract.read_text(encoding="utf-8"))
+    parameters = contract.get("frozen_parameters")
+    if (
+        contract.get("status") != "CONTACT_REWARD_CONTRACT_FROZEN"
+        or not isinstance(parameters, dict)
+        or not isinstance(parameters.get("lambda_c_n"), (int, float))
+        or float(parameters["lambda_c_n"]) <= 1.0e-5
+    ):
+        raise RuntimeError("REWARD_V3_CONTACT_CONTRACT_NOT_FROZEN")
+    preflight_path = resolved_contract.parent / "reward_v3_preflight.json"
+    preflight = json.loads(preflight_path.read_text(encoding="utf-8"))
+    if (
+        preflight.get("status") != "CONTACT_REWARD_CONTRACT_FROZEN"
+        or preflight.get("training_authorized") is not True
+    ):
+        raise RuntimeError("REWARD_V3_CONTACT_PREFLIGHT_NOT_AUTHORIZED")
+    return {
+        "contract": {
+            "path": str(resolved_contract),
+            "sha256": _sha256(resolved_contract),
+            "lambda_c_n": float(parameters["lambda_c_n"]),
+        },
+        "preflight": {
+            "path": str(preflight_path),
+            "sha256": _sha256(preflight_path),
+            "training_authorized": True,
+        },
     }
 
 
@@ -247,6 +290,85 @@ def _phase3_checkpoint_payload(
     return payload
 
 
+def _resume_reward_v3(
+    trainer: PPO26DTrainer, checkpoint: Path, *, expected_clip: str, expected_num_envs: int
+) -> dict[str, Any]:
+    """Resume only an explicitly V3-labelled checkpoint, never a V1/V2 one."""
+
+    payload = load_checkpoint(checkpoint, map_location=trainer.trainer.device)
+    if payload.get("schema_version") != REWARD_V3_CHECKPOINT_SCHEMA:
+        raise ValueError("REWARD_V3_RESUME_CHECKPOINT_SCHEMA_INVALID")
+    if payload.get("clip") != expected_clip:
+        raise ValueError("REWARD_V3_RESUME_CHECKPOINT_CLIP_MISMATCH")
+    if int(payload.get("selected_num_envs", -1)) != expected_num_envs:
+        raise ValueError("REWARD_V3_RESUME_CHECKPOINT_ENV_COUNT_MISMATCH")
+    trainer.model.load_state_dict(payload["actor_critic"])
+    trainer.trainer.optimizer.load_state_dict(payload["optimizer"])
+    trainer.trainer.normalizer.load_state_dict(payload["observation_normalization"])
+    trainer.trainer.normalizer.training = True
+    trainer.cumulative_samples = int(payload["reward_v3_samples"])
+    restore_rng_state(payload["rng"])
+    return {
+        "initialization": "RESUME_REWARD_V3",
+        "checkpoint": str(checkpoint.resolve()),
+        "checkpoint_sha256": _sha256(checkpoint),
+        "reward_v3_samples_before": trainer.cumulative_samples,
+    }
+
+
+def _reward_v3_checkpoint_payload(
+    trainer: PPO26DTrainer,
+    *,
+    environment_contract: dict[str, Any],
+    selected_num_envs: int,
+    initialization: dict[str, Any],
+    contact_entry: dict[str, Any],
+) -> dict[str, Any]:
+    payload = trainer.checkpoint_payload(
+        environment_contract=environment_contract,
+        selected_num_envs=selected_num_envs,
+    )
+    payload["schema_version"] = REWARD_V3_CHECKPOINT_SCHEMA
+    payload.pop("cumulative_samples")
+    payload["reward_v3_samples"] = trainer.cumulative_samples
+    payload["reward_v3_initialization"] = initialization
+    payload["reward_v3_contact_entry"] = contact_entry
+    payload["reference_kinematics_version"] = 2
+    payload["reward_contract"] = environment_contract["ppo26d"]["reward"]
+    return payload
+
+
+def _run_reward_smoke(env: Any, trainer: PPO26DTrainer, *, steps: int) -> dict[str, Any]:
+    """Exercise a V3 reward for an exact control-state count without PPO storage.
+
+    The frozen PPO rollout is capped at 320 transitions, while a Stage16D
+    reference has 321 keys. This direct environment path therefore validates
+    all 321 reward callbacks without changing the training rollout contract.
+    """
+
+    observation, _ = env.reset()
+    reward_sum = 0.0
+    finite = True
+    terminated_or_timed_out = 0
+    for _ in range(steps):
+        with torch.no_grad():
+            action = trainer.trainer.distribution(observation["policy"]).mean
+        observation, reward, terminated, timed_out, _ = env.step(action)
+        finite &= bool(torch.isfinite(reward).all())
+        finite &= bool(torch.isfinite(observation["policy"]).all())
+        reward_sum += float(reward.sum().detach().cpu())
+        terminated_or_timed_out += int((terminated | timed_out).sum().detach().cpu())
+    if not finite:
+        raise FloatingPointError("REWARD_V3_DIRECT_REWARD_SMOKE_NONFINITE")
+    return {
+        "control_steps": steps,
+        "finite": finite,
+        "reward_sum": reward_sum,
+        "terminated_or_timed_out_events": terminated_or_timed_out,
+        "ppo_update_performed": False,
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--accept-eula", action="store_true")
@@ -265,10 +387,32 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Required when live VRAM required a fresh Stage16DPPOEnvCapacitySelectorV1 run.",
     )
-    parser.add_argument("--initialization-checkpoint", type=Path, default=DEFAULT_L0_CHECKPOINT)
+    parser.add_argument(
+        "--initialization-checkpoint",
+        type=Path,
+        help=(
+            "Optional V1 L0 actor/normalizer source. Reward V3 otherwise selects the frozen "
+            "per-clip V1 L0, never a V2/P1 checkpoint."
+        ),
+    )
     parser.add_argument("--resume-checkpoint", type=Path)
     parser.add_argument("--num-envs", type=int, default=1024)
-    parser.add_argument("--target-reward-v2-samples", type=int, required=True)
+    parser.add_argument("--target-reward-v2-samples", type=int)
+    parser.add_argument(
+        "--reward-v3-contact",
+        action="store_true",
+        help=(
+            "Train the frozen reference-gated pair-force Reward V3. This selects a distinct "
+            "checkpoint schema and never resumes a V1 or V2 PPO state."
+        ),
+    )
+    parser.add_argument(
+        "--target-reward-v3-samples",
+        type=int,
+        help="Exact Reward V3 sample budget; required with --reward-v3-contact.",
+    )
+    parser.add_argument("--contact-reward-contract", type=Path, default=DEFAULT_V3_CONTACT_CONTRACT)
+    parser.add_argument("--contact-mask-root", type=Path, default=DEFAULT_V3_CONTACT_MASK_ROOT)
     parser.add_argument(
         "--checkpoint-targets",
         type=int,
@@ -289,7 +433,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--smoke-only",
         action="store_true",
-        help="Run one 1024-env rollout/GAE/PPO update, discard it, and write a receipt.",
+        help=(
+            "Run one fresh V1-initialized rollout/GAE/PPO update, discard it, and write a receipt."
+        ),
+    )
+    parser.add_argument(
+        "--smoke-rollout-steps",
+        type=int,
+        help="Optional explicit PPO-update rollout length, bounded by the frozen 320 steps.",
+    )
+    parser.add_argument(
+        "--smoke-reward-steps",
+        type=int,
+        help="Optional direct finite-reward smoke length; use 321 for the complete V3 reference.",
     )
     return parser.parse_args()
 
@@ -300,10 +456,34 @@ def main() -> int:
         raise ValueError("--accept-eula is required")
     if args.num_envs <= 0:
         raise ValueError("--num-envs must be positive")
-    if args.clip != "hocap_170650":
+    is_reward_v3 = bool(args.reward_v3_contact)
+    if not is_reward_v3 and args.clip != "hocap_170650":
         raise ValueError("PHASE3_ONLY_HOCAP_170650_IS_AUTHORIZED")
-    if args.target_reward_v2_samples > 16_777_216:
-        raise ValueError("PHASE3_SAMPLE_CAP_EXCEEDED")
+    if is_reward_v3:
+        if args.target_reward_v3_samples is None or args.target_reward_v2_samples is not None:
+            raise ValueError("REWARD_V3_REQUIRES_ONLY_TARGET_REWARD_V3_SAMPLES")
+        target_samples = args.target_reward_v3_samples
+        sample_key = "reward_v3_samples"
+        output_group = "ppo_v3"
+    else:
+        if args.target_reward_v2_samples is None or args.target_reward_v3_samples is not None:
+            raise ValueError("PHASE3_REQUIRES_ONLY_TARGET_REWARD_V2_SAMPLES")
+        target_samples = args.target_reward_v2_samples
+        sample_key = "reward_v2_samples"
+        output_group = "phase3"
+    if target_samples > 16_777_216:
+        raise ValueError("REWARD_TRAINING_SAMPLE_CAP_EXCEEDED")
+    default_initialization_checkpoint = (
+        {
+            "hocap_170650": DEFAULT_L0_CHECKPOINT_170650,
+            "hocap_170105": DEFAULT_L0_CHECKPOINT_170105,
+        }[args.clip]
+        if is_reward_v3
+        else DEFAULT_L0_CHECKPOINT_170650
+    )
+    initialization_checkpoint = (
+        args.initialization_checkpoint or default_initialization_checkpoint
+    ).resolve()
     checkpoint_targets = tuple(sorted(set(args.checkpoint_targets)))
     if not checkpoint_targets or checkpoint_targets[0] <= 0:
         raise ValueError("PHASE3_CHECKPOINT_TARGETS_INVALID")
@@ -326,15 +506,19 @@ def main() -> int:
     root = args.output_root.resolve()
     if args.run_label is not None and not args.run_label.replace("_", "").isalnum():
         raise ValueError("PHASE3_RUN_LABEL_INVALID")
-    output = root / "phase3" / args.clip
+    output = root / output_group / args.clip
     if args.run_label is not None:
         output = output / "runs" / args.run_label
     output.mkdir(parents=True, exist_ok=True)
-    entry = _require_phase3_entry(root, clip=args.clip)
+    entry = (
+        _require_reward_v3_entry(args.contact_reward_contract)
+        if is_reward_v3
+        else _require_phase3_entry(root, clip=args.clip)
+    )
     scale_freeze = _freeze_scales(args.reference_root.resolve())
-    _write_json(root / "phase3/reward_v2_scale_freeze.json", scale_freeze)
+    _write_json(root / output_group / "reward_v2_base_scale_freeze.json", scale_freeze)
     gpu_probe = _gpu_probe()
-    _write_json(root / "phase3/gpu_probe.json", gpu_probe)
+    _write_json(root / output_group / "gpu_probe.json", gpu_probe)
     _write_json(output / "launch_progress.json", {"phase": "gpu_probe_complete"})
     os.environ["OMNI_KIT_ACCEPT_EULA"] = "YES"
     from isaaclab.app import AppLauncher
@@ -360,75 +544,130 @@ def main() -> int:
             rsi=True,
             critical_dr=args.critical_dr,
         )
-        ppo_cfg.configure_stage16d_phase3_object_twist_reward(
-            cfg, reference_root=args.reference_root.resolve()
+        if is_reward_v3:
+            ppo_cfg.configure_stage16d_reference_gated_contact_reward(
+                cfg,
+                reference_root=args.reference_root.resolve(),
+                contact_reward_contract=args.contact_reward_contract.resolve(),
+                contact_mask_root=args.contact_mask_root.resolve(),
+            )
+        else:
+            ppo_cfg.configure_stage16d_phase3_object_twist_reward(
+                cfg, reference_root=args.reference_root.resolve()
+            )
+        _write_json(
+            output / "launch_progress.json",
+            {"phase": "v3_configured" if is_reward_v3 else "v2_configured"},
         )
-        _write_json(output / "launch_progress.json", {"phase": "v2_configured"})
         env = IsaacPPO26DReferenceTrackingEnv(cfg)
         _write_json(output / "launch_progress.json", {"phase": "environment_ready"})
         if cfg.reference_kinematics_version != 2:
-            raise RuntimeError("PHASE3_REWARD_V2_REQUIRES_REFERENCE_KINEMATICS_V2")
+            raise RuntimeError("REWARD_TRAINING_REQUIRES_REFERENCE_KINEMATICS_V2")
         trainer = PPO26DTrainer(observation_dim=764, device=str(env.device))
         _write_json(output / "launch_progress.json", {"phase": "trainer_fresh_ready"})
         initialization = (
-            _resume_phase3(
-                trainer,
-                args.resume_checkpoint.resolve(),
-                expected_clip=args.clip,
-                expected_num_envs=args.num_envs,
+            (
+                _resume_reward_v3(
+                    trainer,
+                    args.resume_checkpoint.resolve(),
+                    expected_clip=args.clip,
+                    expected_num_envs=args.num_envs,
+                )
+                if is_reward_v3
+                else _resume_phase3(
+                    trainer,
+                    args.resume_checkpoint.resolve(),
+                    expected_clip=args.clip,
+                    expected_num_envs=args.num_envs,
+                )
             )
             if args.resume_checkpoint is not None
             else _load_l0_actor_and_normalizer(
-                trainer, args.initialization_checkpoint.resolve(), expected_clip=args.clip
+                trainer, initialization_checkpoint, expected_clip=args.clip
             )
         )
         _write_json(output / "launch_progress.json", {"phase": "initialization_ready"})
         samples_per_iteration = args.num_envs * Stage16DPPO26DTrainingConfigV1().rollout_length
         if trainer.cumulative_samples % args.num_envs != 0:
-            raise ValueError("PHASE3_RESUME_SAMPLE_COUNTER_MUST_ALIGN_WITH_NUM_ENVS")
-        if args.target_reward_v2_samples <= trainer.cumulative_samples:
-            raise ValueError("PHASE3_TARGET_MUST_EXCEED_CURRENT_REWARD_V2_SAMPLES")
-        if args.target_reward_v2_samples % args.num_envs != 0:
-            raise ValueError("PHASE3_TARGET_MUST_ALIGN_WITH_NUM_ENVS")
+            raise ValueError("REWARD_TRAINING_RESUME_SAMPLE_COUNTER_MUST_ALIGN_WITH_NUM_ENVS")
+        if target_samples <= trainer.cumulative_samples:
+            raise ValueError("REWARD_TRAINING_TARGET_MUST_EXCEED_CURRENT_SAMPLES")
+        if target_samples % args.num_envs != 0:
+            raise ValueError("REWARD_TRAINING_TARGET_MUST_ALIGN_WITH_NUM_ENVS")
+        if args.smoke_rollout_steps is not None and args.smoke_rollout_steps <= 0:
+            raise ValueError("REWARD_TRAINING_SMOKE_ROLLOUT_STEPS_INVALID")
+        if args.smoke_reward_steps is not None and args.smoke_reward_steps <= 0:
+            raise ValueError("REWARD_TRAINING_SMOKE_REWARD_STEPS_INVALID")
+        if args.smoke_reward_steps is not None and not (is_reward_v3 and args.smoke_only):
+            raise ValueError("REWARD_V3_DIRECT_REWARD_SMOKE_REQUIRES_V3_SMOKE_ONLY")
         config = {
-            "schema_version": "Stage16DPhase3RewardV2TrainingConfigV1",
+            "schema_version": (
+                "Stage16DRewardV3TrainingConfigV1"
+                if is_reward_v3
+                else "Stage16DPhase3RewardV2TrainingConfigV1"
+            ),
             "clip": args.clip,
             "run_label": args.run_label,
             "reference_kinematics_version": cfg.reference_kinematics_version,
-            "reward_v2_samples_start": trainer.cumulative_samples,
-            "target_reward_v2_samples": args.target_reward_v2_samples,
-            "maximum_reward_v2_samples": 16_777_216,
+            f"{sample_key}_start": trainer.cumulative_samples,
+            f"target_{sample_key}": target_samples,
+            f"maximum_{sample_key}": 16_777_216,
             "checkpoint_targets": list(checkpoint_targets),
             "selected_num_envs": args.num_envs,
             "capacity_selection": capacity_selection,
             "samples_per_iteration": samples_per_iteration,
             "critical_dr": args.critical_dr,
             "reward_scale_freeze": scale_freeze,
-            "phase3_entry": entry,
+            "entry": entry,
             "initialization": initialization,
             "environment": env.contract_report(),
         }
         _write_json(output / "training_config.json", config)
-        _write_json(
-            output / f"training_segment_target_{args.target_reward_v2_samples}.json", config
-        )
+        _write_json(output / f"training_segment_target_{target_samples}.json", config)
         if args.smoke_only:
-            if args.num_envs != 1024 and capacity_selection is None:
+            if not is_reward_v3 and args.num_envs != 1024 and capacity_selection is None:
                 raise ValueError("PHASE3_RESUME_SMOKE_REQUIRES_1024_ENVS_OR_SELECTION")
-            metric = trainer.collect_and_update(env)
+            direct_reward_smoke = args.smoke_reward_steps is not None
+            if direct_reward_smoke:
+                metric = _run_reward_smoke(env, trainer, steps=args.smoke_reward_steps)
+            else:
+                metric = trainer.collect_and_update(
+                    env,
+                    rollout_length=(
+                        args.smoke_rollout_steps or Stage16DPPO26DTrainingConfigV1().rollout_length
+                    ),
+                )
             _write_json(output / "launch_progress.json", {"phase": "smoke_update_complete"})
-            metric.pop("last_policy_observation")
+            metric.pop("last_policy_observation", None)
             receipt = {
-                "schema_version": "Stage16DPhase3ResumeSmokeV1",
+                "schema_version": (
+                    "Stage16DRewardV3SmokeV1" if is_reward_v3 else "Stage16DPhase3ResumeSmokeV1"
+                ),
                 "status": (
-                    "PHASE3_1024_ENV_RESUME_SMOKE_PASS"
-                    if args.num_envs == 1024
-                    else "PHASE3_SELECTED_CAPACITY_RESUME_SMOKE_PASS"
+                    (
+                        "REWARD_V3_321_STEP_REWARD_SMOKE_PASS"
+                        if direct_reward_smoke
+                        else "REWARD_V3_PPO_SMOKE_PASS"
+                    )
+                    if is_reward_v3
+                    else (
+                        "PHASE3_1024_ENV_RESUME_SMOKE_PASS"
+                        if args.num_envs == 1024
+                        else "PHASE3_SELECTED_CAPACITY_RESUME_SMOKE_PASS"
+                    )
                 ),
                 "selected_num_envs": args.num_envs,
-                "reward_v2_samples_exercised_then_discarded": metric["samples"],
+                "rollout_steps": (
+                    args.smoke_reward_steps
+                    if direct_reward_smoke
+                    else args.smoke_rollout_steps or Stage16DPPO26DTrainingConfigV1().rollout_length
+                ),
+                f"{sample_key}_exercised_then_discarded": (
+                    None if direct_reward_smoke else metric["samples"]
+                ),
                 "finite": metric["finite"],
-                "ppo": metric["ppo"],
+                "ppo": None if direct_reward_smoke else metric["ppo"],
+                "direct_reward_smoke": metric if direct_reward_smoke else None,
                 "initialization": initialization,
                 "environment": env.contract_report(),
             }
@@ -441,28 +680,39 @@ def main() -> int:
         pending_milestones = [
             milestone
             for milestone in checkpoint_targets
-            if trainer.cumulative_samples < milestone <= args.target_reward_v2_samples
+            if trainer.cumulative_samples < milestone <= target_samples
         ]
 
         def save_milestone(*, milestone: int | None, reason: str) -> Path:
+            checkpoint_prefix = "reward_v3" if is_reward_v3 else "phase3_reward_v2"
             path = (
                 output
                 / "checkpoints"
-                / (f"stage16d_phase3_reward_v2_samples_{trainer.cumulative_samples}.pt")
+                / f"stage16d_{checkpoint_prefix}_samples_{trainer.cumulative_samples}.pt"
             )
             save_checkpoint(
                 path,
-                _phase3_checkpoint_payload(
-                    trainer,
-                    environment_contract=env.contract_report(),
-                    selected_num_envs=args.num_envs,
-                    initialization=initialization,
+                (
+                    _reward_v3_checkpoint_payload(
+                        trainer,
+                        environment_contract=env.contract_report(),
+                        selected_num_envs=args.num_envs,
+                        initialization=initialization,
+                        contact_entry=entry,
+                    )
+                    if is_reward_v3
+                    else _phase3_checkpoint_payload(
+                        trainer,
+                        environment_contract=env.contract_report(),
+                        selected_num_envs=args.num_envs,
+                        initialization=initialization,
+                    )
                 ),
             )
             checkpoint_records.append(
                 {
-                    "milestone_target_reward_v2_samples": milestone,
-                    "actual_reward_v2_samples": trainer.cumulative_samples,
+                    f"milestone_target_{sample_key}": milestone,
+                    f"actual_{sample_key}": trainer.cumulative_samples,
                     "reason": reason,
                     "checkpoint": str(path.resolve()),
                     "checkpoint_sha256": _sha256(path),
@@ -471,17 +721,17 @@ def main() -> int:
             return path
 
         with metrics_path.open("a", encoding="utf-8") as stream:
-            while trainer.cumulative_samples < args.target_reward_v2_samples:
-                remaining_samples = args.target_reward_v2_samples - trainer.cumulative_samples
+            while trainer.cumulative_samples < target_samples:
+                remaining_samples = target_samples - trainer.cumulative_samples
                 remaining_steps = remaining_samples // args.num_envs
                 rollout_steps = min(
                     Stage16DPPO26DTrainingConfigV1().rollout_length, remaining_steps
                 )
                 if rollout_steps <= 0:
-                    raise RuntimeError("PHASE3_EXACT_BUDGET_ROLLOUT_STEPS_INVALID")
+                    raise RuntimeError("REWARD_TRAINING_EXACT_BUDGET_ROLLOUT_STEPS_INVALID")
                 metric = trainer.collect_and_update(env, rollout_length=rollout_steps)
                 metric.pop("last_policy_observation")
-                metric["reward_v2_samples"] = trainer.cumulative_samples
+                metric[sample_key] = trainer.cumulative_samples
                 metric["clip"] = args.clip
                 stream.write(json.dumps(metric, sort_keys=True) + "\n")
                 stream.flush()
@@ -493,25 +743,34 @@ def main() -> int:
                 for milestone in crossed:
                     checkpoint = save_milestone(milestone=milestone, reason="milestone_crossed")
                     pending_milestones.remove(milestone)
-                if trainer.cumulative_samples >= args.target_reward_v2_samples:
+                if trainer.cumulative_samples >= target_samples:
                     if checkpoint is None or checkpoint.name != (
-                        f"stage16d_phase3_reward_v2_samples_{trainer.cumulative_samples}.pt"
+                        f"stage16d_{'reward_v3' if is_reward_v3 else 'phase3_reward_v2'}_samples_"
+                        f"{trainer.cumulative_samples}.pt"
                     ):
                         checkpoint = save_milestone(milestone=None, reason="segment_target_reached")
-        if trainer.cumulative_samples != args.target_reward_v2_samples:
-            raise RuntimeError("PHASE3_EXACT_SAMPLE_BUDGET_NOT_REACHED")
+        if trainer.cumulative_samples != target_samples:
+            raise RuntimeError("REWARD_TRAINING_EXACT_SAMPLE_BUDGET_NOT_REACHED")
         if checkpoint is None:
             raise RuntimeError("PHASE3_CHECKPOINT_NOT_WRITTEN")
         _write_json(output / "checkpoint_milestones.json", checkpoint_records)
         result = {
-            "schema_version": "Stage16DPhase3RewardV2TrainingResultV1",
-            "status": "PHASE3_REWARD_V2_TRAINING_SEGMENT_COMPLETE",
+            "schema_version": (
+                "Stage16DRewardV3TrainingResultV1"
+                if is_reward_v3
+                else "Stage16DPhase3RewardV2TrainingResultV1"
+            ),
+            "status": (
+                "REWARD_V3_TRAINING_SEGMENT_COMPLETE"
+                if is_reward_v3
+                else "PHASE3_REWARD_V2_TRAINING_SEGMENT_COMPLETE"
+            ),
             "clip": args.clip,
-            "reward_v2_samples_start": config["reward_v2_samples_start"],
-            "reward_v2_samples": trainer.cumulative_samples,
-            "target_reward_v2_samples": args.target_reward_v2_samples,
+            f"{sample_key}_start": config[f"{sample_key}_start"],
+            sample_key: trainer.cumulative_samples,
+            f"target_{sample_key}": target_samples,
             "iterations": math.ceil(
-                (trainer.cumulative_samples - int(config["reward_v2_samples_start"]))
+                (trainer.cumulative_samples - int(config[f"{sample_key}_start"]))
                 / samples_per_iteration
             ),
             "checkpoint": str(checkpoint.resolve()),
@@ -528,7 +787,11 @@ def main() -> int:
         _write_json(
             output / "training_failure.json",
             {
-                "schema_version": "Stage16DPhase3TrainingFailureV1",
+                "schema_version": (
+                    "Stage16DRewardV3TrainingFailureV1"
+                    if "is_reward_v3" in locals() and is_reward_v3
+                    else "Stage16DPhase3TrainingFailureV1"
+                ),
                 "exception_type": type(error).__name__,
                 "message": str(error),
                 "traceback": traceback.format_exc(),

@@ -131,7 +131,8 @@ silently redefined.
 The Stage 16-D causal PPO pipeline supports reference pose and object-twist
 tracking together with a reference-gated contact-consistency reward. The latter
 uses reference Wuji fingertip proximity and current PhysX fingertip-to-active-
-object pair force only during policy optimization; it never directly controls
+object pair force only during policy optimization; its shared force scale is
+frozen from exact V1 Formal20 pair-force traces, and it never directly controls
 the object.
 
 Phase-specific terminal-dynamics attribution and detailed results are recorded

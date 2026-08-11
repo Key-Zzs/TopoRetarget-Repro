@@ -183,6 +183,12 @@ def main() -> int:
     parser.add_argument("--trace", type=Path, required=True)
     parser.add_argument("--reference", type=Path, required=True)
     parser.add_argument("--qualification", type=Path, required=True)
+    parser.add_argument(
+        "--kind",
+        choices=("development", "formal"),
+        default="formal",
+        help="Expected 20-episode evaluation kind; defaults to legacy R7 Formal20 behavior.",
+    )
     parser.add_argument("--per-episode", type=Path, required=True)
     parser.add_argument("--summary", type=Path, required=True)
     parser.add_argument("--timeline", type=Path, required=True)
@@ -190,8 +196,12 @@ def main() -> int:
 
     qualification = _read_json(args.qualification.resolve())
     formal = qualification.get("episodes")
+    if qualification.get("kind", "formal") != args.kind:
+        raise ValueError(
+            "Evaluation Suite V2 qualification kind does not match requested evaluation"
+        )
     if not isinstance(formal, list) or len(formal) != 20:
-        raise ValueError("Evaluation Suite V2 requires 20 frozen formal R7 episodes")
+        raise ValueError("Evaluation Suite V2 requires exactly 20 frozen evaluation episodes")
     with np.load(args.reference.resolve(), allow_pickle=False) as reference_archive:
         reference_object_pose = np.concatenate(
             (
@@ -257,6 +267,7 @@ def main() -> int:
         "joint_set": EvaluationJointSetV1().as_dict(),
         "fingertip_set": EvaluationFingertipSetV1().as_dict(),
         "formal_r7_qualification": str(args.qualification.resolve()),
+        "evaluation_kind": args.kind,
         "trace": str(args.trace.resolve()),
         "reference": str(args.reference.resolve()),
         "aggregate": aggregate_rollouts(rows),

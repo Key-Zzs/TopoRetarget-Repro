@@ -24,7 +24,17 @@ def read_json(path: Path) -> dict[str, Any]:
 
 def saturation_at_or_before(metrics: Path, *, samples: int) -> float:
     rows = [json.loads(line) for line in metrics.read_text(encoding="utf-8").splitlines() if line]
-    applicable = [row for row in rows if int(row["cumulative_samples"]) <= samples]
+    applicable = [
+        row
+        for row in rows
+        if int(
+            row.get(
+                "reward_v3_samples",
+                row.get("reward_v2_samples", row.get("cumulative_samples", -1)),
+            )
+        )
+        <= samples
+    ]
     if not applicable:
         return 0.0
     row = applicable[-1]
@@ -32,6 +42,15 @@ def saturation_at_or_before(metrics: Path, *, samples: int) -> float:
         float(row["safety"]["before_update"]["sampled_action_saturation_fraction"]),
         float(row["safety"]["after_update"]["deterministic_action_saturation_fraction"]),
     )
+
+
+def sample_counter(payload: dict[str, Any]) -> tuple[str, int]:
+    """Keep V3/V2 phase-local accounting distinct from legacy cumulative samples."""
+
+    for name in ("reward_v3_samples", "reward_v2_samples", "cumulative_training_samples"):
+        if name in payload:
+            return name, int(payload[name])
+    raise ValueError("checkpoint evaluation has no recognized sample counter")
 
 
 def main() -> int:
@@ -48,6 +67,7 @@ def main() -> int:
     if "formal" in args.development_seed_set.lower():
         raise ValueError("formal holdout evidence is forbidden for checkpoint selection")
     candidates = []
+    counter_names: set[str] = set()
     for evaluation_path in args.evaluation:
         payload = read_json(evaluation_path.resolve())
         actual_seed_set = payload.get("seed_set", {}).get("identifier")
@@ -56,7 +76,8 @@ def main() -> int:
                 "checkpoint selection requires the requested development-only seed set; "
                 f"expected {args.development_seed_set!r}, got {actual_seed_set!r}"
             )
-        sample_count = int(payload["cumulative_training_samples"])
+        counter_name, sample_count = sample_counter(payload)
+        counter_names.add(counter_name)
         matching_metrics = [
             path.resolve()
             for path in args.training_metrics
@@ -71,11 +92,24 @@ def main() -> int:
             (saturation_at_or_before(path, samples=sample_count) for path in matching_metrics),
             default=0.0,
         )
-        candidates.append({**payload, "action_saturation": saturation})
+        candidates.append(
+            {
+                **payload,
+                # The frozen ranker predates phase-local sample accounting; use
+                # this normalized field solely for its last chronological tie
+                # break while preserving the original counter name in evidence.
+                "cumulative_training_samples": sample_count,
+                "sample_counter": {"name": counter_name, "value": sample_count},
+                "action_saturation": saturation,
+            }
+        )
+    if len(counter_names) != 1:
+        raise ValueError("checkpoint selection cannot mix V1, V2, and V3 sample counters")
     ranked = rank_development_checkpoints(candidates)
     result = {
         "schema_version": "Stage16DPPO26DCheckpointSelectionV1",
         "seed_set": args.development_seed_set,
+        "sample_counter": next(iter(counter_names)),
         "selection_rule": [
             "frame_zero_reference_completion",
             "terminal_contact_rate",

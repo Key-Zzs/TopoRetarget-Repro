@@ -188,7 +188,19 @@ class PPO26DTrainer:
                 rows[key].append(value_tensor.detach())
             for name, term in getattr(env, "_last_reward_terms", {}).items():
                 if isinstance(term, torch.Tensor):
-                    reward_terms.setdefault(name, []).append(float(term.mean().detach().cpu()))
+                    # Reward V3 also exposes boolean reference/actual contact
+                    # masks for diagnostics.  They are not reward inputs here,
+                    # but their rate is useful in training metrics.  PyTorch
+                    # intentionally rejects ``bool.mean()``, so promote every
+                    # non-floating diagnostic tensor before reducing it.
+                    metric_term = (
+                        term
+                        if term.is_floating_point() or term.is_complex()
+                        else term.to(dtype=torch.float32)
+                    )
+                    reward_terms.setdefault(name, []).append(
+                        float(metric_term.mean().detach().cpu())
+                    )
             reference_index_sum += float(env._reference_index.float().mean().detach().cpu())
             reference_index_count += 1
             observation = next_observation

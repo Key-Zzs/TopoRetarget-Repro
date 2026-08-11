@@ -38,6 +38,25 @@ palm/other-body force, inactive-object force, support, and scene contacts are
 not substitutes. The runtime sensor is an object-side filtered force matrix;
 the five selected columns are fixed by name and shared between clips.
 
+## Exact force provenance
+
+The runtime source is `force_matrix_w[N, 1, 21, 3]`: axis 1 is the active
+object and the selected hand-collision columns form the world-frame force in
+newtons **on that object**. The audited fingertip order is
+`thumb/index/middle/ring/pinky`, with the exact link-to-column map
+`r_thumb_distal:20`, `r_index_finger_distal:4`,
+`r_middle_finger_distal:8`, `r_ring_finger_distal:16`, and
+`r_pinky_distal:12`. Names, columns, frame, units, and sign semantics are a
+runtime manifest contract, not an unverified positional assumption.
+
+The V1 Formal20 telemetry re-export writes
+`replica_fingertip_object_pair_force_world[321, 20, 5, 3]` together with a
+`[321, 20]` validity mask. The first frame is invalid because no force sample
+has yet been produced; later frames may enter calibration only when valid. The
+diagnostic replay preserves the original V1 checkpoint, reference, deterministic
+mean action, frame-zero Formal20 seeds, RSI policy, and physics. It adds
+telemetry only and never rewrites the historical R7 artifact.
+
 ## Scale and information flow
 
 `lambda_c` is frozen before training as the pooled positive-contact median of
@@ -45,6 +64,11 @@ the five selected columns are fixed by name and shared between clips.
 samples are required. A trace that stores only aggregate force and pair
 presence is insufficient because it cannot be safely decomposed into the five
 pair-force magnitudes; this condition blocks PPO.
+
+Only a valid frame with at least one expected fingertip and `S_contact > 0`
+enters the pool. Both clips must contribute positive samples. The frozen value
+is never tuned from V3 outcomes, recalibrated per clip, or replaced by an
+aggregate-force estimate.
 
 The reward may read current pair force and current/future reference target.
 The actor remains the unchanged 764-D observation and receives no future actual

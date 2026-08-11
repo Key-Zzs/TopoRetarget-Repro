@@ -69,7 +69,7 @@ sample gate because terminal contact and stability regressed against the frozen
 V1 4M baseline. This result does not authorize a 4M/16M continuation or any
 reward/physics-contract expansion.
 
-### Reference-Gated Contact Reward V3 (CURRENT)
+### Reference-Gated Contact Reward V3 (PARTIAL)
 
 Reward V3 is the current single-variable causal experiment:
 
@@ -85,12 +85,15 @@ neither contact-loss termination, terminal/penetration reward, guidance, nor a
 physics curriculum. Signal qualification is fail-closed: historical aggregate
 force telemetry cannot substitute for exact pair force.
 
-If V3 is sufficient, freeze the causal reward contract before deciding between
-the second clip/multi-clip route and a later causal physics curriculum. If
-persistent contact loss remains, hysteretic contact-loss termination is a
-future separate version. If contact is good but terminal dynamics remain weak,
-Contact-ready RSI V2 plus gravity/friction curriculum is future work. H2R
-remains an optional separate lane only after bounded causal corrections fail.
+The exact V1 Formal20 pair-force re-export is validated for both clips, and
+its pooled positive-contact median is frozen once as the shared V3 force scale.
+The bounded V3 result is partial: `hocap_170105` improves Formal20 qualified
+success from 0/20 to 19/20 and reduces free-flight re-catch, while
+`hocap_170650` improves qualified success from 14/20 to 16/20 but retains
+free-flight re-catch. This does not authorize multi-clip PPO, a reward-contract
+expansion, contact-loss termination, or a physics curriculum. The next action
+is to review the frozen contact-reward contract and its remaining 170650
+failure mode; any correction must be a separately versioned causal experiment.
 
 ### Causal Decision Tree (FUTURE)
 
