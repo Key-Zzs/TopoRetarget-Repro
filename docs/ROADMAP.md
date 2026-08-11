@@ -37,7 +37,25 @@ future adapters, and physical curricula. It reports `E_r`, `E_t`, `E_j`,
 metrics under their original names. Re-evaluate the existing two frozen
 frame-zero baselines with this contract.
 
-### Phase 3 — Object Twist Reward (P1 INSUFFICIENT)
+### Phase 2.5 — Reference Kinematics V2 (VALIDATED)
+
+Freeze the 41-key spatial specification, timestamps, linear and angular world
+twists, and terminal semantics in a single V2 artifact.  The V2 validation
+proves that its once-only factor-eight reference resampling preserves physical
+time and does not use a runtime re-timing shim.
+
+### Phase 2.6 — V2 Evaluation and Entry Gate (VALIDATED)
+
+Re-evaluate the frozen baselines and Phase 1-R attribution under V2.  This
+separates a valid reference target from policy tracking error and authorizes
+only the bounded `hocap_170650` Reward V2 experiment.
+
+### Phase 1-R — V2 Attribution Rerun (COMPLETE)
+
+The terminal residual/contact attribution rerun is complete.  It is an
+evaluation gate, not a policy-training phase.
+
+### Phase 3 — Object Twist Reward (REWARD_V2_PARTIAL; P1 INSUFFICIENT)
 
 Only after Phases 1–2 establish that reference twist is a valid target and
 residual object dynamics are a material terminal failure, version the PPO

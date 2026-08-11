@@ -31,7 +31,22 @@ persistence、source/support metadata 和 RSI implementation/state quality。本
 curriculum。它报告 `E_r`、`E_t`、`E_j`、`E_ft`、`SR_kinematic`、`SR_physics` 和
 `SR_qualified`，同时以原名保留 legacy metrics。用该合同重新评价现有两条冻结 frame-zero baseline。
 
-### Phase 3 — Object Twist Reward（P1 INSUFFICIENT）
+### Phase 2.5 — Reference Kinematics V2（VALIDATED）
+
+将 41-key spatial specification、timestamps、world-frame linear/angular twist 与 terminal
+semantics 冻结到单一 V2 artifact。V2 validation 证明仅一次的 factor-eight reference resampling
+保持物理时间，且不使用 runtime re-timing shim。
+
+### Phase 2.6 — V2 Evaluation and Entry Gate（VALIDATED）
+
+在 V2 下重评冻结 baseline 与 Phase 1-R attribution。该 gate 将可信 reference target 与 policy
+tracking error 分开，只授权有界的 `hocap_170650` Reward V2 experiment。
+
+### Phase 1-R — V2 Attribution Rerun（COMPLETE）
+
+terminal residual/contact attribution rerun 已完成。它是 evaluation gate，不是 policy-training phase。
+
+### Phase 3 — Object Twist Reward（REWARD_V2_PARTIAL；P1 INSUFFICIENT）
 
 仅在 Phase 1–2 证明 reference twist 是可信 target，且 residual object dynamics 是重要 terminal
 failure 后，才对 PPO tracking reward 版本化，加入 object linear-velocity 和 angular-velocity
