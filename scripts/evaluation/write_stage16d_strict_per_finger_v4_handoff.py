@@ -40,7 +40,7 @@ def _category(decision: dict[str, Any], suite: dict[str, Any]) -> str:
     if decision.get("status") == "STRICT_V4_EFFECTIVE_AT_4M":
         return (
             "STRICT_V4_VALIDATED"
-            if _rate(suite, "qualified_success") > 0.0
+            if _rate(suite, "physics_success") >= 0.90 and _rate(suite, "qualified_success") >= 0.90
             else "STRICT_V4_IMPROVED_NOT_FULLY_QUALIFIED"
         )
     v3 = decision.get("v3_metrics", {})
