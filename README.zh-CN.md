@@ -119,6 +119,8 @@ reference-gated contact consistency reward。后者只在 policy optimization �
 Wuji fingertip proximity 和当前 PhysX fingertip-to-active-object pair force；其共享 force scale
 由精确的 V1 Formal20 pair-force trace 冻结；它不直接控制 object。
 
+原始 HOCap MANO/object source-contact semantics 现为离线审计提供逐指证据；任何 V4 结论仍只是需单独授权的候选，不会改动 V3。
+
 阶段性的 terminal-dynamics attribution 与详细结果进入 stage/RL 文档；machine-readable
 artifact 保留在忽略的本地存储中。
 

@@ -91,13 +91,14 @@ The bounded V3 result is partial: `hocap_170105` improves Formal20 qualified
 success from 0/20 to 19/20 and reduces free-flight re-catch, while
 `hocap_170650` improves qualified success from 14/20 to 16/20 but retains
 free-flight re-catch. This does not authorize multi-clip PPO, a reward-contract
-expansion, contact-loss termination, or a physics curriculum. The next action
-is the diagnostic-only Reference Contact Contract V2 / full 21-body
-active-object pair-force audit. Its current R2 result is
-`REFERENCE_CONTACT_EVIDENCE_INSUFFICIENT`: several <=2 cm geometric candidates
-float, but the frozen HOCap inputs contain no source per-finger contact or
-topology evidence. V3 remains frozen; first acquire or map that source
-evidence, then rerun Formal20 before authorizing a separately versioned V4.
+expansion, contact-loss termination, or a physics curriculum. The historical
+R2 <=2 cm cohort remains only a geometric candidate. The successor
+source-contact audit resolves raw HOCap MANO/object surface evidence and maps
+it to the frozen 21-body Formal20 trace before it may make one separately
+versioned V4 recommendation. **Source Contact Semantics: VALIDATED. Final
+Contact Reward Audit: COMPLETE. Next: STRICT_PER_FINGER_V4_RECOMMENDED** as a
+separately authorized candidate only. V3 remains frozen and the report itself
+changes neither a reward nor a contact mask.
 
 ### Causal Decision Tree (FUTURE)
 

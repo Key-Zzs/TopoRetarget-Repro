@@ -138,6 +138,9 @@ the object.
 Reference-contact refinements are audit-only until source-supported per-finger
 evidence is available; the frozen V3 3 cm mask is never silently replaced.
 
+Raw HOCap MANO/object source-contact semantics now provide that audit evidence
+offline; any V4 outcome remains a separately authorized candidate, never a V3 change.
+
 Phase-specific terminal-dynamics attribution and detailed results are recorded
 in stage and RL documentation, with machine-readable artifacts kept in ignored
 local storage.

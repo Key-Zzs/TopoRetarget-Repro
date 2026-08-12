@@ -11,6 +11,13 @@ It preserves this document's V3 mask and five-tip trace interpretation, while
 making source-supported contact, <=2 cm geometric candidate contact, and 2--3
 cm proximity-only evidence explicit.
 
+The final successor is the source-authoritative
+[Source Contact Semantics](SOURCE_CONTACT_SEMANTICS.md) audit with its frozen
+[cross-embodiment mapping](CROSS_EMBODIMENT_CONTACT_MAPPING.md). It obtains
+per-finger authority from raw HOCap MANO/object surface geometry, not the V2
+2--3 cm proximity cohorts, then reuses the existing full 21-body Formal20
+telemetry without rerunning PPO.
+
 The audit preserves the frozen V3 primary reference mask
 `distance_m < 0.03`.  It additionally labels `distance_m <= 0.02` as strong
 reference evidence and `0.02 < distance_m < 0.03` as proximity-only ambiguous
