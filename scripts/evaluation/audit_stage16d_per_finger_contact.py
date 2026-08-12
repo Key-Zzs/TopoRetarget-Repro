@@ -503,6 +503,16 @@ def _free_flight_events(
                         FINGERS[index]
                         for index in np.flatnonzero(expected[start] & ~actual[start, episode])
                     ],
+                    "contacting_expected_fingers_before_loss": [
+                        FINGERS[index]
+                        for index in np.flatnonzero(expected[preloss] & actual[preloss, episode])
+                    ],
+                    "newly_lost_expected_fingers": [
+                        FINGERS[index]
+                        for index in np.flatnonzero(
+                            expected[start] & actual[preloss, episode] & ~actual[start, episode]
+                        )
+                    ],
                 }
             )
     return result
