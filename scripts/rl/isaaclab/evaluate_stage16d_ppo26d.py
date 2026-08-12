@@ -37,6 +37,7 @@ from toporetarget.rl.reference_tracking.reference_gated_contact import (
 DEFAULT_ROOT = REPO_ROOT / ".local/reports/stage16d_ppo26d"
 PHASE3_CHECKPOINT_SCHEMA = "Stage16DPhase3RewardV2CheckpointV1"
 REWARD_V3_CHECKPOINT_SCHEMA = "Stage16DRewardV3CheckpointV1"
+STRICT_V4_CHECKPOINT_SCHEMA = "Stage16DStrictPerFingerV4CheckpointV1"
 
 
 def parse_args() -> argparse.Namespace:
@@ -62,6 +63,11 @@ def parse_args() -> argparse.Namespace:
             "Evaluate a frozen Reward V3 checkpoint; requires V2 references, a frozen "
             "pair-force contact contract, and the frozen reference-contact masks."
         ),
+    )
+    parser.add_argument(
+        "--strict-per-finger-contact-reward-v4",
+        action="store_true",
+        help="Evaluate a frozen Strict Per-Finger V4 checkpoint and source mask.",
     )
     parser.add_argument("--contact-reward-contract", type=Path)
     parser.add_argument("--contact-mask-root", type=Path)
@@ -176,6 +182,7 @@ def model_from_checkpoint(
         "Stage16DPPO26DCheckpointV1",
         PHASE3_CHECKPOINT_SCHEMA,
         REWARD_V3_CHECKPOINT_SCHEMA,
+        STRICT_V4_CHECKPOINT_SCHEMA,
     }:
         raise ValueError("CHECKPOINT_ROUNDTRIP_FAILURE: unexpected checkpoint schema")
     checkpoint_clip = payload.get("clip")
@@ -197,7 +204,11 @@ def model_from_checkpoint(
         else (
             payload["reward_v3_samples"]
             if schema == REWARD_V3_CHECKPOINT_SCHEMA
-            else payload["cumulative_samples"]
+            else (
+                payload["reward_v4_samples"]
+                if schema == STRICT_V4_CHECKPOINT_SCHEMA
+                else payload["cumulative_samples"]
+            )
         )
     )
     trainer.trainer.freeze_observation_normalizer()
@@ -211,6 +222,8 @@ def checkpoint_sample_counter(payload: dict[str, Any]) -> tuple[str, int]:
         return "reward_v2_samples", int(payload["reward_v2_samples"])
     if payload.get("schema_version") == REWARD_V3_CHECKPOINT_SCHEMA:
         return "reward_v3_samples", int(payload["reward_v3_samples"])
+    if payload.get("schema_version") == STRICT_V4_CHECKPOINT_SCHEMA:
+        return "reward_v4_samples", int(payload["reward_v4_samples"])
     return "cumulative_training_samples", int(payload["cumulative_samples"])
 
 
@@ -313,6 +326,7 @@ def _initial_trace_snapshot(
     if env.cfg.ppo26d_reward_contract in {
         "TopoRetargetReferenceTrackingReward26DV2",
         "TopoRetargetReferenceTrackingReward26DV3",
+        "TopoRetargetReferenceTrackingReward26DV4",
     }:
         values.update(
             {
@@ -337,6 +351,25 @@ def _initial_trace_snapshot(
                 "fingertip_object_force_magnitude": torch.zeros((count, 5), device=device),
                 "contact_reward": torch.zeros(count, device=device),
                 "contact_force_scale": torch.zeros(count, device=device),
+            }
+        )
+    elif env.cfg.ppo26d_reward_contract == "TopoRetargetReferenceTrackingReward26DV4":
+        values.update(
+            {
+                "source_contact_mask": env._reference_expected_contact_mask(indices),
+                "tip_pair_presence": torch.zeros((count, 5), dtype=torch.bool, device=device),
+                "tip_pair_force_world": torch.zeros((count, 5, 3), device=device),
+                "tip_pair_force_norm": torch.zeros((count, 5), device=device),
+                "per_finger_contact_reward": torch.zeros((count, 5), device=device),
+                "source_expected_finger_count": torch.zeros(count, dtype=torch.long, device=device),
+                "source_satisfied_tip_count": torch.zeros(count, dtype=torch.long, device=device),
+                "source_tip_coverage_ratio": torch.zeros(count, device=device),
+                "r_contact_v4": torch.zeros(count, device=device),
+                "reference_contact_mask": env._reference_expected_contact_mask(indices),
+                "actual_contact_mask": torch.zeros((count, 5), dtype=torch.bool, device=device),
+                "fingertip_object_pair_force_world": torch.zeros((count, 5, 3), device=device),
+                "fingertip_object_force_magnitude": torch.zeros((count, 5), device=device),
+                "contact_reward": torch.zeros(count, device=device),
             }
         )
     if capture_exact_fingertip_object_pair_force:
@@ -788,15 +821,31 @@ def main() -> int:
     if not args.accept_eula:
         raise ValueError("--accept-eula is required")
     if (
-        args.object_twist_reward_v2 or args.reference_gated_contact_reward_v3
+        args.object_twist_reward_v2
+        or args.reference_gated_contact_reward_v3
+        or args.strict_per_finger_contact_reward_v4
     ) and args.reference_kinematics_v2_root is None:
         raise ValueError("PPO26D_REWARD_V2_REQUIRES_REFERENCE_KINEMATICS_V2")
-    if args.object_twist_reward_v2 and args.reference_gated_contact_reward_v3:
-        raise ValueError("PPO26D_REWARD_V2_AND_V3_ARE_MUTUALLY_EXCLUSIVE")
+    if (
+        sum(
+            bool(value)
+            for value in (
+                args.object_twist_reward_v2,
+                args.reference_gated_contact_reward_v3,
+                args.strict_per_finger_contact_reward_v4,
+            )
+        )
+        > 1
+    ):
+        raise ValueError("PPO26D_REWARD_EVALUATION_MODES_ARE_MUTUALLY_EXCLUSIVE")
     if args.reference_gated_contact_reward_v3 and (
         args.contact_reward_contract is None or args.contact_mask_root is None
     ):
         raise ValueError("PPO26D_REWARD_V3_REQUIRES_FROZEN_CONTACT_INPUTS")
+    if args.strict_per_finger_contact_reward_v4 and (
+        args.contact_reward_contract is None or args.contact_mask_root is None
+    ):
+        raise ValueError("STRICT_V4_REQUIRES_FROZEN_CONTACT_INPUTS")
     if args.frame_zero_replicas <= 0 or args.rsi_replicas < 0:
         raise ValueError("--frame-zero-replicas must be positive and --rsi-replicas non-negative")
     if not args.artifact_label.replace("_", "").isalnum():
@@ -837,7 +886,17 @@ def main() -> int:
         ppo26d_cfg.configure_stage16d_ppo26d(
             cfg, num_envs=evaluation_num_envs, clip=args.clip, rsi=False, critical_dr=False
         )
-        if args.reference_gated_contact_reward_v3:
+        if args.strict_per_finger_contact_reward_v4:
+            assert args.reference_kinematics_v2_root is not None
+            assert args.contact_reward_contract is not None
+            assert args.contact_mask_root is not None
+            ppo26d_cfg.configure_stage16d_strict_per_finger_contact_reward_v4(
+                cfg,
+                reference_root=args.reference_kinematics_v2_root,
+                contact_reward_contract=args.contact_reward_contract,
+                source_mask_root=args.contact_mask_root,
+            )
+        elif args.reference_gated_contact_reward_v3:
             assert args.reference_kinematics_v2_root is not None
             assert args.contact_reward_contract is not None
             assert args.contact_mask_root is not None
@@ -860,14 +919,24 @@ def main() -> int:
         trainer, payload = model_from_checkpoint(
             checkpoint, str(env.device), expected_clip=args.clip
         )
-        if args.reference_gated_contact_reward_v3:
+        if args.strict_per_finger_contact_reward_v4:
+            if payload.get("schema_version") != STRICT_V4_CHECKPOINT_SCHEMA:
+                raise ValueError("STRICT_V4_EVALUATION_REQUIRES_V4_CHECKPOINT")
+            assert args.contact_reward_contract is not None
+            checkpoint_entry = payload.get("strict_v4_contact_entry", {}).get("contract", {})
+            if checkpoint_entry.get("sha256") != checkpoint_hash(args.contact_reward_contract):
+                raise ValueError("STRICT_V4_CONTACT_CONTRACT_HASH_MISMATCH")
+        elif args.reference_gated_contact_reward_v3:
             if payload.get("schema_version") != REWARD_V3_CHECKPOINT_SCHEMA:
                 raise ValueError("PPO26D_REWARD_V3_EVALUATION_REQUIRES_V3_CHECKPOINT")
             assert args.contact_reward_contract is not None
             checkpoint_entry = payload.get("reward_v3_contact_entry", {}).get("contract", {})
             if checkpoint_entry.get("sha256") != checkpoint_hash(args.contact_reward_contract):
                 raise ValueError("PPO26D_REWARD_V3_CONTACT_CONTRACT_HASH_MISMATCH")
-        elif payload.get("schema_version") == REWARD_V3_CHECKPOINT_SCHEMA:
+        elif payload.get("schema_version") in {
+            REWARD_V3_CHECKPOINT_SCHEMA,
+            STRICT_V4_CHECKPOINT_SCHEMA,
+        }:
             raise ValueError("PPO26D_V3_CHECKPOINT_REQUIRES_V3_EVALUATION_MODE")
         sample_counter_name, sample_counter = checkpoint_sample_counter(payload)
         selected = int(payload["selected_num_envs"])
@@ -993,13 +1062,21 @@ def main() -> int:
             reference_hash=np.asarray(json.dumps(payload["reference_hash"], sort_keys=True)),
             reference_kinematics_version=np.asarray(int(cfg.reference_kinematics_version)),
             simulation_data_capture_version=np.asarray(
-                "Stage16DRewardV3SimulationDataV1"
-                if args.reference_gated_contact_reward_v3
-                else "Stage16DPPO26DTraceV2"
+                "Stage16DStrictPerFingerV4SimulationDataV1"
+                if args.strict_per_finger_contact_reward_v4
+                else (
+                    "Stage16DRewardV3SimulationDataV1"
+                    if args.reference_gated_contact_reward_v3
+                    else "Stage16DPPO26DTraceV2"
+                )
             ),
             **(
                 {}
-                if not (args.object_twist_reward_v2 or args.reference_gated_contact_reward_v3)
+                if not (
+                    args.object_twist_reward_v2
+                    or args.reference_gated_contact_reward_v3
+                    or args.strict_per_finger_contact_reward_v4
+                )
                 else {
                     "object_twist_reference": trace_rows["object_twist_reference"].astype(
                         np.float32
@@ -1050,6 +1127,29 @@ def main() -> int:
                             ].astype(np.float32)
                         }
                     ),
+                }
+            ),
+            **(
+                {}
+                if not args.strict_per_finger_contact_reward_v4
+                else {
+                    "source_contact_mask": trace_rows["source_contact_mask"].astype(bool),
+                    "tip_pair_presence": trace_rows["tip_pair_presence"].astype(bool),
+                    "tip_pair_force_world": trace_rows["tip_pair_force_world"].astype(np.float32),
+                    "tip_pair_force_norm": trace_rows["tip_pair_force_norm"].astype(np.float32),
+                    "per_finger_contact_reward": trace_rows["per_finger_contact_reward"].astype(
+                        np.float32
+                    ),
+                    "source_expected_finger_count": trace_rows[
+                        "source_expected_finger_count"
+                    ].astype(np.int64),
+                    "source_satisfied_tip_count": trace_rows["source_satisfied_tip_count"].astype(
+                        np.int64
+                    ),
+                    "source_tip_coverage_ratio": trace_rows["source_tip_coverage_ratio"].astype(
+                        np.float32
+                    ),
+                    "r_contact_v4": trace_rows["r_contact_v4"].astype(np.float32),
                 }
             ),
             **(
@@ -1174,6 +1274,39 @@ def main() -> int:
                     ),
                     **(
                         {}
+                        if not args.strict_per_finger_contact_reward_v4
+                        else {
+                            "replica_source_contact_mask": all_replica_trace[
+                                "source_contact_mask"
+                            ].astype(bool),
+                            "replica_tip_pair_presence": all_replica_trace[
+                                "tip_pair_presence"
+                            ].astype(bool),
+                            "replica_tip_pair_force_world": all_replica_trace[
+                                "tip_pair_force_world"
+                            ].astype(np.float32),
+                            "replica_tip_pair_force_norm": all_replica_trace[
+                                "tip_pair_force_norm"
+                            ].astype(np.float32),
+                            "replica_per_finger_contact_reward": all_replica_trace[
+                                "per_finger_contact_reward"
+                            ].astype(np.float32),
+                            "replica_source_expected_finger_count": all_replica_trace[
+                                "source_expected_finger_count"
+                            ].astype(np.int64),
+                            "replica_source_satisfied_tip_count": all_replica_trace[
+                                "source_satisfied_tip_count"
+                            ].astype(np.int64),
+                            "replica_source_tip_coverage_ratio": all_replica_trace[
+                                "source_tip_coverage_ratio"
+                            ].astype(np.float32),
+                            "replica_r_contact_v4": all_replica_trace["r_contact_v4"].astype(
+                                np.float32
+                            ),
+                        }
+                    ),
+                    **(
+                        {}
                         if not args.capture_exact_fingertip_object_pair_force
                         else {
                             "replica_fingertip_object_pair_force_world": all_replica_trace[
@@ -1221,9 +1354,13 @@ def main() -> int:
                         "force on active object from named filtered hand collision body"
                     ),
                     "pair_force_capture": np.asarray(
-                        "V3_PPO_EVALUATION"
-                        if args.reference_gated_contact_reward_v3
-                        else "V1_PAIRFORCE_REEXPORT_DIAGNOSTIC"
+                        "STRICT_V4_PPO_EVALUATION"
+                        if args.strict_per_finger_contact_reward_v4
+                        else (
+                            "V3_PPO_EVALUATION"
+                            if args.reference_gated_contact_reward_v3
+                            else "V1_PAIRFORCE_REEXPORT_DIAGNOSTIC"
+                        )
                     ),
                 }
             ),

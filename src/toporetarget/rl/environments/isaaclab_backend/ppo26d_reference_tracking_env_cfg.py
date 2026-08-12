@@ -135,10 +135,43 @@ def configure_stage16d_reference_gated_contact_reward(
     cfg.ppo26d_reference_contact_mask_paths = {clip: str(path) for clip, path in paths.items()}
 
 
+def configure_stage16d_strict_per_finger_contact_reward_v4(
+    cfg: IsaacPPO26DReferenceTrackingEnvCfg,
+    *,
+    reference_root: Path,
+    contact_reward_contract: Path,
+    source_mask_root: Path,
+) -> None:
+    """Bind V4's source-confirmed masks without changing physics or observations."""
+
+    configure_stage16d_phase3_object_twist_reward(cfg, reference_root=reference_root)
+    receipt_path = contact_reward_contract.resolve()
+    payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    parameters = payload.get("frozen_parameters")
+    if (
+        payload.get("status") != "STRICT_V4_CONTACT_CONTRACT_FROZEN"
+        or not isinstance(parameters, dict)
+        or not isinstance(parameters.get("lambda_tip_n"), (int, float))
+        or float(parameters["lambda_tip_n"]) <= 1.0e-5
+    ):
+        raise ValueError("STRICT_V4_CONTACT_CONTRACT_NOT_FROZEN")
+    paths = {
+        clip: source_mask_root.resolve() / f"strict_source_contact_mask_{clip}.npz"
+        for clip in ("hocap_170105", "hocap_170650")
+    }
+    missing = [str(path) for path in paths.values() if not path.is_file()]
+    if missing:
+        raise FileNotFoundError(f"STRICT_V4_SOURCE_CONTACT_MASK_MISSING:{missing}")
+    cfg.ppo26d_reward_contract = "TopoRetargetReferenceTrackingReward26DV4"
+    cfg.ppo26d_contact_reward_contract_path = str(receipt_path)
+    cfg.ppo26d_reference_contact_mask_paths = {clip: str(path) for clip, path in paths.items()}
+
+
 __all__ = [
     "IsaacPPO26DReferenceTrackingEnvCfg",
     "configure_stage16d_ppo26d",
     "configure_stage16d_reference_kinematics_v2",
     "configure_stage16d_phase3_object_twist_reward",
     "configure_stage16d_reference_gated_contact_reward",
+    "configure_stage16d_strict_per_finger_contact_reward_v4",
 ]

@@ -21,8 +21,10 @@ from toporetarget.rl.reference_tracking.ppo26d_reward import (
     TopoRetargetReferenceTrackingReward26DV1,
     TopoRetargetReferenceTrackingReward26DV2,
     TopoRetargetReferenceTrackingReward26DV3,
+    TopoRetargetReferenceTrackingReward26DV4,
     ppo26d_reward_v2_object_twist_terms,
     ppo26d_reward_v3_reference_gated_contact_terms,
+    ppo26d_reward_v4_strict_per_finger_contact_terms,
 )
 from toporetarget.rl.reference_tracking.reference_gated_contact import (
     fingertip_force_indices,
@@ -51,6 +53,7 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             TopoRetargetReferenceTrackingReward26DV1
             | TopoRetargetReferenceTrackingReward26DV2
             | TopoRetargetReferenceTrackingReward26DV3
+            | TopoRetargetReferenceTrackingReward26DV4
         )
         self._reference_contact_mask_by_clip: torch.Tensor | None = None
         self._fingertip_force_sensor_indices: torch.Tensor | None = None
@@ -75,6 +78,26 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             self._reward_contract = TopoRetargetReferenceTrackingReward26DV3(
                 contact_force_scale_lambda_n=float(parameters["lambda_c_n"])
             )
+        elif cfg.ppo26d_reward_contract == "TopoRetargetReferenceTrackingReward26DV4":
+            if cfg.reference_kinematics_version != 2:
+                raise RuntimeError("STRICT_V4_REQUIRES_REFERENCE_KINEMATICS_V2")
+            if cfg.ppo26d_contact_reward_contract_path is None:
+                raise RuntimeError("STRICT_V4_CONTACT_CONTRACT_PATH_MISSING")
+            receipt = json.loads(
+                Path(cfg.ppo26d_contact_reward_contract_path).read_text(encoding="utf-8")
+            )
+            parameters = receipt.get("frozen_parameters")
+            if (
+                receipt.get("status") != "STRICT_V4_CONTACT_CONTRACT_FROZEN"
+                or not isinstance(parameters, dict)
+                or not isinstance(parameters.get("lambda_tip_n"), (int, float))
+            ):
+                raise RuntimeError("STRICT_V4_CONTACT_CONTRACT_INVALID")
+            self._contact_reward_receipt = receipt
+            self._reward_contract = TopoRetargetReferenceTrackingReward26DV4(
+                contact_force_scale_lambda_tip_n=float(parameters["lambda_tip_n"]),
+                contact_numerical_floor_n=float(parameters["numerical_floor_n"]),
+            )
         elif cfg.ppo26d_reward_contract == "TopoRetargetReferenceTrackingReward26DV2":
             if cfg.reference_kinematics_version != 2:
                 raise RuntimeError("PPO26D_REWARD_V2_REQUIRES_REFERENCE_KINEMATICS_V2")
@@ -96,7 +119,11 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         super().__init__(cfg, render_mode, **kwargs)
         if isinstance(
             self._reward_contract,
-            (TopoRetargetReferenceTrackingReward26DV2, TopoRetargetReferenceTrackingReward26DV3),
+            (
+                TopoRetargetReferenceTrackingReward26DV2,
+                TopoRetargetReferenceTrackingReward26DV3,
+                TopoRetargetReferenceTrackingReward26DV4,
+            ),
         ) and (
             self.reference_bank.manifest.identifier != "world_wrist_reference_bank_kinematics_v2"
             or self.reference_bank.manifest.reference_time_scale != 8
@@ -120,16 +147,26 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             dtype=torch.long,
             device=self.device,
         )
-        if isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV3):
+        if isinstance(
+            self._reward_contract,
+            (TopoRetargetReferenceTrackingReward26DV3, TopoRetargetReferenceTrackingReward26DV4),
+        ):
             paths = cfg.ppo26d_reference_contact_mask_paths
             if paths is None or set(paths) != set(self.reference_bank.clip_ids):
                 raise RuntimeError("PPO26D_REWARD_V3_CONTACT_MASK_PATHS_INVALID")
             masks: list[np.ndarray] = []
             for clip in self.reference_bank.clip_ids:
                 with np.load(Path(paths[clip]), allow_pickle=False) as archive:
-                    if "reference_expected_contact_mask" not in archive.files:
-                        raise RuntimeError("PPO26D_REWARD_V3_CONTACT_MASK_FIELD_MISSING")
-                    mask = np.asarray(archive["reference_expected_contact_mask"], dtype=bool)
+                    field = (
+                        "reference_expected_contact_mask"
+                        if isinstance(
+                            self._reward_contract, TopoRetargetReferenceTrackingReward26DV3
+                        )
+                        else "strict_source_contact_mask"
+                    )
+                    if field not in archive.files:
+                        raise RuntimeError("STRICT_V4_SOURCE_CONTACT_MASK_FIELD_MISSING")
+                    mask = np.asarray(archive[field], dtype=bool)
                 if mask.shape != (self.reference_bank.frame_count, 5):
                     raise RuntimeError(
                         "PPO26D_REWARD_V3_CONTACT_MASK_SHAPE_INVALID:"
@@ -377,7 +414,54 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         second_difference = (
             self._actions - 2.0 * self._previous_actions + self._second_previous_actions
         )
-        if isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV3):
+        if isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV4):
+            state = self._state()
+            index = self._target_reference_index
+            force_indices = self._fingertip_force_sensor_indices
+            if force_indices is None:
+                raise RuntimeError("STRICT_V4_FINGERTIP_FORCE_MAPPING_NOT_INITIALIZED")
+            pair_force = self._active_object_pair_force_matrix()
+            tip_force = pair_force.index_select(1, force_indices)
+            terms = ppo26d_reward_v4_strict_per_finger_contact_terms(
+                object_axis_points=state["object_axis_points_scene"],
+                object_axis_points_ref=self.reference_bank.gather(
+                    "object_axis_points_world_ref", self._clip_index, index
+                ),
+                tracked_links=state["tracked_links_scene"],
+                tracked_links_ref=self.reference_bank.gather(
+                    "tracked_link_positions_world_ref", self._clip_index, index
+                ),
+                finger_q=state["finger_q"],
+                finger_q_ref=self.reference_bank.gather("q_finger_ref", self._clip_index, index),
+                joint_lower=self.joint_lower,
+                joint_upper=self.joint_upper,
+                wrist_position=state["wrist_position_scene"],
+                wrist_quaternion_wxyz=state["wrist_quaternion_wxyz"],
+                wrist_position_ref=self.reference_bank.gather(
+                    "wrist_pose_translation_world_ref", self._clip_index, index
+                ),
+                wrist_quaternion_ref_wxyz=self.reference_bank.gather(
+                    "wrist_pose_quaternion_world_ref_wxyz", self._clip_index, index
+                ),
+                action=self._actions,
+                previous_action=self._previous_actions,
+                second_previous_action=self._second_previous_actions,
+                object_twist_world=state["object_twist_world"],
+                object_twist_world_ref=self.reference_bank.gather(
+                    "object_twist_world_ref", self._clip_index, index
+                ),
+                source_contact_mask=self._reference_expected_contact_mask(index),
+                fingertip_object_pair_force_world=tip_force,
+                fingertip_object_pair_presence=torch.linalg.vector_norm(tip_force, dim=-1)
+                > self._reward_contract.contact_numerical_floor_n,
+                profile=self._reward_contract,
+            )
+            self._last_reward_terms = terms
+            self._second_previous_actions.copy_(self._previous_actions)
+            self._previous_actions.copy_(self._actions)
+            self._reference_index.copy_(self._target_reference_index)
+            reward = terms["total"]
+        elif isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV3):
             state = self._state()
             index = self._target_reference_index
             force_indices = self._fingertip_force_sensor_indices
@@ -494,6 +578,31 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
                         "actual_fingertip_object_contact_mask"
                     ].clone(),
                     "contact_reward": self._last_reward_terms["r_contact"].clone(),
+                }
+            )
+        elif isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV4):
+            force_indices = self._fingertip_force_sensor_indices
+            if force_indices is None:
+                raise RuntimeError("STRICT_V4_FINGERTIP_FORCE_MAPPING_NOT_INITIALIZED")
+            self.extras["ppo26d"].update(
+                {
+                    "source_contact_mask": self._last_reward_terms["source_contact_mask"].clone(),
+                    "tip_pair_presence": self._last_reward_terms["tip_pair_presence"].clone(),
+                    "tip_pair_force_world": pair_force.index_select(1, force_indices).clone(),
+                    "tip_pair_force_norm": self._last_reward_terms["tip_pair_force_norm_n"].clone(),
+                    "per_finger_contact_reward": self._last_reward_terms[
+                        "per_finger_contact_reward"
+                    ].clone(),
+                    "source_expected_finger_count": self._last_reward_terms[
+                        "source_expected_finger_count"
+                    ].clone(),
+                    "source_satisfied_tip_count": self._last_reward_terms[
+                        "source_satisfied_tip_count"
+                    ].clone(),
+                    "source_tip_coverage_ratio": self._last_reward_terms[
+                        "source_tip_coverage_ratio"
+                    ].clone(),
+                    "r_contact_v4": self._last_reward_terms["r_contact_v4"].clone(),
                 }
             )
         self._capture_ppo26d_trace_row()
@@ -773,6 +882,40 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
                     ],
                     "contact_reward": self._last_reward_terms["r_contact"],
                     "contact_force_scale": self._last_reward_terms["contact_force_scale_n"],
+                }
+            )
+        elif isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV4):
+            force_indices = self._fingertip_force_sensor_indices
+            if force_indices is None:
+                raise RuntimeError("STRICT_V4_FINGERTIP_FORCE_MAPPING_NOT_INITIALIZED")
+            values.update(
+                {
+                    "source_contact_mask": self._last_reward_terms["source_contact_mask"],
+                    "tip_pair_presence": self._last_reward_terms["tip_pair_presence"],
+                    "tip_pair_force_world": pair_force.index_select(1, force_indices),
+                    "tip_pair_force_norm": self._last_reward_terms["tip_pair_force_norm_n"],
+                    "per_finger_contact_reward": self._last_reward_terms[
+                        "per_finger_contact_reward"
+                    ],
+                    "source_expected_finger_count": self._last_reward_terms[
+                        "source_expected_finger_count"
+                    ],
+                    "source_satisfied_tip_count": self._last_reward_terms[
+                        "source_satisfied_tip_count"
+                    ],
+                    "source_tip_coverage_ratio": self._last_reward_terms[
+                        "source_tip_coverage_ratio"
+                    ],
+                    "r_contact_v4": self._last_reward_terms["r_contact_v4"],
+                    # Common historical evaluator aliases, now sourced from the
+                    # strict V4 term rather than a V3 aggregate term.
+                    "reference_contact_mask": self._last_reward_terms["source_contact_mask"],
+                    "actual_contact_mask": self._last_reward_terms["tip_pair_presence"],
+                    "fingertip_object_pair_force_world": pair_force.index_select(1, force_indices),
+                    "fingertip_object_force_magnitude": self._last_reward_terms[
+                        "tip_pair_force_norm_n"
+                    ],
+                    "contact_reward": self._last_reward_terms["r_contact_v4"],
                 }
             )
         if self._ppo26d_trace_capture_exact_pair_force:

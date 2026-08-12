@@ -14,6 +14,10 @@ from toporetarget.rl.reference_tracking.reference_gated_contact import (
     ReferenceGatedContactRewardContractV1,
     reference_gated_contact_reward,
 )
+from toporetarget.rl.reference_tracking.strict_per_finger_contact import (
+    StrictPerFingerContactRewardV4,
+    strict_per_finger_contact_reward,
+)
 
 
 @dataclass(frozen=True)
@@ -260,11 +264,77 @@ def ppo26d_reward_v3_reference_gated_contact_terms(
     return {**v2, **contact, "total": total}
 
 
+@dataclass(frozen=True)
+class TopoRetargetReferenceTrackingReward26DV4(TopoRetargetReferenceTrackingReward26DV2):
+    """Reward V2 plus one source-confirmed strict per-finger contact term.
+
+    V4 deliberately inherits V2, rather than V3: the aggregate proximity-mask
+    term is absent by construction and cannot be accidentally double-counted.
+    """
+
+    identifier: str = "TopoRetargetReferenceTrackingReward26DV4"
+    contact_weight: float = 1.0
+    contact_epsilon_n: float = 1.0e-5
+    contact_numerical_floor_n: float = 1.0e-4
+    contact_force_scale_lambda_tip_n: float = 0.0
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.contact_weight != 1.0:
+            raise ValueError("Reward V4 contact weight is frozen at 1.0")
+        if self.contact_epsilon_n != 1.0e-5:
+            raise ValueError("Reward V4 contact epsilon is frozen at 1e-5")
+        if self.contact_numerical_floor_n <= 0.0:
+            raise ValueError("Reward V4 contact numerical floor must be positive")
+        if self.contact_force_scale_lambda_tip_n <= self.contact_epsilon_n:
+            raise ValueError("Reward V4 requires a frozen positive single-tip force scale")
+
+    def contact_contract(self) -> StrictPerFingerContactRewardV4:
+        return StrictPerFingerContactRewardV4(
+            contact_weight=self.contact_weight,
+            epsilon_n=self.contact_epsilon_n,
+            numerical_floor_n=self.contact_numerical_floor_n,
+        )
+
+
+def ppo26d_reward_v4_strict_per_finger_contact_terms(
+    *,
+    object_twist_world: torch.Tensor,
+    object_twist_world_ref: torch.Tensor,
+    source_contact_mask: torch.Tensor,
+    fingertip_object_pair_force_world: torch.Tensor,
+    fingertip_object_pair_presence: torch.Tensor,
+    profile: TopoRetargetReferenceTrackingReward26DV4,
+    **kwargs: torch.Tensor,
+) -> dict[str, torch.Tensor]:
+    """Return frozen V2 terms plus exactly V4's independent-finger term."""
+
+    v2 = ppo26d_reward_v2_object_twist_terms(
+        object_twist_world=object_twist_world,
+        object_twist_world_ref=object_twist_world_ref,
+        profile=profile,
+        **kwargs,
+    )
+    contact = strict_per_finger_contact_reward(
+        source_contact_mask=source_contact_mask,
+        fingertip_object_pair_force_world=fingertip_object_pair_force_world,
+        pair_presence=fingertip_object_pair_presence,
+        lambda_tip_n=profile.contact_force_scale_lambda_tip_n,
+        contract=profile.contact_contract(),
+    )
+    total = v2["total"] + contact["r_contact_v4"]
+    if not bool(torch.isfinite(total).all()):
+        raise FloatingPointError("Stage 16-D Reward V4 became non-finite")
+    return {**v2, **contact, "total": total}
+
+
 __all__ = [
     "TopoRetargetReferenceTrackingReward26DV1",
     "TopoRetargetReferenceTrackingReward26DV2",
     "TopoRetargetReferenceTrackingReward26DV3",
+    "TopoRetargetReferenceTrackingReward26DV4",
     "ppo26d_reward_terms",
     "ppo26d_reward_v2_object_twist_terms",
     "ppo26d_reward_v3_reference_gated_contact_terms",
+    "ppo26d_reward_v4_strict_per_finger_contact_terms",
 ]

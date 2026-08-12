@@ -31,12 +31,15 @@ from toporetarget.rl.reference_tracking.ppo26d_reward import (
 
 PHASE3_CHECKPOINT_SCHEMA = "Stage16DPhase3RewardV2CheckpointV1"
 REWARD_V3_CHECKPOINT_SCHEMA = "Stage16DRewardV3CheckpointV1"
+STRICT_V4_CHECKPOINT_SCHEMA = "Stage16DStrictPerFingerV4CheckpointV1"
 L0_SAMPLES = 1_024_000
 DEFAULT_ROOT = REPO_ROOT / ".local/reports/stage16d_reference_kinematics_v2"
 DEFAULT_REFERENCE_ROOT = DEFAULT_ROOT / "references"
 DEFAULT_V3_ROOT = REPO_ROOT / ".local/reports/stage16d_reward_v3_pairforce_unblock"
 DEFAULT_V3_CONTACT_CONTRACT = DEFAULT_V3_ROOT / "reward_v3_contract.json"
 DEFAULT_V3_CONTACT_MASK_ROOT = REPO_ROOT / ".local/reports/stage16d_reward_v3_contact"
+DEFAULT_V4_ROOT = REPO_ROOT / ".local/reports/stage16d_strict_per_finger_v4"
+DEFAULT_V4_CONTACT_CONTRACT = DEFAULT_V4_ROOT / "strict_v4_contract.json"
 DEFAULT_L0_CHECKPOINT_170650 = (
     REPO_ROOT
     / ".local/reports/stage16d_ppo26d_clip_repair/hocap_170650/stage16d_ppo26d_170650_l0.pt"
@@ -124,6 +127,38 @@ def _require_reward_v3_entry(contract_path: Path) -> dict[str, Any]:
             "sha256": _sha256(preflight_path),
             "training_authorized": True,
         },
+    }
+
+
+def _require_strict_v4_entry(contract_path: Path) -> dict[str, Any]:
+    """Refuse V4 PPO unless source masks and V1-only calibration are frozen."""
+
+    resolved = contract_path.resolve()
+    contract = json.loads(resolved.read_text(encoding="utf-8"))
+    parameters = contract.get("frozen_parameters")
+    frozen_inputs = resolved.parent / "frozen_inputs.json"
+    calibration = resolved.parent / "strict_v4_force_scale_calibration.json"
+    if (
+        contract.get("status") != "STRICT_V4_CONTACT_CONTRACT_FROZEN"
+        or not isinstance(parameters, dict)
+        or not isinstance(parameters.get("lambda_tip_n"), (int, float))
+        or float(parameters["lambda_tip_n"]) <= 1.0e-5
+        or not frozen_inputs.is_file()
+        or not calibration.is_file()
+    ):
+        raise RuntimeError("STRICT_V4_CONTACT_PREFLIGHT_NOT_AUTHORIZED")
+    if json.loads(calibration.read_text(encoding="utf-8")).get("status") != (
+        "STRICT_V4_CONTACT_CONTRACT_FROZEN"
+    ):
+        raise RuntimeError("STRICT_V4_CALIBRATION_NOT_FROZEN")
+    return {
+        "contract": {
+            "path": str(resolved),
+            "sha256": _sha256(resolved),
+            "lambda_tip_n": float(parameters["lambda_tip_n"]),
+        },
+        "frozen_inputs": {"path": str(frozen_inputs), "sha256": _sha256(frozen_inputs)},
+        "calibration": {"path": str(calibration), "sha256": _sha256(calibration)},
     }
 
 
@@ -338,6 +373,52 @@ def _reward_v3_checkpoint_payload(
     return payload
 
 
+def _resume_strict_v4(
+    trainer: PPO26DTrainer, checkpoint: Path, *, expected_clip: str, expected_num_envs: int
+) -> dict[str, Any]:
+    payload = load_checkpoint(checkpoint, map_location=trainer.trainer.device)
+    if payload.get("schema_version") != STRICT_V4_CHECKPOINT_SCHEMA:
+        raise ValueError("STRICT_V4_RESUME_CHECKPOINT_SCHEMA_INVALID")
+    if payload.get("clip") != expected_clip:
+        raise ValueError("STRICT_V4_RESUME_CHECKPOINT_CLIP_MISMATCH")
+    if int(payload.get("selected_num_envs", -1)) != expected_num_envs:
+        raise ValueError("STRICT_V4_RESUME_CHECKPOINT_ENV_COUNT_MISMATCH")
+    trainer.model.load_state_dict(payload["actor_critic"])
+    trainer.trainer.optimizer.load_state_dict(payload["optimizer"])
+    trainer.trainer.normalizer.load_state_dict(payload["observation_normalization"])
+    trainer.trainer.normalizer.training = True
+    trainer.cumulative_samples = int(payload["reward_v4_samples"])
+    restore_rng_state(payload["rng"])
+    return {
+        "initialization": "RESUME_STRICT_V4",
+        "checkpoint": str(checkpoint.resolve()),
+        "checkpoint_sha256": _sha256(checkpoint),
+        "reward_v4_samples_before": trainer.cumulative_samples,
+    }
+
+
+def _strict_v4_checkpoint_payload(
+    trainer: PPO26DTrainer,
+    *,
+    environment_contract: dict[str, Any],
+    selected_num_envs: int,
+    initialization: dict[str, Any],
+    contact_entry: dict[str, Any],
+) -> dict[str, Any]:
+    payload = trainer.checkpoint_payload(
+        environment_contract=environment_contract,
+        selected_num_envs=selected_num_envs,
+    )
+    payload["schema_version"] = STRICT_V4_CHECKPOINT_SCHEMA
+    payload.pop("cumulative_samples")
+    payload["reward_v4_samples"] = trainer.cumulative_samples
+    payload["strict_v4_initialization"] = initialization
+    payload["strict_v4_contact_entry"] = contact_entry
+    payload["reference_kinematics_version"] = 2
+    payload["reward_contract"] = environment_contract["ppo26d"]["reward"]
+    return payload
+
+
 def _run_reward_smoke(env: Any, trainer: PPO26DTrainer, *, steps: int) -> dict[str, Any]:
     """Exercise a V3 reward for an exact control-state count without PPO storage.
 
@@ -411,8 +492,24 @@ def parse_args() -> argparse.Namespace:
         type=int,
         help="Exact Reward V3 sample budget; required with --reward-v3-contact.",
     )
+    parser.add_argument(
+        "--strict-per-finger-contact-reward-v4",
+        action="store_true",
+        help="Train V4 from the frozen source-confirmed strict per-finger contract.",
+    )
+    parser.add_argument(
+        "--target-reward-v4-samples",
+        type=int,
+        help="Exact Strict V4 sample budget; required with --strict-per-finger-contact-reward-v4.",
+    )
     parser.add_argument("--contact-reward-contract", type=Path, default=DEFAULT_V3_CONTACT_CONTRACT)
     parser.add_argument("--contact-mask-root", type=Path, default=DEFAULT_V3_CONTACT_MASK_ROOT)
+    parser.add_argument("--strict-v4-contract", type=Path, default=DEFAULT_V4_CONTACT_CONTRACT)
+    parser.add_argument(
+        "--strict-v4-source-mask-root",
+        type=Path,
+        default=DEFAULT_V4_ROOT,
+    )
     parser.add_argument(
         "--checkpoint-targets",
         type=int,
@@ -457,16 +554,40 @@ def main() -> int:
     if args.num_envs <= 0:
         raise ValueError("--num-envs must be positive")
     is_reward_v3 = bool(args.reward_v3_contact)
-    if not is_reward_v3 and args.clip != "hocap_170650":
+    is_strict_v4 = bool(args.strict_per_finger_contact_reward_v4)
+    is_contact_reward = is_reward_v3 or is_strict_v4
+    if is_reward_v3 and is_strict_v4:
+        raise ValueError("REWARD_V3_AND_STRICT_V4_ARE_MUTUALLY_EXCLUSIVE")
+    if not is_contact_reward and args.clip != "hocap_170650":
         raise ValueError("PHASE3_ONLY_HOCAP_170650_IS_AUTHORIZED")
-    if is_reward_v3:
-        if args.target_reward_v3_samples is None or args.target_reward_v2_samples is not None:
+    if is_strict_v4:
+        if (
+            any(
+                value is not None
+                for value in (args.target_reward_v2_samples, args.target_reward_v3_samples)
+            )
+            or args.target_reward_v4_samples is None
+        ):
+            raise ValueError("STRICT_V4_REQUIRES_ONLY_TARGET_REWARD_V4_SAMPLES")
+        target_samples = args.target_reward_v4_samples
+        sample_key = "reward_v4_samples"
+        output_group = "ppo_v4"
+    elif is_reward_v3:
+        if (
+            args.target_reward_v3_samples is None
+            or args.target_reward_v2_samples is not None
+            or args.target_reward_v4_samples is not None
+        ):
             raise ValueError("REWARD_V3_REQUIRES_ONLY_TARGET_REWARD_V3_SAMPLES")
         target_samples = args.target_reward_v3_samples
         sample_key = "reward_v3_samples"
         output_group = "ppo_v3"
     else:
-        if args.target_reward_v2_samples is None or args.target_reward_v3_samples is not None:
+        if (
+            args.target_reward_v2_samples is None
+            or args.target_reward_v3_samples is not None
+            or args.target_reward_v4_samples is not None
+        ):
             raise ValueError("PHASE3_REQUIRES_ONLY_TARGET_REWARD_V2_SAMPLES")
         target_samples = args.target_reward_v2_samples
         sample_key = "reward_v2_samples"
@@ -478,7 +599,7 @@ def main() -> int:
             "hocap_170650": DEFAULT_L0_CHECKPOINT_170650,
             "hocap_170105": DEFAULT_L0_CHECKPOINT_170105,
         }[args.clip]
-        if is_reward_v3
+        if is_contact_reward
         else DEFAULT_L0_CHECKPOINT_170650
     )
     initialization_checkpoint = (
@@ -511,9 +632,13 @@ def main() -> int:
         output = output / "runs" / args.run_label
     output.mkdir(parents=True, exist_ok=True)
     entry = (
-        _require_reward_v3_entry(args.contact_reward_contract)
-        if is_reward_v3
-        else _require_phase3_entry(root, clip=args.clip)
+        _require_strict_v4_entry(args.strict_v4_contract)
+        if is_strict_v4
+        else (
+            _require_reward_v3_entry(args.contact_reward_contract)
+            if is_reward_v3
+            else _require_phase3_entry(root, clip=args.clip)
+        )
     )
     scale_freeze = _freeze_scales(args.reference_root.resolve())
     _write_json(root / output_group / "reward_v2_base_scale_freeze.json", scale_freeze)
@@ -544,7 +669,14 @@ def main() -> int:
             rsi=True,
             critical_dr=args.critical_dr,
         )
-        if is_reward_v3:
+        if is_strict_v4:
+            ppo_cfg.configure_stage16d_strict_per_finger_contact_reward_v4(
+                cfg,
+                reference_root=args.reference_root.resolve(),
+                contact_reward_contract=args.strict_v4_contract.resolve(),
+                source_mask_root=args.strict_v4_source_mask_root.resolve(),
+            )
+        elif is_reward_v3:
             ppo_cfg.configure_stage16d_reference_gated_contact_reward(
                 cfg,
                 reference_root=args.reference_root.resolve(),
@@ -557,7 +689,15 @@ def main() -> int:
             )
         _write_json(
             output / "launch_progress.json",
-            {"phase": "v3_configured" if is_reward_v3 else "v2_configured"},
+            {
+                "phase": (
+                    "strict_v4_configured"
+                    if is_strict_v4
+                    else "v3_configured"
+                    if is_reward_v3
+                    else "v2_configured"
+                )
+            },
         )
         env = IsaacPPO26DReferenceTrackingEnv(cfg)
         _write_json(output / "launch_progress.json", {"phase": "environment_ready"})
@@ -567,18 +707,27 @@ def main() -> int:
         _write_json(output / "launch_progress.json", {"phase": "trainer_fresh_ready"})
         initialization = (
             (
-                _resume_reward_v3(
+                _resume_strict_v4(
                     trainer,
                     args.resume_checkpoint.resolve(),
                     expected_clip=args.clip,
                     expected_num_envs=args.num_envs,
                 )
-                if is_reward_v3
-                else _resume_phase3(
-                    trainer,
-                    args.resume_checkpoint.resolve(),
-                    expected_clip=args.clip,
-                    expected_num_envs=args.num_envs,
+                if is_strict_v4
+                else (
+                    _resume_reward_v3(
+                        trainer,
+                        args.resume_checkpoint.resolve(),
+                        expected_clip=args.clip,
+                        expected_num_envs=args.num_envs,
+                    )
+                    if is_reward_v3
+                    else _resume_phase3(
+                        trainer,
+                        args.resume_checkpoint.resolve(),
+                        expected_clip=args.clip,
+                        expected_num_envs=args.num_envs,
+                    )
                 )
             )
             if args.resume_checkpoint is not None
@@ -598,13 +747,17 @@ def main() -> int:
             raise ValueError("REWARD_TRAINING_SMOKE_ROLLOUT_STEPS_INVALID")
         if args.smoke_reward_steps is not None and args.smoke_reward_steps <= 0:
             raise ValueError("REWARD_TRAINING_SMOKE_REWARD_STEPS_INVALID")
-        if args.smoke_reward_steps is not None and not (is_reward_v3 and args.smoke_only):
-            raise ValueError("REWARD_V3_DIRECT_REWARD_SMOKE_REQUIRES_V3_SMOKE_ONLY")
+        if args.smoke_reward_steps is not None and not (is_contact_reward and args.smoke_only):
+            raise ValueError("CONTACT_REWARD_DIRECT_REWARD_SMOKE_REQUIRES_CONTACT_SMOKE_ONLY")
         config = {
             "schema_version": (
-                "Stage16DRewardV3TrainingConfigV1"
-                if is_reward_v3
-                else "Stage16DPhase3RewardV2TrainingConfigV1"
+                "Stage16DStrictPerFingerV4TrainingConfigV1"
+                if is_strict_v4
+                else (
+                    "Stage16DRewardV3TrainingConfigV1"
+                    if is_reward_v3
+                    else "Stage16DPhase3RewardV2TrainingConfigV1"
+                )
             ),
             "clip": args.clip,
             "run_label": args.run_label,
@@ -625,7 +778,7 @@ def main() -> int:
         _write_json(output / "training_config.json", config)
         _write_json(output / f"training_segment_target_{target_samples}.json", config)
         if args.smoke_only:
-            if not is_reward_v3 and args.num_envs != 1024 and capacity_selection is None:
+            if not is_contact_reward and args.num_envs != 1024 and capacity_selection is None:
                 raise ValueError("PHASE3_RESUME_SMOKE_REQUIRES_1024_ENVS_OR_SELECTION")
             direct_reward_smoke = args.smoke_reward_steps is not None
             if direct_reward_smoke:
@@ -641,15 +794,27 @@ def main() -> int:
             metric.pop("last_policy_observation", None)
             receipt = {
                 "schema_version": (
-                    "Stage16DRewardV3SmokeV1" if is_reward_v3 else "Stage16DPhase3ResumeSmokeV1"
+                    "Stage16DStrictPerFingerV4SmokeV1"
+                    if is_strict_v4
+                    else (
+                        "Stage16DRewardV3SmokeV1" if is_reward_v3 else "Stage16DPhase3ResumeSmokeV1"
+                    )
                 ),
                 "status": (
                     (
-                        "REWARD_V3_321_STEP_REWARD_SMOKE_PASS"
-                        if direct_reward_smoke
-                        else "REWARD_V3_PPO_SMOKE_PASS"
+                        (
+                            "STRICT_V4_321_STEP_REWARD_SMOKE_PASS"
+                            if direct_reward_smoke
+                            else "STRICT_V4_PPO_SMOKE_PASS"
+                        )
+                        if is_strict_v4
+                        else (
+                            "REWARD_V3_321_STEP_REWARD_SMOKE_PASS"
+                            if direct_reward_smoke
+                            else "REWARD_V3_PPO_SMOKE_PASS"
+                        )
                     )
-                    if is_reward_v3
+                    if is_contact_reward
                     else (
                         "PHASE3_1024_ENV_RESUME_SMOKE_PASS"
                         if args.num_envs == 1024
@@ -682,9 +847,11 @@ def main() -> int:
             for milestone in checkpoint_targets
             if trainer.cumulative_samples < milestone <= target_samples
         ]
+        checkpoint_prefix = (
+            "strict_v4" if is_strict_v4 else "reward_v3" if is_reward_v3 else "phase3_reward_v2"
+        )
 
         def save_milestone(*, milestone: int | None, reason: str) -> Path:
-            checkpoint_prefix = "reward_v3" if is_reward_v3 else "phase3_reward_v2"
             path = (
                 output
                 / "checkpoints"
@@ -693,19 +860,29 @@ def main() -> int:
             save_checkpoint(
                 path,
                 (
-                    _reward_v3_checkpoint_payload(
+                    _strict_v4_checkpoint_payload(
                         trainer,
                         environment_contract=env.contract_report(),
                         selected_num_envs=args.num_envs,
                         initialization=initialization,
                         contact_entry=entry,
                     )
-                    if is_reward_v3
-                    else _phase3_checkpoint_payload(
-                        trainer,
-                        environment_contract=env.contract_report(),
-                        selected_num_envs=args.num_envs,
-                        initialization=initialization,
+                    if is_strict_v4
+                    else (
+                        _reward_v3_checkpoint_payload(
+                            trainer,
+                            environment_contract=env.contract_report(),
+                            selected_num_envs=args.num_envs,
+                            initialization=initialization,
+                            contact_entry=entry,
+                        )
+                        if is_reward_v3
+                        else _phase3_checkpoint_payload(
+                            trainer,
+                            environment_contract=env.contract_report(),
+                            selected_num_envs=args.num_envs,
+                            initialization=initialization,
+                        )
                     )
                 ),
             )
@@ -745,8 +922,7 @@ def main() -> int:
                     pending_milestones.remove(milestone)
                 if trainer.cumulative_samples >= target_samples:
                     if checkpoint is None or checkpoint.name != (
-                        f"stage16d_{'reward_v3' if is_reward_v3 else 'phase3_reward_v2'}_samples_"
-                        f"{trainer.cumulative_samples}.pt"
+                        f"stage16d_{checkpoint_prefix}_samples_{trainer.cumulative_samples}.pt"
                     ):
                         checkpoint = save_milestone(milestone=None, reason="segment_target_reached")
         if trainer.cumulative_samples != target_samples:
@@ -756,14 +932,22 @@ def main() -> int:
         _write_json(output / "checkpoint_milestones.json", checkpoint_records)
         result = {
             "schema_version": (
-                "Stage16DRewardV3TrainingResultV1"
-                if is_reward_v3
-                else "Stage16DPhase3RewardV2TrainingResultV1"
+                "Stage16DStrictPerFingerV4TrainingResultV1"
+                if is_strict_v4
+                else (
+                    "Stage16DRewardV3TrainingResultV1"
+                    if is_reward_v3
+                    else "Stage16DPhase3RewardV2TrainingResultV1"
+                )
             ),
             "status": (
-                "REWARD_V3_TRAINING_SEGMENT_COMPLETE"
-                if is_reward_v3
-                else "PHASE3_REWARD_V2_TRAINING_SEGMENT_COMPLETE"
+                "STRICT_V4_TRAINING_SEGMENT_COMPLETE"
+                if is_strict_v4
+                else (
+                    "REWARD_V3_TRAINING_SEGMENT_COMPLETE"
+                    if is_reward_v3
+                    else "PHASE3_REWARD_V2_TRAINING_SEGMENT_COMPLETE"
+                )
             ),
             "clip": args.clip,
             f"{sample_key}_start": config[f"{sample_key}_start"],
@@ -788,9 +972,13 @@ def main() -> int:
             output / "training_failure.json",
             {
                 "schema_version": (
-                    "Stage16DRewardV3TrainingFailureV1"
-                    if "is_reward_v3" in locals() and is_reward_v3
-                    else "Stage16DPhase3TrainingFailureV1"
+                    "Stage16DStrictPerFingerV4TrainingFailureV1"
+                    if "is_strict_v4" in locals() and is_strict_v4
+                    else (
+                        "Stage16DRewardV3TrainingFailureV1"
+                        if "is_reward_v3" in locals() and is_reward_v3
+                        else "Stage16DPhase3TrainingFailureV1"
+                    )
                 ),
                 "exception_type": type(error).__name__,
                 "message": str(error),
