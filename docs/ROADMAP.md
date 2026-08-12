@@ -92,8 +92,12 @@ success from 0/20 to 19/20 and reduces free-flight re-catch, while
 `hocap_170650` improves qualified success from 14/20 to 16/20 but retains
 free-flight re-catch. This does not authorize multi-clip PPO, a reward-contract
 expansion, contact-loss termination, or a physics curriculum. The next action
-is to review the frozen contact-reward contract and its remaining 170650
-failure mode; any correction must be a separately versioned causal experiment.
+is the diagnostic-only Reference Contact Contract V2 / full 21-body
+active-object pair-force audit. Its current R2 result is
+`REFERENCE_CONTACT_EVIDENCE_INSUFFICIENT`: several <=2 cm geometric candidates
+float, but the frozen HOCap inputs contain no source per-finger contact or
+topology evidence. V3 remains frozen; first acquire or map that source
+evidence, then rerun Formal20 before authorizing a separately versioned V4.
 
 ### Causal Decision Tree (FUTURE)
 

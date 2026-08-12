@@ -19,6 +19,7 @@ import torch
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from toporetarget.evaluation.full_hand_contact import hand_body_manifest
 from toporetarget.rl.geometry_audit.hand_collision_reconstruction import (
     HAND_COLLISION_BODY_NAMES as FK_HAND_COLLISION_BODY_NAMES,
 )
@@ -94,6 +95,14 @@ def parse_args() -> argparse.Namespace:
             "Record the current object-side filtered PhysX force vector from each of the "
             "five named fingertips. This is trace-only telemetry and does not change the "
             "active reward, policy, physics, or actions."
+        ),
+    )
+    parser.add_argument(
+        "--capture-full-hand-object-pair-telemetry",
+        action="store_true",
+        help=(
+            "Export the named 21-body active-object filtered pair matrix for diagnostics; "
+            "this never changes policy, reward, action, observation, or physics."
         ),
     )
     parser.add_argument(
@@ -222,7 +231,10 @@ def _device_trace_to_numpy(
 
 
 def _initial_trace_snapshot(
-    env: Any, *, capture_exact_fingertip_object_pair_force: bool
+    env: Any,
+    *,
+    capture_exact_fingertip_object_pair_force: bool,
+    capture_full_hand_object_pair_telemetry: bool,
 ) -> dict[str, np.ndarray]:
     """Capture the physical reset state as trace frame zero without collision reads.
 
@@ -339,6 +351,18 @@ def _initial_trace_snapshot(
                 ),
             }
         )
+    if capture_full_hand_object_pair_telemetry:
+        # Frame zero has no post-physics sensor sample.  Keep it explicitly
+        # invalid rather than manufacturing no-contact evidence.
+        values.update(
+            {
+                "hand_object_pair_force_world": torch.zeros((count, 21, 3), device=device),
+                "hand_object_pair_presence": torch.zeros(
+                    (count, 21), dtype=torch.bool, device=device
+                ),
+                "hand_object_pair_force_valid": torch.zeros(count, dtype=torch.bool, device=device),
+            }
+        )
     return {name: value.detach().cpu().numpy().copy() for name, value in values.items()}
 
 
@@ -362,6 +386,7 @@ def run_episode(
     *,
     capture: bool,
     capture_exact_fingertip_object_pair_force: bool,
+    capture_full_hand_object_pair_telemetry: bool,
     expected_clip: str,
 ) -> dict[str, Any]:
     """Run one physical rollout without reading collision articulation tensors.
@@ -384,6 +409,7 @@ def run_episode(
         env.start_trace_capture(
             capacity=env.reference_bank.frame_count,
             capture_exact_fingertip_object_pair_force=capture_exact_fingertip_object_pair_force,
+            capture_full_hand_object_pair_telemetry=capture_full_hand_object_pair_telemetry,
         )
     start_reference_index = int(env._reference_index[0].item())
     total_reward = 0.0
@@ -540,6 +566,7 @@ def run_parallel_episodes(
     capture: bool,
     capture_all_replicas: bool,
     capture_exact_fingertip_object_pair_force: bool,
+    capture_full_hand_object_pair_telemetry: bool,
     expected_clip: str,
     seeds: list[int],
 ) -> list[dict[str, Any]]:
@@ -561,6 +588,7 @@ def run_parallel_episodes(
         _initial_trace_snapshot(
             env,
             capture_exact_fingertip_object_pair_force=capture_exact_fingertip_object_pair_force,
+            capture_full_hand_object_pair_telemetry=capture_full_hand_object_pair_telemetry,
         )
         if capture
         else None
@@ -569,6 +597,7 @@ def run_parallel_episodes(
         env.start_trace_capture(
             capacity=env.reference_bank.frame_count,
             capture_exact_fingertip_object_pair_force=capture_exact_fingertip_object_pair_force,
+            capture_full_hand_object_pair_telemetry=capture_full_hand_object_pair_telemetry,
         )
     device = env.device
     count = env.num_envs
@@ -774,6 +803,8 @@ def main() -> int:
         raise ValueError("--artifact-label must be alphanumeric/underscore")
     if args.capture_exact_fingertip_object_pair_force and not args.capture_all_frame_zero_replicas:
         raise ValueError("PPO26D_PAIR_FORCE_CAPTURE_REQUIRES_ALL_FRAME_ZERO_REPLICAS")
+    if args.capture_full_hand_object_pair_telemetry and not args.capture_all_frame_zero_replicas:
+        raise ValueError("PPO26D_FULL_HAND_PAIR_CAPTURE_REQUIRES_ALL_FRAME_ZERO_REPLICAS")
     if args.trace_name is not None and (
         Path(args.trace_name).name != args.trace_name or not args.trace_name.endswith(".npz")
     ):
@@ -848,6 +879,7 @@ def main() -> int:
             capture=True,
             capture_all_replicas=args.capture_all_frame_zero_replicas,
             capture_exact_fingertip_object_pair_force=args.capture_exact_fingertip_object_pair_force,
+            capture_full_hand_object_pair_telemetry=args.capture_full_hand_object_pair_telemetry,
             expected_clip=args.clip,
             seeds=pad_parallel_seeds(frame_zero_seeds, count=evaluation_num_envs),
         )[: args.frame_zero_replicas]
@@ -895,6 +927,7 @@ def main() -> int:
                 capture=False,
                 capture_all_replicas=False,
                 capture_exact_fingertip_object_pair_force=False,
+                capture_full_hand_object_pair_telemetry=False,
                 expected_clip=args.clip,
                 seeds=rsi_parallel_seeds,
             )[: args.rsi_replicas]
@@ -902,6 +935,11 @@ def main() -> int:
             rsi = []
         trace_path = output / (args.trace_name or f"ppo_{args.artifact_label}_trace_replica0.npz")
         environment_contract = env.contract_report()
+        full_hand_manifest = (
+            hand_body_manifest(tuple(HAND_COLLISION_BODY_NAMES), repo_root=REPO_ROOT)
+            if args.capture_full_hand_object_pair_telemetry
+            else None
+        )
         np.savez_compressed(
             trace_path,
             object_pose=trace_rows["object_pose"].astype(np.float32),
@@ -1146,6 +1184,21 @@ def main() -> int:
                             ].astype(bool),
                         }
                     ),
+                    **(
+                        {}
+                        if not args.capture_full_hand_object_pair_telemetry
+                        else {
+                            "replica_hand_object_pair_force_world": all_replica_trace[
+                                "hand_object_pair_force_world"
+                            ].astype(np.float32),
+                            "replica_hand_object_pair_presence": all_replica_trace[
+                                "hand_object_pair_presence"
+                            ].astype(bool),
+                            "replica_hand_object_pair_force_valid": all_replica_trace[
+                                "hand_object_pair_force_valid"
+                            ].astype(bool),
+                        }
+                    ),
                 }
             ),
             **(
@@ -1171,6 +1224,37 @@ def main() -> int:
                         "V3_PPO_EVALUATION"
                         if args.reference_gated_contact_reward_v3
                         else "V1_PAIRFORCE_REEXPORT_DIAGNOSTIC"
+                    ),
+                }
+            ),
+            **(
+                {}
+                if not args.capture_full_hand_object_pair_telemetry or full_hand_manifest is None
+                else {
+                    "hand_object_pair_force_world": trace_rows[
+                        "hand_object_pair_force_world"
+                    ].astype(np.float32),
+                    "hand_object_pair_presence": trace_rows["hand_object_pair_presence"].astype(
+                        bool
+                    ),
+                    "hand_object_pair_force_valid": trace_rows[
+                        "hand_object_pair_force_valid"
+                    ].astype(bool),
+                    "hand_body_names": np.asarray(full_hand_manifest["hand_body_names"]),
+                    "hand_body_indices": np.asarray(
+                        full_hand_manifest["hand_body_indices"], dtype=np.int64
+                    ),
+                    "hand_body_groups": np.asarray(full_hand_manifest["hand_body_groups"]),
+                    "hand_collision_shape_mapping": np.asarray(
+                        json.dumps(full_hand_manifest["collision_shape_mapping"], sort_keys=True)
+                    ),
+                    "hand_palm_mapping": np.asarray(
+                        json.dumps(full_hand_manifest["palm_mapping"], sort_keys=True)
+                    ),
+                    "full_hand_pair_force_frame": np.asarray(full_hand_manifest["force_frame"]),
+                    "full_hand_pair_force_units": np.asarray(full_hand_manifest["force_units"]),
+                    "full_hand_pair_force_semantics": np.asarray(
+                        full_hand_manifest["force_semantics"]
                     ),
                 }
             ),
@@ -1220,6 +1304,15 @@ def main() -> int:
             "trace_capture": "post_physics_gpu_buffer_then_single_host_export",
             "all_frame_zero_replica_trace": all_replica_trace is not None,
             "hand_collision_body_pose": "offline_fk_from_captured_physical_wrist_and_finger_state",
+            "full_hand_object_pair_telemetry": (
+                None
+                if full_hand_manifest is None
+                else {
+                    **full_hand_manifest,
+                    "capture": "post_physics_gpu_buffer_then_single_host_export",
+                    "reward_or_policy_effect": "none",
+                }
+            ),
             "self_collision": "ENABLED; post-PPO diagnostic pending formal audit",
             "inter_finger_penetration": "POST_PPO_GEOMETRY_DIAGNOSTIC_NOT_RUN",
         }

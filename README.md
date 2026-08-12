@@ -135,6 +135,9 @@ object pair force only during policy optimization; its shared force scale is
 frozen from exact V1 Formal20 pair-force traces, and it never directly controls
 the object.
 
+Reference-contact refinements are audit-only until source-supported per-finger
+evidence is available; the frozen V3 3 cm mask is never silently replaced.
+
 Phase-specific terminal-dynamics attribution and detailed results are recorded
 in stage and RL documentation, with machine-readable artifacts kept in ignored
 local storage.

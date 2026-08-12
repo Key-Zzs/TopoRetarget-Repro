@@ -78,8 +78,11 @@ positive-contact median 一次性冻结共享 V3 force scale。有界 V3 结果�
 free-flight re-catch 减少；`hocap_170650` 从 14/20 提升至 16/20，但
 free-flight re-catch 仍存在。这不授权 multi-clip PPO、reward-contract 扩展、
 contact-loss termination 或 physics curriculum。下一步是审查冻结的
-contact-reward contract 及 170650 的剩余失败模式；任何修正都必须是独立版本化的
-causal experiment。
+contact-reward contract 的 diagnostic-only Reference Contact Contract V2 /
+完整 21-body active-object pair-force audit。当前 R2 结论为
+`REFERENCE_CONTACT_EVIDENCE_INSUFFICIENT`：多个 <=2 cm 的几何强候选手指悬空，
+但冻结的 HOCap 输入没有逐指 source-contact 或 topology evidence。V3 保持冻结；
+应先补齐或映射该 source evidence，再重跑 Formal20，随后才可授权单独版本化的 V4。
 
 ### Causal Decision Tree（FUTURE）
 

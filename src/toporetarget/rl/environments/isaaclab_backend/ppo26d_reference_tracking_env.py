@@ -591,7 +591,11 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         return terminated, timed_out
 
     def start_trace_capture(
-        self, *, capacity: int, capture_exact_fingertip_object_pair_force: bool = False
+        self,
+        *,
+        capacity: int,
+        capture_exact_fingertip_object_pair_force: bool = False,
+        capture_full_hand_object_pair_telemetry: bool = False,
     ) -> None:
         """Capture one post-physics row per PPO step without host transfers.
 
@@ -614,6 +618,7 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         self._ppo26d_trace_capture = None
         self._ppo26d_trace_enabled = True
         self._ppo26d_trace_capture_exact_pair_force = capture_exact_fingertip_object_pair_force
+        self._ppo26d_trace_capture_full_hand_object_pair = capture_full_hand_object_pair_telemetry
         self._ppo26d_trace_capacity = capacity
         self._ppo26d_trace_length = 0
 
@@ -627,6 +632,7 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         self._ppo26d_trace_capture = None
         self._ppo26d_trace_enabled = False
         self._ppo26d_trace_capture_exact_pair_force = False
+        self._ppo26d_trace_capture_full_hand_object_pair = False
         self._ppo26d_trace_capacity = 0
         self._ppo26d_trace_length = 0
         if length == 0:
@@ -781,6 +787,19 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
                     # supplies an explicitly-invalid reset row when it needs a
                     # 321-key trace.
                     "fingertip_object_pair_force_valid": torch.ones(
+                        self.num_envs, dtype=torch.bool, device=self.device
+                    ),
+                }
+            )
+        if self._ppo26d_trace_capture_full_hand_object_pair:
+            values.update(
+                {
+                    # This is the raw named 21-body filtered matrix.  It is
+                    # observational and deliberately independent of reward version.
+                    "hand_object_pair_force_world": pair_force,
+                    "hand_object_pair_presence": torch.linalg.vector_norm(pair_force, dim=-1)
+                    > 1.0e-4,
+                    "hand_object_pair_force_valid": torch.ones(
                         self.num_envs, dtype=torch.bool, device=self.device
                     ),
                 }
