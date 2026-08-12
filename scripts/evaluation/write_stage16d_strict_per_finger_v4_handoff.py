@@ -64,16 +64,27 @@ def _clip_summary(report_root: Path, simulation_root: Path, clip: str) -> dict[s
     selected_samples = int(selection["selected"]["reward_v4_samples"])
     formal_root = clip_root / "formal"
     suffix = f"v4_formal_selected_{selected_samples}"
-    qualification_path = formal_root / f"{suffix}_qualification.json"
-    if not qualification_path.is_file():
+    qualification_candidates = [
+        formal_root / f"{suffix}_qualification.json",
+        formal_root / clip / f"{suffix}_qualification.json",
+    ]
+    qualification_path = next((path for path in qualification_candidates if path.is_file()), None)
+    if qualification_path is None:
         raise ValueError(f"STRICT_V4_HANDOFF_SELECTED_FORMAL_MISSING:{clip}:{selected_samples}")
+    formal_root = qualification_path.parent
     qualification = _read(qualification_path)
     suite = _read(formal_root / f"{suffix}_evaluation_suite_v2.json")
     audit = _read(formal_root / f"{suffix}_source_contact_evaluation.json")
     telemetry = _read(formal_root / f"{suffix}_full_hand_pair_telemetry.json")
-    traces_path = formal_root / f"traces_{suffix}" / "manifest.json"
-    if not traces_path.is_file():
-        traces_path = formal_root / "traces" / "manifest.json"
+    trace_candidates = (
+        formal_root / f"traces_{suffix}" / "manifest.json",
+        formal_root / "traces" / "manifest.json",
+        clip_root / "formal" / f"traces_{suffix}" / "manifest.json",
+        clip_root / "formal" / "traces" / "manifest.json",
+    )
+    traces_path = next((path for path in trace_candidates if path.is_file()), None)
+    if traces_path is None:
+        raise ValueError(f"STRICT_V4_HANDOFF_SELECTED_TRACES_MISSING:{clip}:{selected_samples}")
     traces = _read(traces_path)
     simulation_path = simulation_root / clip / suffix / "manifest.json"
     if not simulation_path.is_file():
