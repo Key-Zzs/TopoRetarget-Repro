@@ -35,6 +35,7 @@ def _arrays(trace_path: Path) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         required = {
             "replica_object_pose",
             "replica_object_twist",
+            "replica_hand_collision_body_pose",
             "replica_wrist_pose",
             "replica_wrist_twist_world",
             "replica_virtual_wrist_q",
@@ -145,6 +146,7 @@ def _write_zarr(
         "robot": (
             "wrist_pose",
             "wrist_twist_world",
+            "hand_collision_body_pose",
             "virtual_wrist_q",
             "virtual_wrist_qdot",
             "virtual_wrist_target_q",
@@ -167,6 +169,8 @@ def _write_zarr(
         ),
         "source_semantics": ("source_contact_mask",),
         "contact": (
+            "contact_pair_presence",
+            "contact_force_world",
             "tip_pair_presence",
             "tip_pair_force_world",
             "hand_object_pair_presence",
