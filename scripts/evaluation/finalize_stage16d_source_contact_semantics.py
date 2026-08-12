@@ -165,7 +165,34 @@ def _load_mano_topology() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarra
     exact LBS/topology buffers needed for this offline segmentation.
     """
 
+    import inspect
+    from collections import namedtuple
+
     import torch
+
+    # The workstation base environment has the source renderer's legacy
+    # chumpy dependency. Make its Python/NumPy compatibility explicit so this
+    # same process can render both clips instead of repeatedly spawning a
+    # helper under the project environment.
+    if not hasattr(inspect, "getargspec"):
+        argument_spec = namedtuple("arg_spec", "args varargs keywords defaults")
+
+        def getargspec(function: object) -> object:
+            full = inspect.getfullargspec(function)
+            return argument_spec(full.args, full.varargs, full.varkw, full.defaults)
+
+        inspect.getargspec = getargspec  # type: ignore[attr-defined]
+    for name, value in {
+        "bool": bool,
+        "int": int,
+        "float": float,
+        "complex": complex,
+        "object": object,
+        "unicode": str,
+        "str": str,
+    }.items():
+        if name not in np.__dict__:
+            setattr(np, name, value)
 
     try:
         import smplx
@@ -812,6 +839,7 @@ def _source_asset_and_alignment(
         "runtime_artifact": str(runtime_path.resolve()),
     }
     _write_json(clip_output / "source_contact_evidence_summary.json", source_summary)
+    _write_json(clip_output / "source_reference_alignment.json", alignment)
     diagnostics = output / "diagnostics"
     diagnostics.mkdir(exist_ok=True)
     visualization_windows: dict[str, Any] = {
@@ -898,6 +926,7 @@ def _source_asset_and_alignment(
         },
         "reference_source_frame_indices": source_indices.tolist(),
     }
+    _write_json(clip_output / "source_asset_resolution.json", asset_receipt)
     return {
         "alignment": alignment,
         "asset_receipt": asset_receipt,
@@ -1579,11 +1608,163 @@ def _markdown(summary: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _finalize_existing(output: Path) -> int:
+    """Finish a restart-safe audit from already materialized source evidence.
+
+    This mode exists because exact mesh queries are intentionally independent
+    per clip. It never recomputes source geometry or launches a simulator.
+    """
+
+    source: dict[str, dict[str, Any]] = {}
+    robot: dict[str, dict[str, Any]] = {}
+    for clip in CLIPS:
+        clip_output = output / clip
+        with (
+            np.load(
+                clip_output / "source_contact_evidence_native.npz", allow_pickle=False
+            ) as native,
+            np.load(
+                clip_output / "source_contact_evidence_runtime.npz", allow_pickle=False
+            ) as runtime,
+        ):
+            source[clip] = {
+                "source_summary": _read_json(clip_output / "source_contact_evidence_summary.json"),
+                "alignment": _read_json(clip_output / "source_reference_alignment.json"),
+                "asset_receipt": _read_json(clip_output / "source_asset_resolution.json"),
+                "runtime_expected": np.asarray(runtime["expected_contact"], dtype=bool),
+                "runtime_class": np.asarray(runtime["class_label"]),
+                "sensitivity": {
+                    name: np.asarray(native[name], dtype=bool)
+                    for name in ("contact_at_1mm", "contact_at_2mm", "contact_at_5mm")
+                },
+            }
+        robot[clip] = _robot_audit(
+            clip,
+            output=output,
+            source_expected=source[clip]["runtime_expected"],
+            source_class=source[clip]["runtime_class"],
+        )
+    decision = _recommendation(source, robot)
+    mapping = {
+        "aggregate_v3": "frozen five-tip sum only; recorded as historical baseline, never changed"
+    }
+    weights, faces, template, regressor, shapedirs = _load_mano_topology()
+    betas = np.asarray(
+        yaml.safe_load((SOURCE_ROOT / "calibration/mano/subject_1.yaml").read_text())["betas"],
+        dtype=np.float64,
+    )
+    rest_vertices = template + np.einsum("l,vkl->vk", betas, shapedirs)
+    region_map = build_mano_surface_region_map(
+        weights, faces, rest_vertices, regressor @ rest_vertices
+    )
+    tables = _materialize_final_layout(
+        output,
+        source=source,
+        robot=robot,
+        mapping=mapping,
+        region_map=region_map,
+        rest_vertices=rest_vertices,
+        faces=faces,
+        decision=decision,
+    )
+    sensitivity = {
+        clip: {
+            threshold: {
+                finger: int(values[:, index].sum()) for index, finger in enumerate(FINGER_ORDER)
+            }
+            for threshold, values in source[clip]["sensitivity"].items()
+        }
+        for clip in CLIPS
+    }
+    _write_json(
+        output / "source_asset_resolution.json",
+        {clip: source[clip]["asset_receipt"] for clip in CLIPS},
+    )
+    _write_json(
+        output / "source_reference_alignment.json",
+        {clip: source[clip]["alignment"] for clip in CLIPS},
+    )
+    _write_json(output / "threshold_sensitivity.json", sensitivity)
+    _write_json(output / "decision.json", decision)
+    _write_json(
+        output / "strict_per_finger_v4_proposal.json",
+        {
+            "status": "CANDIDATE_ONLY_RECOMMENDED",
+            "source_mask": "SOURCE_CONTACT_CONFIRMED/PROBABLE/PERSISTENT",
+            "force_evidence": "matching named Wuji distal body pair-force only",
+            "normalization": "mean over source-expected fingers only",
+            "force_farming_guard": "no other-finger or wrist/base credit",
+            "training": "FORBIDDEN_IN_THIS_AUDIT",
+        },
+    )
+    _write_json(
+        output / "contact_group_v4_proposal.json",
+        {
+            "status": "NOT_RECOMMENDED_CURRENTLY",
+            "same_finger_semantics": "named bodies in matching digit only",
+            "training": "FORBIDDEN_IN_THIS_AUDIT",
+        },
+    )
+    summary = {
+        "schema_version": "Stage16DSourceContactSemanticsFinalAuditV1",
+        "status": "STAGE16D_SOURCE_CONTACT_SEMANTICS_AUDIT_COMPLETE",
+        "primary_recommendation": decision["primary_recommendation"],
+        "decision": decision,
+        "clips": {
+            clip: {
+                "source": source[clip]["source_summary"],
+                "robot_per_finger": robot[clip]["per_finger"],
+                "freeflight_event_count": len(robot[clip]["freeflight"]),
+                "physics": robot[clip]["physics"],
+            }
+            for clip in CLIPS
+        },
+        "v3_preserved": True,
+        "v4_implemented": False,
+        "tables": tables,
+    }
+    _write_json(output / "final_summary.json", summary)
+    markdown = _markdown(summary)
+    (output / "final_summary.md").write_text(markdown + "\n", encoding="utf-8")
+    (output / "handoff.md").write_text(
+        markdown + "\n\nNo PPO, reward, mask, RSI, controller, or physics change was made.\n",
+        encoding="utf-8",
+    )
+    _write_json(
+        output / "cross_clip_summary.json",
+        {
+            "schema_version": "Stage16DCrossClipSourceContactSummaryV1",
+            "primary_recommendation": decision["primary_recommendation"],
+            "decision_confidence": decision["decision_confidence"],
+            "source_contact_decision_sensitive": decision["source_contact_decision_sensitive"],
+            "source_truth_rows": tables["source"],
+            "robot_satisfaction_rows": tables["satisfaction"],
+        },
+    )
+    # A resume only rebuilds derived audit summaries. Keep the prior repository
+    # test receipt intact rather than downgrading verified evidence to pending.
+    if not (output / "tests.json").exists():
+        _write_json(output / "tests.json", {"status": "PENDING_REPOSITORY_TEST_COMMANDS"})
+    (output / "failure_transitions.jsonl").write_text("", encoding="utf-8")
+    _write_json(output / "git_commits.json", _git_state())
+    print(json.dumps({"status": summary["status"], "decision": decision["primary_recommendation"]}))
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--finalize-existing",
+        action="store_true",
+        help="finish an interrupted audit from its already materialized per-clip evidence",
+    )
     args = parser.parse_args()
     output = args.output.resolve()
+    if args.finalize_existing:
+        if not output.is_dir():
+            raise FileNotFoundError(f"SOURCE_CONTACT_RESUME_OUTPUT_MISSING:{output}")
+        return _finalize_existing(output)
     if output.exists() and any(output.iterdir()):
         allowed_retry = {"git_start.json"}
         unexpected = {path.name for path in output.iterdir()}.difference(allowed_retry)
