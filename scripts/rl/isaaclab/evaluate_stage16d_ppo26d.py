@@ -69,6 +69,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Evaluate a frozen Strict Per-Finger V4 checkpoint and source mask.",
     )
+    parser.add_argument(
+        "--strict-contact-diagnostic-allow-non-v4-checkpoint",
+        action="store_true",
+        help=(
+            "Explicitly permit a V1/V3 policy checkpoint to run once in the frozen V4 "
+            "environment only to capture strict source-contact telemetry. The result is "
+            "diagnostic-only and cannot be used as a V4 qualification or export."
+        ),
+    )
     parser.add_argument("--contact-reward-contract", type=Path)
     parser.add_argument("--contact-mask-root", type=Path)
     parser.add_argument("--selected-capacity", type=Path)
@@ -846,6 +855,11 @@ def main() -> int:
         args.contact_reward_contract is None or args.contact_mask_root is None
     ):
         raise ValueError("STRICT_V4_REQUIRES_FROZEN_CONTACT_INPUTS")
+    if (
+        args.strict_contact_diagnostic_allow_non_v4_checkpoint
+        and not args.strict_per_finger_contact_reward_v4
+    ):
+        raise ValueError("STRICT_CONTACT_DIAGNOSTIC_REQUIRES_V4_RUNTIME_MODE")
     if args.frame_zero_replicas <= 0 or args.rsi_replicas < 0:
         raise ValueError("--frame-zero-replicas must be positive and --rsi-replicas non-negative")
     if not args.artifact_label.replace("_", "").isalnum():
@@ -919,12 +933,21 @@ def main() -> int:
         trainer, payload = model_from_checkpoint(
             checkpoint, str(env.device), expected_clip=args.clip
         )
+        strict_contact_diagnostic = bool(args.strict_contact_diagnostic_allow_non_v4_checkpoint)
         if args.strict_per_finger_contact_reward_v4:
             if payload.get("schema_version") != STRICT_V4_CHECKPOINT_SCHEMA:
-                raise ValueError("STRICT_V4_EVALUATION_REQUIRES_V4_CHECKPOINT")
+                if not strict_contact_diagnostic or payload.get("schema_version") not in {
+                    "Stage16DPPO26DCheckpointV1",
+                    REWARD_V3_CHECKPOINT_SCHEMA,
+                }:
+                    raise ValueError("STRICT_V4_EVALUATION_REQUIRES_V4_CHECKPOINT")
+            elif strict_contact_diagnostic:
+                raise ValueError("STRICT_CONTACT_DIAGNOSTIC_REQUIRES_V1_OR_V3_CHECKPOINT")
             assert args.contact_reward_contract is not None
             checkpoint_entry = payload.get("strict_v4_contact_entry", {}).get("contract", {})
-            if checkpoint_entry.get("sha256") != checkpoint_hash(args.contact_reward_contract):
+            if not strict_contact_diagnostic and checkpoint_entry.get("sha256") != checkpoint_hash(
+                args.contact_reward_contract
+            ):
                 raise ValueError("STRICT_V4_CONTACT_CONTRACT_HASH_MISMATCH")
         elif args.reference_gated_contact_reward_v3:
             if payload.get("schema_version") != REWARD_V3_CHECKPOINT_SCHEMA:
@@ -1062,14 +1085,19 @@ def main() -> int:
             reference_hash=np.asarray(json.dumps(payload["reference_hash"], sort_keys=True)),
             reference_kinematics_version=np.asarray(int(cfg.reference_kinematics_version)),
             simulation_data_capture_version=np.asarray(
-                "Stage16DStrictPerFingerV4SimulationDataV1"
-                if args.strict_per_finger_contact_reward_v4
+                "Stage16DStrictPerFingerV4DiagnosticTraceV1"
+                if strict_contact_diagnostic
                 else (
-                    "Stage16DRewardV3SimulationDataV1"
-                    if args.reference_gated_contact_reward_v3
-                    else "Stage16DPPO26DTraceV2"
+                    "Stage16DStrictPerFingerV4SimulationDataV1"
+                    if args.strict_per_finger_contact_reward_v4
+                    else (
+                        "Stage16DRewardV3SimulationDataV1"
+                        if args.reference_gated_contact_reward_v3
+                        else "Stage16DPPO26DTraceV2"
+                    )
                 )
             ),
+            strict_contact_diagnostic=np.asarray(strict_contact_diagnostic),
             **(
                 {}
                 if not (
@@ -1354,12 +1382,16 @@ def main() -> int:
                         "force on active object from named filtered hand collision body"
                     ),
                     "pair_force_capture": np.asarray(
-                        "STRICT_V4_PPO_EVALUATION"
-                        if args.strict_per_finger_contact_reward_v4
+                        "STRICT_V4_CONTACT_DIAGNOSTIC"
+                        if strict_contact_diagnostic
                         else (
-                            "V3_PPO_EVALUATION"
-                            if args.reference_gated_contact_reward_v3
-                            else "V1_PAIRFORCE_REEXPORT_DIAGNOSTIC"
+                            "STRICT_V4_PPO_EVALUATION"
+                            if args.strict_per_finger_contact_reward_v4
+                            else (
+                                "V3_PPO_EVALUATION"
+                                if args.reference_gated_contact_reward_v3
+                                else "V1_PAIRFORCE_REEXPORT_DIAGNOSTIC"
+                            )
                         )
                     ),
                 }
@@ -1409,6 +1441,13 @@ def main() -> int:
             "clip_index": expected_clip_index,
             "checkpoint": str(checkpoint.resolve()),
             "checkpoint_sha256": checkpoint_hash(checkpoint),
+            "checkpoint_schema_version": payload["schema_version"],
+            "strict_contact_diagnostic_only": strict_contact_diagnostic,
+            "strict_contact_diagnostic_policy_effect": (
+                "none; reward is post-action and the policy checkpoint is read-only"
+                if strict_contact_diagnostic
+                else None
+            ),
             sample_counter_name: sample_counter,
             "selected_num_envs": selected,
             "frame_zero": [
