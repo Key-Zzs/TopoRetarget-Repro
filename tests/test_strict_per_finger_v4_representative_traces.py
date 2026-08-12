@@ -61,3 +61,4 @@ def test_no_hand_flight_trace_selection_carries_the_frozen_episode_seed() -> Non
     assert flight is not None
     assert flight["replica"] == 7
     assert flight["seed"] == 1007
+    assert result["best_progress"]["replica"] == 0

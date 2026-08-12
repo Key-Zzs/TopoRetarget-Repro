@@ -85,6 +85,16 @@ def _select(
     selection: dict[str, dict[str, Any] | None] = {
         "best_interaction_qualified": None,
         "best_physics_qualified": None,
+        "best_progress": max(
+            rows,
+            key=lambda row: (
+                row["semantic_progress"],
+                row["persistent_source_tip_recall"],
+                row["source_tip_recall"],
+                -row["final_error_m"],
+                -row["replica"],
+            ),
+        ),
         "representative_source_contact_failure": min(
             rows,
             key=lambda row: (

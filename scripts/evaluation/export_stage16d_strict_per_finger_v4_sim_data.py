@@ -342,6 +342,14 @@ def main() -> int:
     parser.add_argument("--source-runtime", type=Path, required=True)
     parser.add_argument("--source-contact-contract", type=Path, required=True)
     parser.add_argument("--strict-v4-contract", type=Path, required=True)
+    parser.add_argument(
+        "--physics-contract",
+        type=Path,
+        default=Path(
+            ".local/reports/stage16d_reward_v3_pairforce_unblock/checkpoint_manifest.json"
+        ),
+    )
+    parser.add_argument("--repair-existing-manifest", action="store_true")
     parser.add_argument("--reference", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -355,6 +363,27 @@ def main() -> int:
     source_contact_contract_path = args.source_contact_contract.resolve()
     contract_path = args.strict_v4_contract.resolve()
     reference_path = args.reference.resolve()
+    physics_contract_path = args.physics_contract.resolve()
+    if args.repair_existing_manifest and output.exists():
+        manifest_path = output / "manifest.json"
+        manifest = _read(manifest_path)
+        manifest.setdefault("metadata", {})["physics_contract_sha256"] = _sha256(
+            physics_contract_path
+        )
+        manifest.setdefault("inputs", {})["physics_contract"] = {
+            "path": str(physics_contract_path),
+            "sha256": _sha256(physics_contract_path),
+        }
+        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+        print(
+            json.dumps(
+                {
+                    "status": "STAGE16D_STRICT_V4_SIM_MANIFEST_REPAIRED",
+                    "output": str(output),
+                }
+            )
+        )
+        return 0
     if output.exists():
         raise FileExistsError(f"STRICT_V4_EXPORT_OUTPUT_ALREADY_EXISTS:{output}")
     values, metadata = _arrays(trace_path)
@@ -390,7 +419,7 @@ def main() -> int:
         **metadata,
         "reward_contract_sha256": _sha256(contract_path),
         "source_contact_contract_sha256": _sha256(source_contact_contract_path),
-        "physics_contract_sha256": qualification.get("physics_contract_sha256"),
+        "physics_contract_sha256": _sha256(physics_contract_path),
         "source_contact_semantics_pass_v1": "source and persistent tip recall each >= 0.50",
     }
     _write_zarr(
@@ -449,6 +478,10 @@ def main() -> int:
                 "sha256": _sha256(source_contact_contract_path),
             },
             "strict_v4_contract": {"path": str(contract_path), "sha256": _sha256(contract_path)},
+            "physics_contract": {
+                "path": str(physics_contract_path),
+                "sha256": _sha256(physics_contract_path),
+            },
             "reference": {"path": str(reference_path), "sha256": _sha256(reference_path)},
         },
         "files": {

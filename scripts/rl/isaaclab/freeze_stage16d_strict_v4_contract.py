@@ -68,21 +68,25 @@ def _stats(values: np.ndarray) -> dict[str, float | int | None]:
     if not array.size:
         return {
             "n": 0,
+            "p05": None,
             "p10": None,
             "p25": None,
             "p50": None,
             "p75": None,
             "p90": None,
             "p95": None,
+            "p99": None,
         }
     return {
         "n": int(array.size),
+        "p05": float(np.quantile(array, 0.05)),
         "p10": float(np.quantile(array, 0.10)),
         "p25": float(np.quantile(array, 0.25)),
         "p50": float(np.quantile(array, 0.50)),
         "p75": float(np.quantile(array, 0.75)),
         "p90": float(np.quantile(array, 0.90)),
         "p95": float(np.quantile(array, 0.95)),
+        "p99": float(np.quantile(array, 0.99)),
         "max": float(array.max()),
     }
 
@@ -182,25 +186,41 @@ def _calibration_values(
     }, values
 
 
-def _response(lambda_tip_n: float, floor_n: float) -> list[dict[str, float]]:
-    forces = [
-        0.0,
-        floor_n,
-        lambda_tip_n * 0.05,
-        lambda_tip_n * 0.10,
-        lambda_tip_n * 0.25,
-        lambda_tip_n,
-        lambda_tip_n * 2,
-        lambda_tip_n * 4,
-    ]
+def _response(
+    lambda_tip_n: float,
+    floor_n: float,
+    statistics: dict[str, float | int | None] | None = None,
+) -> list[dict[str, float | str]]:
+    if statistics is None:
+        scales = [
+            ("zero", 0.0),
+            ("floor", floor_n),
+            ("lambda_p05", lambda_tip_n * 0.05),
+            ("lambda_p10", lambda_tip_n * 0.10),
+            ("lambda_p25", lambda_tip_n * 0.25),
+            ("lambda_p50", lambda_tip_n),
+            ("lambda_p100", lambda_tip_n * 2),
+            ("lambda_p200", lambda_tip_n * 4),
+        ]
+    else:
+        scales = (
+            [("p0", 0.0)]
+            + [
+                (label, float(statistics[label]))
+                for label in ("p05", "p10", "p25", "p50", "p75", "p90", "p95", "p99")
+                if isinstance(statistics.get(label), (int, float))
+            ]
+            + [("2*p99", 2.0 * float(statistics["p99"]))]
+        )
     return [
         {
+            "scale_label": label,
             "force_n": force,
             "per_finger_reward": 0.0
             if force <= floor_n
             else float(np.exp(-lambda_tip_n / (force + 1.0e-5))),
         }
-        for force in forces
+        for label, force in scales
     ]
 
 
@@ -277,13 +297,17 @@ def main() -> int:
         if args.require_ready:
             return 2
         return 0
-    response = _response(lambda_tip_n, contract.numerical_floor_n)
-    if not np.isclose(response[5]["per_finger_reward"], np.exp(-1.0), atol=1.0e-5):
+    statistics = calibration["pooled_positive_contact_statistics"]
+    if not isinstance(statistics, dict):
+        raise RuntimeError("STRICT_V4_CALIBRATION_STATISTICS_INVALID")
+    response = _response(lambda_tip_n, contract.numerical_floor_n, statistics)
+    p50_row = next(row for row in response if row["scale_label"] == "p50")
+    if not np.isclose(p50_row["per_finger_reward"], np.exp(-1.0), atol=1.0e-5):
         raise AssertionError("STRICT_V4_RESPONSE_LAMBDA_INVARIANT_FAILED")
     with (output / "strict_v4_reward_response.csv").open(
         "w", newline="", encoding="utf-8"
     ) as handle:
-        writer = csv.DictWriter(handle, fieldnames=("force_n", "per_finger_reward"))
+        writer = csv.DictWriter(handle, fieldnames=("scale_label", "force_n", "per_finger_reward"))
         writer.writeheader()
         writer.writerows(response)
     _write_json(
