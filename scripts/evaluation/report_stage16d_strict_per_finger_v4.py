@@ -56,11 +56,16 @@ def _geometry_penetration_mm(geometry: dict[str, Any]) -> float | str:
 
 def _row(values: list[str]) -> tuple[dict[str, Any], dict[str, Any]]:
     clip, contract, qualification_arg, suite_arg, audit_arg, geometry_arg = values
+    clip_key = clip if clip.startswith("hocap_") else f"hocap_{clip}"
     qualification = _read(Path(qualification_arg).resolve())
     suite = _read(Path(suite_arg).resolve())
     audit = _read(Path(audit_arg).resolve())
     geometry = _read(Path(geometry_arg).resolve())
-    if qualification.get("clip") != clip or audit.get("clip") != clip or suite.get("clip") != clip:
+    if (
+        qualification.get("clip") != clip_key
+        or audit.get("clip") != clip_key
+        or suite.get("clip") != clip_key
+    ):
         raise ValueError("STRICT_V4_REPORT_CLIP_PROVENANCE_MISMATCH")
     aggregate = audit.get("aggregate", {})
     if not isinstance(aggregate, dict):
@@ -69,7 +74,7 @@ def _row(values: list[str]) -> tuple[dict[str, Any], dict[str, Any]]:
     if not isinstance(suite_aggregate, dict):
         raise ValueError("STRICT_V4_REPORT_SUITE_AGGREGATE_MISSING")
     row = {
-        "Clip": clip.removeprefix("hocap_"),
+        "Clip": clip_key.removeprefix("hocap_"),
         "Contract": contract,
         "Samples": _samples(qualification),
         "Er_deg": _nested(suite_aggregate, "E_r_mean_deg", "mean"),
