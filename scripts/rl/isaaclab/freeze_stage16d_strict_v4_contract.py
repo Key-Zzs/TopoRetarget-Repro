@@ -299,12 +299,26 @@ def main() -> int:
         row = checkpoint_manifest.get("clips", {}).get(clip)
         if not isinstance(row, dict):
             raise RuntimeError("STRICT_V4_INPUT_PROVENANCE_DRIFT")
-        checkpoint = Path(str(row["checkpoint"]))
-        if _sha256(checkpoint) != row.get("checkpoint_sha256"):
+        v3_training_config = (
+            v3_root / "ppo_v3" / clip / "runs" / "formal_v3_4m" / "training_config.json"
+        )
+        training = _json(v3_training_config)
+        initialization = training.get("initialization")
+        if not isinstance(initialization, dict):
+            raise RuntimeError("V1_L0_INITIALIZATION_DRIFT")
+        checkpoint = Path(str(initialization.get("checkpoint", "")))
+        if (
+            initialization.get("initialization") != "V1_L0_ACTOR_AND_NORMALIZER_ONLY"
+            or initialization.get("source_clip") != clip
+            or initialization.get("v1_l0_cumulative_samples") != 1_024_000
+            or _sha256(checkpoint) != initialization.get("checkpoint_sha256")
+        ):
             raise RuntimeError("V1_L0_INITIALIZATION_DRIFT")
         checkpoint_receipts[clip] = {
             "v1_l0_checkpoint": _receipt(checkpoint),
-            "manifest_entry": row,
+            "v3_training_initialization": initialization,
+            "v3_training_config": _receipt(v3_training_config),
+            "v3_selected_checkpoint_manifest_entry": row,
         }
     frozen_inputs = {
         "schema_version": "Stage16DStrictPerFingerV4FrozenInputsV1",
