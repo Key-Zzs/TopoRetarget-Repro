@@ -71,7 +71,7 @@ semantics 不会改动它。
 transition、proximity-only、no-contact 和 ambiguous evidence。最终 audit 以高置信度将 Strict
 Per-Finger V4 选为 V3 的唯一 successor。
 
-### Strict Per-Finger Contact Reward V4（CURRENT）
+### Strict Per-Finger Contact Reward V4（PARTIAL）
 
 V4 替换 V3 aggregate contact term，同时保留冻结的 Reward V2 components、Reference Kinematics V2、
 764-D observation、26-D action、physics、controller 和 PPO hyperparameters。source-confirmed 或
@@ -79,32 +79,20 @@ persistent-confirmed 的 finger `f` requirement 只可由 finger `f` 的 named d
 pair force 获得 contact reward。contact term 按 source-required finger 数量归一化；不得使用
 whole-hand force、same-finger group force 或 cross-finger compensation。
 
-V4 因果路线为：
+最终 V4 状态为 `STAGE16D_STRICT_V4_PARTIAL`。下一阶段为
+`NEXT_REVIEW_STRICT_V4_FAILURE_MODE`；在该 review 解决 qualification gap 之前，
+不授权进入 Contact-ready RSI V2。
+
+V4 的预定因果路线仍为：
 
 ```text
 Source Contact Semantics
     VALIDATED
         ↓
 Strict Per-Finger Reward V4
-    CURRENT
+    PARTIAL
         ↓
-if validated:
-    Freeze Causal Contact Reward
-        ↓
-    Contact-ready RSI V2
-        ↓
-    Support Feasibility
-        ↓
-    Gravity + Friction Curriculum
-        ↓
-    Full-gravity / zero-guidance Formal Qualification
-        ↓
-    Multi-Clip
-        ↓
-    causal milestone
-        ↓
-only if causal path insufficient:
-    external guidance / data-H2R
+NEXT_REVIEW_STRICT_V4_FAILURE_MODE
 ```
 
 V4 不加入 object guidance、object-state write、attachment、suction、contact-loss termination、terminal

@@ -84,7 +84,7 @@ It distinguishes confirmed, persistent-confirmed, probable, transition,
 proximity-only, no-contact, and ambiguous evidence. The final audit selected
 Strict Per-Finger V4 as the unique high-confidence successor to V3.
 
-### Strict Per-Finger Contact Reward V4 (CURRENT)
+### Strict Per-Finger Contact Reward V4 (PARTIAL)
 
 V4 replaces V3's aggregate contact term while retaining the frozen Reward V2
 components, Reference Kinematics V2, 764-D observation, 26-D action, physics,
@@ -94,32 +94,20 @@ from finger `f`'s named distal/tip-to-active-object pair force. The contact
 term is normalized by the number of source-required fingers; it cannot use
 whole-hand force, same-finger group force, or cross-finger compensation.
 
-The V4 causal route is:
+The final V4 status is `STAGE16D_STRICT_V4_PARTIAL`. The next stage is
+`NEXT_REVIEW_STRICT_V4_FAILURE_MODE`; Contact-ready RSI V2 is not authorized
+until that review resolves the qualification gap.
+
+The intended V4 causal route remains:
 
 ```text
 Source Contact Semantics
     VALIDATED
         ↓
 Strict Per-Finger Reward V4
-    CURRENT
+    PARTIAL
         ↓
-if validated:
-    Freeze Causal Contact Reward
-        ↓
-    Contact-ready RSI V2
-        ↓
-    Support Feasibility
-        ↓
-    Gravity + Friction Curriculum
-        ↓
-    Full-gravity / zero-guidance Formal Qualification
-        ↓
-    Multi-Clip
-        ↓
-    causal milestone
-        ↓
-only if causal path insufficient:
-    external guidance / data-H2R
+NEXT_REVIEW_STRICT_V4_FAILURE_MODE
 ```
 
 No V4 phase adds object guidance, object-state writes, attachment, suction,
