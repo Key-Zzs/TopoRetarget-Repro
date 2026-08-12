@@ -114,12 +114,17 @@ rotation/translation tracking、retargeted-hand joint/fingertip tracking，以�
 kinematic、physics 和 qualified success rate。轨迹指标使用移除 environment origin 后的共同
 world/env frame；legacy metrics 仍会保留，但不会被静默重定义。
 
-Stage 16-D 因果 PPO pipeline 支持 reference pose、object twist tracking，以及
-reference-gated contact consistency reward。后者只在 policy optimization 中使用 reference
-Wuji fingertip proximity 和当前 PhysX fingertip-to-active-object pair force；其共享 force scale
-由精确的 V1 Formal20 pair-force trace 冻结；它不直接控制 object。
+Stage 16-D 因果 PPO pipeline 支持 reference pose、object twist tracking 和版本化 contact reward。
+Reward V3 作为 reference-proximity aggregate baseline 保持冻结。Strict Per-Finger V4 使用
+`SourcePerFingerContactEvidenceV1`：只有 source-confirmed 或 persistent-confirmed 的指定 finger
+的 MANO/object contact，才要求同名 Wuji distal/tip body 与 active object 接触。probable、
+transition、proximity-only、no-contact 和 ambiguous source state 都不是 V4 的 mandatory contact
+semantics。
 
-原始 HOCap MANO/object source-contact semantics 现为离线审计提供逐指证据；任何 V4 结论仍只是需单独授权的候选，不会改动 V3。
+V4 按 source-required finger 数量归一化独立 named-tip reward。因此其它 finger 的大力不能给缺失的
+required finger 记分，source 要求更多 fingers 也不会改变总 contact reward scale。reward 只读取当前
+经 filter 的 PhysX named-tip-to-active-object pair force，从不直接控制 object；共享 per-tip force
+scale 在 PPO 前由精确的 V1 Formal20 pair-force telemetry 冻结。
 
 阶段性的 terminal-dynamics attribution 与详细结果进入 stage/RL 文档；machine-readable
 artifact 保留在忽略的本地存储中。
@@ -136,14 +141,18 @@ artifact 保留在忽略的本地存储中。
 - [Physics-correction PPO](docs/rl/PHYSICS_CORRECTION_PPO.md) — 因果训练边界与决策树。
 - [Reference-gated contact reward](docs/rl/REFERENCE_GATED_CONTACT_REWARD.md) — V3 contact
   signal 与因果边界。
+- [Strict per-finger contact reward](docs/rl/STRICT_PER_FINGER_CONTACT_REWARD.zh-CN.md) — V4
+  source-confirmed contact semantics 与独立-finger contract。
+- [Source contact semantics](docs/rl/SOURCE_CONTACT_SEMANTICS.md) — 原始 MANO/object evidence
+  与冻结的 factor-eight runtime mapping。
 - [Evaluation Suite V2](docs/rl/EVALUATION_SUITE_V2.md) — 共享指标与 success 合同。
 - [Paper fidelity and engineering adaptations](docs/PAPER_FIDELITY.md) — 论文一致性与
   明确的工程适配。
 
 ## README 文档政策
 
-README 仅作为稳定的项目入口文档。实验日志、checkpoint 记录、具体阶段指标、commit 状态和
-runtime 报告禁止写入 README。详细结果进入 stage 文档和本地 machine-readable reports。
+README 文件是稳定的项目入口文档；实验日志和 run-specific metrics 位于 README 之外，进入
+stage 文档和本地 machine-readable reports。
 
 ## License
 

@@ -69,54 +69,63 @@ sample gate because terminal contact and stability regressed against the frozen
 V1 4M baseline. This result does not authorize a 4M/16M continuation or any
 reward/physics-contract expansion.
 
-### Reference-Gated Contact Reward V3 (PARTIAL)
+### Reference-Gated Contact Reward V3 (FROZEN BASELINE)
 
-Reward V3 is the current single-variable causal experiment:
+V3 remains the historical aggregate baseline. It uses a reference-only 3 cm
+Wuji distal-root proximity mask and an aggregate sum of current named-tip
+PhysX pair-force magnitudes. It is preserved for comparison and is not altered
+by later source-contact semantics.
 
-```text
-Reward V3 = Reward V2 + reference-gated fingertip-to-active-object contact reward
-```
+### Source Contact Semantics (VALIDATED)
 
-It retains Reference Kinematics V2, the 764-D observation, 26-D action,
-physics, controller, and PPO hyperparameters. The mask is reference-only
-Wuji distal-root proximity to the visual object surface; the actual signal is
-strictly a current filtered fingertip--active-object PhysX pair force. It adds
-neither contact-loss termination, terminal/penetration reward, guidance, nor a
-physics curriculum. Signal qualification is fail-closed: historical aggregate
-force telemetry cannot substitute for exact pair force.
+`SourcePerFingerContactEvidenceV1` establishes raw HOCap MANO/object surface
+contact per finger and its frozen factor-eight mapping to 321 runtime frames.
+It distinguishes confirmed, persistent-confirmed, probable, transition,
+proximity-only, no-contact, and ambiguous evidence. The final audit selected
+Strict Per-Finger V4 as the unique high-confidence successor to V3.
 
-The exact V1 Formal20 pair-force re-export is validated for both clips, and
-its pooled positive-contact median is frozen once as the shared V3 force scale.
-The bounded V3 result is partial: `hocap_170105` improves Formal20 qualified
-success from 0/20 to 19/20 and reduces free-flight re-catch, while
-`hocap_170650` improves qualified success from 14/20 to 16/20 but retains
-free-flight re-catch. This does not authorize multi-clip PPO, a reward-contract
-expansion, contact-loss termination, or a physics curriculum. The historical
-R2 <=2 cm cohort remains only a geometric candidate. The successor
-source-contact audit resolves raw HOCap MANO/object surface evidence and maps
-it to the frozen 21-body Formal20 trace before it may make one separately
-versioned V4 recommendation. **Source Contact Semantics: VALIDATED. Final
-Contact Reward Audit: COMPLETE. Next: STRICT_PER_FINGER_V4_RECOMMENDED** as a
-separately authorized candidate only. V3 remains frozen and the report itself
-changes neither a reward nor a contact mask.
+### Strict Per-Finger Contact Reward V4 (CURRENT)
 
-### Causal Decision Tree (FUTURE)
+V4 replaces V3's aggregate contact term while retaining the frozen Reward V2
+components, Reference Kinematics V2, 764-D observation, 26-D action, physics,
+controller, and PPO hyperparameters. A source-confirmed or
+persistent-confirmed requirement for finger `f` can receive contact reward only
+from finger `f`'s named distal/tip-to-active-object pair force. The contact
+term is normalized by the number of source-required fingers; it cannot use
+whole-hand force, same-finger group force, or cross-finger compensation.
 
-| Observation | Next causal correction |
-| --- | --- |
-| Contact repeatedly breaks | Reference-gated contact reward plus hysteretic contact-loss termination |
-| Contact is sound but terminal dynamics are unstable | Contact-ready RSI plus gravity/friction curriculum |
-| Causal performance is acceptable | Freeze the global causal contract, run the second single clip, then Multi-Clip PPO and a milestone PR to `main` |
-| Bounded causal corrections remain insufficient | Create a separate future `develop/data-H2R` assisted-data branch |
-
-The assisted branch is not the main causal solution. Its results must identify
-external guidance and declare `assisted=true`, `causal_physics=false`.
-
-## Milestone
+The V4 causal route is:
 
 ```text
-causal single clip -> causal second clip -> Multi-Clip PPO -> milestone PR to main
+Source Contact Semantics
+    VALIDATED
+        ↓
+Strict Per-Finger Reward V4
+    CURRENT
+        ↓
+if validated:
+    Freeze Causal Contact Reward
+        ↓
+    Contact-ready RSI V2
+        ↓
+    Support Feasibility
+        ↓
+    Gravity + Friction Curriculum
+        ↓
+    Full-gravity / zero-guidance Formal Qualification
+        ↓
+    Multi-Clip
+        ↓
+    causal milestone
+        ↓
+only if causal path insufficient:
+    external guidance / data-H2R
 ```
+
+No V4 phase adds object guidance, object-state writes, attachment, suction,
+contact-loss termination, terminal reward, penetration reward, gravity or
+friction curriculum, Multi-Clip PPO, or data-H2R. Gravity and physics
+curricula are deliberately before any external-guidance route.
 
 ## After the milestone
 
@@ -140,3 +149,5 @@ and sensitivity analysis.
 - [Reference Kinematics V2 contract](rl/REFERENCE_KINEMATICS_CONTRACT.md)
 - [Phase 3 object-dynamics reward](stages/STAGE16D_PHASE3_OBJECT_DYNAMICS_REWARD.md)
 - [Reference-gated contact reward V3](stages/STAGE16D_CONTACT_REWARD_V3.md)
+- [Strict per-finger contact reward V4](rl/STRICT_PER_FINGER_CONTACT_REWARD.md)
+- [Stage 16-D Strict Per-Finger V4](stages/STAGE16D_STRICT_PER_FINGER_V4.md)

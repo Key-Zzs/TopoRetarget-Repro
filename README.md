@@ -129,17 +129,21 @@ origin removed; legacy metrics remain available for comparison but are not
 silently redefined.
 
 The Stage 16-D causal PPO pipeline supports reference pose and object-twist
-tracking together with a reference-gated contact-consistency reward. The latter
-uses reference Wuji fingertip proximity and current PhysX fingertip-to-active-
-object pair force only during policy optimization; its shared force scale is
-frozen from exact V1 Formal20 pair-force traces, and it never directly controls
-the object.
+tracking together with versioned contact rewards. Reward V3 remains frozen as a
+reference-proximity aggregate baseline. Strict Per-Finger V4 instead uses
+`SourcePerFingerContactEvidenceV1`: only source-confirmed or
+persistent-confirmed MANO/object contact for a named finger requires that same
+Wuji distal/tip body to contact the active object. Probable, transition,
+proximity-only, no-contact, and ambiguous source states are not mandatory V4
+contact semantics.
 
-Reference-contact refinements are audit-only until source-supported per-finger
-evidence is available; the frozen V3 3 cm mask is never silently replaced.
-
-Raw HOCap MANO/object source-contact semantics now provide that audit evidence
-offline; any V4 outcome remains a separately authorized candidate, never a V3 change.
+V4 normalizes independent named-tip rewards by the number of source-required
+fingers. A large force from another finger therefore cannot credit a missing
+required finger or change the total reward scale merely because the source
+requires more fingers. The reward reads only current filtered PhysX
+named-tip-to-active-object pair force and never directly controls the object.
+Its shared per-tip force scale is frozen from exact V1 Formal20 pair-force
+telemetry before PPO.
 
 Phase-specific terminal-dynamics attribution and detailed results are recorded
 in stage and RL documentation, with machine-readable artifacts kept in ignored
@@ -158,6 +162,10 @@ local storage.
   boundary and decision tree.
 - [Reference-gated contact reward](docs/rl/REFERENCE_GATED_CONTACT_REWARD.md)
   — V3 contact signal and causal boundary.
+- [Strict per-finger contact reward](docs/rl/STRICT_PER_FINGER_CONTACT_REWARD.md)
+  — V4 source-confirmed contact semantics and independent-finger contract.
+- [Source contact semantics](docs/rl/SOURCE_CONTACT_SEMANTICS.md) — raw
+  MANO/object evidence and frozen factor-eight runtime mapping.
 - [Evaluation Suite V2](docs/rl/EVALUATION_SUITE_V2.md) — shared metric and
   success contract.
 - [Paper fidelity and engineering adaptations](docs/PAPER_FIDELITY.md) — what
@@ -165,9 +173,8 @@ local storage.
 
 ## README document policy
 
-README files are stable project entry documents. Experiment logs, checkpoint
-receipts, per-stage metrics, commit-specific status, and runtime reports are
-intentionally excluded. Detailed results live in stage documentation and local
+README files are stable project entry documents; experiment logs and
+run-specific metrics live outside README, in stage documentation and local
 machine-readable reports.
 
 ## License

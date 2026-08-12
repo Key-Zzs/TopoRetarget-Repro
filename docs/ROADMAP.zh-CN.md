@@ -58,49 +58,58 @@ Reference Kinematics V2 与 Phase 1-R attribution 已通过 entry gates。获授
 V1 4M baseline，terminal contact 与 stability 发生回退。该结果不授权继续到 4M/16M，
 也不授权扩展 reward 或 physics contract。
 
-### Reference-Gated Contact Reward V3（PARTIAL）
+### Reference-Gated Contact Reward V3（FROZEN BASELINE）
 
-Reward V3 是当前唯一的因果单变量实验：
+V3 是历史 aggregate baseline，使用 reference-only 的 3 cm Wuji distal-root proximity mask 和当前
+named-tip PhysX pair-force magnitude 的 aggregate sum。它为比较而保留，后续 source-contact
+semantics 不会改动它。
 
-```text
-Reward V3 = Reward V2 + reference-gated fingertip-to-active-object contact reward
-```
+### Source Contact Semantics（VALIDATED）
 
-它保留 Reference Kinematics V2、764-D observation、26-D action、physics、controller 和 PPO
-hyperparameters。mask 只由 Wuji distal-root 到 visual object surface 的 reference proximity
-决定；actual signal 严格是当前经 filter 的 fingertip--active-object PhysX pair force。不加入
-contact-loss termination、terminal/penetration reward、guidance 或 physics curriculum。signal
-qualification 采用 fail-closed：历史 aggregate force telemetry 不能替代精确 pair force。
+`SourcePerFingerContactEvidenceV1` 建立 raw HOCap MANO/object surface 的逐 finger contact，及其到
+321 runtime frame 的冻结 factor-eight mapping。它区分 confirmed、persistent-confirmed、probable、
+transition、proximity-only、no-contact 和 ambiguous evidence。最终 audit 以高置信度将 Strict
+Per-Finger V4 选为 V3 的唯一 successor。
 
-两个 clip 的精确 V1 Formal20 pair-force re-export 均已验证，并以其 pooled
-positive-contact median 一次性冻结共享 V3 force scale。有界 V3 结果为 partial：
-`hocap_170105` 的 Formal20 qualified success 从 0/20 提升至 19/20，且
-free-flight re-catch 减少；`hocap_170650` 从 14/20 提升至 16/20，但
-free-flight re-catch 仍存在。这不授权 multi-clip PPO、reward-contract 扩展、
-contact-loss termination 或 physics curriculum。历史 R2 的 <=2 cm cohort 仍只是
-几何候选。后续 source-contact audit 从原始 HOCap MANO/object surface 解析逐指证据，
-并映射到冻结的 21-body Formal20 trace，之后才可以给出单独版本化 V4 的唯一建议。V3
-保持冻结；该报告本身不改变 reward 或 contact mask。**Source Contact Semantics:
-VALIDATED；Final Contact Reward Audit: COMPLETE；Next:
-STRICT_PER_FINGER_V4_RECOMMENDED**，但它仍只是需要单独授权的 candidate。
+### Strict Per-Finger Contact Reward V4（CURRENT）
 
-### Causal Decision Tree（FUTURE）
+V4 替换 V3 aggregate contact term，同时保留冻结的 Reward V2 components、Reference Kinematics V2、
+764-D observation、26-D action、physics、controller 和 PPO hyperparameters。source-confirmed 或
+persistent-confirmed 的 finger `f` requirement 只可由 finger `f` 的 named distal/tip-to-active-object
+pair force 获得 contact reward。contact term 按 source-required finger 数量归一化；不得使用
+whole-hand force、same-finger group force 或 cross-finger compensation。
 
-| 观察 | 下一项因果修正 |
-| --- | --- |
-| Contact 反复断开 | reference-gated contact reward 加 hysteretic contact-loss termination |
-| Contact 良好但 terminal dynamics 不稳定 | Contact-ready RSI 加 gravity/friction curriculum |
-| 因果表现可接受 | 冻结全局 causal contract，运行第二条 single clip，再进行 Multi-Clip PPO 和 milestone PR 到 `main` |
-| 有界 causal corrections 仍不足 | 未来单独创建 `develop/data-H2R` assisted-data branch |
-
-assisted branch 不是 main causal solution。其结果必须标注 external guidance，并声明
-`assisted=true`、`causal_physics=false`。
-
-## Milestone
+V4 因果路线为：
 
 ```text
-causal single clip -> causal second clip -> Multi-Clip PPO -> milestone PR to main
+Source Contact Semantics
+    VALIDATED
+        ↓
+Strict Per-Finger Reward V4
+    CURRENT
+        ↓
+if validated:
+    Freeze Causal Contact Reward
+        ↓
+    Contact-ready RSI V2
+        ↓
+    Support Feasibility
+        ↓
+    Gravity + Friction Curriculum
+        ↓
+    Full-gravity / zero-guidance Formal Qualification
+        ↓
+    Multi-Clip
+        ↓
+    causal milestone
+        ↓
+only if causal path insufficient:
+    external guidance / data-H2R
 ```
+
+V4 不加入 object guidance、object-state write、attachment、suction、contact-loss termination、terminal
+reward、penetration reward、gravity/friction curriculum、Multi-Clip PPO 或 data-H2R。gravity/physics
+curriculum 明确位于任何 external-guidance route 之前。
 
 ## Milestone 之后
 
@@ -123,3 +132,5 @@ curricula、mass/inertia uncertainty、dynamics randomization 和 sensitivity an
 - [Reference Kinematics V2 contract](rl/REFERENCE_KINEMATICS_CONTRACT.md)
 - [Phase 3 object-dynamics reward](stages/STAGE16D_PHASE3_OBJECT_DYNAMICS_REWARD.md)
 - [Reference-gated contact reward V3](stages/STAGE16D_CONTACT_REWARD_V3.md)
+- [Strict per-finger contact reward V4](rl/STRICT_PER_FINGER_CONTACT_REWARD.zh-CN.md)
+- [Stage 16-D Strict Per-Finger V4](stages/STAGE16D_STRICT_PER_FINGER_V4.zh-CN.md)

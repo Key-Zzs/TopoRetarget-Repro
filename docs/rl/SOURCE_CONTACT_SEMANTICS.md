@@ -1,9 +1,10 @@
 # Source Contact Semantics
 
-`SourcePerFingerContactEvidenceV1` is the source authority for the final
-Stage 16-D cross-embodiment contact audit. It is offline and diagnostic-only:
-it does not replace the frozen Reward V3 3 cm mask or alter PPO, a checkpoint,
-RSI, controller, reference, or physics.
+`SourcePerFingerContactEvidenceV1` is the source authority for Stage 16-D
+cross-embodiment contact semantics. It does not alter frozen V3, but its
+confirmed/persistent-confirmed runtime mapping is the mandatory source mask for
+the separately versioned Strict Per-Finger V4 reward. It never changes a
+checkpoint, RSI, controller, reference, or physics.
 
 For the selected HOCap clips, it reconstructs the raw right MANO surface from
 `poses_m.npy`, subject-specific calibration betas, and `MANO_RIGHT.pkl`. It
@@ -32,6 +33,12 @@ The native source has exactly 41 selected keys. It maps to the existing 321
 control frames at factor 8: exact keys retain their class, only adjacent
 confirmed keys fill a `SOURCE_CONTACT_PERSISTENT` interval, two no-contact
 keys fill no contact, and every other interval remains transition.
+
+V4 treats only `SOURCE_CONTACT_CONFIRMED` and
+`SOURCE_CONTACT_PERSISTENT` as mandatory. Probable, transition,
+proximity-only, no-contact, and ambiguous states are explicitly zero in its
+first strict mask. The policy cannot use actual robot contact to regenerate or
+modify this source-side decision.
 
 Run the final read-only materialization with:
 
