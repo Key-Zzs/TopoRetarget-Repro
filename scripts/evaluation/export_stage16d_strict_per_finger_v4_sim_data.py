@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 import shutil
@@ -102,6 +103,22 @@ def _write_parquet(path: Path, rows: list[dict[str, Any]]) -> None:
     pq.write_table(pa.Table.from_pylist(rows), path, compression="zstd")
 
 
+def _read_suite_rows(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as stream:
+        rows = list(csv.DictReader(stream))
+    if len(rows) != EPISODE_COUNT or any(
+        int(row["replica"]) != index for index, row in enumerate(rows)
+    ):
+        raise ValueError("STRICT_V4_EXPORT_EVALUATION_SUITE_ROWS_INVALID")
+    return rows
+
+
+def _bool(value: str) -> bool:
+    if value not in {"True", "False"}:
+        raise ValueError(f"STRICT_V4_EXPORT_BOOLEAN_INVALID:{value}")
+    return value == "True"
+
+
 def _write_zarr(
     output: Path,
     *,
@@ -193,14 +210,15 @@ def _write_zarr(
 
 
 def _episode_rows(
-    *, qualification: dict[str, Any], suite: dict[str, Any], audit: dict[str, Any]
+    *,
+    qualification: dict[str, Any],
+    suite_rows: list[dict[str, str]],
+    audit: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     qualification_rows = qualification.get("episodes")
-    suite_rows = suite.get("episodes")
     audit_rows = audit.get("per_replica")
     if (
         not isinstance(qualification_rows, list)
-        or not isinstance(suite_rows, list)
         or not isinstance(audit_rows, list)
         or len(qualification_rows) != EPISODE_COUNT
         or len(suite_rows) != EPISODE_COUNT
@@ -221,21 +239,22 @@ def _episode_rows(
             {
                 "episode": episode,
                 "seed": int(q["seed"]),
-                "kinematic_success": bool(suite_row["kinematic_success"]),
-                "physics_success": bool(suite_row["physics_success"]),
-                "qualified_success": bool(suite_row["qualified_success"]),
+                "kinematic_success": _bool(suite_row["kinematic_success"]),
+                "physics_success": _bool(suite_row["physics_success"]),
+                "qualified_success": _bool(suite_row["qualified_success"]),
                 "source_contact_semantics_pass_v1": source_pass,
-                "SR_interaction_qualified_v1": bool(suite_row["qualified_success"]) and source_pass,
+                "SR_interaction_qualified_v1": _bool(suite_row["qualified_success"])
+                and source_pass,
                 "source_tip_recall": contact["source_tip_recall"],
                 "persistent_source_tip_recall": contact["persistent_source_tip_recall"],
                 "full_source_tip_coverage_rate": contact["full_source_tip_coverage_rate"],
                 "longest_source_contact_loss_gap": contact["longest_source_contact_loss_gap"],
                 "source_contact_loss_event_count": contact["source_contact_loss_event_count"],
                 "recontact_event_count": contact["recontact_event_count"],
-                "E_r_mean_deg": suite_row["E_r_mean_deg"],
-                "E_t_mean_cm": suite_row["E_t_mean_cm"],
-                "E_j_mean_cm": suite_row["E_j_mean_cm"],
-                "E_ft_mean_cm": suite_row["E_ft_mean_cm"],
+                "E_r_mean_deg": float(suite_row["E_r_mean_deg"]),
+                "E_t_mean_cm": float(suite_row["E_t_mean_cm"]),
+                "E_j_mean_cm": float(suite_row["E_j_mean_cm"]),
+                "E_ft_mean_cm": float(suite_row["E_ft_mean_cm"]),
                 "terminal_delta_v_mps": q["terminal_delta_v_mps"],
                 "terminal_delta_omega_radps": q["terminal_delta_omega_radps"],
                 "max_inter_finger_penetration_m": q["max_inter_finger_penetration_m"],
@@ -305,6 +324,7 @@ def main() -> int:
     parser.add_argument("--trace", type=Path, required=True)
     parser.add_argument("--qualification", type=Path, required=True)
     parser.add_argument("--evaluation-suite", type=Path, required=True)
+    parser.add_argument("--per-episode", type=Path, required=True)
     parser.add_argument("--source-audit", type=Path, required=True)
     parser.add_argument("--source-runtime", type=Path, required=True)
     parser.add_argument("--strict-v4-contract", type=Path, required=True)
@@ -316,6 +336,7 @@ def main() -> int:
     output = args.output.resolve()
     qualification_path = args.qualification.resolve()
     suite_path = args.evaluation_suite.resolve()
+    per_episode_path = args.per_episode.resolve()
     audit_path = args.source_audit.resolve()
     contract_path = args.strict_v4_contract.resolve()
     reference_path = args.reference.resolve()
@@ -340,7 +361,11 @@ def main() -> int:
         names = tuple(str(value) for value in source["finger_order"].tolist())
     if classes.shape != (FRAME_COUNT, 5) or names != FINGERS:
         raise ValueError("STRICT_V4_EXPORT_SOURCE_RUNTIME_CONTRACT_INVALID")
-    episode_rows, _ = _episode_rows(qualification=qualification, suite=suite, audit=audit)
+    episode_rows, _ = _episode_rows(
+        qualification=qualification,
+        suite_rows=_read_suite_rows(per_episode_path),
+        audit=audit,
+    )
     source_rows = _source_rows(values=values, source_classes=classes, audit=audit)
     pair_rows = _pair_rows(values, metadata["hand_body_names"])
     output.mkdir(parents=True, exist_ok=False)
@@ -400,6 +425,7 @@ def main() -> int:
                 "sha256": _sha256(qualification_path),
             },
             "evaluation_suite": {"path": str(suite_path), "sha256": _sha256(suite_path)},
+            "per_episode": {"path": str(per_episode_path), "sha256": _sha256(per_episode_path)},
             "source_audit": {"path": str(audit_path), "sha256": _sha256(audit_path)},
             "strict_v4_contract": {"path": str(contract_path), "sha256": _sha256(contract_path)},
             "reference": {"path": str(reference_path), "sha256": _sha256(reference_path)},

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 from pathlib import Path
@@ -30,15 +31,30 @@ def _source_pass(row: dict[str, Any]) -> bool:
     )
 
 
+def _suite_rows(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as stream:
+        rows = list(csv.DictReader(stream))
+    if len(rows) != 20 or any(int(row["replica"]) != index for index, row in enumerate(rows)):
+        raise ValueError("STRICT_V4_REPRESENTATIVE_SUITE_ROWS_INVALID")
+    return rows
+
+
+def _bool(value: str) -> bool:
+    if value not in {"True", "False"}:
+        raise ValueError(f"STRICT_V4_REPRESENTATIVE_BOOLEAN_INVALID:{value}")
+    return value == "True"
+
+
 def _select(
-    *, qualification: dict[str, Any], suite: dict[str, Any], audit: dict[str, Any]
+    *,
+    qualification: dict[str, Any],
+    suite_rows: list[dict[str, str]],
+    audit: dict[str, Any],
 ) -> dict[str, dict[str, Any] | None]:
     q_rows = qualification.get("episodes")
-    suite_rows = suite.get("episodes")
     contact_rows = audit.get("per_replica")
     if (
         not isinstance(q_rows, list)
-        or not isinstance(suite_rows, list)
         or not isinstance(contact_rows, list)
         or len(q_rows) != 20
         or len(suite_rows) != 20
@@ -55,9 +71,9 @@ def _select(
             {
                 "replica": replica,
                 "seed": int(q["seed"]),
-                "qualified": bool(suite_row["qualified_success"]),
-                "physics": bool(suite_row["physics_success"]),
-                "interaction": bool(suite_row["qualified_success"]) and _source_pass(contact),
+                "qualified": _bool(suite_row["qualified_success"]),
+                "physics": _bool(suite_row["physics_success"]),
+                "interaction": _bool(suite_row["qualified_success"]) and _source_pass(contact),
                 "source_tip_recall": float(contact["source_tip_recall"] or 0.0),
                 "persistent_source_tip_recall": float(
                     contact["persistent_source_tip_recall"] or 0.0
@@ -159,6 +175,7 @@ def main() -> int:
     parser.add_argument("--evaluation", type=Path, required=True)
     parser.add_argument("--qualification", type=Path, required=True)
     parser.add_argument("--evaluation-suite", type=Path, required=True)
+    parser.add_argument("--per-episode", type=Path, required=True)
     parser.add_argument("--source-audit", type=Path, required=True)
     parser.add_argument("--source-trace", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
@@ -179,7 +196,11 @@ def main() -> int:
         or "formal" not in seed_set.lower()
     ):
         raise ValueError("STRICT_V4_REPRESENTATIVE_REQUIRES_FROZEN_FORMAL_HOLDOUT")
-    selected = _select(qualification=qualification, suite=suite, audit=audit)
+    selected = _select(
+        qualification=qualification,
+        suite_rows=_suite_rows(args.per_episode.resolve()),
+        audit=audit,
+    )
     output = args.output_dir.resolve()
     outputs: dict[str, dict[str, str] | str] = {}
     for role, row in selected.items():
