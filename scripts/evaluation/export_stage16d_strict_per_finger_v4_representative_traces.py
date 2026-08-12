@@ -116,7 +116,7 @@ def _select(
     if not isinstance(events, list):
         raise ValueError("STRICT_V4_REPRESENTATIVE_FLIGHT_EVENTS_MISSING")
     no_hand = [row for row in events if row.get("event_type") == "NO_HAND_OBJECT_CONTACT_FLIGHT"]
-    selection["representative_no_hand_flight_recontact"] = (
+    selected_flight = (
         max(
             no_hand,
             key=lambda row: (
@@ -127,6 +127,12 @@ def _select(
         if no_hand
         else None
     )
+    if selected_flight is not None:
+        selected_flight = {
+            **selected_flight,
+            "seed": rows[int(selected_flight["replica"])]["seed"],
+        }
+    selection["representative_no_hand_flight_recontact"] = selected_flight
     return selection
 
 

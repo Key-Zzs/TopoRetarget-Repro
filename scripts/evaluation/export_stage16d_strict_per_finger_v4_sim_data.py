@@ -55,7 +55,7 @@ def _arrays(trace_path: Path) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
             "replica_per_finger_contact_reward",
             "replica_r_contact_v4",
             "replica_reward_total",
-            "replica_object_twist_reference",
+            "object_twist_reference",
             "replica_embedded_reference_object_pose",
             "replica_reference_index",
         }
@@ -67,6 +67,15 @@ def _arrays(trace_path: Path) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
             for name in archive.files
             if name.startswith("replica_") and np.asarray(archive[name]).shape[:2] == (321, 20)
         }
+        object_twist_reference = np.asarray(archive["object_twist_reference"])
+        if object_twist_reference.shape != (FRAME_COUNT, 6):
+            raise ValueError(
+                "STRICT_V4_EXPORT_OBJECT_TWIST_REFERENCE_SHAPE_INVALID:"
+                f"{object_twist_reference.shape}"
+            )
+        values["replica_object_twist_reference"] = np.broadcast_to(
+            object_twist_reference[:, None], (FRAME_COUNT, EPISODE_COUNT, 6)
+        ).copy()
         metadata = {
             "clip": str(np.asarray(archive["clip"]).item()),
             "checkpoint_path": str(np.asarray(archive["checkpoint_path"]).item()),
