@@ -90,6 +90,16 @@ def _persistent(values: np.ndarray) -> np.ndarray:
     return result
 
 
+def _persistent_3d(values: np.ndarray) -> np.ndarray:
+    values = np.asarray(values, dtype=bool)
+    if values.shape != (FRAME_COUNT, FORMAL_REPLICAS):
+        raise ValueError("STRICT_V4_AUDIT_PERSISTENCE_SHAPE_INVALID")
+    result = np.zeros_like(values)
+    for replica in range(FORMAL_REPLICAS):
+        result[:, replica] = _persistent(values[:, replica])
+    return result
+
+
 def _rate(numerator: np.ndarray, denominator: np.ndarray) -> float | None:
     denominator = np.asarray(denominator, dtype=bool)
     if not denominator.any():
@@ -220,20 +230,37 @@ def _load_trace(path: Path, *, mask: np.ndarray) -> dict[str, np.ndarray | tuple
 
 
 def _flight_events(
-    *, clip: str, expected: np.ndarray, named_tip: np.ndarray, any_hand: np.ndarray
+    *,
+    clip: str,
+    expected: np.ndarray,
+    tip_presence: np.ndarray,
+    named_tip: np.ndarray,
+    any_hand: np.ndarray,
+    object_pose: np.ndarray,
+    object_twist: np.ndarray,
 ) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     expected_any = expected.any(axis=-1)
     for replica in range(FORMAL_REPLICAS):
-        for name, missing in {
+        event_masks: dict[str, np.ndarray] = {
             "NO_TIP_CONTACT_FLIGHT": expected_any[:, replica] & ~named_tip[:, replica],
             "NO_HAND_OBJECT_CONTACT_FLIGHT": expected_any[:, replica] & ~any_hand[:, replica],
-        }.items():
+        }
+        for finger, name in enumerate(FINGERS):
+            event_masks[f"SOURCE_REQUIRED_{name.upper()}_TIP_LOSS"] = (
+                expected[:, replica, finger] & ~tip_presence[:, replica, finger]
+            )
+        for name, missing in event_masks.items():
             for start, end in _runs(missing):
                 if end - start < PERSISTENCE_STEPS:
                     continue
+                target_contact = (
+                    tip_presence[:, replica, FINGERS.index(name.split("_")[2].lower())]
+                    if name.startswith("SOURCE_REQUIRED_")
+                    else named_tip[:, replica]
+                )
                 recontact = next(
-                    (index for index in range(end, FRAME_COUNT) if named_tip[index, replica]), None
+                    (index for index in range(end, FRAME_COUNT) if target_contact[index]), None
                 )
                 result.append(
                     {
@@ -248,6 +275,14 @@ def _flight_events(
                             FINGERS[index]
                             for index in np.flatnonzero(expected[start:end, replica].any(axis=0))
                         ],
+                        "object_z_displacement_m": float(
+                            object_pose[end - 1, replica, 2] - object_pose[start, replica, 2]
+                        ),
+                        "object_vz_at_onset_mps": float(object_twist[start, replica, 2]),
+                        "object_vz_mean_mps": float(object_twist[start:end, replica, 2].mean()),
+                        "object_vz_max_abs_mps": float(
+                            np.abs(object_twist[start:end, replica, 2]).max()
+                        ),
                     }
                 )
     return result
@@ -300,6 +335,7 @@ def audit(
         wrist_contact = hand_presence[:, :, wrist]
         missing = active & ~own_tip & ~same_group & ~cross_group & ~wrist_contact
         persistent = persistent_expected[:, :, finger_index]
+        cross_group_compensation = active & ~own_tip & ~same_group & cross_group
         rows.append(
             {
                 "clip": clip,
@@ -314,8 +350,9 @@ def audit(
                 "cross_finger_tip_compensation_fraction": _rate(
                     active & ~own_tip & ~same_group & cross_tip, active
                 ),
-                "cross_finger_group_compensation_fraction": _rate(
-                    active & ~own_tip & ~same_group & cross_group, active
+                "cross_finger_group_compensation_fraction": _rate(cross_group_compensation, active),
+                "persistent_cross_finger_group_compensation_fraction": _rate(
+                    _persistent_3d(cross_group_compensation), active
                 ),
                 "wrist_base_substitution_fraction": _rate(
                     active & ~own_tip & ~same_group & ~cross_group & wrist_contact, active
@@ -360,7 +397,17 @@ def audit(
                 ),
             }
         )
-    flights = _flight_events(clip=clip, expected=expected, named_tip=named_tip, any_hand=any_hand)
+    object_pose = np.asarray(trace["replica_object_pose"], dtype=np.float64)
+    object_twist = np.asarray(trace["replica_object_twist"], dtype=np.float64)
+    flights = _flight_events(
+        clip=clip,
+        expected=expected,
+        tip_presence=tip_presence,
+        named_tip=named_tip,
+        any_hand=any_hand,
+        object_pose=object_pose,
+        object_twist=object_twist,
+    )
     v4_reward = trace.get("replica_r_contact_v4")
     per_finger_reward = trace.get("replica_per_finger_contact_reward")
     result = {
@@ -409,6 +456,28 @@ def audit(
             else None,
             "valid_source_tip_samples": int(aggregate_expected.sum()),
             "satisfied_source_tip_samples": int(aggregate_matched.sum()),
+            "no_tip_contact_flight_fraction": _rate(
+                expected.any(axis=-1) & ~named_tip, expected.any(axis=-1)
+            ),
+            "no_hand_object_contact_flight_fraction": _rate(
+                expected.any(axis=-1) & ~any_hand, expected.any(axis=-1)
+            ),
+            "longest_no_tip_flight_gap": float(
+                np.mean(
+                    [
+                        _longest(expected[:, replica].any(axis=-1) & ~named_tip[:, replica])
+                        for replica in range(FORMAL_REPLICAS)
+                    ]
+                )
+            ),
+            "longest_no_hand_flight_gap": float(
+                np.mean(
+                    [
+                        _longest(expected[:, replica].any(axis=-1) & ~any_hand[:, replica])
+                        for replica in range(FORMAL_REPLICAS)
+                    ]
+                )
+            ),
         },
         "per_finger": rows,
         "per_replica": per_replica,
