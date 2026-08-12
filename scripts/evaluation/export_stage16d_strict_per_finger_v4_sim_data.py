@@ -327,6 +327,7 @@ def main() -> int:
     parser.add_argument("--per-episode", type=Path, required=True)
     parser.add_argument("--source-audit", type=Path, required=True)
     parser.add_argument("--source-runtime", type=Path, required=True)
+    parser.add_argument("--source-contact-contract", type=Path, required=True)
     parser.add_argument("--strict-v4-contract", type=Path, required=True)
     parser.add_argument("--reference", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -338,6 +339,7 @@ def main() -> int:
     suite_path = args.evaluation_suite.resolve()
     per_episode_path = args.per_episode.resolve()
     audit_path = args.source_audit.resolve()
+    source_contact_contract_path = args.source_contact_contract.resolve()
     contract_path = args.strict_v4_contract.resolve()
     reference_path = args.reference.resolve()
     if output.exists():
@@ -346,11 +348,13 @@ def main() -> int:
     qualification = _read(qualification_path)
     suite = _read(suite_path)
     audit = _read(audit_path)
+    source_contact_contract = _read(source_contact_contract_path)
     contract = _read(contract_path)
     if (
         qualification.get("status") != "STAGE16D_STRICT_V4_FORMAL_COMPLETE"
         or suite.get("schema_version") != "TopoRetargetEvaluationSuiteV2ResultV1"
         or audit.get("status") != "STRICT_V4_SOURCE_CONTACT_AUDIT_COMPLETE"
+        or not source_contact_contract
         or contract.get("status") != "STRICT_V4_CONTACT_CONTRACT_FROZEN"
         or qualification.get("trace_sha256") != _sha256(trace_path)
         or audit.get("trace", {}).get("sha256") != _sha256(trace_path)
@@ -372,7 +376,7 @@ def main() -> int:
     enriched_metadata = {
         **metadata,
         "reward_contract_sha256": _sha256(contract_path),
-        "source_contact_contract_sha256": _sha256(contract_path),
+        "source_contact_contract_sha256": _sha256(source_contact_contract_path),
         "physics_contract_sha256": qualification.get("physics_contract_sha256"),
         "source_contact_semantics_pass_v1": "source and persistent tip recall each >= 0.50",
     }
@@ -427,6 +431,10 @@ def main() -> int:
             "evaluation_suite": {"path": str(suite_path), "sha256": _sha256(suite_path)},
             "per_episode": {"path": str(per_episode_path), "sha256": _sha256(per_episode_path)},
             "source_audit": {"path": str(audit_path), "sha256": _sha256(audit_path)},
+            "source_contact_contract": {
+                "path": str(source_contact_contract_path),
+                "sha256": _sha256(source_contact_contract_path),
+            },
             "strict_v4_contract": {"path": str(contract_path), "sha256": _sha256(contract_path)},
             "reference": {"path": str(reference_path), "sha256": _sha256(reference_path)},
         },
