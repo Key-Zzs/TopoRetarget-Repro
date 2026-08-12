@@ -140,8 +140,14 @@ def main() -> int:
     if geometry.get("candidate_trace_sha256") != _hash(trace_path):
         raise ValueError("STRICT_V4_QUALIFICATION_GEOMETRY_PROVENANCE_MISMATCH")
     absolute_geometry_pass = _absolute_geometry_pass(geometry)
-    gate = _read(args.task_gates.resolve())["clips"][clip]
-    topology = _read(args.topology.resolve())["clips"][clip]
+    task_payload = _read(args.task_gates.resolve())
+    topology_payload = _read(args.topology.resolve())
+    task_gates = task_payload.get("task_gates", task_payload)
+    topology_by_clip = topology_payload.get("contact_topology", topology_payload)
+    if not isinstance(task_gates, dict) or not isinstance(topology_by_clip, dict):
+        raise ValueError("STRICT_V4_QUALIFICATION_FROZEN_GATE_BUNDLE_INVALID")
+    gate = task_gates["clips"][clip]
+    topology = topology_by_clip["clips"][clip]
     rows, trace_diagnostics = _trace_metrics(trace_path, clip=clip, gate=gate, topology=topology)
     residuals, linear, angular = _twist_residuals(trace_path, args.reference.resolve())
     reached_end = np.asarray([bool(row["reached_final_reference"]) for row in frame_zero])
