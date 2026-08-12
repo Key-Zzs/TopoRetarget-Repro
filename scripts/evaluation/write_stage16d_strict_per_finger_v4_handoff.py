@@ -25,7 +25,10 @@ def _one(root: Path, pattern: str) -> Path:
 
 
 def _rate(suite: dict[str, Any], key: str) -> float:
-    value = suite.get("aggregate", {}).get(key, {}).get("rate")
+    aggregate = suite.get("aggregate", suite)
+    if not isinstance(aggregate, dict):
+        raise ValueError("STRICT_V4_HANDOFF_AGGREGATE_INVALID")
+    value = aggregate.get(key, {}).get("rate")
     if not isinstance(value, (int, float)):
         raise ValueError(f"STRICT_V4_HANDOFF_RATE_MISSING:{key}")
     return float(value)
@@ -53,18 +56,42 @@ def _category(decision: dict[str, Any], suite: dict[str, Any]) -> str:
 
 def _clip_summary(report_root: Path, simulation_root: Path, clip: str) -> dict[str, Any]:
     clip_root = report_root / clip
-    selection = _read(clip_root / "checkpoint_selection.json")
     decision = _read(clip_root / "four_m_effectiveness_gate.json")
+    selection_path = clip_root / "final_checkpoint_selection.json"
+    if not selection_path.is_file():
+        selection_path = clip_root / "checkpoint_selection.json"
+    selection = _read(selection_path)
+    selected_samples = int(selection["selected"]["reward_v4_samples"])
     formal_root = clip_root / "formal"
-    qualification_path = _one(formal_root, "v4_formal_selected_*_qualification.json")
-    suffix = qualification_path.name.removesuffix("_qualification.json")
+    suffix = f"v4_formal_selected_{selected_samples}"
+    qualification_path = formal_root / f"{suffix}_qualification.json"
+    if not qualification_path.is_file():
+        raise ValueError(f"STRICT_V4_HANDOFF_SELECTED_FORMAL_MISSING:{clip}:{selected_samples}")
     qualification = _read(qualification_path)
     suite = _read(formal_root / f"{suffix}_evaluation_suite_v2.json")
     audit = _read(formal_root / f"{suffix}_source_contact_evaluation.json")
     telemetry = _read(formal_root / f"{suffix}_full_hand_pair_telemetry.json")
-    traces = _read(formal_root / "traces" / "manifest.json")
-    simulation = _read(_one(simulation_root / clip, "*/manifest.json"))
+    traces_path = formal_root / f"traces_{suffix}" / "manifest.json"
+    if not traces_path.is_file():
+        traces_path = formal_root / "traces" / "manifest.json"
+    traces = _read(traces_path)
+    simulation_path = simulation_root / clip / suffix / "manifest.json"
+    if not simulation_path.is_file():
+        raise ValueError(f"STRICT_V4_HANDOFF_SELECTED_SIMULATION_MISSING:{clip}:{selected_samples}")
+    simulation = _read(simulation_path)
     training = _read(report_root / "ppo_v4" / clip / "training_result.json")
+    if decision.get("status") == "STRICT_V4_EFFECTIVE_AT_4M":
+        continuations = sorted(
+            (report_root / "ppo_v4" / clip / "runs").glob("*/training_result.json")
+        )
+        completed = [
+            path
+            for path in continuations
+            if int(_read(path).get("reward_v4_samples", -1)) == 16_777_216
+        ]
+        if len(completed) != 1:
+            raise ValueError(f"STRICT_V4_HANDOFF_16M_CONTINUATION_REQUIRED:{clip}:{completed}")
+        training = _read(completed[0])
     if (
         training.get("status") != "STRICT_V4_TRAINING_SEGMENT_COMPLETE"
         or decision.get("status") not in {"STRICT_V4_EFFECTIVE_AT_4M", "STOP_AT_STRICT_V4_4M_BEST"}
@@ -76,6 +103,7 @@ def _clip_summary(report_root: Path, simulation_root: Path, clip: str) -> dict[s
         raise ValueError(f"STRICT_V4_HANDOFF_COMPLETED_RECEIPTS_REQUIRED:{clip}")
     return {
         "training": training,
+        "selection_path": str(selection_path.resolve()),
         "selection": selection["selected"],
         "four_m_effectiveness_gate": decision,
         "formal_qualification": qualification,
@@ -217,7 +245,7 @@ def _failure_transitions(
                     "failure_path": str(failure_path.resolve()),
                     "exception_type": failure.get("exception_type"),
                     "message": failure.get("message"),
-                    "subsequent_4m_training_complete": True,
+                    "subsequent_training_samples": item["training"]["reward_v4_samples"],
                 }
             )
         rows.append(
