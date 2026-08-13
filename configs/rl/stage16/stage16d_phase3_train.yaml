@@ -1,0 +1,16 @@
+schema_version: Stage16DPhase3TrainingConfigV1
+clip: hocap_170650
+initial_actor_checkpoint: .local/reports/stage16d_ppo26d_clip_repair/hocap_170650/stage16d_ppo26d_170650_l0.pt
+initial_actor_samples: 1024000
+critic_initialization: fresh
+optimizer_initialization: fresh
+observation_normalization: load_l0_and_continue
+actor_observation_dimension: 764
+action_dimension: 26
+development_checkpoint_targets:
+  - 1048576
+  - 2097152
+  - 3145728
+  - 4194304
+maximum_samples_without_new_gate: 4194304
+maximum_samples_total: 16777216

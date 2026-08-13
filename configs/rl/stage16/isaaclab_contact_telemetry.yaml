@@ -1,0 +1,35 @@
+schema_version: toporetarget.stage16c3.contact_telemetry.v1
+qualification_profile:
+  scene_clone: usd_clone
+  replicate_physics: true
+  clone_in_fabric: false
+  reason: Isaac Sim 5.1 Fabric-cloned ContactSensor views do not resolve at 128 environments.
+contact_telemetry:
+  runtime_default: off
+  future_ppo_default: aggregate
+  modes:
+    off:
+      collects_contact_records: false
+      reward_or_control_effect: none
+    aggregate:
+      collects_contact_records: true
+      fields: [net_force_world_on_object, impulse_world_on_object, pair_presence]
+      reward_or_control_effect: none
+    diagnostic:
+      collects_contact_records: true
+      fields: [net_force_world_on_object, impulse_world_on_object, pair_presence, pair_force_world_on_object]
+      reward_or_control_effect: none
+object_centric_sensor_views:
+  count: 2
+  objects: [Object170105, Object170650]
+  sensor_bodies_per_view: 1
+  filter_body_count: 21
+  filter_source: HAND_COLLISION_BODY_NAMES
+  raw_force_matrix_shape: [num_envs, 1, 21, 3]
+  force_frame: world_force_on_object
+  contact_points: unavailable
+  fake_point_force: forbidden
+bounded_transport:
+  policy: bounded_latest_only
+  record_capacity: 4096
+  purpose: prevent high-environment diagnostics from accumulating Python telemetry

@@ -1,186 +1,148 @@
 # TopoRetarget-Repro
 
-## Stage 16 状态
-
-Stage 16 当前状态为 `STAGE16_BLOCKED_WITH_BOUNDED_EVIDENCE`。T1/T2/T3 功能流水线已冻结，但新的 frame-0 可控性验收在两条批准的 HO-Cap clip 上失败：zero-residual 和 oracle 诊断中 free object 均在约 13–15% 进度超过 5 cm termination gate。因此没有启动 Stage 16.2/16.3 PPO 资格训练；这不等于 PPO 方法失败。环境命令：`conda env create -f environment.stage16.yml`，推荐执行 `bash scripts/bootstrap_stage16_env.sh`。
-
 [English README](README.md)
 
-TopoRetarget-Repro 是论文
+TopoRetarget-Repro 是对
 [*TopoRetarget: Interaction-Preserving Retargeting for Dexterous Manipulation*](https://arxiv.org/abs/2606.16272)
-的非官方、独立且可追踪论文依据的复现仓库。它通过 canonical HOI contract、MANO 语义转换、
-目标机器人手运动学、geometry/SDF、相对骨方向 warm start、交互图、受限 refinement、验证和
-manifest 绑定的导出，将 GRAB 手物交互运动转换为离线灵巧手 reference。
+的独立、可追溯复现。它通过规范 HOI 合同、MANO 语义转换、目标手运动学、几何/SDF
+处理、交互感知优化、验证和绑定 manifest 的导出，将手-物交互运动转为可审计的灵巧手参考轨迹。
 
-仓库支持 tracked Arti-MANO 与 Wuji Hand2 Beta1 目标手资产，不分发外部 dataset 或
-MANO/SMPL-X model。当前实现是带显式 provenance 与假设的有界工程复现，不声称
-author-exact、全数据集、实时、真实硬件控制、physics 或 RL 复现。
+## 研究目标与边界
 
-## 仓库概览
+项目研究物理可行的灵巧手仿真，并保持以下因果链：
 
-`toporetarget` CLI 提供：
-
-- 保留 native timestamp、scene-frame geometry 与显式 SE(3) 约定的机器人无关
-  `HOISequence` schema；
-- lazy GRAB index、有界 native-frame 转换、semantic contact 处理及
-  MANO→MediaPipe-style-21 转换；
-- YAML 注册的通用 URDF 目标手、differentiable/reference FK、named qpos、semantic anchor、
-  collision surface 以及 tracked Arti-MANO/Wuji 资产；
-- 确定性 object-surface 采样、signed-distance query、collision QuerySet 和独立 full-surface
-  audit；
-- relative-bone warm start、冻结的 source interaction graph/Laplacian 以及受限的
-  interaction-preserving refinement；
-- 可恢复、content-hashed workflow、不可变 source/provenance 记录、自动验证、人工 review
-  边界和版本化 robot-reference export；
-- 覆盖 source/warm/final mesh、interaction graph、continuity、collision/contact 诊断、
-  metric 和审计证据的 self-contained browser HTML。
-
-机器本地 dataset、model、cache、report 与 run 应位于被忽略的 `.local/`。核心契约见
-[HOI 数据接口](docs/HOI_DATA_INTERFACE.md)、
-[坐标约定](docs/COORDINATE_CONVENTIONS.md)和
-[机器人手目标契约](docs/ROBOT_HAND_TARGET_CONTRACT.md)。
-
-## 当前状态
-
-阶段 0–10 已在各自文档化的有界范围内完成。阶段 11 已完成：Canonical HOI、DatasetAdapter、
-RobotHandPlugin、RobotReference 与 MetricRegistry 契约已冻结并通过测试。Dataset Adapter v1
-在 DexYCB、OakInk、HO-Cap 与 ContactPose 的全部 8/8 个冻结选择上通过 source qualification
-与 strict final qualification。ContactPose 使用原生静态单帧样本和官方标注 joints；fitted MANO
-仅用于可视化。mug 与 banana 已通过 strict final，但官方 ContactPose contact benchmark 尚未复现。
-
-Arti-MANO 与 Wuji Hand2 Beta1 是已验证目标手。通用 URDF/MJCF 运动学导入已建立，但 semantic
-anchor、contact surface、collision profile 与 simulation metadata 仍可能需要经过验证的 plugin
-manifest。当前推荐的离线 reference 后端是
-`wuji_continuous_sequential_fast_exact_v4_compiled_sign`：analytic signed-distance Jacobian、
-exact object-local BVH、认证式 sign reuse、compiled deterministic generalized winding、strict
-full-surface audit 与 CPU float64。它是工程后端，不声称是作者指定的后端，也不代表实时生产能力。
-
-当前边界：完整 ContactPose 论文 benchmark 为 **NOT_REPRODUCED**；Stage 16 在两条功能性
-clip 的可控性验收处于 **CONTROLLABILITY_BLOCKED_WITH_BOUNDED_EVIDENCE**，HOCap-32 与 Pen-Spin 均不在本次范围内，完整论文
-tables/figures/seeds 以及 ARCTIC/OakInk2/TACO 仍为 TODO；不声称实时重定向、跨 subject/全数据集
-生产验证、作者精确模拟器或论文规模 RL。
-
-## TODO 与完整路线图
-
-路线图描述的是有界仓库能力，不代表完整论文结果复现。详细阶段历史和实现记录维护在
-[docs/DEVELOPMENT_LOG.zh-CN.md](docs/DEVELOPMENT_LOG.zh-CN.md)、[docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md)
-和 [docs/stages/](docs/stages/) 中。
-
-| 阶段 | 能力 | 状态 | 完成定义 / 后续工作 |
-|---:|---|---|---|
-| 0 | 仓库架构与路径策略 | 完成 | CLI、配置、资产发现、导入和验证基础能力可用。 |
-| 1 | 论文忠实度审计 | 完成 | 公式、表格、假设和 provenance 跟踪可用。 |
-| 2 | Canonical HOI schema 与坐标 | 完成，有界 | canonical rigid-HOI schema 与迁移已验证；复杂 articulated/bimanual 扩展留给阶段 13。 |
-| 3 | source hand / MANO 到 21-keypoint 契约 | 完成，有界 | PCA15/PCA45/axis-angle 路由与 dataset-native source contract 已明确验证。 |
-| 4 | 机器人手运动学与 plugin 基础 | 完成，有界 | 通用 URDF/MJCF 加载及已验证 Arti-MANO/Wuji plugin 可用；任意机器人手仍需 semantic manifest。 |
-| 5 | GRAB adapter | 完成，有界 | lazy conversion、provenance、source/contact 可视化与验证可用。 |
-| 6 | 物体采样、碰撞几何与 SDF | 完成，有界 | 确定性采样、精确距离查询与独立审计可用。 |
-| 7 | 相对骨方向 warm start | 完成 | Eq.1–2 初始化与时间处理已实现。 |
-| 8 | interaction graph 与 Laplacian 坐标 | 完成 | Eq.3–7 interaction graph 与验证已实现。 |
-| 9 | 受限 final refinement | 完成，有界 | Eq.8–9 refinement、slack、active set、strict audit 与确定性恢复已实现。 |
-| 10 | GRAB 端到端重定向 | 完成，有界 | GRAB→Arti-MANO/Wuji reference generation 可用。 |
-| 11 | 核心契约冻结 | 完成 | CanonicalHOI、DatasetAdapter、RobotHandPlugin、RobotReference 与 MetricRegistry 契约已冻结。 |
-| 12 | Dataset Adapter v1 | 完成 | DexYCB、OakInk、HO-Cap、ContactPose adapter 在 8/8 个冻结选择上通过 strict final。 |
-| 13 | 复杂 HOI adapter | DEFERRED | 加入 ARCTIC、OakInk2、TACO；扩展 articulated-object、bimanual 与 SMPL-X hand extraction contract。 |
-| 14 | 通用机器人手 plugin 验证 | DEFERRED | 验证更多机器人拓扑与完整 URDF/MJCF plugin 能力矩阵。 |
-| 15 | baseline 与消融 | DEFERRED | 加入公平的 OmniRetarget、Mink、DexPilot、GeoRT 及相关 baseline 对比。 |
-| 16 | reference-tracking PPO | 16.0 功能完成；16.1 BLOCKED；16.2/16.3 被 gate 阻断 | 两条 clip 已冻结；kinematic replay 通过，但 zero-residual/oracle free-object 验收未通过，不声称长期 PPO 或论文结果。 |
-| 17 | 论文实验复现 | TODO | 复现论文 tables、figures、seeds、ContactPose benchmark 与正式报告。 |
-| 18 | 性能与 v1.0 发布 | TODO | 建立 production benchmark、打包、CI 矩阵与发布标准。 |
-| 19 | 非论文扩展 | TODO | 将 MANO cleanup、SPIDER integration、penetration objective 等扩展明确隔离。 |
-
-可选研究扩展——morphology-aware warm start、robot-surface contact proxy、contact-aware final
-objective、cross-trajectory profile selection——不阻塞阶段 13。
-
-## Stage-16 reference tracking 命令
-
-两条批准输入固定在 `.local/stage16_reference_tracking_ppo/`。可控性验收命令如下；当前真实结果为 `STAGE16_1_CONTROLLABILITY_BLOCKED`：
-
-```bash
-conda run -n toporetarget-rl python scripts/rl/qualify_stage16_1.py \
-  --reference .local/stage16_reference_tracking_ppo/references/hocap_170105.stage16.npz \
-  --reference .local/stage16_reference_tracking_ppo/references/hocap_170650.stage16.npz \
-  --object-mesh .local/stage16_reference_tracking_ppo/objects/hocap_170105.obj \
-  --object-mesh .local/stage16_reference_tracking_ppo/objects/hocap_170650.obj \
-  --scene-root .local/experiments/stage16_reference_tracking_ppo/stage16_1_3_20260731T192400Z_e605dab/stage16_1 \
-  --report .local/reports/stage16_1_3/stage16_1_controllability.json \
-  --episodes-per-clip 20 --candidate-episodes 1
+```text
+robot action -> hand-object contact -> object dynamics
 ```
 
-Stage 16.2/16.3 只有 Stage 16.1 `COMPLETE` 才允许训练；训练器强制读取 `--controllability-report` 并在 gate 失败时退出，固定 4 epochs、32 minibatches、nominal/no-DR、均衡 clip 与有界 sample ladder。frame-0 评测命令：
+当前主线是 PPO-26D 物理修正。rollout 中不得使用 object guidance force、隐藏 object
+controller、object pose/velocity write、attachment 或 suction。未来 H2R assisted-data
+路线与 main causal solution 分离，所有产出必须标记 `assisted=true` 和
+`causal_physics=false`。
 
-```bash
-conda run -n toporetarget-rl python scripts/rl/evaluate_hocap_reference_policy.py \
-  --checkpoint .local/checkpoints/stage16_reference_tracking_ppo/hocap_t3/best.pt \
-  --reference .local/stage16_reference_tracking_ppo/references/hocap_170105.stage16.npz \
-  --reference .local/stage16_reference_tracking_ppo/references/hocap_170650.stage16.npz \
-  --object-mesh .local/stage16_reference_tracking_ppo/objects/hocap_170105.obj \
-  --object-mesh .local/stage16_reference_tracking_ppo/objects/hocap_170650.obj \
-  --scene-root .local/experiments/stage16_reference_tracking_ppo/stage16_1_3_20260731T192400Z_e605dab/eval_nominal \
-  --episodes-per-clip 20 --report .local/reports/stage16_1_3/highest_functional_checkpoint_eval.json \
-  --episodes-output .local/reports/stage16_1_3/highest_functional_checkpoint_episodes.json
+本仓库是工程复现；不声称作者级精确复现、完整数据集覆盖、实时性、硬件控制或持续的厂商支持。
+
+## 方法总览
+
+```text
+有授权的 HOI 数据
+  -> 规范 HOI 序列与坐标约定
+  -> MANO / 目标手语义转换
+  -> 交互感知运动学重定向
+  -> 几何与接触验证
+  -> 版本化机器人参考导出
+  -> Isaac Lab 因果物理修正与评价
 ```
 
-MuJoCo 交互/无窗口检查使用 `scripts/rl/visualize_hocap_policy_mujoco.py`；当前 GL renderer 不可用时会保留数值 fallback PNG 与 dashboard，而不会伪造几何截图。
+核心合同见 [HOI 数据](docs/HOI_DATA_INTERFACE.md)、
+[坐标约定](docs/COORDINATE_CONVENTIONS.md) 和
+[机器人手目标合同](docs/ROBOT_HAND_TARGET_CONTRACT.md)。
 
-## 数据集支持
+## 支持的数据与手
 
-| 数据集 | Adapter | Source qualification | Strict final qualification | 说明 |
-|---|---|---:|---:|---|
-| GRAB | 完成 | 已验证 | 已验证 | 初始动态 reference dataset |
-| DexYCB | 完成 | 2/2 | 2/2 | 原生 PCA45 与 subject-shape 路由 |
-| OakInk | 完成 | 2/2 | 2/2 | 原生 hand vertices/joints 与 object transform |
-| HO-Cap | 完成 | 2/2 | 2/2 | PCA45、subject shape 与 qxyzw object pose |
-| ContactPose | 完成 | 2/2 静态 | 2/2 strict | 静态单帧、官方 joints；论文 contact benchmark 尚未复现 |
-| ARCTIC | TODO | — | — | 阶段 13 |
-| OakInk2 | TODO | — | — | 阶段 13 |
-| TACO | TODO | — | — | 阶段 13 |
-
-## 机器人手支持
+| 数据集 | Adapter | 说明 |
+| --- | --- | --- |
+| GRAB | 已支持 | 动态手-物交互序列 |
+| DexYCB | 已支持 | 原生 PCA45 与 subject-shape 路由 |
+| OakInk | 已支持 | 原生 hand vertices/joints 与 object transform |
+| HO-Cap | 已支持 | PCA45、subject shape 与 object pose |
+| ContactPose | 已支持 | 单帧静态转换 |
+| ARCTIC、OakInk2、TACO | 计划中 | 尚未支持 |
 
 | 目标手 | 运动学 | 重定向 | 碰撞 | 仿真/RL |
-|---|---|---|---|---|
-| Arti-MANO | 已验证 | 已验证 | 已验证 | 未通过 RL qualification |
-| Wuji Hand2 Beta1 | 已验证 | 已验证 | 已验证 | 仅离线 reference generation |
-| 通用 URDF/MJCF | 导入基础 | 需要 manifest | 需要 profile | 不自动保证 |
+| --- | --- | --- | --- | --- |
+| Arti-MANO | 已支持 | 已支持 | 已支持 | 不自动代表已资格化 |
+| Wuji Hand2 Beta1 | 已支持 | 已支持 | 已支持 | 离线参考与因果物理主线 |
+| Generic URDF/MJCF | 导入基础 | 需要 manifest | 需要 profile | 不自动代表已资格化 |
+
+外部数据集和 MANO/SMPL-X 模型不会随仓库分发。请将授权输入、模型、生成数据、cache 和本地
+run 保持在版本控制之外。
 
 ## 环境配置
 
-### 依赖与安装
-
-- Linux、Git、Python `>=3.10,<3.14`；当前维护的本地 workflow 使用 Python 3.12。
-- 完整流程需要 SciPy、PyTorch、Zarr、trimesh、SMPL-X 和 browser/visualization 依赖。
-- 真实数据运行需要 GRAB 与 MANO 文件，并须遵守其上游许可证。
-
-创建独立环境并安装所有已实现 workflow 的 extra：
+通用 workflow 使用 Python `>=3.10,<3.14`；本地维护环境为 Python 3.12。Isaac Lab
+使用独立冻结环境，见 [Isaac Lab direct environment contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md)。
 
 ```bash
 conda create -n topo-retarget python=3.12 -y
 conda activate topo-retarget
 python -m pip install -U pip
 python -m pip install -e ".[dev,cache,viz,grab,robot,geometry,retarget]"
-```
 
-### 配置本地资源
-
-不要把有许可证约束的数据或 model 文件复制进 Git。可以直接设置路径，也可以依据
-[configs/paths.example.yaml](configs/paths.example.yaml) 创建被忽略的 `.local/config.yaml`：
-
-```bash
 export GRAB_ROOT=/path/to/GRAB
-# GRAB_ROOT 是 `toporetarget data index` 使用的 dataset root。
 export MANO_MODEL_ROOT=/path/to/body_models/mano
-# MANO_MODEL_ROOT 应包含 MANO_LEFT.pkl 与 MANO_RIGHT.pkl。
-
 export PYTHONNOUSERSITE=1
 export PYTHONPATH=src
 export TOPORETARGET_PYTHON="${CONDA_PREFIX}/bin/python"
+export TOPORETARGET_OUTPUT=/path/to/toporetarget-output
 ```
 
-Arti-MANO 与 Wuji 资产已经 tracked 在 `third_party/robot_hands/`。Arti-MANO 可通过
-`TOPORETARGET_ARTIMANO_ASSET_ROOT` 覆盖；未设置时使用 tracked bundle。
+直接设置本地路径，或从 [configs/paths.example.yaml](configs/paths.example.yaml) 开始。
+`GRAB_ROOT` 必须包含已授权的数据集，`MANO_MODEL_ROOT` 必须包含已授权的 MANO 模型文件。
 
-### 验证安装与资产
+## 核心工作流
+
+一次只操作一条明确指定的 sequence。授权的原始数据保持只读；派生 cache、report 和 HTML 请写到仓库外，
+例如 `$TOPORETARGET_OUTPUT` 下。
+
+1. **环境与目标手资产预检。**
+
+   ```bash
+   "$TOPORETARGET_PYTHON" -m toporetarget doctor paper
+   "$TOPORETARGET_PYTHON" -m toporetarget robots list
+   "$TOPORETARGET_PYTHON" -m toporetarget robots validate wuji_hand2_beta1_rh \
+     --asset-root third_party/robot_hands/wuji_hand2_beta1
+   ```
+
+2. **转换并检查一条 HOI sequence。** 该步骤生成绑定 manifest 的 canonical cache，且不对 source
+   sequence 做重采样。
+
+   ```bash
+   "$TOPORETARGET_PYTHON" -m toporetarget data convert \
+     --dataset grab --sequence <sequence-id> --grab-root "$GRAB_ROOT" \
+     --mano-model-root "$MANO_MODEL_ROOT" \
+     --output "$TOPORETARGET_OUTPUT/<sequence-id>.zarr"
+   "$TOPORETARGET_PYTHON" -m toporetarget data inspect \
+     "$TOPORETARGET_OUTPUT/<sequence-id>.zarr"
+   ```
+
+3. **运行有界的 retargeting workflow。** 先检查精确参数，再让 `plan-grab`、`run-grab`、`status`
+   和 `validate` 指向同一条明确 sequence/window 与 output root。该 workflow 支持恢复，且不会扫描或修改
+   无关的 source data。
+
+   ```bash
+   "$TOPORETARGET_PYTHON" -m toporetarget workflow plan-grab --help
+   "$TOPORETARGET_PYTHON" -m toporetarget workflow run-grab --help
+   "$TOPORETARGET_PYTHON" -m toporetarget workflow status --help
+   "$TOPORETARGET_PYTHON" -m toporetarget workflow validate --help
+   ```
+
+4. **审计几何并评价冻结 benchmark。** geometry inspection 是只读的；benchmark 按明确的
+   `inspect-datasets -> select -> freeze -> run -> evaluate` 状态机执行。
+
+   ```bash
+   "$TOPORETARGET_PYTHON" -m toporetarget geometry --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark inspect-datasets --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark select --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark freeze --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark run --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark evaluate --help
+   ```
+
+5. **检查已有 Isaac Lab trace。** replay 仅用于诊断：不会重新训练 PPO、修改 trace，或生成新的物理资格化。
+
+   ```bash
+   conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
+     python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py --help
+   ```
+
+完整的参数合同与验收边界见 [configs/README.md](configs/README.md)、
+[workflow resume and provenance](docs/WORKFLOW_RESUME_AND_PROVENANCE.md) 和
+[Isaac Lab direct environment contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md)。
+
+## Quick start 与复现入口
+
+查看命令并验证随仓库提供的目标手资产：
 
 ```bash
 "$TOPORETARGET_PYTHON" -m toporetarget --help
@@ -192,376 +154,94 @@ Arti-MANO 与 Wuji 资产已经 tracked 在 `third_party/robot_hands/`。Arti-MA
   --asset-root third_party/robot_hands/wuji_hand2_beta1
 ```
 
-## 完整 Workflow
-
-以下主流程以命令为核心，不保存历史阶段日志。Raw GRAB 与 MANO 输入均为只读，生成的
-artifact 保留在 `.local/`。
-
-所有必要可视化统一使用 browser-based self-contained HTML。统一样式是全画布场景、右侧
-控制栏、frame slider/playback、orbit/zoom、source/warm/final layer、graph/contact/collision
-filter、metric 与 provenance，与
-`.local/experiments/wuji_hand2_continuous_v1/html/W1_airplane_lift_continuity_comparison.html`
-采用同类交互方式。PNG/GIF 与临时 Matplotlib window 不属于本 README 的 workflow。
-
-### 1. 选择 source clip 与目标机器人手
-
-`SEQUENCE`、`START_FRAME` 和 `END_FRAME` 共同选择 GRAB object/action 与 native
-半开区间。下面示例使用右手 60 帧；可以改成其它已索引序列/区间，但不得 resample，也不得
-依据结果重新选择。
-
-```bash
-# Source object/action：三个值应一起修改。
-export SEQUENCE=s1/airplane_lift
-export START_FRAME=240
-export END_FRAME=300
-export HAND=right
-
-# 其它固定示例：
-# apple:      SEQUENCE=s1/apple_eat_1      START_FRAME=212  END_FRAME=272
-# alarmclock: SEQUENCE=s1/alarmclock_lift  START_FRAME=407  END_FRAME=467
-
-# 目标手 family：artimano 或 wuji。
-export TARGET_FAMILY=artimano
-
-case "${TARGET_FAMILY}:${HAND}" in
-  artimano:right)
-    export ROBOT=artimano_rh
-    export TARGET_ASSET_ROOT=third_party/robot_hands/artimano
-    ;;
-  artimano:left)
-    export ROBOT=artimano_lh
-    export TARGET_ASSET_ROOT=third_party/robot_hands/artimano
-    ;;
-  wuji:right)
-    export ROBOT=wuji_hand2_beta1_rh
-    export TARGET_ASSET_ROOT=third_party/robot_hands/wuji_hand2_beta1
-    ;;
-  wuji:left)
-    export ROBOT=wuji_hand2_beta1_lh
-    export TARGET_ASSET_ROOT=third_party/robot_hands/wuji_hand2_beta1
-    ;;
-  *)
-    echo "unsupported TARGET_FAMILY/HAND pair" >&2
-    return 2 2>/dev/null || exit 2
-    ;;
-esac
-
-export GRAB_INDEX=.local/index/grab
-export SOLVER_PROFILE=scipy_slsqp_active_set_contact_rich_v3_fixed
-```
-
-Arti-MANO 与 Wuji 共用数据/index 和目标手验证命令：
-
-```bash
-"$TOPORETARGET_PYTHON" -m toporetarget data index \
-  --dataset grab --grab-root "$GRAB_ROOT" --output "$GRAB_INDEX"
-
-"$TOPORETARGET_PYTHON" -m toporetarget data validate \
-  --dataset grab --index "$GRAB_INDEX" --sequence "$SEQUENCE" \
-  --hands "$HAND" --mano-model-root "$MANO_MODEL_ROOT" \
-  --contact-mode semantic --start-frame "$START_FRAME" --end-frame "$END_FRAME" \
-  --report .local/reports/preflight/source_validation.json
-
-"$TOPORETARGET_PYTHON" -m toporetarget robots validate "$ROBOT" \
-  --asset-root "$TARGET_ASSET_ROOT" \
-  --report .local/reports/preflight/"${ROBOT}"_validation.json
-```
-
-### 2A. 运行完整 Arti-MANO pipeline
-
-Manifest-driven Arti-MANO runner 会解析并验证 source、转换 canonical HOI/MANO 语义、
-审计 object geometry、采样 object 与机器人 collision surface、生成并验证 warm start、
-构建/评价冻结的 interaction graph、运行 final refinement、执行独立 collision/semantic
-检查并生成 review bundle。
-运行本 lane 前，应在第 1 节选择 `TARGET_FAMILY=artimano`。
-
-Planning 不运行 solver：
-
-```bash
-test "$TARGET_FAMILY" = artimano
-export RUN_ROOT=.local/runs/artimano
-export WINDOW_LENGTH="$((END_FRAME - START_FRAME))"
-
-"$TOPORETARGET_PYTHON" -m toporetarget workflow plan-grab \
-  --sequence "$SEQUENCE" --index "$GRAB_INDEX" \
-  --hand "$HAND" --robot "$ROBOT" \
-  --start-frame "$START_FRAME" --end-frame "$END_FRAME" \
-  --window-length "$WINDOW_LENGTH" \
-  --refinement-solver-profile "$SOLVER_PROFILE" \
-  --mano-model-root "$MANO_MODEL_ROOT" --run-root "$RUN_ROOT" \
-  --output .local/reports/preflight/workflow_plan.json --dry-run
-```
-
-运行或恢复完整 DAG：
-
-```bash
-"$TOPORETARGET_PYTHON" -m toporetarget workflow run-grab \
-  --sequence "$SEQUENCE" --index "$GRAB_INDEX" \
-  --hand "$HAND" --robot "$ROBOT" \
-  --start-frame "$START_FRAME" --end-frame "$END_FRAME" \
-  --window-length "$WINDOW_LENGTH" \
-  --refinement-solver-profile "$SOLVER_PROFILE" \
-  --mano-model-root "$MANO_MODEL_ROOT" --asset-root "$TARGET_ASSET_ROOT" \
-  --run-root "$RUN_ROOT" --resume
-
-RUN_ID="${SEQUENCE//\//__}__${HAND}__${ROBOT}__f$(printf '%06d' "$START_FRAME")_f$(printf '%06d' "$END_FRAME")"
-export RUN_DIR="$RUN_ROOT/$RUN_ID"
-export RUN_MANIFEST="$RUN_DIR/manifest.json"
-```
-
-`workflow run-grab` 当前按设计只验证 Arti-MANO target name。Wuji 应使用下一节的 suite
-runner，不要把 Wuji robot name 直接替换进本命令。
-
-### 2B. 运行完整 Wuji pipeline
-
-通用 suite runner 对冻结的 Wuji clip 运行相同的 canonical conversion、geometry、warm-start、
-interaction-graph、refinement、validation、export 与 HTML evaluation component。使用
-`--unit` 选择一个 object；省略则运行右手 W1/W2/W3。
-
-```bash
-export TARGET_FAMILY=wuji
-export HAND=right
-export ROBOT=wuji_hand2_beta1_rh
-export TARGET_ASSET_ROOT=third_party/robot_hands/wuji_hand2_beta1
-export WUJI_EXPERIMENT_ROOT=.local/experiments/wuji_hand2_grab3_v1
-
-"$TOPORETARGET_PYTHON" -m toporetarget workflow run-grab-suite \
-  --suite configs/experiments/wuji_hand2_grab3_v1.yaml \
-  --grab-root "$GRAB_ROOT" --index "$GRAB_INDEX" \
-  --mano-model-root "$MANO_MODEL_ROOT" \
-  --robot "$ROBOT" --solver-profile "$SOLVER_PROFILE" \
-  --experiment-root "$WUJI_EXPERIMENT_ROOT" \
-  --resume --max-wall-time 1800 \
-  --evaluate --export-reference --generate-html
-
-# 仅运行所选 airplane 示例时追加：
-# --unit W1_s1__airplane_lift__right__wuji_hand2_beta1_rh__f000240_f000300
-```
-
-Wuji suite 的权威 machine status 位于
-`$WUJI_EXPERIMENT_ROOT/reports/final_status.json`，export 位于 `exports/`，HTML 入口位于
-`html/index.html`。
-
-### 3. 验证、审计并导出 Arti-MANO run
-
-以下检查由 manifest 驱动，不修改 raw data。JSON/CSV 是权威结果，HTML 是视觉审计界面。
-
-```bash
-"$TOPORETARGET_PYTHON" -m toporetarget workflow status --run "$RUN_MANIFEST"
-
-"$TOPORETARGET_PYTHON" -m toporetarget workflow validate \
-  --run "$RUN_MANIFEST" \
-  --report "$RUN_DIR/reports/end_to_end_validation.json" \
-  --csv "$RUN_DIR/reports/end_to_end_validation.csv"
-
-"$TOPORETARGET_PYTHON" -m toporetarget workflow audit-contact-retention \
-  --run "$RUN_MANIFEST" \
-  --output-dir "$RUN_DIR/audits/contact_retention" \
-  --surface-samples 8192 --thresholds-mm 1,2,3,5,8,10 \
-  --html --force
-
-"$TOPORETARGET_PYTHON" -m toporetarget workflow export-reference \
-  --run "$RUN_MANIFEST" --format zarr \
-  --output "$RUN_DIR/exports/robot_reference.zarr"
-```
-
-导出的 `toporetarget.robot_reference.v1` 是离线 trajectory artifact，不是真实机器人控制指令。
-
-### 4. 生成统一的中间/最终 HTML review
-
-一个 combined page 覆盖必要的中间与最终视图：source MANO mesh、warm-start target mesh、
-final target mesh、object context、冻结的 interaction graph、Figure-4-style hand-object edge、
-Laplacian residual、逐帧 refinement metric 与 provenance。
-
-```bash
-"$TOPORETARGET_PYTHON" -m toporetarget workflow visualize-mesh \
-  --run "$RUN_MANIFEST" --mode combined \
-  --output "$RUN_DIR/review/trajectory_comparison.html" \
-  --interactive
-```
-
-Contact audit 会生成第二个 self-contained 页面：
-`$RUN_DIR/audits/contact_retention/trajectory_contact_audit.html`。它提供
-source/warm/final、visual/collision surface、QuerySet、semantic anchor、threshold、frame
-与 link/region 控制。视觉合理不能替代 numerical validation 与 collision report。
-
-Wuji 的 `--generate-html` 会在 `$WUJI_EXPERIMENT_ROOT/html/` 下生成相应的全画布页面。
-打开 `index.html`；每个 clip 页面都提供 source/warm/final layer 及同类 browser playback/control。
-
-### 5. 完成人工 review 边界
-
-Machine validation 不能伪造人工 acceptance。先生成 template，在 combined/contact-audit HTML
-中检查 required 与 worst frame，再由具名人工 reviewer 填写复制后的 record：
-
-```bash
-"$TOPORETARGET_PYTHON" -m toporetarget workflow review-template \
-  --run "$RUN_MANIFEST" --output "$RUN_DIR/review/manual_acceptance.template.json"
-
-cp "$RUN_DIR/review/manual_acceptance.template.json" \
-  "$RUN_DIR/review/manual_acceptance.json"
-# 由人工 reviewer 填写 manual_acceptance.json；不得自动写入 pass。
-```
-
-使用以下参数恢复第 2A 节同一条 `workflow run-grab` 命令：
-
-```text
---manual-acceptance "$RUN_DIR/review/manual_acceptance.json"
-```
-
-Content hash、selected frame range、source identity、robot/profile identity、solver status、
-collision/continuity gate 与人工 review lineage 必须同时有效。失败 gate 应保持失败；不得跳帧、
-替换 object 或根据结果重新选择。
-
-### 6. 复现已实现的 evaluation lane
-
-这些是独立的冻结评价，不是 single-run workflow 中的隐藏步骤。
-
-Arti-MANO 四 clip quality/morphology/contact evaluation：
-
-```bash
-PYTHONNOUSERSITE=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
-"$TOPORETARGET_PYTHON" -m toporetarget quality run-a-to-e \
-  --config configs/experiments/grab_artimano_quality_v1.yaml \
-  --resume --max-wall-time 1800 --generate-html
-
-"$TOPORETARGET_PYTHON" -m toporetarget quality status \
-  --experiment-root .local/experiments/grab_artimano_quality_v1
-# HTML：.local/experiments/grab_artimano_quality_v1/html/index.html
-```
-
-Wuji continuity evaluation 与 comparison HTML：
-
-```bash
-"$TOPORETARGET_PYTHON" -m toporetarget workflow run-grab-suite \
-  --suite configs/experiments/wuji_hand2_grab3_v1.yaml \
-  --grab-root "$GRAB_ROOT" --index "$GRAB_INDEX" \
-  --mano-model-root "$MANO_MODEL_ROOT" \
-  --robot wuji_hand2_beta1_rh \
-  --solver-profile wuji_continuous_full_state_v1 \
-  --experiment-root .local/experiments/wuji_hand2_continuous_v1 \
-  --resume --max-wall-time 1800 \
-  --evaluate --export-reference --generate-html
-# HTML：.local/experiments/wuji_hand2_continuous_v1/html/index.html
-```
-
-冻结的 GRAB/ContactPose benchmark 与统一 dashboard：
-
-```bash
-export CONTACTPOSE_ROOT=/path/to/ContactPose
-
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark inspect-datasets \
-  --grab-root "$GRAB_ROOT" --contactpose-root "$CONTACTPOSE_ROOT" \
-  --output .local/benchmarks/hoi_benchmark_v1/dataset_audit.json
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark select \
-  --config configs/benchmarks/hoi_benchmark_v1.yaml
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark freeze
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark run --resume
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark evaluate --html
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark dashboard
-```
-
-Selection 与 attribution gate 采用 fail closed。Static ContactPose unit 与 dynamic GRAB unit
-保持分离，GRAB contact proxy 绝不重命名为 ContactPose ground truth。
-
-### 7. 仓库级审计
+主要离线 pipeline 见 [configs/README.md](configs/README.md) 与 CLI help。它保留 source
+数据，创建绑定 manifest 的派生产物，并将人工验收保留为明确边界。运行 paper-fidelity 检查：
 
 ```bash
 "$TOPORETARGET_PYTHON" scripts/check_paper_fidelity.py
-"$TOPORETARGET_PYTHON" -m pytest -m "not licensed_data"
-"$TOPORETARGET_PYTHON" -m ruff check .
-"$TOPORETARGET_PYTHON" -m ruff format --check .
-"$TOPORETARGET_PYTHON" -m mypy src
-git diff --check
 ```
 
-Licensed-data test 是 opt-in，要求已配置本地 GRAB/MANO 资源。
+## 可视化入口
 
-## 其它文档索引
+项目生成独立浏览器 HTML，用于查看 source、warm start、final mesh、interaction graph、
+contact/collision diagnostics、continuity 和 provenance。请使用所选 pipeline manifest 给出的
+可视化命令，并在浏览器中检查生成的 HTML。Isaac Lab 保存 trace 的 replay 仅用于诊断可视化，
+不生成新的物理资格化结果。
 
-- 项目规划与历史：
-  [路线图](docs/ROADMAP.md) /
-  [中文路线图](docs/ROADMAP.zh-CN.md)、
-  [开发日志](docs/DEVELOPMENT_LOG.md) /
-  [中文开发日志](docs/DEVELOPMENT_LOG.zh-CN.md)、
-  [复现日志](docs/REPRODUCTION_LOG.md)
-- 论文与契约：
-  [论文忠实度](docs/PAPER_FIDELITY.md)、
-  [实现规范](docs/PAPER_IMPLEMENTATION_SPEC.md)、
-  [显式假设](docs/ASSUMPTIONS.md)、
-  [待向作者确认的问题](docs/OPEN_QUESTIONS_FOR_AUTHORS.md)
-- 数据与 geometry：
-  [数据布局](docs/DATA_LAYOUT.md)、
-  [GRAB adapter](docs/GRAB_DATASET_ADAPTER.md)、
-  [MANO 转换](docs/MANO_TO_MEDIAPIPE21.md)、
-  [Object geometry/sampling](docs/OBJECT_GEOMETRY_AND_SAMPLING.md)、
-  [Signed distance](docs/SIGNED_DISTANCE_AND_COLLISION_QUERIES.md)
-- 重定向：
-  [Relative-bone 初始化](docs/RELATIVE_BONE_DIRECTION_INITIALIZATION.md)、
-  [Interaction graph](docs/INTERACTION_GRAPH.md)、
-  [Laplacian loss](docs/LAPLACIAN_INTERACTION_LOSS.md)、
-  [Final refinement](docs/CONTACT_PRESERVING_FINAL_REFINEMENT.md)、
-  [Workflow resume/provenance](docs/WORKFLOW_RESUME_AND_PROVENANCE.md)
-- HTML review 与审计：
-  [Trajectory visualization](docs/TRAJECTORY_VISUALIZATION.md)、
-  [Interaction-mesh HTML](docs/INTERACTION_MESH_VISUALIZATION.md)、
-  [Contact-retention audit](docs/CONTACT_RETENTION_AUDIT.md)、
-  [Warm-start audit](docs/WARM_START_FIDELITY_AND_REACHABILITY_AUDIT.md)
-- 目标手与评价：
-  [Tracked robot assets](docs/TRACKED_ROBOT_HAND_ASSETS.md)、
-  [Arti-MANO adapter](docs/ARTIMANO_ADAPTER.md)、
-  [Wuji target](docs/WUJI_HAND2_BETA1_TARGET.md) /
-  [中文 Wuji 目标手](docs/WUJI_HAND2_BETA1_TARGET.zh-CN.md)、
-  [Arti-MANO A–E 评价](docs/GRAB_ARTIMANO_QUALITY_EXPERIMENT.md)、
-  [Wuji GRAB 重定向](docs/WUJI_HAND2_GRAB_RETARGETING.md)、
-  [Wuji continuity](docs/WUJI_CONTINUOUS_RETARGETING.md)
-- 仓库策略：
-  [数据/许可证策略](docs/LICENSE_AND_DATA_POLICY.md)、
-  [第三方资产策略](docs/THIRD_PARTY_ASSET_POLICY.md)、
-  [贡献指南](CONTRIBUTING.md)、
-  [第三方声明](THIRD_PARTY_NOTICES.md)
+## 评价
 
-详细阶段历史和实现记录维护在：
+统一评价入口是 [Evaluation Suite V2](docs/rl/EVALUATION_SUITE_V2.md)。它报告 object
+rotation/translation tracking、retargeted-hand joint/fingertip tracking，以及分离的
+kinematic、physics 和 qualified success rate。轨迹指标使用移除 environment origin 后的共同
+world/env frame；legacy metrics 仍会保留，但不会被静默重定义。
 
-- [docs/DEVELOPMENT_LOG.zh-CN.md](docs/DEVELOPMENT_LOG.zh-CN.md)
-- [docs/ROADMAP.zh-CN.md](docs/ROADMAP.zh-CN.md)
-- [docs/stages/](docs/stages/)
-- [solver-feasibility 说明](docs/SOLVER_FEASIBILITY_RESTORATION.md)
-- [Stage 16 reference-tracking PPO](docs/stages/STAGE16_REFERENCE_TRACKING_PPO.md)
+Stage 16-D 因果 PPO pipeline 支持 reference pose、object twist tracking 和版本化 contact reward。
+**Aggregate V3 是当前稳定的默认 contact baseline**（`aggregate_v3`）。**Strict Per-Finger V4
+是实验性 opt-in**（`strict_per_finger_v4`），它使用
+`SourcePerFingerContactEvidenceV1`：只有 source-confirmed 或 persistent-confirmed 的指定 finger
+的 MANO/object contact，才要求同名 Wuji distal/tip body 与 active object 接触。probable、
+transition、proximity-only、no-contact 和 ambiguous source state 都不是 V4 的 mandatory contact
+semantics。
+
+V4 按 source-required finger 数量归一化独立 named-tip reward。因此其它 finger 的大力不能给缺失的
+required finger 记分，source 要求更多 fingers 也不会改变总 contact reward scale。reward 只读取当前
+经 filter 的 PhysX named-tip-to-active-object pair force，从不直接控制 object；共享 per-tip force
+scale 在 PPO 前由精确的 V1 Formal20 pair-force telemetry 冻结。
+
+已完成的 Stage16-D milestone 是在冻结、简化的 **zero-gravity / no-support** Isaac/PhysX 合同下的
+物理因果 reference-tracking baseline：没有 external object guidance，也没有 rollout-time object-state
+或 wrist-root write。这不是 physically realistic、real-world calibrated 或 full-gravity validation。
+新配置使用稳定默认值：
+
+```yaml
+reward:
+  contact:
+    mode: aggregate_v3
+```
+
+如需明确 opt-in 到实验目标：
+
+```yaml
+reward:
+  contact:
+    mode: strict_per_finger_v4
+```
+
+阶段性的 terminal-dynamics attribution 与详细结果进入 stage/RL 文档；machine-readable
+artifact 保留在忽略的本地存储中。
+
+## 文档索引
+
+- [Roadmap](docs/ROADMAP.zh-CN.md) — 当前因果科研路线与未来 lanes。
+- [Stage 16-D physics-consistent retargeting](docs/stages/STAGE16D_PHYSICS_CONSISTENT_RETARGETING.md)
+  — physics scope、provenance 与 qualification 边界。
+- [Stage16-D causal zero-g milestone](docs/stages/STAGE16D_CAUSAL_ZERO_G_MILESTONE.zh-CN.md)
+  — 冻结范围、稳定/默认 V3、实验性 V4 与下一物理阶段。
+- [Terminal dynamics attribution](docs/stages/STAGE16D_PHASE1_TERMINAL_DYNAMICS.md)
+  — Phase 1 方法与结论。
+- [PPO-26D reference tracking](docs/rl/REFERENCE_TRACKING_PPO_26D.md) — action、
+  observation、RSI、reward 与 gate 合同。
+- [Physics-correction PPO](docs/rl/PHYSICS_CORRECTION_PPO.md) — 因果训练边界与决策树。
+- [Reference-gated contact reward](docs/rl/REFERENCE_GATED_CONTACT_REWARD.md) — V3 contact
+  signal 与因果边界。
+- [Strict per-finger contact reward](docs/rl/STRICT_PER_FINGER_CONTACT_REWARD.zh-CN.md) — V4
+  source-confirmed contact semantics 与独立-finger contract。
+- [Source contact semantics](docs/rl/SOURCE_CONTACT_SEMANTICS.md) — 原始 MANO/object evidence
+  与冻结的 factor-eight runtime mapping。
+- [Evaluation Suite V2](docs/rl/EVALUATION_SUITE_V2.md) — 共享指标与 success 合同。
+- [Paper fidelity and engineering adaptations](docs/PAPER_FIDELITY.md) — 论文一致性与
+  明确的工程适配。
+
+## README 文档政策
+
+README 文件是稳定的项目入口文档；实验日志和 run-specific metrics 位于 README 之外，进入
+stage 文档和本地 machine-readable reports。
 
 ## License
 
-仓库代码与文档采用 GNU General Public License v3.0，见 [LICENSE](LICENSE)。Tracked
-第三方资产继续使用其上游许可证与 `third_party/robot_hands/` 中的 notice。GRAB、
-MANO/SMPL-X、ContactPose、ManipTrans 及其它外部资源受各自条款约束。使用前请阅读
-[docs/LICENSE_AND_DATA_POLICY.md](docs/LICENSE_AND_DATA_POLICY.md)和
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
-
-## Acknowledgments
-
-感谢：
-
-- [TopoRetarget](https://toporetarget2026.github.io/TopoRetarget/) 作者；
-- GRAB、MANO/SMPL-X、ContactPose 的作者与维护者；
-- ManipTrans 项目与 Arti-MANO 上游资产贡献者；
-- tracked provenance manifest 中记录的 Wuji Hand2 上游资产贡献者。
-
-使用时请保留上游 attribution，并遵守每个 dataset、model、code 与 asset 的许可证。
+见 [LICENSE](LICENSE)。请遵守上游数据集、模型、机器人资产和依赖的许可证。
 
 ## Citation
 
-如果本仓库或实现记录对你的工作有帮助，请引用 TopoRetarget 论文：
-
-```bibtex
-@article{wu2026toporetarget,
-  title   = {TopoRetarget: Interaction-Preserving Retargeting for Dexterous Manipulation},
-  author  = {Wu, Jielin and Yao, Shenzhe and He, Guanqi and Liu, Xiaohan and Zeng, Zhaoqing
-             and Jiang, Xiangrui and Yang, Han and Zhang, Wentao and Zhao, Hang},
-  journal = {arXiv preprint arXiv:2606.16272},
-  year    = {2026},
-  doi     = {10.48550/arXiv.2606.16272}
-}
-```
-
-同时请引用实验实际使用的 dataset、body model、目标手资产和上游实现。本地论文副本见
-[docs/TopoRetarget.pdf](docs/TopoRetarget.pdf)，上游引用索引见
-[docs/UPSTREAM_REFERENCES.md](docs/UPSTREAM_REFERENCES.md)。
+方法请引用原始 TopoRetarget 论文。使用本仓库的实现或派生产物时，请按其 release metadata
+引用本仓库。

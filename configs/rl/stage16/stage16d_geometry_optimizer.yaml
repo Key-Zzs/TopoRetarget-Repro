@@ -1,0 +1,22 @@
+schema_version: Stage16DGeometryAwareOptimizerConfigV2
+shared_across_clips: true
+window_margin_control_steps: 10
+selection_holdout_replicas: 8
+formal_holdout_replicas: 20
+levels:
+  G1:
+    knots: 16
+    population: 96
+    replicas: 4
+    iterations: 8
+    elites: 12
+  G2:
+    knots: 32
+    population: 96
+    replicas: 8
+    iterations: 8
+    elites: 12
+seed_contract:
+  freeze_before_optimization: true
+  internal_selection_formal_disjoint: true
+ranking: semantic_balanced_geometry_v2

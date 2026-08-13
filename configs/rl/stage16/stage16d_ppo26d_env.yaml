@@ -1,0 +1,15 @@
+schema_version: Stage16DPPO26DReferenceTrackingEnvV1
+physics_hz: 120
+control_hz: 20
+decimation: 6
+reference_time_scale: 8
+runtime_reference_samples: 321
+free_physx_object: true
+self_collision: enabled
+virtual_wrist: explicit_serial_3p3r
+finger_joints: 20
+action_contract: Stage16DReferenceResidualAction26DV1
+observation_contract: Stage16DPPO26DObservationV2
+rollout_object_state_writes: 0
+rollout_wrist_root_state_writes: 0
+hidden_force_or_attachment: false

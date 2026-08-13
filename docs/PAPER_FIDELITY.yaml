@@ -45,7 +45,7 @@ audit_contracts:
   stage16_reference_tracking_ppo:
     profile: docs/stages/STAGE16_REFERENCE_TRACKING_PPO.md
     paper_source: "Appendix A.5; Tables 4-6"
-    status: stage16_1_controllability_blocked_bounded_evidence
+    status: stage16_1_reference_dynamical_infeasibility_confirmed
     paper_exact_components: [base_frame_reference, residual_action, observation_offsets_0_1_3_5, table4_reward_termination, table5_randomization_ranges, table6_architecture_and_listed_ppo]
     simulator_backend: mujoco_3_3_6_cpu_correctness_only
     author_exact_simulator: unresolved
@@ -59,9 +59,96 @@ audit_contracts:
     stage16_1_status: STAGE16_1_CONTROLLABILITY_BLOCKED
     stage16_2_status: NOT_STARTED_GATE_BLOCKED
     stage16_3_status: NOT_STARTED_GATE_BLOCKED
+    stage16_1_root_cause: REFERENCE_DYNAMICAL_INFEASIBILITY
     assumptions: [A_STAGE16_SIMULATOR_001, A_STAGE16_TRACKED_LINKS_001, A_STAGE16_AXIS_POINTS_001, A_STAGE16_PD_001, A_STAGE16_PPO_UNLISTED_VALUES_001]
-    evidence: [.local/reports/stage16_reference_tracking_ppo/final_summary.json, .local/reports/stage16_reference_tracking_ppo/environment_validation.json, .local/reports/stage16_reference_tracking_ppo/ppo_smoke.json]
-    notes: "Generic free-object smoke and numerical PPO checks are not HOCap protocol evaluation or author-exact reproduction."
+    evidence: [.local/reports/stage16_dynamic_coupling_v1_rerun1/final_summary.json, .local/reports/stage16_dynamic_coupling_v1_rerun1/step_b_contact_audit.json, .local/reports/stage16_dynamic_coupling_v1_rerun1/root_cause.json]
+    notes: "PD isolation passes, but pre-gate hand-object contact/proximity is absent on both clips; object-aware oracle and shooting remain engineering diagnostics, not PPO or author-exact reproduction."
+  stage16b_world_wrist_finger_tracking:
+    profile: docs/rl/WORLD_WRIST_FINGER_TRACKING.md
+    label: ENGINEERING_EXTENSION
+    protocol: WORLD_WRIST_FINGER_TRACKING_PROTOCOL
+    status: STAGE16B_ADAPTIVE_MULTI_HORIZON_ORACLE_PARTIAL
+    preserves_stage16a_profile: paper_finger_only_base_relative_v1
+    paper_method: false
+    author_exact_control: unresolved
+    author_exact_simulator: unresolved
+    action: 6d_wrist_residual_plus_20d_finger_residual
+    finite_wrench_abstract_wrist: true
+    no_direct_object_control: true
+    ppo_started: false
+    ppo_entry: STAGE16B_SINGLE_CLIP_PPO_NOT_STARTED_GATE_BLOCKED
+    single_clip_ppo_status: STAGE16B_SINGLE_CLIP_PPO_NOT_STARTED_GATE_BLOCKED
+    two_clip_ppo_status: STAGE16B_TWO_CLIP_PPO_NOT_STARTED
+    mujoco_ppo_status: MUJOCO_PPO_TRAINING_DEFERRED
+    mujoco_role: [correctness, deterministic_regression, contact_diagnostics, action_replay, visualization]
+    adaptive_oracle: {hocap_170105: "selected 32x3: 0/20 fail at 80 percent, axis 5.194 cm", hocap_170650: "selected 32x3: 20/20 pass, position 0.119 cm, rotation 0.667 deg, axis 0.158 cm"}
+    ppo_samples: 0
+    ppo_checkpoints: 0
+    global_48x4_upgrade: "170105 fail at 82.5 percent with 5.002 cm axis error"
+    further_mujoco_search_authorized: false
+    isaaclab_ppo_authorized: false
+    physx_oracle_required: true
+    assumptions: [A_STAGE16B_FREE_WRIST_001, A_STAGE16B_ZERO_GRAVITY_001, A_STAGE16B_WRIST_SAFETY_001]
+    evidence: [.local/reports/stage16b_adaptive_oracle_single_ppo/final_summary.json, .local/reports/stage16b_adaptive_oracle_single_ppo/adaptive_oracle_evaluation.json]
+    notes: "MuJoCo B.1c is partial and closed; PPO never started. Isaac Lab/PhysX must be qualified independently. This extension is not a real arm, sim-to-real, paper-controller, or HO-Cap-32 claim."
+  stage16c_isaaclab_gpu_backend:
+    label: ENGINEERING_EXTENSION
+    stage16c0_status: STAGE16C0_ISAACLAB_PLATFORM_VALIDATED_WITH_LIMITATIONS
+    blocker: null
+    classification: ENGINEERING_INFRASTRUCTURE
+    python: 3.11.15
+    isaac_sim: 5.1.0
+    isaac_lab_tag: v2.3.2
+    isaac_lab_commit: 37ddf626871758333d6ed89cf64ad702aef127d0
+    torch: 2.7.0
+    torch_cuda_runtime: cu128
+    official_platform_smoke_only: false
+    required_vector_envs: 128
+    viewer_soft_gate: true
+    custom_wuji_asset_migrated: true
+    hocap_object_migrated: true
+    stage16c1_status: STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED
+    stage16c2_status: STAGE16C2_DIRECT_RL_ENV_VALIDATED
+    custom_direct_rl_env_implemented: true
+    stage16c3_status: STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED
+    stage16c3_blocker: null
+    stage16c3_historical_original_timing_blocker: EXPLICIT_SERIAL_3P3R_COMPUTED_TORQUE_AND_PREVIEW_TRACKING_EXHAUSTED
+    stage16c3_reference_time_scale: 8
+    stage16c3_source_frames: 41
+    stage16c3_runtime_frames: 321
+    stage16c3_reference_frame_status: C3_REFERENCE_OR_FRAME_CONTRACT_VALIDATED
+    stage16c3_contact_readout_status: C3_CONTACT_READOUT_VALIDATED
+    stage16c3_active_wrist_controller: finite_virtual_6d_wrist_actuator_v1
+    stage16c3_active_wrist_profile: high_authority_bounded
+    stage16c2_d6_profile_regression_status: STAGE16C2_EXPLICIT_3P3R_WRIST_VALIDATED
+    stage16c2_d6_profile_regression_scope: bounded_1_128_env_action_basis_subset_reset_contract
+    stage16c4_status: STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED
+    stage16c4_validated_counts: [128, 512, 1024, 2048, 4096]
+    stage16c4_selected_num_envs: 4096
+    stage16c4_rollout_length: 16
+    stage16c4_shards: 4
+    stage16c4_samples_per_update: 65536
+    stage16c4_highest_count_samples_per_s: 700.3515840410429
+    stage16c4_highest_count_process_vram_peak_mib: 3731
+    stage16c4_throughput_scope: shared_gpu_load_infrastructure_evidence
+    stage16c5a_status: STAGE16C5A_PHYSICS_CONTRACT_CHANGE_REQUIRED
+    stage16c5a_reason: TRUE_FROZEN_PHYSX_BASELINE_NONDETERMINISM
+    stage16c5a_scope: r1_harness_repair_and_physics_contract_diagnosis_only
+    stage16c5a_o0_validated_counts: [1, 32, 96, 144]
+    stage16c5a_o1_status: NOT_AUTHORIZED_DUE_TO_PHYSICS_CONTRACT_CHANGE_REQUIRED
+    stage16c5b_authorized: false
+    stage16c6_ppo_authorized: false
+    stage16c6_status: STAGE16C6_SINGLE_CLIP_GPU_PPO_NOT_AUTHORIZED
+    physx_oracle_run: false
+    ppo_started: false
+    mujoco_oracle_authorizes_physx: false
+    paper_result_claimed: false
+    evidence:
+      - .local/reports/stage16c3r4_mpc_holdout_c4/final_summary.json
+      - .local/reports/stage16c3r5_reference_retiming_c4/c3_full_qualification_scale8_final.json
+      - .local/reports/stage16c3r5_reference_retiming_c4/contact_causality_scale8.json
+      - .local/reports/stage16c3r5_reference_retiming_c4/c4_gpu_vector_benchmark_scale8.json
+      - .local/reports/stage16c5a_repair_c5c_oracle/final_summary.json
   stage7_1_warm_start_audit:
     profile: src/toporetarget/workflows/warm_start_audit.py
     formal_stage7_objective_unchanged: true
@@ -1147,6 +1234,27 @@ wuji_continuous_sequential_fast_exact_v1:
   recommended: false
   stage12_default: false
   author_exact: unresolved
+stage16d_physics_consistent_retargeting:
+  paper_method: false
+  engineering_extension: true
+  goal_change: strict_object_tracking_to_contact_driven_object_correction
+  source_robot_reference_frozen: true
+  source_object_reference_frozen: true
+  corrected_object_path: free_physx_rollout_output
+  geometry_metric: RuntimeCollisionProxyPenetrationV1
+  geometry_backend: python-fcl==0.7.0.11
+  geometry_authority: authored_runtime_collision_proxies
+  visual_geometry_role: unsigned_diagnostic_only
+  source_corrected_metric_compatible: true
+  geometry_qualification: blocked_source_relative_max_and_contact_active_p95
+  trajectory_170105: blocked_15_of_20_and_geometry
+  trajectory_170650: blocked_geometry_despite_20_of_20
+  ppo_started: false
+  ppo_samples: 0
+  ppo_checkpoints: 0
+  real_robot_claim: false
+  sim_to_real_claim: false
+  author_exact: false
 wuji_continuous_sequential_fast_exact_v2:
   paper_method: false
   engineering_execution_profile: true
@@ -1190,3 +1298,39 @@ wuji_continuous_sequential_fast_exact_v4_compiled_sign:
   recommended: false
   stage12_default: false
   author_exact: unresolved
+stage16d_geometry_aware_recovery:
+  paper_method: false
+  engineering_extension: true
+  status: STAGE16D_GEOMETRY_GATE_REVISION_BLOCKED
+  v1_comparability: validated
+  v1_contact_preserving_attainability: not_demonstrated
+  v2_created: false
+  dynamic_contact_floor: not_established
+  absolute_geometry_gate_changed: false
+  online_signal_qualified: false
+  geometry_optimizer_run: false
+  ppo_samples: 0
+  checkpoints: 0
+  factor8_changes_time_semantics: true
+  virtual_wrist_is_real_arm: false
+  physical_parameters_calibrated: false
+  sim_to_real_claim: false
+stage16d_stable_free_object_grasp_calibration:
+  paper_method: false
+  engineering_extension: true
+  status: STAGE16D_STABLE_GRASP_CALIBRATION_BLOCKED
+  stop_marker: STAGE16D_STABLE_FREE_OBJECT_GRASP_CALIBRATION_BLOCKED
+  c1_development_candidates: 12
+  c2_unique_development_candidates: 8
+  development_replicas_per_candidate: 4
+  runtime_steps: 321
+  eligible_candidates: 0
+  formal20_runs: 0
+  empirical_dynamic_contact_reference_created: false
+  v2_created: false
+  ppo_samples: 0
+  checkpoints: 0
+  absolute_geometry_gate_changed: false
+  collision_proxy_is_visual_truth: false
+  physical_parameters_calibrated: false
+  sim_to_real_claim: false

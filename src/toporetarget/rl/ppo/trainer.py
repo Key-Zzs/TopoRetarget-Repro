@@ -25,6 +25,7 @@ class PPOConfig:
     clip_epsilon: float = 0.2
     value_loss_coefficient: float = 0.5
     max_grad_norm: float = 1.0
+    target_kl: float = 0.03
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -47,10 +48,12 @@ class PPOTrainer:
 
     def distribution(self, observations: torch.Tensor) -> SoftplusGaussian:
         normalized = self.normalizer.normalize(observations)
-        return SoftplusGaussian(self.model.mean(normalized), self.model.log_std_parameter)
+        return SoftplusGaussian(
+            self.model.action_location(normalized), self.model.log_std_parameter
+        )
 
     def update_observation_normalizer(self, observations: torch.Tensor) -> None:
-        """Update once before collecting a rollout so old/new log-probs share a transform."""
+        """Update statistics outside a collection/update transaction."""
 
         self.normalizer.update(observations)
 
@@ -68,7 +71,7 @@ class PPOTrainer:
         action = distribution.mean if deterministic else distribution.sample()
         return action, distribution.log_prob(action), values
 
-    def update(self, storage: RolloutStorage, last_value: torch.Tensor) -> dict[str, float]:
+    def update(self, storage: RolloutStorage, last_value: torch.Tensor) -> dict[str, Any]:
         advantages, returns = generalized_advantage_estimate(
             storage.rewards,
             storage.values,
@@ -77,6 +80,8 @@ class PPOTrainer:
             gamma=self.config.gamma,
             gae_lambda=self.config.gae_lambda,
         )
+        if not bool(torch.isfinite(advantages).all()) or not bool(torch.isfinite(returns).all()):
+            raise FloatingPointError("PPO GAE produced NaN or Inf")
         flat = storage.flatten(advantages, returns)
         flat["advantages"] = (flat["advantages"] - flat["advantages"].mean()) / (
             flat["advantages"].std(unbiased=False) + 1e-8
@@ -86,9 +91,27 @@ class PPOTrainer:
             raise ValueError("PPO sample count must divide evenly into configured minibatches")
         generator = torch.Generator(device=self.device)
         generator.manual_seed(0)
-        accumulators = {"actor_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "kl": 0.0}
+        accumulators = {
+            "actor_loss": 0.0,
+            "value_loss": 0.0,
+            "entropy": 0.0,
+            "kl": 0.0,
+            "clip_fraction": 0.0,
+            "grad_norm": 0.0,
+            "ratio": 0.0,
+            "action_std": 0.0,
+        }
         updates = 0
+        kl_early_stop = False
+        completed_epochs = 0
+        executed_epochs = 0
+        kl_per_epoch: list[float] = []
+        kl_per_minibatch: list[float] = []
+        minibatches_per_epoch: list[int] = []
         for _ in range(self.config.epochs):
+            executed_epochs += 1
+            epoch_kl: list[float] = []
+            epoch_updates = 0
             order = torch.randperm(count, generator=generator, device=self.device)
             for indices in order.chunk(self.config.minibatches):
                 observations = flat["observations"][indices].to(self.device)
@@ -116,17 +139,62 @@ class PPOTrainer:
                 )
                 self.optimizer.zero_grad(set_to_none=True)
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.max_grad_norm)
+                grad_norm = torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), self.config.max_grad_norm
+                )
                 self.optimizer.step()
+                with torch.no_grad():
+                    post_distribution = self.distribution(observations)
+                    post_log_probs = post_distribution.log_prob(actions)
+                    log_ratio = post_log_probs - old_log_probs
+                    approximate_kl = ((torch.exp(log_ratio) - 1.0) - log_ratio).mean()
+                if not bool(torch.isfinite(approximate_kl)):
+                    raise FloatingPointError("PPO approximate KL produced NaN or Inf")
                 accumulators["actor_loss"] += float(actor_loss.detach())
                 accumulators["value_loss"] += float(value_loss.detach())
                 accumulators["entropy"] += float(entropy.detach())
-                accumulators["kl"] += float((old_log_probs - new_log_probs).mean().detach())
+                accumulators["kl"] += float(approximate_kl.detach())
+                accumulators["clip_fraction"] += float(
+                    ((ratio - 1.0).abs() > self.config.clip_epsilon).float().mean().detach()
+                )
+                accumulators["grad_norm"] += float(grad_norm.detach())
+                accumulators["ratio"] += float(ratio.mean().detach())
+                accumulators["action_std"] += float(distribution.std.mean().detach())
                 updates += 1
+                epoch_updates += 1
+                kl_value = float(approximate_kl.detach())
+                epoch_kl.append(kl_value)
+                kl_per_minibatch.append(kl_value)
+                if float(approximate_kl) > self.config.target_kl:
+                    kl_early_stop = True
+                    break
+            if not epoch_kl:
+                raise RuntimeError("PPO epoch executed no minibatches")
+            kl_per_epoch.append(sum(epoch_kl) / len(epoch_kl))
+            minibatches_per_epoch.append(epoch_updates)
+            if kl_early_stop:
+                break
+            completed_epochs += 1
+        if updates == 0:
+            raise RuntimeError("PPO update executed no minibatches")
+        explained_variance = 1.0 - torch.var(returns - storage.values) / torch.var(
+            returns
+        ).clamp_min(1e-8)
         return {key: value / updates for key, value in accumulators.items()} | {
             "sample_count": float(count),
             "updates": float(updates),
+            "completed_epochs": float(completed_epochs),
+            "requested_epochs": float(self.config.epochs),
+            "actual_epochs_executed": float(executed_epochs),
+            "requested_minibatches": float(self.config.epochs * self.config.minibatches),
+            "actual_minibatches_updated": float(updates),
+            "minibatches_per_epoch": minibatches_per_epoch,
+            "kl_per_epoch": kl_per_epoch,
+            "kl_per_minibatch": kl_per_minibatch,
+            "kl_early_stop": kl_early_stop,
+            "target_kl": self.config.target_kl,
             "old_value_mean": float(old_values.mean()),
+            "explained_variance": float(explained_variance.detach()),
         }
 
 

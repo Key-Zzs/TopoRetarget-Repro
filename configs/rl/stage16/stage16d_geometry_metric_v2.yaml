@@ -1,0 +1,11 @@
+schema_version: RuntimeCollisionProxyPenetrationV2FreezeContract
+creation_authority: stable 20-replica free-object calibration plus V1 unattainability
+parent: RuntimeCollisionProxyPenetrationV1
+absolute_gate_unchanged: true
+relative_max_formula: max(source_max * 1.10 + geometry_epsilon, dynamic_reference_max)
+relative_active_p95_formula: max(source_active_p95 * 1.10 + geometry_epsilon, dynamic_reference_active_p95)
+clip_specific_thresholds: false
+per_topology_formal_thresholds: false
+corrected_trajectory_used: false
+optimizer_result_used: false
+ppo_result_used: false

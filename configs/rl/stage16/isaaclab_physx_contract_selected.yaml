@@ -1,0 +1,14 @@
+schema_version: toporetarget.stage16c5a.physx_contract_selection.v1
+status: BLOCKED_NO_GPU_PHYSX_CONTRACT
+selected_candidate_id: null
+selection_report: .local/reports/stage16c5a_r2_physx_contract/physics_contract_selection.json
+selection_requirements:
+  - S0_through_S5_pass
+  - C3P_all_semantic_gates_pass
+  - C4P_resource_benchmark_pass
+  - runtime_usd_attributes_match_requested_contract
+  - no_config_fallback
+activation:
+  ppo_enabled: false
+  c5b_enabled: false
+  c5c_enabled: false

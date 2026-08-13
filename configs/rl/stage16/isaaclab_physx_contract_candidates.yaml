@@ -1,0 +1,19 @@
+schema_version: toporetarget.stage16c5a.physx_contract_candidates.v1
+matrix_id: stage16c5a_r2_gpu_cpu_candidate_matrix_v1
+frozen_matrix_report: .local/reports/stage16c5a_r2_physx_contract/physx_contract_candidate_matrix.json
+gpu_candidates: [G0, G1, G2, G3, G4, G5]
+cpu_diagnostic_candidates: [C0]
+dimensions:
+  - enhanced_determinism
+  - scene_and_actor_solver_iterations
+  - solve_articulation_contact_last
+invariants:
+  - factor8_reference_contract
+  - source_reference_controller_hashes
+  - usd_clone_no_fabric_v1
+  - no_hidden_object_or_wrist_execution_writes
+prohibited:
+  - candidate_addition_after_freeze
+  - tolerance_softening
+  - cloth_or_pbd_substitution
+  - control_rate_change

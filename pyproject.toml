@@ -58,9 +58,12 @@ rl = [
   "scipy>=1.13",
   "torch>=2.13",
   "matplotlib>=3.8",
+  "imageio==2.37.0",
+  "imageio-ffmpeg==0.6.0",
   "trimesh>=4.0",
   "zarr>=2.16,<3",
   "numcodecs>=0.11",
+  "pyarrow>=19,<20",
 ]
 
 [project.scripts]

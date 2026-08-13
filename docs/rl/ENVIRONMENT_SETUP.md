@@ -10,21 +10,40 @@ conda env create -f environment.stage16.yml
 # or, from a checkout where the environment may already exist:
 bash scripts/bootstrap_stage16_env.sh
 conda run -n toporetarget-rl python -c \
-  'import mujoco, numpy, scipy, torch; print(mujoco.__version__, numpy.__version__, scipy.__version__, torch.__version__)'
+  'import imageio, imageio_ffmpeg, mujoco, numpy, scipy, torch; print(mujoco.__version__, numpy.__version__, scipy.__version__, torch.__version__)'
 ```
 
-The validated local inventory on 2026-07-31 was Python 3.12.13, MuJoCo 3.3.6, NumPy 2.5.1,
+The validated local inventory on 2026-08-01 was Python 3.12.13, MuJoCo 3.3.6, NumPy 2.5.1,
 SciPy 1.18.0, Torch 2.13.0+cu130, Matplotlib 3.11.1, Pillow 12.3.0, Zarr 2.18.7,
-Numcodecs 0.15.1, pytest 9.1.1, Ruff 0.16.1, and mypy 2.3.0. The torch wheel exposes CUDA
-metadata, but the host had no usable NVIDIA driver; Stage 16 therefore uses MuJoCo CPU
-correctness mode. This is an environment fact, not a paper-simulator claim.
+Numcodecs 0.15.1, imageio 2.37.0, imageio-ffmpeg 0.6.0, pytest 9.1.1, Ruff 0.16.1, and mypy
+2.3.0. Torch CUDA is available on an RTX 5080 (driver 580.159.03); MuJoCo remains a CPU
+correctness backend. These are environment facts, not a paper-simulator claim.
 
 Headless inspection uses MuJoCo offscreen rendering when an EGL/OSMesa context is available.
-If both fail, `visualize_hocap_policy_mujoco.py` writes a numerical fallback PNG and HTML
+If both fail, `visualize_hocap_world_wrist_policy_mujoco.py` writes a numerical fallback PNG and HTML
 dashboard and records `PASS_WITH_LIMITATION`; it does not fabricate geometry screenshots.
 Interactive mode requires a working GLFW/X11 display and uses `mujoco.viewer`.
+
+The Stage-16B command surfaces can be checked without data or training:
+
+```bash
+conda run -n toporetarget-rl python scripts/rl/qualify_stage16b_adaptive_oracle.py --help
+conda run -n toporetarget-rl python scripts/rl/train_stage16_world_wrist_ppo.py --help
+conda run -n toporetarget-rl python scripts/rl/visualize_hocap_world_wrist_policy_mujoco.py --help
+```
+
+No new dependency was required for the adaptive-oracle closeout. The current
+PPO CLI rejects the partial oracle report before creating a run directory or
+checkpoint.
 
 All external dataset/model paths are explicit. The two current references and OBJ meshes are
 under ignored `.local/stage16_reference_tracking_ppo/`; raw NAS data is never copied into the
 repository. Generated scenes, runs, checkpoints, PNG/MP4, and logs remain ignored under
 `.local/`.
+
+The isolated Isaac Lab environment and its process-scoped EULA boundary are
+documented separately in
+[`ISAACLAB_ENVIRONMENT_SETUP.md`](ISAACLAB_ENVIRONMENT_SETUP.md). Stage 16-C.1
+asset import and smoke commands are in
+[`ISAACLAB_ASSET_MIGRATION.md`](ISAACLAB_ASSET_MIGRATION.md); they do not add
+Isaac dependencies to the base `toporetarget-rl` environment.

@@ -16,7 +16,12 @@ else
 fi
 
 conda run -n "$env_name" python -c \
-  'import mujoco, numpy, scipy, torch; print("stage16 imports: mujoco", mujoco.__version__, "numpy", numpy.__version__, "scipy", scipy.__version__, "torch", torch.__version__)'
-conda run -n "$env_name" python "$repo_root/scripts/rl/validate_reference_clips.py" \
-  "$repo_root/.local/stage16_reference_tracking_ppo/references/hocap_170105.stage16.npz"
+  'import imageio, imageio_ffmpeg, mujoco, numpy, scipy, torch; print("stage16 imports: mujoco", mujoco.__version__, "numpy", numpy.__version__, "scipy", scipy.__version__, "torch", torch.__version__)'
+reference_path="$repo_root/.local/stage16_reference_tracking_ppo/references/hocap_170105.stage16.npz"
+if [[ -f "$reference_path" ]]; then
+  conda run -n "$env_name" python "$repo_root/scripts/rl/validate_reference_clips.py" \
+    "$reference_path"
+else
+  echo "reference validation skipped: no ignored local Stage-16 artifact"
+fi
 echo "Stage-16 environment smoke complete: $env_name"

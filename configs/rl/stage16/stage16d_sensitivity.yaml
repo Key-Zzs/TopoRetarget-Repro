@@ -1,0 +1,9 @@
+schema_version: Stage16DSensitivityAuditV1
+entry: nominal_ppo_validated
+selection_after_results: false
+method: bounded_one_factor_at_a_time
+mass_scale: [0.5, 1.0, 2.0]
+inertia_scale: [0.5, 1.0, 2.0]
+friction_scale: [0.5, 1.0, 1.5]
+controller_effort_scale: [0.8, 1.0, 1.2]
+claims: [simulation_sensitivity_only, no_sim_to_real]

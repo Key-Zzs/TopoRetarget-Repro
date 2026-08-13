@@ -11,6 +11,14 @@ import numpy as np
 import torch
 
 
+def _cpu_byte_rng_state(value: Any, *, field: str) -> torch.Tensor:
+    """Recover a ByteTensor state after a checkpoint was mapped onto CUDA."""
+
+    if not isinstance(value, torch.Tensor) or value.dtype != torch.uint8:
+        raise TypeError(f"RNG_STATE_{field}_MUST_BE_TORCH_BYTETENSOR")
+    return value.detach().to(device="cpu", dtype=torch.uint8).contiguous()
+
+
 def rng_state() -> dict[str, Any]:
     return {
         "python": random.getstate(),
@@ -23,9 +31,14 @@ def rng_state() -> dict[str, Any]:
 def restore_rng_state(state: dict[str, Any]) -> None:
     random.setstate(state["python"])
     np.random.set_state(state["numpy"])
-    torch.set_rng_state(state["torch_cpu"])
+    torch.set_rng_state(_cpu_byte_rng_state(state["torch_cpu"], field="TORCH_CPU"))
     if state.get("torch_cuda") is not None and torch.cuda.is_available():
-        torch.cuda.set_rng_state_all(state["torch_cuda"])
+        cuda_states = state["torch_cuda"]
+        if not isinstance(cuda_states, (list, tuple)):
+            raise TypeError("RNG_STATE_TORCH_CUDA_MUST_BE_SEQUENCE")
+        torch.cuda.set_rng_state_all(
+            [_cpu_byte_rng_state(value, field="TORCH_CUDA") for value in cuda_states]
+        )
 
 
 def save_checkpoint(path: str | Path, payload: dict[str, Any]) -> Path:

@@ -1,0 +1,24 @@
+schema_version: Stage16DStableGraspGeometryPPORecoveryStateMachineV1
+calibration_levels: [C1, C2]
+maximum_calibration_candidates_per_object: 48
+calibration_formal_replicas: 20
+geometry_gate_versions: [V1, optional_V2]
+maximum_online_geometry_backends: 1
+optimizer_levels: [G1, G2]
+maximum_formal20_evaluations_per_optimizer_level_per_clip: 1
+maximum_ppo_seeds_per_clip: 2
+maximum_ppo_lr_fallbacks_per_clip: 1
+maximum_ppo_samples_per_run: 67108864
+maximum_major_transitions: 56
+fail_closed:
+  - source_hash_drift
+  - collision_asset_drift
+  - corrected_candidate_used_for_calibration
+  - clip_specific_threshold
+  - gate_mutation_after_optimizer
+  - hidden_object_control
+  - formal_state_write
+  - unauthorized_physics_change
+  - reward_exploit
+  - source_overwrite
+  - unrelated_process_termination

@@ -1,0 +1,6 @@
+schema_version: toporetarget.stage16c1.hocap_objects.v1
+recipe: configs/rl/stage16/isaaclab_asset_validation.yaml#objects
+collision_strategy: convex_hull_v1
+generated_root: .local/generated_assets/isaaclab
+runtime: {device: cuda:0, gravity: [0.0, 0.0, 0.0], ground: false, support: none}
+validation: {steps: 1000, expected_mass_kg: 0.05}

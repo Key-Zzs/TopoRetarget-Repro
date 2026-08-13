@@ -1,0 +1,10 @@
+schema_version: Stage16DGeometryAwarePPORecoveryConfigV1
+gate_versions_max: 2
+fast_geometry_backends_max: 1
+optimizer_levels_max: 2
+formal20_per_level_per_clip_max: 1
+ppo_seeds_per_clip_max: 2
+ppo_lr_fallbacks_per_clip_max: 1
+ppo_samples_per_run_max: 67108864
+major_transitions_max: 48
+two_clip_requires_both_single_ppo: true

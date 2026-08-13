@@ -91,3 +91,20 @@ to rebuild the eight-trajectory `stage12_summary.json` handoff (including Wuji
 completion rate, report paths, HTML paths, and per-trajectory metrics) without
 rerunning any solve. The opt-in adapter smoke test is enabled with
 `STAGE12_RUN_NAS_TESTS=1` and is marked `licensed_data`.
+
+## Repairing a stale primary-object viewer
+
+If an archived run predates the explicit `primary_object` contract, rebuild
+only its viewer-derived samples, interaction graph, evaluation, and HTML with
+`scripts/repair_stage12_primary_object_viewer.py`. The command creates a
+versioned `repairs/` lineage and leaves canonical, source, warm, and final
+artifacts untouched. `--replace-html` first archives the legacy viewer under
+`html/archive/`, then atomically replaces the old path after an object-ID-aware
+smoke check.
+
+```bash
+conda run --no-capture-output -n toporetarget-rl \
+python scripts/repair_stage12_primary_object_viewer.py \
+  --selection-root .local/experiments/stage12_source_v2_v4_formal/stage12_source_v2_v4_20260731T065250Z_65b700d9_dd266bc39db9/hocap/hocap_subject_1_20231025_170105 \
+  --primary-object G10_2 --replace-html
+```

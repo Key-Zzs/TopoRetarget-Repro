@@ -146,8 +146,12 @@ def _dataset_manifest(adapter: Any, output_root: Path) -> Path:
     return path
 
 
-def _primary_object(sequence: CanonicalHOIv2) -> Any:
-    return sequence.primary_rigid_object()
+def _primary_object(sequence: CanonicalHOIv2, configured_object_id: str | None) -> Any:
+    """Resolve the configured object id instead of trusting stale canonical metadata."""
+
+    if configured_object_id is None:
+        return sequence.primary_rigid_object()
+    return sequence.rigid_object(str(configured_object_id))
 
 
 def _metrics(
@@ -732,9 +736,17 @@ def run_one(
         )
 
         write_progress("interaction_artifacts", frame_count=canonical.num_frames)
-        object_track = _primary_object(canonical)
+        object_track = _primary_object(canonical, row.get("primary_object"))
         if paths["graph"].is_dir() and paths["collision_samples"].is_file():
             graph = load_interaction_graph(paths["graph"])
+            graph_object_id = graph.metadata.get("object_id")
+            if graph_object_id != object_track.object_id:
+                raise ValueError(
+                    "existing interaction graph targets "
+                    f"{graph_object_id!r}, but the frozen selection targets "
+                    f"{object_track.object_id!r}; preserve the old artifacts and rebuild "
+                    "viewer-derived artifacts in a versioned repair root"
+                )
         else:
             object_profile = load_surface_profile("paper_strict_area_uniform", repo_root=repo)
             object_samples = sample_object_track(object_track, object_profile)
@@ -874,7 +886,17 @@ def run_one(
             graph_path=paths["graph"],
             evaluation_path=paths["evaluation"],
         )
-        html_smoke = smoke_html(paths["html"], expected_frames=canonical.num_frames, profiles=2)
+        html_smoke = smoke_html(
+            paths["html"],
+            expected_frames=canonical.num_frames,
+            profiles=2,
+            expected_object_id=object_track.object_id,
+            expected_context_object_ids={
+                item.object_id
+                for item in canonical.rigid_objects
+                if item.object_id != object_track.object_id
+            },
+        )
         if html_smoke.get("status") != "pass":
             raise ValueError(f"Stage 12 HTML smoke failed: {html_smoke}")
         frame_rows = list(checkpoint_status.get("frame_rows", []))

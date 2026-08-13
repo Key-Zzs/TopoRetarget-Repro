@@ -1,243 +1,161 @@
 # TopoRetarget-Repro
 
-## Stage 16 status
-
-Stage 16 is currently `STAGE16_BLOCKED_WITH_BOUNDED_EVIDENCE`. The functional T1/T2/T3 pipeline remains frozen, but the new frame-0 controllability qualification failed on both approved HO-Cap clips: the free object exceeded the 5 cm termination gate at about 13–15% progress under zero-residual and oracle diagnostics. Therefore Stage 16.2/16.3 PPO qualification was not started. This is not a claim that PPO failed. Create the isolated environment with `conda env create -f environment.stage16.yml` and run `bash scripts/bootstrap_stage16_env.sh` for the documented setup.
-
 [中文 README](README.zh-CN.md)
 
-TopoRetarget-Repro is an unofficial, independent, paper-traceable reproduction of
+TopoRetarget-Repro is an independent, paper-traceable reproduction of
 [*TopoRetarget: Interaction-Preserving Retargeting for Dexterous Manipulation*](https://arxiv.org/abs/2606.16272).
-It turns GRAB hand-object motion into offline dexterous-hand references through a canonical HOI
-contract, MANO semantic conversion, target-hand kinematics, geometry/SDF processing,
-relative-bone warm starts, interaction graphs, constrained refinement, validation, and
+It turns hand-object motion into auditable dexterous-hand references through a
+canonical HOI contract, MANO semantic conversion, target-hand kinematics,
+geometry/SDF processing, interaction-aware refinement, validation, and
 manifest-bound export.
 
-The repository supports tracked Arti-MANO and Wuji Hand2 Beta1 target assets. External datasets
-and MANO/SMPL-X models are not redistributed. Implemented results are bounded engineering
-reproductions with explicit provenance and assumptions; they are not claims of author-exact,
-full-dataset, real-time, hardware-control, physics, or RL reproduction.
+## Research goal and boundary
 
-## Overview
+The project investigates physically feasible dexterous-hand simulation while
+preserving the causal chain:
 
-The `toporetarget` CLI provides:
+```text
+robot action -> hand-object contact -> object dynamics
+```
 
-- a robot-independent `HOISequence` schema with native timestamps, scene-frame geometry, and
-  explicit SE(3) conventions;
-- lazy GRAB indexing, bounded native-frame conversion, semantic contact handling, and
-  MANO-to-MediaPipe-style-21 conversion;
-- generic YAML-registered URDF target hands, differentiable/reference FK, named qpos, semantic
-  anchors, collision surfaces, and tracked Arti-MANO/Wuji assets;
-- deterministic object-surface sampling, signed-distance queries, collision QuerySets, and
-  independent full-surface audits;
-- relative-bone warm starts, frozen source interaction graphs/Laplacians, and constrained
-  interaction-preserving refinement;
-- resumable, content-hashed workflows, immutable source/provenance records, automatic validation,
-  human-review boundaries, and versioned robot-reference exports;
-- self-contained browser HTML for source/warm/final meshes, interaction graphs, continuity,
-  collision/contact diagnostics, metrics, and audit evidence.
+The active causal lane uses PPO-26D physics correction. It does not use object
+guidance forces, hidden object controllers, object-pose or velocity writes,
+attachments, or suction during rollout. An eventual H2R assisted-data lane is
+separate from this main causal solution and must label its outputs
+`assisted=true` and `causal_physics=false`.
 
-Machine-local datasets, models, caches, reports, and runs belong under ignored `.local/` paths.
-The central contracts are [HOI data](docs/HOI_DATA_INTERFACE.md),
+This repository is an engineering reproduction, not a claim of author-exact,
+full-dataset, real-time, hardware-control, or vendor-supported reproduction.
+
+## Method overview
+
+```text
+licensed HOI data
+  -> canonical HOI sequence and coordinate conventions
+  -> MANO / target-hand semantic conversion
+  -> interaction-aware kinematic retargeting
+  -> geometry and contact validation
+  -> versioned robot reference export
+  -> Isaac Lab causal physics correction and evaluation
+```
+
+The core contracts are [HOI data](docs/HOI_DATA_INTERFACE.md),
 [coordinate conventions](docs/COORDINATE_CONVENTIONS.md), and the
 [robot-hand target contract](docs/ROBOT_HAND_TARGET_CONTRACT.md).
 
-## Current Status
+## Supported data and hands
 
-Stage 0–10 are complete within their documented bounded scopes. Stage 11 is complete: the
-Canonical HOI, DatasetAdapter, RobotHandPlugin, RobotReference, and MetricRegistry contracts are
-frozen and tested. Dataset Adapter v1 has passed source and strict-final qualification on all
-8/8 frozen selections across DexYCB, OakInk, HO-Cap, and ContactPose. ContactPose uses native
-static one-frame samples and official annotated joints; fitted MANO is visual only. Mug and banana
-strict final qualification passed, but the official ContactPose contact benchmark was not reproduced.
+| Dataset | Adapter | Notes |
+| --- | --- | --- |
+| GRAB | Supported | Dynamic hand-object sequences |
+| DexYCB | Supported | Native PCA45 and subject-shape routing |
+| OakInk | Supported | Native hand vertices/joints and object transforms |
+| HO-Cap | Supported | PCA45, subject shape, and object pose |
+| ContactPose | Supported | Static one-frame conversion |
+| ARCTIC, OakInk2, TACO | Planned | Not yet supported |
 
-Arti-MANO and Wuji Hand2 Beta1 are validated target hands. Generic URDF/MJCF kinematic import is
-available, while semantic anchors, contact surfaces, collision profiles, and simulation metadata
-may still require a validated plugin manifest. The recommended offline reference backend is
-`wuji_continuous_sequential_fast_exact_v4_compiled_sign`: analytic signed-distance Jacobians,
-exact object-local BVH, certified sign reuse, compiled deterministic generalized winding, strict
-full-surface audit, and CPU float64. It is an engineering backend, not the authors' specified
-backend and not a real-time production claim.
+| Target hand | Kinematics | Retargeting | Collision | Simulation/RL |
+| --- | --- | --- | --- | --- |
+| Arti-MANO | Supported | Supported | Supported | Not automatically qualified |
+| Wuji Hand2 Beta1 | Supported | Supported | Supported | Offline references and causal-physics lane |
+| Generic URDF/MJCF | Import foundation | Manifest required | Profile required | Not automatically qualified |
 
-Current boundaries: full ContactPose paper benchmark is **NOT_REPRODUCED**; Stage 16 is
-**CONTROLLABILITY_BLOCKED_WITH_BOUNDED_EVIDENCE** after a two-clip functional baseline, while
-HOCap-32 and Pen-Spin remain out of scope and
-paper tables/figures/seeds plus ARCTIC/OakInk2/TACO remain TODO. Real-time retargeting,
-cross-subject/full-dataset production validation, author-exact simulation, and paper-scale RL are
-not claimed.
+External datasets and MANO/SMPL-X models are not redistributed. Keep licensed
+inputs, models, generated data, caches, and local runs outside version control.
 
-## TODO and Full Roadmap
+## Setup
 
-The roadmap describes bounded repository capabilities, not complete paper-result reproduction.
-Detailed stage history and implementation notes are maintained in
-[docs/DEVELOPMENT_LOG.md](docs/DEVELOPMENT_LOG.md), [docs/ROADMAP.md](docs/ROADMAP.md), and
-[docs/stages/](docs/stages/).
-
-| Stage | Capability | Status | Completion definition / next work |
-|---:|---|---|---|
-| 0 | Repository architecture and path policy | Complete | CLI, configuration, asset discovery, import and validation foundations are available. |
-| 1 | Paper-fidelity audit | Complete | Formula, table, assumption and provenance tracking are available. |
-| 2 | Canonical HOI schema and coordinates | Complete, bounded | Canonical rigid-HOI schema and migrations are validated; complex articulated/bimanual extensions remain Stage 13. |
-| 3 | Source hand / MANO to 21-keypoint contract | Complete, bounded | Explicit PCA15/PCA45/axis-angle routing and dataset-native source contracts are validated. |
-| 4 | Robot-hand kinematic/plugin foundation | Complete, bounded | Generic URDF/MJCF loading and validated Arti-MANO/Wuji plugins are available; arbitrary hands still need semantic manifests. |
-| 5 | GRAB adapter | Complete, bounded | Lazy conversion, provenance, source/contact visualization and validation are available. |
-| 6 | Object sampling, collision geometry and SDF | Complete, bounded | Deterministic sampling, exact distance queries and independent audits are available. |
-| 7 | Relative bone-direction warm start | Complete | Eq.1–2 initialization and temporal handling are implemented. |
-| 8 | Interaction graph and Laplacian coordinates | Complete | Eq.3–7 interaction graph and validation are implemented. |
-| 9 | Constrained final refinement | Complete, bounded | Eq.8–9 refinement, slack, active set, strict audits and deterministic recovery are implemented. |
-| 10 | GRAB end-to-end retargeting | Complete, bounded | End-to-end GRAB→Arti-MANO/Wuji reference generation is available. |
-| 11 | Core contract freeze | Complete | CanonicalHOI, DatasetAdapter, RobotHandPlugin, RobotReference and MetricRegistry contracts are frozen. |
-| 12 | Dataset Adapter v1 | Complete | DexYCB, OakInk, HO-Cap and ContactPose adapters are qualified on 8/8 frozen selections with strict final results. |
-| 13 | Complex HOI adapters | DEFERRED | Add ARCTIC, OakInk2 and TACO; extend articulated-object, bimanual and SMPL-X hand extraction contracts. |
-| 14 | Universal robot-hand plugin validation | DEFERRED | Validate additional robot topologies and the full URDF/MJCF plugin capability matrix. |
-| 15 | Baselines and ablations | DEFERRED | Add fair OmniRetarget, Mink, DexPilot, GeoRT and relevant baseline comparisons. |
-| 16 | Reference-tracking PPO | 16.0 functional complete; 16.1 BLOCKED; 16.2/16.3 gate-blocked | Two approved clips are frozen. Frame-0 kinematic replay passes, but zero-residual and oracle free-object qualification fail the shared 5 cm object gate; no long PPO claim is made. |
-| 17 | Paper experiment reproduction | TODO | Reproduce paper tables, figures, seeds, ContactPose benchmark and formal reports. |
-| 18 | Performance and v1.0 release | TODO | Establish production benchmarks, packaging, CI matrices and release criteria. |
-| 19 | Non-paper extensions | TODO | Keep MANO cleanup, SPIDER integration, penetration objectives and other extensions explicitly separated. |
-
-## Stage-16 reference tracking commands
-
-The two approved inputs are fixed at:
-
-```bash
-export STAGE16_ROOT=.local/stage16_reference_tracking_ppo
-export STAGE16_REPORT=.local/reports/stage16_1_3
-export STAGE16_RUN=.local/experiments/stage16_reference_tracking_ppo/stage16_1_3_20260731T192400Z_e605dab
-```
-
-Validate the references and the pre-training actuator profile:
-
-```bash
-conda run -n toporetarget-rl python scripts/rl/validate_reference_clips.py \
-  "$STAGE16_ROOT/references/hocap_170105.stage16.npz"
-conda run -n toporetarget-rl python scripts/rl/validate_reference_clips.py \
-  "$STAGE16_ROOT/references/hocap_170650.stage16.npz"
-conda run -n toporetarget-rl python scripts/rl/qualify_hocap_pd.py \
-  --reference "$STAGE16_ROOT/references/hocap_170105.stage16.npz" \
-  --reference "$STAGE16_ROOT/references/hocap_170650.stage16.npz" \
-  --report "$STAGE16_REPORT/pd_qualification.json"
-```
-
-Run the bounded Stage 16.1 qualification (the current result is
-`STAGE16_1_CONTROLLABILITY_BLOCKED`):
-
-```bash
-conda run -n toporetarget-rl python scripts/rl/qualify_stage16_1.py \
-  --reference "$STAGE16_ROOT/references/hocap_170105.stage16.npz" \
-  --reference "$STAGE16_ROOT/references/hocap_170650.stage16.npz" \
-  --object-mesh "$STAGE16_ROOT/objects/hocap_170105.obj" \
-  --object-mesh "$STAGE16_ROOT/objects/hocap_170650.obj" \
-  --scene-root "$STAGE16_RUN/stage16_1" \
-  --report "$STAGE16_REPORT/stage16_1_controllability.json" \
-  --episodes-per-clip 20 --candidate-episodes 1
-```
-
-Stage 16.2/16.3 training is gate-controlled and must not run while Stage 16.1 is blocked. Once a future run has a completed gate, the executable trainer uses 4 epochs, 32 minibatches, balanced two-clip collection, and only the bounded sample ladder:
-
-```bash
-conda run -n toporetarget-rl python scripts/rl/train_stage16_qualification.py \
-  --stage single --budget 32768 --rollout-steps 320 \
-  --controllability-report "$STAGE16_REPORT/stage16_1_controllability.json" \
-  --reference "$STAGE16_ROOT/references/hocap_170105.stage16.npz" \
-  --object-mesh "$STAGE16_ROOT/objects/hocap_170105.obj" \
-  --scene-root "$STAGE16_RUN/single_170105" \
-  --checkpoint-directory .local/checkpoints/stage16_reference_tracking_ppo/single_170105 \
-  --report "$STAGE16_REPORT/stage16_2_170105_training.json"
-```
-
-Frame-0 evaluation retains failed episodes and supports the formal 20-episode population:
-
-```bash
-conda run -n toporetarget-rl python scripts/rl/evaluate_hocap_reference_policy.py \
-  --checkpoint .local/checkpoints/stage16_reference_tracking_ppo/hocap_t3/best.pt \
-  --reference "$STAGE16_ROOT/references/hocap_170105.stage16.npz" \
-  --reference "$STAGE16_ROOT/references/hocap_170650.stage16.npz" \
-  --object-mesh "$STAGE16_ROOT/objects/hocap_170105.obj" \
-  --object-mesh "$STAGE16_ROOT/objects/hocap_170650.obj" \
-  --scene-root "$STAGE16_RUN/eval_nominal" --episodes-per-clip 20 \
-  --report "$STAGE16_REPORT/highest_functional_checkpoint_eval.json" \
-  --episodes-output "$STAGE16_REPORT/highest_functional_checkpoint_episodes.json"
-```
-
-Interactive MuJoCo and headless inspection use the same CLI. The current highest-level checkpoint is still the old functional T3 checkpoint; it is not a qualified tracker:
-
-```bash
-conda run -n toporetarget-rl python scripts/rl/visualize_hocap_policy_mujoco.py \
-  --policy oracle --reference "$STAGE16_ROOT/references/hocap_170105.stage16.npz" \
-  --object-mesh "$STAGE16_ROOT/objects/hocap_170105.obj" --mode interactive \
-  --start-frame 0 --deterministic --show-reference-ghost --show-axis-points \
-  --show-tracked-links --show-contacts
-conda run -n toporetarget-rl python scripts/rl/visualize_hocap_policy_mujoco.py \
-  --policy checkpoint --checkpoint .local/checkpoints/stage16_reference_tracking_ppo/hocap_t3/best.pt \
-  --reference "$STAGE16_ROOT/references/hocap_170650.stage16.npz" \
-  --object-mesh "$STAGE16_ROOT/objects/hocap_170650.obj" --mode headless \
-  --start-frame 0 --deterministic --show-reference-ghost --show-axis-points \
-  --show-tracked-links --show-contacts --output-frames "$STAGE16_REPORT/visual/t3_170650"
-```
-
-Optional research extensions—morphology-aware warm start, robot-surface contact proxies,
-contact-aware final objectives, and cross-trajectory profile selection—do not block Stage 13.
-
-## Dataset support
-
-| Dataset | Adapter | Source qualification | Strict final qualification | Notes |
-|---|---|---:|---:|---|
-| GRAB | Complete | Validated | Validated | Primary initial dynamic reference dataset |
-| DexYCB | Complete | 2/2 | 2/2 | Native PCA45 and subject-shape routing |
-| OakInk | Complete | 2/2 | 2/2 | Native hand vertices/joints and object transforms |
-| HO-Cap | Complete | 2/2 | 2/2 | PCA45, subject shape and qxyzw object pose |
-| ContactPose | Complete | 2/2 static | 2/2 strict | Static one-frame samples; official joints; paper contact benchmark not reproduced |
-| ARCTIC | TODO | — | — | Stage 13 |
-| OakInk2 | TODO | — | — | Stage 13 |
-| TACO | TODO | — | — | Stage 13 |
-
-## Robot-hand support
-
-| Target | Kinematics | Retarget | Collision | Simulation/RL |
-|---|---|---|---|---|
-| Arti-MANO | Validated | Validated | Validated | Not RL-qualified |
-| Wuji Hand2 Beta1 | Validated | Validated | Validated | Offline reference generation only |
-| Generic URDF/MJCF | Import foundation | Manifest required | Profile required | Not automatically guaranteed |
-
-## Environment setup
-
-### Requirements and installation
-
-- Linux, Git, and Python `>=3.10,<3.14`; Python 3.12 is the maintained local workflow.
-- SciPy, PyTorch, Zarr, trimesh, SMPL-X, and browser/visualization dependencies for the complete
-  pipeline.
-- GRAB and MANO files for real-data runs. Respect their upstream licenses.
-
-Create an isolated environment and install every implemented workflow extra:
+The general workflow uses Python `>=3.10,<3.14`; Python 3.12 is the maintained
+local setup. Isaac Lab uses its separate frozen environment described in the
+[Isaac Lab direct environment contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md).
 
 ```bash
 conda create -n topo-retarget python=3.12 -y
 conda activate topo-retarget
 python -m pip install -U pip
 python -m pip install -e ".[dev,cache,viz,grab,robot,geometry,retarget]"
-```
 
-### Configure local resources
-
-Do not copy licensed data or model files into Git. Set paths directly or create the ignored
-`.local/config.yaml` from [configs/paths.example.yaml](configs/paths.example.yaml):
-
-```bash
 export GRAB_ROOT=/path/to/GRAB
-# GRAB_ROOT is the dataset root consumed by `toporetarget data index`.
 export MANO_MODEL_ROOT=/path/to/body_models/mano
-# MANO_MODEL_ROOT must contain MANO_LEFT.pkl and MANO_RIGHT.pkl.
-
 export PYTHONNOUSERSITE=1
 export PYTHONPATH=src
 export TOPORETARGET_PYTHON="${CONDA_PREFIX}/bin/python"
+export TOPORETARGET_OUTPUT=/path/to/toporetarget-output
 ```
 
-Arti-MANO and Wuji assets are tracked under `third_party/robot_hands/`. Arti-MANO can be
-overridden with `TOPORETARGET_ARTIMANO_ASSET_ROOT`; otherwise the tracked bundle is used.
+Set local paths directly or start from
+[configs/paths.example.yaml](configs/paths.example.yaml). `GRAB_ROOT` must
+contain the licensed dataset; `MANO_MODEL_ROOT` must contain the licensed MANO
+model files.
 
-### Verify the installation and assets
+## Core workflows
+
+Use one explicitly selected sequence at a time. Raw licensed data is read-only;
+write derived caches, reports, and HTML outside the repository, for example
+under `$TOPORETARGET_OUTPUT`.
+
+1. **Preflight the installation and target assets.**
+
+   ```bash
+   "$TOPORETARGET_PYTHON" -m toporetarget doctor paper
+   "$TOPORETARGET_PYTHON" -m toporetarget robots list
+   "$TOPORETARGET_PYTHON" -m toporetarget robots validate wuji_hand2_beta1_rh \
+     --asset-root third_party/robot_hands/wuji_hand2_beta1
+   ```
+
+2. **Convert and inspect one HOI sequence.** This creates a manifest-bound
+   canonical cache without resampling the source sequence.
+
+   ```bash
+   "$TOPORETARGET_PYTHON" -m toporetarget data convert \
+     --dataset grab --sequence <sequence-id> --grab-root "$GRAB_ROOT" \
+     --mano-model-root "$MANO_MODEL_ROOT" \
+     --output "$TOPORETARGET_OUTPUT/<sequence-id>.zarr"
+   "$TOPORETARGET_PYTHON" -m toporetarget data inspect \
+     "$TOPORETARGET_OUTPUT/<sequence-id>.zarr"
+   ```
+
+3. **Run the bounded retargeting workflow.** Inspect the exact options first,
+   then use `plan-grab`, `run-grab`, `status`, and `validate` against the same
+   explicit sequence/window and output root. The workflow is resumable and
+   does not scan or mutate unrelated source data.
+
+   ```bash
+   "$TOPORETARGET_PYTHON" -m toporetarget workflow plan-grab --help
+   "$TOPORETARGET_PYTHON" -m toporetarget workflow run-grab --help
+   "$TOPORETARGET_PYTHON" -m toporetarget workflow status --help
+   "$TOPORETARGET_PYTHON" -m toporetarget workflow validate --help
+   ```
+
+4. **Audit geometry and evaluate a frozen benchmark.** Geometry inspection is
+   read-only; the benchmark follows the explicit `inspect-datasets -> select
+   -> freeze -> run -> evaluate` state machine.
+
+   ```bash
+   "$TOPORETARGET_PYTHON" -m toporetarget geometry --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark inspect-datasets --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark select --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark freeze --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark run --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark evaluate --help
+   ```
+
+5. **Inspect an existing Isaac Lab trace.** Replay is diagnostic only: it does
+   not retrain PPO, alter the trace, or create a new physics qualification.
+
+   ```bash
+   conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
+     python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py --help
+   ```
+
+For the full argument contracts and acceptance boundaries, see
+[configs/README.md](configs/README.md),
+[workflow resume and provenance](docs/WORKFLOW_RESUME_AND_PROVENANCE.md), and
+[the Isaac Lab direct environment contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md).
+
+## Quick start and reproduction
+
+Inspect the available commands and validate the shipped target assets:
 
 ```bash
 "$TOPORETARGET_PYTHON" -m toporetarget --help
@@ -249,383 +167,112 @@ overridden with `TOPORETARGET_ARTIMANO_ASSET_ROOT`; otherwise the tracked bundle
   --asset-root third_party/robot_hands/wuji_hand2_beta1
 ```
 
-## Complete workflow
-
-The main workflow below is command-oriented and contains no historical stage log. Raw GRAB and
-MANO inputs are read-only. Generated artifacts remain under `.local/`.
-
-All required visualization is browser-based, self-contained HTML. The standard is a full-canvas
-scene with a right-side control panel, frame slider/playback, orbit/zoom, source/warm/final
-layers, graph/contact/collision filters, metrics, and provenance—matching the interaction style
-of
-`.local/experiments/wuji_hand2_continuous_v1/html/W1_airplane_lift_continuity_comparison.html`.
-PNG/GIF and temporary Matplotlib windows are not part of this README workflow.
-
-### 1. Select the source clip and target hand
-
-`SEQUENCE`, `START_FRAME`, and `END_FRAME` select the GRAB object/action and native half-open
-window. The examples below use right-hand 60-frame windows; choose another indexed sequence/range
-without resampling or result-based reselection.
-
-```bash
-# Source object/action: change these three values together.
-export SEQUENCE=s1/airplane_lift
-export START_FRAME=240
-export END_FRAME=300
-export HAND=right
-
-# Other fixed examples:
-# apple:      SEQUENCE=s1/apple_eat_1      START_FRAME=212  END_FRAME=272
-# alarmclock: SEQUENCE=s1/alarmclock_lift  START_FRAME=407  END_FRAME=467
-
-# Target family: artimano or wuji.
-export TARGET_FAMILY=artimano
-
-case "${TARGET_FAMILY}:${HAND}" in
-  artimano:right)
-    export ROBOT=artimano_rh
-    export TARGET_ASSET_ROOT=third_party/robot_hands/artimano
-    ;;
-  artimano:left)
-    export ROBOT=artimano_lh
-    export TARGET_ASSET_ROOT=third_party/robot_hands/artimano
-    ;;
-  wuji:right)
-    export ROBOT=wuji_hand2_beta1_rh
-    export TARGET_ASSET_ROOT=third_party/robot_hands/wuji_hand2_beta1
-    ;;
-  wuji:left)
-    export ROBOT=wuji_hand2_beta1_lh
-    export TARGET_ASSET_ROOT=third_party/robot_hands/wuji_hand2_beta1
-    ;;
-  *)
-    echo "unsupported TARGET_FAMILY/HAND pair" >&2
-    return 2 2>/dev/null || exit 2
-    ;;
-esac
-
-export GRAB_INDEX=.local/index/grab
-export SOLVER_PROFILE=scipy_slsqp_active_set_contact_rich_v3_fixed
-```
-
-The data/index and target-validation commands are shared by Arti-MANO and Wuji:
-
-```bash
-"$TOPORETARGET_PYTHON" -m toporetarget data index \
-  --dataset grab --grab-root "$GRAB_ROOT" --output "$GRAB_INDEX"
-
-"$TOPORETARGET_PYTHON" -m toporetarget data validate \
-  --dataset grab --index "$GRAB_INDEX" --sequence "$SEQUENCE" \
-  --hands "$HAND" --mano-model-root "$MANO_MODEL_ROOT" \
-  --contact-mode semantic --start-frame "$START_FRAME" --end-frame "$END_FRAME" \
-  --report .local/reports/preflight/source_validation.json
-
-"$TOPORETARGET_PYTHON" -m toporetarget robots validate "$ROBOT" \
-  --asset-root "$TARGET_ASSET_ROOT" \
-  --report .local/reports/preflight/"${ROBOT}"_validation.json
-```
-
-### 2A. Run the complete Arti-MANO pipeline
-
-The manifest-driven Arti-MANO runner resolves and validates the source, converts canonical
-HOI/MANO semantics, audits object geometry, samples the object and robot collision surfaces,
-generates and validates the warm start, builds/evaluates the frozen interaction graph, performs
-final refinement, runs independent collision/semantic checks, and builds the review bundle.
-Select `TARGET_FAMILY=artimano` in section 1 before running this lane.
-
-Planning is solver-free:
-
-```bash
-test "$TARGET_FAMILY" = artimano
-export RUN_ROOT=.local/runs/artimano
-export WINDOW_LENGTH="$((END_FRAME - START_FRAME))"
-
-"$TOPORETARGET_PYTHON" -m toporetarget workflow plan-grab \
-  --sequence "$SEQUENCE" --index "$GRAB_INDEX" \
-  --hand "$HAND" --robot "$ROBOT" \
-  --start-frame "$START_FRAME" --end-frame "$END_FRAME" \
-  --window-length "$WINDOW_LENGTH" \
-  --refinement-solver-profile "$SOLVER_PROFILE" \
-  --mano-model-root "$MANO_MODEL_ROOT" --run-root "$RUN_ROOT" \
-  --output .local/reports/preflight/workflow_plan.json --dry-run
-```
-
-Run or resume the complete DAG:
-
-```bash
-"$TOPORETARGET_PYTHON" -m toporetarget workflow run-grab \
-  --sequence "$SEQUENCE" --index "$GRAB_INDEX" \
-  --hand "$HAND" --robot "$ROBOT" \
-  --start-frame "$START_FRAME" --end-frame "$END_FRAME" \
-  --window-length "$WINDOW_LENGTH" \
-  --refinement-solver-profile "$SOLVER_PROFILE" \
-  --mano-model-root "$MANO_MODEL_ROOT" --asset-root "$TARGET_ASSET_ROOT" \
-  --run-root "$RUN_ROOT" --resume
-
-RUN_ID="${SEQUENCE//\//__}__${HAND}__${ROBOT}__f$(printf '%06d' "$START_FRAME")_f$(printf '%06d' "$END_FRAME")"
-export RUN_DIR="$RUN_ROOT/$RUN_ID"
-export RUN_MANIFEST="$RUN_DIR/manifest.json"
-```
-
-`workflow run-grab` currently validates Arti-MANO target names by design. Use the suite runner
-below for Wuji; do not substitute a Wuji robot name into this command.
-
-### 2B. Run the complete Wuji pipeline
-
-The generic suite runner executes the same canonical conversion, geometry, warm-start,
-interaction-graph, refinement, validation, export, and HTML evaluation components for the
-frozen right-hand Wuji clips. Select one object with `--unit`, or omit it to run W1/W2/W3.
-
-```bash
-export TARGET_FAMILY=wuji
-export HAND=right
-export ROBOT=wuji_hand2_beta1_rh
-export TARGET_ASSET_ROOT=third_party/robot_hands/wuji_hand2_beta1
-export WUJI_EXPERIMENT_ROOT=.local/experiments/wuji_hand2_grab3_v1
-
-"$TOPORETARGET_PYTHON" -m toporetarget workflow run-grab-suite \
-  --suite configs/experiments/wuji_hand2_grab3_v1.yaml \
-  --grab-root "$GRAB_ROOT" --index "$GRAB_INDEX" \
-  --mano-model-root "$MANO_MODEL_ROOT" \
-  --robot "$ROBOT" --solver-profile "$SOLVER_PROFILE" \
-  --experiment-root "$WUJI_EXPERIMENT_ROOT" \
-  --resume --max-wall-time 1800 \
-  --evaluate --export-reference --generate-html
-
-# To run only the selected airplane example, append:
-# --unit W1_s1__airplane_lift__right__wuji_hand2_beta1_rh__f000240_f000300
-```
-
-The Wuji suite writes its authoritative machine status to
-`$WUJI_EXPERIMENT_ROOT/reports/final_status.json`, exports under `exports/`, and the HTML entry
-point under `html/index.html`.
-
-### 3. Validate, audit, and export an Arti-MANO run
-
-The following checks are manifest-driven and do not alter raw data. JSON/CSV remains
-authoritative; HTML is the visual audit surface.
-
-```bash
-"$TOPORETARGET_PYTHON" -m toporetarget workflow status --run "$RUN_MANIFEST"
-
-"$TOPORETARGET_PYTHON" -m toporetarget workflow validate \
-  --run "$RUN_MANIFEST" \
-  --report "$RUN_DIR/reports/end_to_end_validation.json" \
-  --csv "$RUN_DIR/reports/end_to_end_validation.csv"
-
-"$TOPORETARGET_PYTHON" -m toporetarget workflow audit-contact-retention \
-  --run "$RUN_MANIFEST" \
-  --output-dir "$RUN_DIR/audits/contact_retention" \
-  --surface-samples 8192 --thresholds-mm 1,2,3,5,8,10 \
-  --html --force
-
-"$TOPORETARGET_PYTHON" -m toporetarget workflow export-reference \
-  --run "$RUN_MANIFEST" --format zarr \
-  --output "$RUN_DIR/exports/robot_reference.zarr"
-```
-
-The exported `toporetarget.robot_reference.v1` is an offline trajectory artifact, not a robot
-command stream.
-
-### 4. Generate the unified intermediate/final HTML review
-
-One combined page covers the necessary intermediate and final views: source MANO mesh,
-warm-start target mesh, final target mesh, object context, frozen interaction graph,
-Figure-4-style hand-object edges, Laplacian residuals, per-frame refinement metrics, and
-provenance.
-
-```bash
-"$TOPORETARGET_PYTHON" -m toporetarget workflow visualize-mesh \
-  --run "$RUN_MANIFEST" --mode combined \
-  --output "$RUN_DIR/review/trajectory_comparison.html" \
-  --interactive
-```
-
-The contact audit adds a second self-contained page at
-`$RUN_DIR/audits/contact_retention/trajectory_contact_audit.html`, with source/warm/final,
-visual/collision surfaces, QuerySet, semantic anchors, thresholds, frames, and link/region
-controls. Visual plausibility never replaces the numerical validation and collision reports.
-
-For Wuji, `--generate-html` creates the corresponding full-canvas pages under
-`$WUJI_EXPERIMENT_ROOT/html/`. Open `index.html`; the per-clip pages provide source/warm/final
-layers and the same browser-oriented playback/control pattern.
-
-### 5. Complete the human-review boundary
-
-Machine validation cannot fabricate human acceptance. Generate a template, inspect the combined
-and contact-audit HTML across the required and worst frames, then have a named human reviewer fill
-the copied record:
-
-```bash
-"$TOPORETARGET_PYTHON" -m toporetarget workflow review-template \
-  --run "$RUN_MANIFEST" --output "$RUN_DIR/review/manual_acceptance.template.json"
-
-cp "$RUN_DIR/review/manual_acceptance.template.json" \
-  "$RUN_DIR/review/manual_acceptance.json"
-# A human reviewer now fills manual_acceptance.json; do not auto-write a pass.
-```
-
-Resume the same `workflow run-grab` command from section 2A with:
-
-```text
---manual-acceptance "$RUN_DIR/review/manual_acceptance.json"
-```
-
-Content hashes, selected frame range, source identity, robot/profile identity, solver status,
-collision/continuity gates, and manual-review lineage must all remain valid. A failed gate stays
-failed; do not skip frames, replace objects, or reselect from results.
-
-### 6. Reproduce the implemented evaluation lanes
-
-These are separate frozen evaluations, not hidden steps in the single-run workflow.
-
-Arti-MANO four-clip quality/morphology/contact evaluation:
-
-```bash
-PYTHONNOUSERSITE=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
-"$TOPORETARGET_PYTHON" -m toporetarget quality run-a-to-e \
-  --config configs/experiments/grab_artimano_quality_v1.yaml \
-  --resume --max-wall-time 1800 --generate-html
-
-"$TOPORETARGET_PYTHON" -m toporetarget quality status \
-  --experiment-root .local/experiments/grab_artimano_quality_v1
-# HTML: .local/experiments/grab_artimano_quality_v1/html/index.html
-```
-
-Wuji continuity evaluation and comparison HTML:
-
-```bash
-"$TOPORETARGET_PYTHON" -m toporetarget workflow run-grab-suite \
-  --suite configs/experiments/wuji_hand2_grab3_v1.yaml \
-  --grab-root "$GRAB_ROOT" --index "$GRAB_INDEX" \
-  --mano-model-root "$MANO_MODEL_ROOT" \
-  --robot wuji_hand2_beta1_rh \
-  --solver-profile wuji_continuous_full_state_v1 \
-  --experiment-root .local/experiments/wuji_hand2_continuous_v1 \
-  --resume --max-wall-time 1800 \
-  --evaluate --export-reference --generate-html
-# HTML: .local/experiments/wuji_hand2_continuous_v1/html/index.html
-```
-
-Frozen GRAB/ContactPose benchmark and unified dashboard:
-
-```bash
-export CONTACTPOSE_ROOT=/path/to/ContactPose
-
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark inspect-datasets \
-  --grab-root "$GRAB_ROOT" --contactpose-root "$CONTACTPOSE_ROOT" \
-  --output .local/benchmarks/hoi_benchmark_v1/dataset_audit.json
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark select \
-  --config configs/benchmarks/hoi_benchmark_v1.yaml
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark freeze
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark run --resume
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark evaluate --html
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark dashboard
-```
-
-Selection and attribution gates fail closed. Static ContactPose units and dynamic GRAB units
-remain separate, and GRAB contact proxies are never relabeled as ContactPose ground truth.
-
-### 7. Repository-level audit
+The main offline pipeline is documented in [configs/README.md](configs/README.md)
+and the CLI help. It preserves source data, creates manifest-bound derived
+outputs, and keeps human acceptance as an explicit boundary. For a paper-fidelity
+check, run:
 
 ```bash
 "$TOPORETARGET_PYTHON" scripts/check_paper_fidelity.py
-"$TOPORETARGET_PYTHON" -m pytest -m "not licensed_data"
-"$TOPORETARGET_PYTHON" -m ruff check .
-"$TOPORETARGET_PYTHON" -m ruff format --check .
-"$TOPORETARGET_PYTHON" -m mypy src
-git diff --check
 ```
 
-Licensed-data tests are opt-in and require the configured local GRAB/MANO resources.
+## Visualization
+
+The project generates self-contained browser HTML for source, warm-start, and
+final meshes; interaction graphs; contact and collision diagnostics; continuity;
+and provenance. Use the visualization commands emitted by the selected pipeline
+manifest, then inspect the generated HTML in a browser. Replay of a saved Isaac
+Lab trace is diagnostic visualization only; it does not create a new physical
+qualification.
+
+## Evaluation
+
+The common evaluation entry point is [Evaluation Suite V2](docs/rl/EVALUATION_SUITE_V2.md).
+It reports object rotation and translation tracking, retargeted-hand joint and
+fingertip tracking, plus separate kinematic, physics, and qualified success
+rates. Trajectory metrics use a common world/env frame with the environment
+origin removed; legacy metrics remain available for comparison but are not
+silently redefined.
+
+The Stage 16-D causal PPO pipeline supports reference pose and object-twist
+tracking together with versioned contact rewards. **Aggregate V3 is the current
+stable/default contact baseline** (`aggregate_v3`). **Strict Per-Finger V4 is
+experimental and opt-in** (`strict_per_finger_v4`); it instead uses
+`SourcePerFingerContactEvidenceV1`: only source-confirmed or
+persistent-confirmed MANO/object contact for a named finger requires that same
+Wuji distal/tip body to contact the active object. Probable, transition,
+proximity-only, no-contact, and ambiguous source states are not mandatory V4
+contact semantics.
+
+V4 normalizes independent named-tip rewards by the number of source-required
+fingers. A large force from another finger therefore cannot credit a missing
+required finger or change the total reward scale merely because the source
+requires more fingers. The reward reads only current filtered PhysX
+named-tip-to-active-object pair force and never directly controls the object.
+Its shared per-tip force scale is frozen from exact V1 Formal20 pair-force
+telemetry before PPO.
+
+The completed Stage16-D milestone is a physically causal reference-tracking
+baseline under a frozen simplified **zero-gravity, no-support** Isaac/PhysX
+contract. It has no external object guidance and no rollout-time object-state
+or wrist-root writes. This is not physically realistic, real-world calibrated,
+or full-gravity validation. New configurations use the stable default:
+
+```yaml
+reward:
+  contact:
+    mode: aggregate_v3
+```
+
+To explicitly opt into the experimental objective:
+
+```yaml
+reward:
+  contact:
+    mode: strict_per_finger_v4
+```
+
+Phase-specific terminal-dynamics attribution and detailed results are recorded
+in stage and RL documentation, with machine-readable artifacts kept in ignored
+local storage.
 
 ## Documentation map
 
-- Project planning and history:
-  [roadmap](docs/ROADMAP.md) /
-  [中文路线图](docs/ROADMAP.zh-CN.md),
-  [development log](docs/DEVELOPMENT_LOG.md) /
-  [中文开发日志](docs/DEVELOPMENT_LOG.zh-CN.md),
-  [reproduction log](docs/REPRODUCTION_LOG.md)
-- Paper and contracts:
-  [paper fidelity](docs/PAPER_FIDELITY.md),
-  [implementation specification](docs/PAPER_IMPLEMENTATION_SPEC.md),
-  [assumptions](docs/ASSUMPTIONS.md),
-  [open author questions](docs/OPEN_QUESTIONS_FOR_AUTHORS.md)
-- Data and geometry:
-  [data layout](docs/DATA_LAYOUT.md),
-  [GRAB adapter](docs/GRAB_DATASET_ADAPTER.md),
-  [MANO conversion](docs/MANO_TO_MEDIAPIPE21.md),
-  [object geometry/sampling](docs/OBJECT_GEOMETRY_AND_SAMPLING.md),
-  [signed distance](docs/SIGNED_DISTANCE_AND_COLLISION_QUERIES.md)
-- Retargeting:
-  [relative-bone initialization](docs/RELATIVE_BONE_DIRECTION_INITIALIZATION.md),
-  [interaction graph](docs/INTERACTION_GRAPH.md),
-  [Laplacian loss](docs/LAPLACIAN_INTERACTION_LOSS.md),
-  [final refinement](docs/CONTACT_PRESERVING_FINAL_REFINEMENT.md),
-  [workflow resume/provenance](docs/WORKFLOW_RESUME_AND_PROVENANCE.md)
-- HTML review and audits:
-  [trajectory visualization](docs/TRAJECTORY_VISUALIZATION.md),
-  [interaction-mesh HTML](docs/INTERACTION_MESH_VISUALIZATION.md),
-  [contact-retention audit](docs/CONTACT_RETENTION_AUDIT.md),
-  [warm-start audit](docs/WARM_START_FIDELITY_AND_REACHABILITY_AUDIT.md)
-- Target hands and evaluations:
-  [tracked robot assets](docs/TRACKED_ROBOT_HAND_ASSETS.md),
-  [Arti-MANO adapter](docs/ARTIMANO_ADAPTER.md),
-  [Wuji target](docs/WUJI_HAND2_BETA1_TARGET.md) /
-  [中文 Wuji 目标手](docs/WUJI_HAND2_BETA1_TARGET.zh-CN.md),
-  [Arti-MANO A–E evaluation](docs/GRAB_ARTIMANO_QUALITY_EXPERIMENT.md),
-  [Wuji GRAB retargeting](docs/WUJI_HAND2_GRAB_RETARGETING.md),
-  [Wuji continuity](docs/WUJI_CONTINUOUS_RETARGETING.md)
-- Repository policy:
-  [data/license policy](docs/LICENSE_AND_DATA_POLICY.md),
-  [third-party asset policy](docs/THIRD_PARTY_ASSET_POLICY.md),
-  [contributing](CONTRIBUTING.md),
-  [third-party notices](THIRD_PARTY_NOTICES.md)
+- [Roadmap](docs/ROADMAP.md) — current causal research route and future lanes.
+- [Stage 16-D physics-consistent retargeting](docs/stages/STAGE16D_PHYSICS_CONSISTENT_RETARGETING.md)
+  — physics scope, provenance, and qualification boundary.
+- [Stage16-D causal zero-g milestone](docs/stages/STAGE16D_CAUSAL_ZERO_G_MILESTONE.md)
+  — frozen scope, stable/default V3, experimental V4, and the next physical stage.
+- [Terminal dynamics attribution](docs/stages/STAGE16D_PHASE1_TERMINAL_DYNAMICS.md)
+  — Phase 1 method and conclusions.
+- [PPO-26D reference tracking](docs/rl/REFERENCE_TRACKING_PPO_26D.md) — action,
+  observation, RSI, reward, and gate contracts.
+- [Physics-correction PPO](docs/rl/PHYSICS_CORRECTION_PPO.md) — causal training
+  boundary and decision tree.
+- [Reference-gated contact reward](docs/rl/REFERENCE_GATED_CONTACT_REWARD.md)
+  — V3 contact signal and causal boundary.
+- [Strict per-finger contact reward](docs/rl/STRICT_PER_FINGER_CONTACT_REWARD.md)
+  — V4 source-confirmed contact semantics and independent-finger contract.
+- [Source contact semantics](docs/rl/SOURCE_CONTACT_SEMANTICS.md) — raw
+  MANO/object evidence and frozen factor-eight runtime mapping.
+- [Evaluation Suite V2](docs/rl/EVALUATION_SUITE_V2.md) — shared metric and
+  success contract.
+- [Paper fidelity and engineering adaptations](docs/PAPER_FIDELITY.md) — what
+  follows the paper and what is explicitly adapted.
 
-Detailed stage history and implementation notes are maintained in:
+## README document policy
 
-- [docs/DEVELOPMENT_LOG.md](docs/DEVELOPMENT_LOG.md)
-- [docs/ROADMAP.md](docs/ROADMAP.md)
-- [docs/stages/](docs/stages/)
-- [solver feasibility note](docs/SOLVER_FEASIBILITY_RESTORATION.md)
-- [Stage 16 reference-tracking PPO](docs/stages/STAGE16_REFERENCE_TRACKING_PPO.md)
+README files are stable project entry documents; experiment logs and
+run-specific metrics live outside README, in stage documentation and local
+machine-readable reports.
 
 ## License
 
-Repository code and documentation are released under the GNU General Public License v3.0; see
-[LICENSE](LICENSE). Tracked third-party assets retain their upstream licenses and notices under
-`third_party/robot_hands/`. GRAB, MANO/SMPL-X, ContactPose, ManipTrans, and other external
-resources remain subject to their own terms. Read
-[docs/LICENSE_AND_DATA_POLICY.md](docs/LICENSE_AND_DATA_POLICY.md) and
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) before use.
-
-## Acknowledgments
-
-We thank:
-
-- the authors of [TopoRetarget](https://toporetarget2026.github.io/TopoRetarget/);
-- the GRAB, MANO/SMPL-X, and ContactPose authors and maintainers;
-- the ManipTrans project and the upstream Arti-MANO asset contributors;
-- the Wuji Hand2 upstream asset contributors identified in the tracked provenance manifests.
-
-Preserve upstream attribution and comply with every dataset, model, code, and asset license.
+See [LICENSE](LICENSE). Respect the licenses of upstream datasets, models,
+robot assets, and dependencies.
 
 ## Citation
 
-If this repository or its implementation notes are useful, cite the TopoRetarget paper:
-
-```bibtex
-@article{wu2026toporetarget,
-  title   = {TopoRetarget: Interaction-Preserving Retargeting for Dexterous Manipulation},
-  author  = {Wu, Jielin and Yao, Shenzhe and He, Guanqi and Liu, Xiaohan and Zeng, Zhaoqing
-             and Jiang, Xiangrui and Yang, Han and Zhang, Wentao and Zhao, Hang},
-  journal = {arXiv preprint arXiv:2606.16272},
-  year    = {2026},
-  doi     = {10.48550/arXiv.2606.16272}
-}
-```
-
-Also cite each dataset, body model, target-hand asset, and upstream implementation used in your
-experiment. The local paper copy is [docs/TopoRetarget.pdf](docs/TopoRetarget.pdf), and upstream
-references are listed in [docs/UPSTREAM_REFERENCES.md](docs/UPSTREAM_REFERENCES.md).
+Please cite the original TopoRetarget paper for the method. Cite this repository
+according to its release metadata when using its implementation or derivative
+artifacts.

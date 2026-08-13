@@ -1,0 +1,11 @@
+schema_version: Stage16DRecoveryStateMachine
+failure_repairs_max: 3
+phase_reruns_max: 5
+reward_profiles_max: 3
+knot_levels_max: 3
+optimizer_global_upgrades_max: 2
+ppo_seeds_max_per_clip: 2
+ppo_learning_rate_fallback_max: 1
+ppo_samples_max_per_run: 67108864
+major_transitions_max: 48
+fail_closed: [source_hash_drift, generated_asset_corruption, hidden_object_control, hidden_wrist_or_object_state_writes, source_overwrite, reward_exploit, action_contract_mutation, unauthorized_physics_mutation, unrelated_process_termination]

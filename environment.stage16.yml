@@ -16,7 +16,9 @@ dependencies:
       - trimesh==4.12.2
       - zarr==2.18.7
       - numcodecs==0.15.1
+      - pyarrow==19.0.1
       - imageio==2.37.0
+      - imageio-ffmpeg==0.6.0
 
 # Reproduction note: the local audit selected MuJoCo CPU correctness mode.
 # The paper does not disclose its simulator, solver, or version.

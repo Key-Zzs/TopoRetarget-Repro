@@ -1,0 +1,21 @@
+schema_version: toporetarget.stage16c5a.recovery.v1
+identifier: Stage16C5ARecoveryStateMachine
+budgets:
+  repairs_per_failure_class: 3
+  phase_reruns: 5
+  implementation_strategies: 3
+failure_classes:
+  source_hash_drift: fail_closed
+  reference_hash_drift: fail_closed
+  candidate_setup_write_outside_candidate_ids: fail_closed
+  execution_rollout_direct_state_write: fail_closed
+  physx_replication_baseline_nondeterminism: fail_closed
+  tensor_clone_contact_mismatch: history_replay_fallback
+  candidate_pool_aliasing: bounded_repair
+  o0_bookkeeping: bounded_repair
+prohibited:
+  - tolerance_softening
+  - hidden_object_control
+  - execution_wrist_teleport
+  - cem
+  - ppo

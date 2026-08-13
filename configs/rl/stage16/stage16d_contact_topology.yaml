@@ -1,0 +1,7 @@
+schema_version: PersistentContactTopologyConfigV1
+groups: [thumb, index, middle, ring, pinky, palm]
+features: [coverage, duration, onset_order, persistence, final_coverage]
+filters: [very_short_transient, source_deep_penetration_single_frame, reference_ghost, self_contact, inactive_object]
+minimum_persistence_formula: ceil(0.50 * longest_source_contact_run)
+required_group_formula: groups_with_maximum_source_step_count
+raw_point_precision: aggregate_object_force_only_point_contacts_unavailable

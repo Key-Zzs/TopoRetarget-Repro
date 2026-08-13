@@ -65,3 +65,18 @@ PYTHONNOUSERSITE=1 \
 `STAGE12_RUN_NAS_TESTS=1`，并标记为 `licensed_data`。所有有界运行完成后，不带筛选
 参数执行 `--aggregate-only` 可在不重跑求解的前提下重建八条轨迹的
 `stage12_summary.json` handoff，其中包含 Wuji 完成率、报告和 HTML 路径以及逐轨迹指标。
+
+## 修复旧 primary-object HTML
+
+如果历史运行早于显式 `primary_object` 契约，可使用
+`scripts/repair_stage12_primary_object_viewer.py` 只重建 viewer 派生的物体采样、
+interaction graph、evaluation 和 HTML。脚本在 `repairs/` 下建立版本化修复谱系，不修改
+canonical、source、warm 或 final。传入 `--replace-html` 后，脚本会先把旧 viewer 归档到
+`html/archive/`，通过带物体 ID 的 smoke check 后再原子替换旧路径。
+
+```bash
+conda run --no-capture-output -n toporetarget-rl \
+python scripts/repair_stage12_primary_object_viewer.py \
+  --selection-root .local/experiments/stage12_source_v2_v4_formal/stage12_source_v2_v4_20260731T065250Z_65b700d9_dd266bc39db9/hocap/hocap_subject_1_20231025_170105 \
+  --primary-object G10_2 --replace-html
+```

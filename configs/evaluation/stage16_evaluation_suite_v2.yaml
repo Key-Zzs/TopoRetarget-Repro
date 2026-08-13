@@ -1,0 +1,24 @@
+schema_version: TopoRetargetEvaluationSuiteV2
+coordinate_convention: common_world_frame_after_env_origin_removal
+primary_aggregation: mean_over_observed_valid_trajectory_frames
+metrics:
+  E_r: raw_object_orientation_SO3_geodesic_deg
+  E_t: object_root_origin_euclidean_cm
+  E_j: EvaluationJointSetV1_euclidean_cm
+  E_ft: EvaluationFingertipSetV1_euclidean_cm
+thresholds:
+  E_r_strictly_less_than_deg: 30
+  E_t_strictly_less_than_cm: 3
+  E_j_strictly_less_than_cm: 8
+  E_ft_strictly_less_than_cm: 6
+physics:
+  require_terminal_contact: true
+  require_terminal_stability: true
+  require_contact_causality: true
+  require_inter_finger_penetration_safety: true
+  require_absolute_hand_object_penetration_safety: true
+  require_action_bounds: true
+  require_no_hidden_force: true
+  require_no_object_rollout_state_write: true
+  require_no_wrist_root_teleport: true
+future_bimanual: object_and_left_hand_and_right_hand

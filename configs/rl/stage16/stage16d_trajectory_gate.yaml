@@ -1,0 +1,13 @@
+schema_version: Stage16DTrajectoryGateV1
+replicas: 20
+seed_success_rate: 0.80
+semantic_reach_rate: 0.80
+contact_topology_pass_rate: 0.80
+catastrophic_penetration_m: 0.010
+p95_penetration_m: 0.003
+source_max_penetration_relative_degradation: 0.10
+partial_seed:
+  task_success_rate: 0.30
+  contact_topology_recall: 0.50
+  requires_nonzero_task_progress: true
+hard: [contact_causality, terminal_stability, no_hidden_control, no_formal_state_writes, action_bounds, complete_321_trace]

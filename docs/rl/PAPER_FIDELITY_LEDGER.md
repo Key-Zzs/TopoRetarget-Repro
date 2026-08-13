@@ -26,3 +26,85 @@ functional T3 run is frozen separately and is not evidence of tracking qualifica
 | Pen-Spin clips | private, 32 | unavailable, fail closed | UNRESOLVED | A.4, p. 13 |
 
 `PAPER_EXACT` means the public statement is implemented literally; it does not imply author-code, asset, data, or result equivalence.
+
+## Stage 16-B world wrist-and-finger ledger
+
+| Item | Paper value | Implemented mapping | Classification | Evidence |
+| --- | --- | --- | --- | --- |
+| World wrist reference | not specified | `WorldWristFingerReferenceV1`, direct Stage-12 `base_pose_scene` export | ENGINEERING_EXTENSION | `scripts/rl/export_stage16_world_wrist_reference.py` |
+| Wrist actuation | not specified | `CartesianWristImpedanceController`, finite world wrench | ENGINEERING_EXTENSION | `world_wrist_backend.py` |
+| 26D action | not specified | 6D local wrist residual + original 20D finger residual | ENGINEERING_EXTENSION | `WristFingerActionScaleV1` |
+| World/relative features | not specified | `WorldWristObservationContractV1` (764D) | ENGINEERING_EXTENSION | `REFERENCE_TRACKING_MDP.md` |
+| Dynamic scene | not specified | MuJoCo 3.3.6, zero gravity, no ground, free object | ENGINEERING_ASSUMPTION | `wrist_model_validation.json` |
+| Adaptive oracle gate | not specified | shared state-only terminal-contracted H1/H5/H10 CEM with gate-first selection | ENGINEERING_DIAGNOSTIC | `stage16b_adaptive_oracle_single_ppo/adaptive_oracle_evaluation.json` |
+| Nominal simulator profile | not specified | `world_wrist_freebody_nominal_v1`; 0.05 kg, mesh inertia, zero gravity/support/damping | ENGINEERING_ASSUMPTION | `nominal_dynamics_profile.json` |
+| Per-clip PPO | Appendix A.5 does not specify this 26D extension | gate not authorized; 0 samples and no checkpoints | NOT_STARTED_GATE_BLOCKED | `ppo_contract.json` |
+| MuJoCo backend role | not specified | correctness, deterministic regression, contact diagnostics, action replay, visualization | ENGINEERING_INFRASTRUCTURE | Stage 16-B.1c closeout |
+| Isaac Lab GPU lane | not specified | independent Stage 16-C platform/PhysX qualification before PPO | ENGINEERING_EXTENSION | Stage 16-C roadmap |
+
+Stage 16-B preserves the Stage-16A ledger and is not a paper-fidelity upgrade.
+Its authoritative result is
+`STAGE16B_ADAPTIVE_MULTI_HORIZON_ORACLE_PARTIAL`; `170650` passes while
+`170105` does not under the frozen MuJoCo model and bounded search. PPO did not
+start. This MuJoCo result cannot authorize Isaac Lab PPO, and no PhysX result
+is claimed.
+
+## Stage 16-D engineering-extension ledger
+
+| Item | Paper value | Implemented mapping | Classification | Evidence |
+| --- | --- | --- | --- | --- |
+| Physics-consistent object correction | not specified | source object path is a soft prior; free PhysX rollout is output | ENGINEERING_EXTENSION | `PHYSICS_CONSISTENT_RETARGETING.md` |
+| Semantic/contact extraction | not specified | shared generic fallback from sparse C3 traces | ENGINEERING_DIAGNOSTIC | ignored Stage 16-D semantic reports |
+| Robust spline optimizer | not specified | 16 knots, population 64, four replicas, five iterations | ENGINEERING_DIAGNOSTIC | ignored Stage 16-D optimizer reports |
+| Penetration qualification | not specified | convex collision-proxy lower bound; formal gate blocked | UNRESOLVED | ignored Stage 16-D geometry audits |
+| Physics-correction PPO | Appendix A.5 does not specify this corrected-object task | not run; 0 samples, no checkpoints | NOT_STARTED_GATE_BLOCKED | ignored Stage 16-D PPO reports |
+| Physical parameters | not specified | nominal uncalibrated mass, inertia, and friction | ENGINEERING_ASSUMPTION | Stage 16-C asset manifest |
+
+Stage 16-D changes the engineering task and is not a paper-fidelity upgrade.
+Factor-8 changes timing; the virtual wrist is not a physical arm; partial
+simulation trajectories are not real-robot data or PPO data; no sim-to-real
+claim is made.
+
+### Stage 16-D.5 PPO-26D update
+
+| Item | Paper value | Implemented mapping | Classification | Evidence |
+| --- | --- | --- | --- | --- |
+| Reference-residual PPO | Appendix A.5 / Tables 4–6 | paper object/link/joint/smoothness terms, RSI and PPO | PAPER_EXACT | `docs/TopoRetarget.pdf`, pp. 13–16 |
+| Wrist residual | finger residual only | 3 translation + 3 rotation-vector residual composed with reference SE(3) | ENGINEERING_ADAPTATION | `Stage16DReferenceResidualAction26DV1` |
+| Explicit virtual wrist | fixed/given base | serial 3P+3R target through existing SE(3) adapter | ENGINEERING_ADAPTATION | `explicit_virtual_wrist.py` |
+| Factor-8 timing | 400-step, 20 s reference | immutable 41-key source materialized at 321 × 20 Hz | ENGINEERING_ADAPTATION | `WorldWristReferenceBank` |
+| IsaacLab backend | author backend not disclosed | GPU PhysX `DirectRLEnv` | ENGINEERING_ADAPTATION | Stage 16-C platform contract |
+
+The D.5 claim is `TOPORETARGET_PPO_REPRODUCTION_WITH_26D_WRIST_ADAPTATION`,
+not exact author reproduction. Unimplemented IsaacLab randomization mappings
+remain `PAPER_FIDELITY_PARTIAL` and are never represented as paper-exact.
+
+## Stage 16-C.0 Isaac Lab platform ledger
+
+| Item | Paper value | Implemented mapping | Classification | Evidence |
+| --- | --- | --- | --- | --- |
+| GPU simulator platform | not specified | Isaac Sim 5.1.0 + Isaac Lab v2.3.2 | ENGINEERING_INFRASTRUCTURE | `isaaclab_platform.yaml` |
+| Python/Torch runtime | not specified | Python 3.11.15, Torch 2.7.0 cu128 | ENGINEERING_INFRASTRUCTURE | environment manifests |
+| GPU PhysX smoke | not specified | finite official headless platform smoke only | ENGINEERING_DIAGNOSTIC | Stage 16-C.0 report bundle |
+| 128-env vector smoke | not specified | official task, CUDA tensors, independent actions/resets | ENGINEERING_DIAGNOSTIC | `vector_env_benchmark.json` |
+| Stage-16 assets | not specified | C.1 floating Wuji plus two nominal HO-Cap objects with deterministic convex proxies | ENGINEERING_EXTENSION | Stage 16-C.1 report bundle |
+| Stage-16 task/oracle/PPO | not specified | prohibited through C.1 | NOT_STARTED_SCOPE_BLOCKED | frozen C.1 scope |
+
+## Stage 16-C.2/C.3 DirectRLEnv ledger
+
+| Item | Paper value | Implemented mapping | Classification | Evidence |
+| --- | --- | --- | --- | --- |
+| 26-D action | not specified | 3 local translation, 3 local SO(3) log, 20 canonical fingers | ENGINEERING_EXTENSION | `isaaclab_world_wrist_env.yaml` |
+| finite wrist wrench | not specified | global 250 N/m, 2 Nm/rad with frozen limits | ENGINEERING_ASSUMPTION | `isaaclab_world_wrist_control.yaml` |
+| C.2 task shell | not specified | real GPU `DirectRLEnv`, 1/128-env finite smokes | ENGINEERING_EXTENSION | C.2 local report bundle |
+| C.3 original timing | not specified | C3-0/readout validate; explicit serial 3P+3R computed-torque and bounded-preview paths fail both clips | ENGINEERING_DIAGNOSTIC | C3R4 local closeout bundle |
+| C.3 authorized retiming | not specified | shared factor 8, immutable 41 source keys/hashes, derived 321-sample 20 Hz view; C3-0--C3-5 pass as `STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED` | ENGINEERING_EXTENSION | C3R5 local qualification bundle |
+| C.4 GPU vector backend | not specified | `STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`; 128/512/1024/2048/4096 clean/finite, selected 4096 x 16; 700.35 samples/s at 4096 under shared GPU load | ENGINEERING_INFRASTRUCTURE | C3R5/C4 local benchmark bundle |
+| C.5A-R1 | not specified | frozen inputs, candidate-state contract, CUDA O0 1/32/96/144, repaired harness, single-env/origin/cross-process/telemetry controls pass; same-process 33-env natural baseline diverges after contact and exceeds hard caps, so O1/history replay/benchmark stop | ENGINEERING_DIAGNOSTIC_BLOCKED | C5A-R1 local closeout: `STAGE16C5A_PHYSICS_CONTRACT_CHANGE_REQUIRED` |
+| C.5B/C.6 | not specified | Oracle evaluator and PPO are not authorized; no CEM, Oracle episodes, samples, or checkpoints | NOT_STARTED_GATE_BLOCKED | C5A closeout |
+
+C.0 is not a paper-fidelity upgrade and is not evidence that the Stage-16
+task is controllable in PhysX. Its current result is
+`STAGE16C0_ISAACLAB_PLATFORM_VALIDATED_WITH_LIMITATIONS`; C.1 then validates
+asset migration only. C.1 preserves nominal dynamics whose physical provenance
+is unresolved and uses measured collision proxies. It cannot authorize PPO.

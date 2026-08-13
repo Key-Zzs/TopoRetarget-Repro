@@ -29,8 +29,15 @@ class ActorCritic(nn.Module):
     def value(self, observations: torch.Tensor) -> torch.Tensor:
         return self.critic(observations).squeeze(-1)
 
+    def action_location(self, observations: torch.Tensor) -> torch.Tensor:
+        """Return the unbounded latent Gaussian location."""
+
+        return self.actor(observations)
+
     def mean(self, observations: torch.Tensor) -> torch.Tensor:
-        return torch.tanh(self.actor(observations))
+        """Return the bounded deterministic action."""
+
+        return torch.tanh(self.action_location(observations))
 
 
 __all__ = ["ACTOR_HIDDEN", "CRITIC_HIDDEN", "ActorCritic"]

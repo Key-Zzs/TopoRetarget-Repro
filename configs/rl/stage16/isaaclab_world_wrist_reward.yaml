@@ -1,0 +1,7 @@
+schema_version: toporetarget.stage16c2.reward.v1
+object: {weight: 8.0, sigma_m: 0.04}
+tracked_links: {weight: 1.0, sigma_m: 0.025}
+finger_joints: {weight: 1.0, sigma_normalized: 0.10}
+wrist_position: {weight: 2.0, sigma_m: 0.02}
+wrist_rotation: {weight: 1.0, sigma_deg: 10.0}
+action_smoothness: {weight: -0.01}

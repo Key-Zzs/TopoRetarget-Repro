@@ -1,0 +1,31 @@
+schema_version: toporetarget.stage16c3.identified_inverse_wrench.v1
+profile:
+  identifier: identified_inverse_wrench_v1
+  actuation: floating_external_wrench
+  implementation_budget: 1
+  qualification_runs_budget: 2
+  probe:
+    num_envs: 12
+    frame_indices: [0, 10, 20, 30, 40]
+    signed_axes: [+Fx, -Fx, +Fy, -Fy, +Fz, -Fz, +Tx, -Tx, +Ty, -Ty, +Tz, -Tz]
+    force_amplitude_n: 0.25
+    torque_amplitude_nm: 0.05
+    finger_conditions: [finger_locked_hold_target, finger_reference_target_active]
+  controller:
+    translation_position_gain_s2: 100.0
+    translation_damping_ratio: 1.0
+    rotation_position_gain_s2: 36.0
+    rotation_damping_ratio: 1.0
+    force_limit_n: 50.0
+    torque_limit_nm: 6.0
+    singular_value_relative_cutoff: 0.001
+    condition_number_max: 4000.0
+    regularization_candidates:
+      lambda_1: 0.10
+      lambda_2: 0.50
+selection_rule: worst_clip_gate_then_condition_then_saturation_then_smoothness
+prohibitions:
+  - no_pose_write_during_execution_rollout
+  - no_velocity_write_during_execution_rollout
+  - no_clip_specific_gain_or_limit
+  - no_third_qualification_run

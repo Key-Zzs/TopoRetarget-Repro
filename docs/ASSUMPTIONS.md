@@ -287,12 +287,15 @@ exactness remains unresolved.
 
 ## Stage 16 reference-tracking PPO boundary
 
-The current Stage 16 qualification status is `STAGE16_BLOCKED_WITH_BOUNDED_EVIDENCE`.
-Both approved 41-frame HO-Cap references pass the kinematic contract, but the shared
-MuJoCo free-object setup fails the frame-0 zero-residual and object-blind oracle gate at
-approximately 13–15% progress. Stage 16.2/16.3 training is therefore gate-blocked; this
-does not diagnose PPO failure. The current environment and per-object mesh remain engineering
-assumptions and are not author-exact simulation evidence.
+The current Stage 16 qualification status is `STAGE16_1_CONTROLLABILITY_BLOCKED`.
+Both approved 41-frame HO-Cap references pass the kinematic contract and the dynamic-hand /
+kinematic-object PD isolation. In the shared MuJoCo free-object setup, however, frames 0/5/10
+have no actual or expected hand–object proximity contact under the bounded global preload grid,
+while the free object crosses the unchanged 5 cm gate at frame 5 or 6. The recorded root cause
+is `REFERENCE_DYNAMICAL_INFEASIBILITY` for the current fixed-base, 20D residual-action, contact
+assumptions. Stage 16.2/16.3 training is therefore gate-blocked; this does not diagnose PPO
+failure. The environment, per-object collision mesh, preload, and selected velocity reset remain
+engineering assumptions rather than author-exact simulation evidence.
 
 Stage 16 preserves the paper-exact Appendix A.5 values in
 configs/paper/rl.yaml and records its additional choices in
@@ -302,3 +305,133 @@ settings, and Pen-Spin data are not published. MuJoCo 3.3.6, fixed 5 cm axis
 points, a frozen palm-plus-finger link profile, and the listed PPO defaults are
 engineering assumptions. The implementation must report
 PAPER_PROTOCOL_REPRODUCTION_WITH_ASSUMPTIONS rather than author-exact results.
+
+## Stage 16-B world wrist-and-finger assumptions
+
+- `WORLD_WRIST_FINGER_TRACKING_PROTOCOL` is an `ENGINEERING_EXTENSION`; it
+  does not modify the preserved `paper_finger_only_base_relative_v1` profile.
+- The 6D wrist is a free MuJoCo body driven by a finite Cartesian wrench. It
+  is not a robot-arm model, calibration, torque controller, or sim-to-real
+  claim.
+- World wrist/object motion is exported directly from accepted Stage-12
+  `RobotReferenceV2` fields and resampled to 20 Hz. Quaternion convention is
+  active right-handed WXYZ with deterministic shortest-rotation sign.
+- The dynamic scene uses zero gravity, no synthetic ground, the original
+  derived object mesh, a 0.05 kg object, and a global finite-wrench profile.
+  These are engineering assumptions, not author-exact simulator details.
+- PPO optimization does not intrinsically require physically identified
+  parameters, but simulator rollouts require a frozen model. The nominal model
+  permits functional oracle/PPO work; unresolved physical provenance still
+  blocks real-dynamics, force-accuracy, and sim-to-real claims. Full dynamics
+  randomization remains future work.
+- Formal post-reset rollout never writes object pose or velocity. W1
+  exogenous wrist playback and kinematic-object paths are diagnostics only.
+- 20 cm wrist-position and 90 degree wrist-orientation limits are safety
+  engineering gates. The reported oracle failure at that gate cannot be
+  relabelled as PPO failure.
+- The shared adaptive H1/H5/H10 oracle and its single 48x4 global upgrade are
+  bounded MuJoCo diagnostics. The final result is `170105` 0/20 at 82.5% and
+  `170650` 20/20. Its partial result does not prove physical
+  impossibility and cannot authorize a policy in another simulator.
+- MuJoCo is retained as a correctness/debug/reference backend. Planned
+  GPU-parallel training uses an independently qualified Isaac Lab/PhysX lane;
+  bitwise MuJoCo/PhysX equality is not assumed, and semantic parity plus a new
+  PhysX oracle are required.
+- Stage 16-C.0 implements no custom asset or task. Stage 16-C.1 separately
+  migrates Wuji and the two HO-Cap objects, but still implements no custom
+  `DirectRLEnv`, PhysX oracle, or Isaac Lab PPO.
+
+## Stage 16-C.0 Isaac Lab platform assumptions
+
+- Isaac Sim 5.1.0 and Isaac Lab v2.3.2 are a frozen reproducibility stack for
+  this engineering qualification. Their use does not identify the simulator,
+  contact solver, or low-level controller used by the paper.
+- The pip-installed CUDA 12.8 runtime is isolated from the host's system CUDA.
+  C.0 never upgrades the NVIDIA driver, kernel, glibc, or system toolchain.
+- A successful official Cartpole smoke proves platform import, stepping,
+  tensor placement, GPU PhysX selection, and vectorization only. It does not
+  prove Wuji/HO-Cap asset compatibility, Stage-16 semantic parity, contact
+  controllability, or PPO learnability.
+- The 128-environment gate requires unique environment origins, independent
+  action rows, and a non-synchronized subset reset event. Merely setting
+  `num_envs=128` is not accepted as parallel-execution evidence.
+- Interactive viewer availability is a soft host limitation. Headless GPU
+  execution, CUDA tensors, and 128-environment evidence are hard gates.
+- NVIDIA EULA acceptance is outside the reusable bootstrap. The verifier sets
+  `OMNI_KIT_ACCEPT_EULA=YES` only for the explicitly authorized runtime process
+  and records the decision. This does not include privacy or telemetry consent.
+
+## Stage 16-C.1 Isaac Lab asset assumptions
+
+- Wuji visual geometry and articulation topology come from the frozen upstream
+  release. Deterministic support-direction convex proxies replace high-poly
+  collision meshes because bounded GPU cooking did not finish; this is an
+  engineering collision approximation, not author-exact geometry.
+- HO-Cap OBJ meshes remain the visual source of truth. Their single convex-hull
+  proxies have measured support-gap deviations and are not watertight repairs.
+- Object mass, inertia, COM, friction, zero gravity, no-ground and no-support
+  values are frozen cross-backend engineering assumptions. Their physical
+  provenance is unresolved and blocks real-dynamics and sim-to-real claims.
+- 128-env platform spawning proves asset instancing, CUDA state tensors,
+  distinct origins and subset-reset isolation. It does not prove Stage-16 task
+  semantics, controllability, or PPO learnability.
+
+## Stage 16-C.2/C.3 DirectRLEnv assumptions
+
+- The C.2 action uses a 3-D local wrist translation residual (0.01 m), a local
+  SO(3) logarithmic wrist residual (5 degrees), and the frozen canonical 20-D
+  finger order (10 percent of each range). Joint-order conversion is explicit.
+- The global finite-wrench wrist controller uses 250 N/m, damping ratio 1.0,
+  2 Nm/rad, damping ratio 0.5, 25 N and 1.5 Nm limits, and unit reference-twist
+  feed-forward. These are engineering values, not paper or hardware control.
+- C.2 writes object/wrist root state only during reset. The separate C.3
+  kinematic-object diagnostic is explicitly non-formal and records its own
+  state writes; it cannot demonstrate free-object contact controllability.
+- C3-0 derived-FK replay and C.3R2 object-centric contact readout are validated
+  engineering diagnostics. Under the original source timing, the permitted
+  explicit serial 3P+3R fallback fails both full-articulation computed-torque
+  profiles and the single bounded-preview architecture; independent local-
+  model holdout also fails. This remains immutable C3R4 historical evidence.
+- The user separately authorized one global factor-8 reference retiming for
+  C3R5. Source NPZs, hashes and 41 spatial keys are unchanged; the derived
+  runtime view has 321 samples at 20 Hz. This is an engineering structural
+  choice, not a paper value. With unchanged gains, effort bounds and gates,
+  both clips pass wrist/finger/link tracking and task-level aggregate contact
+  causality. The current C.3 state is
+  `STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED`. Aggregate angular causality is
+  approximate because no contact point is available. C.5A-R1 validates its
+  candidate-state contract and O0 isolation, repairs the harness, and passes
+  single-env, origin, cross-process, and telemetry controls. The same-process
+  33-env natural baseline still exceeds hard caps after contact, producing
+  `STAGE16C5A_PHYSICS_CONTRACT_CHANGE_REQUIRED` with reason
+  `TRUE_FROZEN_PHYSX_BASELINE_NONDETERMINISM`. O1/C5B/C5C and C.6 PPO remain
+  unauthorized, and tolerances are not softened.
+
+## Stage 16-D assumptions
+
+- `A_STAGE16D_OBJECT_CORRECTION_001`: the source object world path is a soft
+  prior; the corrected path is generated only by free PhysX contact. This is
+  an engineering goal change, not a paper-specified objective.
+- `A_STAGE16D_GEOMETRY_METRIC_001`: the authored runtime convex collision
+  proxies, not the visual meshes or Stage 12 SDF, are formal authority for
+  `RuntimeCollisionProxyPenetrationV1`. Source and corrected paths use the same
+  shapes, transforms, pair filter, signed backend, tolerance, and aggregation.
+  This is a simulator collision-proxy metric and is not true visual-mesh
+  penetration; non-watertight visual geometry is unsigned diagnostic evidence.
+- `A_STAGE16D_PHYSICAL_PARAMETERS_001`: object mass, inertia, and friction are
+  engineering-nominal and uncalibrated. Empirical replay cannot establish
+  physical provenance.
+- Factor-8 changes time semantics; the virtual 3P+3R wrist is not a real arm;
+  partial simulation trajectories are neither real-robot nor PPO data; no
+  sim-to-real claim is made.
+- `A_STAGE16D_GEOMETRY_ATTAINABILITY_002`: same-metric comparability does not
+  establish that kinematic source overlap is a valid dynamic-contact limit.
+  D.4R2 did not prove V1 with required topology and did not establish the
+  stable shared dynamic floor required for V2. The absolute 10 mm/3 mm gate is
+  unchanged; no corrected candidate value defines a threshold.
+- `A_STAGE16D_STABLE_GRASP_003`: D.4R3 stable-grasp calibration is an
+  engineering contract probe, not a task trajectory. Its 20 frozen C1/C2
+  development candidates produced no complete stability pass. No empirical
+  dynamic-contact reference or V2 threshold was created from failed traces.
+  The free object, reset-only initialization, exact metric, controller,
+  physics, collision proxies, and absolute gates remain unchanged.

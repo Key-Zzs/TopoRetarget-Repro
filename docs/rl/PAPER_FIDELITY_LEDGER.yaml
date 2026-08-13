@@ -17,3 +17,111 @@ items:
   - {id: object_axis_profile, classification: ENGINEERING_ASSUMPTION, evidence: "not disclosed", mapping: "object_axis_points_v1"}
   - {id: simulator, classification: ENGINEERING_ASSUMPTION, evidence: "not disclosed", mapping: "mujoco_cpu_reference"}
   - {id: pen_spin, classification: UNRESOLVED, evidence: "private dataset", mapping: "STAGE16_PENSPIN_DATA_UNAVAILABLE"}
+world_wrist_finger_extension:
+  label: ENGINEERING_EXTENSION
+  protocol: WORLD_WRIST_FINGER_TRACKING_PROTOCOL
+  status: STAGE16B_ADAPTIVE_MULTI_HORIZON_ORACLE_PARTIAL
+  preserves_profile: paper_finger_only_base_relative_v1
+  paper_method: false
+  world_wrist_reference: {classification: ENGINEERING_EXTENSION, mapping: "WorldWristFingerReferenceV1"}
+  finite_wrench_wrist: {classification: ENGINEERING_EXTENSION, mapping: "CartesianWristImpedanceController"}
+  action_26d: {classification: ENGINEERING_EXTENSION, mapping: "6D wrist residual plus 20D finger residual"}
+  world_relative_observation: {classification: ENGINEERING_EXTENSION, mapping: "WorldWristObservationContractV1"}
+  oracle: {classification: ENGINEERING_DIAGNOSTIC, mapping: "shared state-only terminal-contracted adaptive H1/H5/H10 CEM"}
+  oracle_results: {hocap_170105: "selected 32x3: 0/20 fail at 80 percent, axis 5.194 cm", hocap_170650: "selected 32x3: 20/20 pass, position 0.119 cm, rotation 0.667 deg, axis 0.158 cm"}
+  budget_upgrade: {clip: hocap_170105, population: 48, iterations: 4, elites: 12, count: 1, result: "0/20 fail at 82.5 percent, axis 5.002 cm"}
+  ppo_started: false
+  ppo_entry: STAGE16B_SINGLE_CLIP_PPO_NOT_STARTED_GATE_BLOCKED
+  ppo_samples: 0
+  ppo_checkpoints: 0
+  mujoco_backend_role: [correctness, deterministic_regression, contact_diagnostics, action_replay, visualization]
+  isaaclab_ppo_authorized_by_mujoco: false
+  physx_oracle_required: true
+  no_direct_object_control: true
+  assumptions: [A_STAGE16B_FREE_WRIST_001, A_STAGE16B_ZERO_GRAVITY_001, A_STAGE16B_WRIST_SAFETY_001]
+isaaclab_platform_extension:
+  label: ENGINEERING_INFRASTRUCTURE
+  stage: 16-C.0
+  paper_method: false
+  stack: {python: 3.11.15, isaac_sim: 5.1.0, isaac_lab: v2.3.2, torch: 2.7.0, cuda_runtime: cu128}
+  platform_only: true
+  official_task_smoke_only: true
+  required_vector_envs: 128
+  viewer_soft_gate: true
+  current_status: STAGE16C0_ISAACLAB_PLATFORM_VALIDATED_WITH_LIMITATIONS
+  blocker: null
+  custom_assets_migrated: true
+  stage16c1_status: STAGE16C1_ISAACLAB_ASSET_MIGRATION_VALIDATED
+  stage16c2_status: STAGE16C2_DIRECT_RL_ENV_VALIDATED
+  custom_direct_rl_env_implemented: true
+  stage16c3_status: STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED
+  stage16c3_blocker: null
+  stage16c3_historical_original_timing_blocker: EXPLICIT_SERIAL_3P3R_COMPUTED_TORQUE_AND_PREVIEW_TRACKING_EXHAUSTED
+  stage16c3_reference_time_scale: 8
+  stage16c3_source_frames: 41
+  stage16c3_runtime_frames: 321
+  stage16c3_reference_frame_status: C3_REFERENCE_OR_FRAME_CONTRACT_VALIDATED
+  stage16c3_contact_readout_status: C3_CONTACT_READOUT_VALIDATED
+  stage16c3_active_wrist_controller: finite_virtual_6d_wrist_actuator_v1
+  stage16c3_active_wrist_profile: high_authority_bounded
+  stage16c2_d6_profile_regression_status: STAGE16C2_EXPLICIT_3P3R_WRIST_VALIDATED
+  stage16c2_d6_profile_regression_scope: nominal_candidate_runtime_contract_only
+  stage16c4_status: STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED
+  stage16c4_validated_counts: [128, 512, 1024, 2048, 4096]
+  stage16c4_selected_num_envs: 4096
+  stage16c4_rollout_length: 16
+  stage16c4_shards: 4
+  stage16c4_samples_per_update: 65536
+  stage16c4_highest_count_samples_per_s: 700.3515840410429
+  stage16c4_highest_count_process_vram_peak_mib: 3731
+  stage16c4_throughput_scope: shared_gpu_load_infrastructure_evidence
+  stage16c5a_status: STAGE16C5A_PHYSICS_CONTRACT_CHANGE_REQUIRED
+  stage16c5a_reason: TRUE_FROZEN_PHYSX_BASELINE_NONDETERMINISM
+  stage16c5a_scope: r1_harness_repair_and_physics_contract_diagnosis_only
+  stage16c5a_o0_validated_counts: [1, 32, 96, 144]
+  stage16c5a_o1_status: NOT_AUTHORIZED_DUE_TO_PHYSICS_CONTRACT_CHANGE_REQUIRED
+  stage16c5b_authorized: false
+  stage16c6_ppo_authorized: false
+  stage16c6_status: STAGE16C6_SINGLE_CLIP_GPU_PPO_NOT_AUTHORIZED
+  physx_oracle_run: false
+  ppo_started: false
+  mujoco_oracle_authorizes_physx: false
+  evidence:
+    - .local/reports/stage16c3r4_mpc_holdout_c4/final_summary.json
+    - .local/reports/stage16c3r5_reference_retiming_c4/c3_full_qualification_scale8_final.json
+    - .local/reports/stage16c3r5_reference_retiming_c4/contact_causality_scale8.json
+    - .local/reports/stage16c3r5_reference_retiming_c4/c4_gpu_vector_benchmark_scale8.json
+    - .local/reports/stage16c5a_repair_c5c_oracle/final_summary.json
+physics_consistent_retargeting_extension:
+  label: ENGINEERING_EXTENSION
+  stage: 16-D
+  paper_method: false
+  status: STAGE16D_BLOCKED_WITH_BOUNDED_EVIDENCE
+  source_object_path: soft_prior_only
+  corrected_object_path: free_physx_rollout_output
+  action_dimension: 26
+  observation_dimension: 764
+  reference_time_scale: 8
+  trajectory_status: {hocap_170105: PARTIAL_BLOCKED, hocap_170650: PARTIAL_BLOCKED}
+  empirical_success: {hocap_170105: 0.75, hocap_170650: 1.0}
+  geometry_gate: BLOCKED_METRIC_COMPARABILITY_AND_VISUAL_SIGN
+  partial_v1_exported: true
+  qualified_v2_exported: false
+  ppo_started: false
+  ppo_samples: 0
+  ppo_checkpoints: 0
+  sim_to_real_claim: false
+stage16d_ppo26d_revision:
+  label: TOPORETARGET_PPO_REPRODUCTION_WITH_26D_WRIST_ADAPTATION
+  stage: 16-D.5
+  ppo_entry_gate: ENVIRONMENT_TRAINABILITY_GATE_A_ONLY
+  old_s3_cem_status: PRE_PPO_BASELINE_FAILURE
+  old_s3_cem_terminal_contact: {hocap_170105: "0/20", hocap_170650: "0/20"}
+  old_s3_cem_terminal_stability: {hocap_170105: "0/20", hocap_170650: "0/20"}
+  old_s3_cem_final_success: {hocap_170105: "0/20", hocap_170650: "0/20"}
+  paper_reference_tracking_ppo: PAPER_EXACT
+  wrist_residual_6d: ENGINEERING_ADAPTATION
+  explicit_serial_3p3r_wrist: ENGINEERING_ADAPTATION
+  factor8_reference: ENGINEERING_ADAPTATION
+  isaaclab_backend: ENGINEERING_ADAPTATION
+  post_ppo_geometry_status: PAPER_FIDELITY_PARTIAL

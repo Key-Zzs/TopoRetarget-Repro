@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,11 @@ import mujoco
 import numpy as np
 
 from toporetarget.rl.contracts import Stage16ReferenceClip
+from toporetarget.rl.dynamic_coupling import (
+    ObjectAwareResidualOracle,
+    ObjectAwareShootingOracle,
+    reference_velocities,
+)
 from toporetarget.rl.environments.mujoco_backend import (
     MujocoBackendConfig,
     MujocoReferenceTrackingBackend,
@@ -51,7 +57,7 @@ def _backend(args: argparse.Namespace) -> MujocoReferenceTrackingBackend:
         include_ground=False,
         gravity_mps2=(0.0, 0.0, 0.0),
     )
-    return MujocoReferenceTrackingBackend(
+    backend = MujocoReferenceTrackingBackend(
         scene_path=scene,
         reference=reference,
         joint_lower=bounds[:, 0],
@@ -63,6 +69,9 @@ def _backend(args: argparse.Namespace) -> MujocoReferenceTrackingBackend:
         randomization=DomainRandomizationConfig(enabled=args.domain_randomization),
         seed=args.seed,
     )
+    qdot, object_velocity = reference_velocities(reference)
+    backend.set_reference_velocities(qdot=qdot, object_velocity=object_velocity)
+    return backend
 
 
 def _policy(args: argparse.Namespace, backend: MujocoReferenceTrackingBackend) -> Any:
@@ -72,7 +81,7 @@ def _policy(args: argparse.Namespace, backend: MujocoReferenceTrackingBackend) -
             return np.zeros(backend.reference.dof_count, dtype=np.float64)
 
         return zero
-    if args.policy == "oracle":
+    if args.policy in {"oracle", "joint-oracle"}:
         controller = OracleResidualController(
             joint_gain=args.oracle_gain,
             action_scale_fraction=args.action_scale_fraction,
@@ -90,6 +99,23 @@ def _policy(args: argparse.Namespace, backend: MujocoReferenceTrackingBackend) -
             )
 
         return oracle
+    if args.policy == "object-oracle":
+        controller = ObjectAwareResidualOracle()
+
+        def object_oracle(_state: dict[str, np.ndarray], _index: int) -> np.ndarray:
+            return controller.action(backend)
+
+        return object_oracle
+    if args.policy == "shooting-oracle":
+        controller = ObjectAwareResidualOracle()
+        shooting = ObjectAwareShootingOracle()
+
+        def shooting_oracle(_state: dict[str, np.ndarray], _index: int) -> np.ndarray:
+            nominal = controller.action(backend)
+            result = shooting.diagnose(backend, nominal, horizon=5)
+            return np.asarray(result.first_action, dtype=np.float64)
+
+        return shooting_oracle
     if args.checkpoint is None:
         raise ValueError("--checkpoint is required with --policy checkpoint")
     observation = backend.observation(backend.reset(reference_index=args.start_frame))
@@ -148,6 +174,8 @@ def _annotate(
         f"max_axis_error={axis_error * 100:.2f} cm  termination={args._termination or 'running'}",
         f"show_axis_points={args.show_axis_points}  "
         f"show_tracked_links={args.show_tracked_links}  show_contacts={args.show_contacts}",
+        f"collision={args.show_collision_geoms} force={args.show_contact_forces} "
+        f"wrench={args.show_object_wrench} kinematic_object={args.kinematic_object}",
     ]
     draw.rectangle((0, 0, image.width, 76), fill=(15, 15, 15))
     for index, line in enumerate(lines):
@@ -218,7 +246,7 @@ def _headless(
     reason: str | None = None
     for step in range(args.max_steps):
         action = np.asarray(policy(state, backend.reference_index), dtype=np.float64)
-        state, reward, reason = backend.transition(action)
+        state, reward, reason = backend.transition(action, kinematic_object=args.kinematic_object)
         keyframes = {
             0,
             max(args.max_steps // 4, 1),
@@ -247,7 +275,7 @@ def _headless(
                 "termination": reason,
             }
         )
-        if reason is not None:
+        if reason is not None and not args.diagnostic_continue_after_termination:
             break
     sheet = frame_dir / "contact_sheet.png"
     _contact_sheet(rendered, sheet)
@@ -312,14 +340,26 @@ def _interactive(
         raise RuntimeError("interactive mode requires mujoco.viewer") from exc
     state = backend.reset(reference_index=args.start_frame)
     with mujoco.viewer.launch_passive(backend.model, backend.data) as viewer:
+        # The viewer is passive: without explicit pacing this loop completes a
+        # 41-frame clip in a few milliseconds and closes its GLFW window as the
+        # context manager exits.  Keep the final state visible for inspection.
         for _ in range(args.max_steps):
             if not viewer.is_running():
                 break
+            started_at = time.monotonic()
             action = policy(state, backend.reference_index)
-            state, _, reason = backend.transition(action)
+            state, _, reason = backend.transition(action, kinematic_object=args.kinematic_object)
             viewer.sync()
-            if reason is not None:
+            if reason is not None and not args.diagnostic_continue_after_termination:
                 break
+            remaining = (1.0 / args.playback_fps) - (time.monotonic() - started_at)
+            if remaining > 0:
+                time.sleep(remaining)
+        if not args.close_on_complete:
+            print("Playback complete. Close the MuJoCo window to exit.")
+            while viewer.is_running():
+                viewer.sync()
+                time.sleep(1.0 / 60.0)
     return 0
 
 
@@ -329,7 +369,18 @@ def main() -> int:
     parser.add_argument("--reference", required=True, type=Path)
     parser.add_argument("--object-mesh", required=True, type=Path)
     parser.add_argument("--scene-root", type=Path, default=Path(".local/visualize_stage16"))
-    parser.add_argument("--policy", choices=("checkpoint", "oracle", "zero"), default="oracle")
+    parser.add_argument(
+        "--policy",
+        choices=(
+            "checkpoint",
+            "oracle",
+            "joint-oracle",
+            "object-oracle",
+            "shooting-oracle",
+            "zero",
+        ),
+        default="joint-oracle",
+    )
     parser.add_argument("--mode", choices=("interactive", "headless"), default="interactive")
     parser.add_argument("--start-frame", type=int, default=0)
     parser.add_argument("--deterministic", action="store_true")
@@ -338,10 +389,29 @@ def main() -> int:
     parser.add_argument("--show-axis-points", action="store_true")
     parser.add_argument("--show-tracked-links", action="store_true")
     parser.add_argument("--show-contacts", action="store_true")
+    parser.add_argument("--show-collision-geoms", action="store_true")
+    parser.add_argument("--show-contact-forces", action="store_true")
+    parser.add_argument("--show-contact-normals", action="store_true")
+    parser.add_argument("--show-object-wrench", action="store_true")
+    parser.add_argument("--show-reference-velocity", action="store_true")
+    parser.add_argument("--show-current-velocity", action="store_true")
+    parser.add_argument("--kinematic-object", action="store_true")
+    parser.add_argument("--diagnostic-continue-after-termination", action="store_true")
     parser.add_argument("--camera", default="default")
     parser.add_argument("--output-video", type=Path)
     parser.add_argument("--output-frames", type=Path)
     parser.add_argument("--max-steps", type=int, default=45)
+    parser.add_argument(
+        "--playback-fps",
+        type=float,
+        default=20.0,
+        help="interactive playback rate; must be positive (default: 20)",
+    )
+    parser.add_argument(
+        "--close-on-complete",
+        action="store_true",
+        help="close the interactive viewer immediately after the rollout",
+    )
     parser.add_argument("--seed", type=int, default=20260801)
     parser.add_argument("--action-scale-fraction", type=float, default=0.05)
     parser.add_argument("--oracle-gain", type=float, default=0.0)
@@ -355,6 +425,8 @@ def main() -> int:
         parser.error("--checkpoint is required with --policy checkpoint")
     if not 0 <= args.start_frame < 41:
         parser.error("--start-frame must be within the 41-frame HOCap reference")
+    if args.playback_fps <= 0:
+        parser.error("--playback-fps must be positive")
     args._reference = Stage16ReferenceClip.from_npz(args.reference)
     args._termination = None
     backend = _backend(args)

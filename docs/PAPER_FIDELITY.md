@@ -396,6 +396,13 @@ The implemented Stage 16.0 functional pipeline is not the qualification result. 
 `frame0_deterministic_eval_v1` gate was run on the two user-approved HO-Cap clips and is
 currently `STAGE16_1_CONTROLLABILITY_BLOCKED`; no Stage 16.2 or 16.3 PPO success is claimed.
 
+The Stage-16.1a diagnostic has now separated PD from coupling: the dynamic hand tracks a
+kinematic reference object within the engineering thresholds, but both clips have zero actual and
+expected proximity contacts at frames 0/5/10 and fail the free-object gate at frame 5 or 6.
+`REFERENCE_DYNAMICAL_INFEASIBILITY` is a current-setup diagnosis, not a claim about the paper,
+the source reference, or PPO. Object-aware finite-difference and short shooting oracles are
+engineering controllability probes and never policy results.
+
 Stage 16 implements the public Appendix A.5 MDP/PPO contract: base-frame
 references, residual actions, the `[0,1,3,5]` reference observation, Table 4
 reward/termination, Table 5 randomization ranges, and Table 6 model/training
@@ -405,9 +412,107 @@ values. The implementation is independently mapped in
 simulator, solver, contact model, PD gains, tracked links, axis offsets, or
 unlisted PPO values, so none is presented as author-exact.
 
-The local raw HO-Cap root is available, but no accepted dynamic RobotReference
-exists after the source-contract repair, and `.local/control/final_jobs/PAUSED`
-forbids generating a new final job. Consequently, numerical PPO and free-object
-backend checks pass while HOCap protocol training/evaluation is explicitly
-blocked. Pen-Spin remains `STAGE16_PENSPIN_DATA_UNAVAILABLE`; no surrogate data
-is used and no Table 2 result is claimed.
+The two accepted local dynamic references are retained as immutable Stage-16 inputs; no raw
+HO-Cap data, retarget artifact, or reference array was changed by the diagnosis. HOCap protocol
+training/evaluation remains explicitly blocked by the Stage-16.1 gate. Pen-Spin remains
+`STAGE16_PENSPIN_DATA_UNAVAILABLE`; no surrogate data is used and no Table 2 result is claimed.
+
+## Stage 16-B world wrist-and-finger extension boundary
+
+`WORLD_WRIST_FINGER_TRACKING_PROTOCOL` is an `ENGINEERING_EXTENSION`, not an
+alternative interpretation of Appendix A.5. It preserves the Stage-16A
+finger-only contract and adds direct Stage-12 world wrist motion, an abstract
+finite-wrench free wrist, a 6D wrist residual, world-frame features, and
+wrist-relative reconstructions. The shared state-adaptive 26D H1/H5/H10
+oracle is a gate diagnostic, not PPO. Its bounded MuJoCo result is
+`STAGE16B_ADAPTIVE_MULTI_HORIZON_ORACLE_PARTIAL`: selected 32x3 passes
+`170650` and fails `170105` at 80%; its bounded 48x4 upgrade reaches 82.5%
+and still fails at 5.002 cm axis error. PPO was never started
+(0 samples, no checkpoints). MuJoCo is closed as a correctness/reference
+backend, while the planned Isaac Lab GPU lane requires independent platform,
+semantic-parity, and PhysX-oracle qualification. Neither backend is an
+author-exact paper result, sim-to-real result, or HO-Cap-32 comparison.
+
+## Stage 16-C.0 Isaac Lab platform boundary
+
+Stage 16-C.0 is an engineering platform qualification. Its frozen Isaac Sim
+5.1.0 / Isaac Lab v2.3.2 / Torch 2.7.0 cu128 stack is not disclosed by the
+paper and is not presented as author-exact. The official empty-scene and
+Cartpole runs test the platform only; they do not contain Wuji, HO-Cap,
+Stage-16 actions/rewards, a PhysX oracle, or PPO. A validated C.0 can authorize
+only C.1 asset migration. Independent semantic parity and PhysX
+controllability gates are still required before policy training.
+
+The current C.0 status is
+`STAGE16C0_ISAACLAB_PLATFORM_VALIDATED_WITH_LIMITATIONS`: every hard runtime
+gate passed after explicit process-scoped EULA authorization; interactive
+viewer evidence is unavailable. C.1 is independently validated as an
+`ENGINEERING_EXTENSION` for asset topology, nominal dynamics, collision,
+contact, CUDA tensors, and 1/128-env spawning. Neither result is paper-exact or
+authorizes a PhysX oracle, PPO, real dynamics, or sim-to-real claim.
+
+## Stage 16-C.3R4--C.5 wrist boundary
+
+The C.3R4 closeout remains an `ENGINEERING_DIAGNOSTIC`, not a paper-method or
+control claim. C3-0 validates derived canonical-URDF FK targets while retaining
+the immutable stored-link field, and the object-centric contact sensor validates
+readout only. Live GPU inspection permits the explicit serial 3P+3R articulation
+because the authored generic D6 wrapper exposes no D6 tensor joints. The
+fallback exposes six GPU tensor joints and is an abstract engineering wrist,
+not a real arm. Both full-articulation computed-torque profiles and the single
+bounded preview architecture fail both clips. A high local-model fit R2 is not
+treated as validation because independent 1/6-step holdout and 41-frame tracking
+fail. This produces `C3_WRIST_ACTUATION_ARCHITECTURE_BLOCKED`; no contact
+causality, C.4 benchmark, C.5 oracle, or PPO result is claimed.
+
+That statement is the immutable original-timing C3R4 closeout, not the current
+C.3 gate. The user later authorized one explicit engineering structural
+change: a global factor-8 reference retiming shared by both clips. C3R5 leaves
+the source NPZ hashes and all 41 source spatial keys unchanged, materializes a
+derived 321-sample view at 20 Hz, and changes no controller gain, effort bound,
+action/observation contract or acceptance threshold. The retimed task passes
+C3-0 through C3-5, including aggregate contact-to-momentum causality, and is
+`STAGE16C3_SEMANTIC_QUALIFICATION_VALIDATED`. This is still an
+`ENGINEERING_EXTENSION`, not a paper timing, author-exact controller, real-arm,
+real-dynamics, or sim-to-real result. The formal 128/512/1024/2048/4096
+aggregate-contact GPU benchmark then exits clean and finite at every count as
+`STAGE16C4_GPU_VECTOR_BACKEND_VALIDATED`. The highest count measures 700.35
+samples/s and 3731 MiB process-VRAM peak under unrelated concurrent CUDA load;
+this is shared-load infrastructure evidence, not a linear-scaling or training-
+optimality claim. C.5A-R1 subsequently validates frozen inputs, a
+candidate-state contract, CUDA O0 isolation at 1/32/96/144 candidates,
+repaired harness ordering, and single-env/origin/cross-process/telemetry
+controls. Its required same-process 33-env natural no-clone 20x8 baseline still
+diverges after contact and exceeds frozen hard caps. The result is
+`STAGE16C5A_PHYSICS_CONTRACT_CHANGE_REQUIRED` with reason
+`TRUE_FROZEN_PHYSX_BASELINE_NONDETERMINISM`; O1, history replay, C5B, C5C, and
+PPO remain unrun/unauthorized, with no tolerance softening.
+
+## Stage 16-D engineering boundary
+
+Stage 16-D changes the engineering task from strict source object-path
+tracking to contact-driven physics-consistent retargeting. Source robot and
+object trajectories remain frozen evidence, but the object path becomes a
+soft prior and the corrected path comes from free PhysX dynamics. This method,
+its spline CEM, task-semantic fallback, geometry gate, BC lane, and PPO lane
+are not specified by the paper.
+
+The runtime collision-proxy metric implementation is resolved and validated,
+but both corrected candidates fail its frozen source-relative gates. `170105`
+also remains below the 16/20 trajectory gate after its only two bounded repair
+paths. PPO did not run. These are engineering qualification results and do not
+support author-exact, visual-mesh-penetration, real-robot,
+physical-parameter, or sim-to-real claims.
+
+The D.4R2 geometry-aware recovery remains an `ENGINEERING_EXTENSION`. Its
+attainability audit ends `STAGE16D_GEOMETRY_GATE_REVISION_BLOCKED`: V1 is not
+demonstrated under persistent required contact and V2 lacks a legal stable
+dynamic floor. No geometry-aware optimizer or PPO evidence was produced. This
+does not change paper fidelity, validate visual geometry, calibrate physics, or
+support real-arm or sim-to-real claims.
+
+D.4R3 is also an `ENGINEERING_EXTENSION`. Its object-canonical initializer,
+grasp families, C1/C2 matrix, and 321-step action schedule are not paper
+methods. The bounded development search produced no stable qualified grasp,
+so it adds no author-exact, physical-parameter, real-robot, or sim-to-real
+evidence and does not authorize V2 or PPO.

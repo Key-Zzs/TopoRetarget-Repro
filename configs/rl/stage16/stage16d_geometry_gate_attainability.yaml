@@ -1,0 +1,18 @@
+schema_version: Stage16DGeometryGateAttainabilityConfigV1
+replicas: 20
+control_steps: 321
+experiments:
+  - geometry_backend_numerical_floor
+  - no_contact_dynamic_floor
+  - stable_single_contact_calibration
+  - source_kinematic_dynamic_comparison
+  - contact_preserving_local_feasibility
+metric_v1: RuntimeCollisionProxyPenetrationV1
+geometry_epsilon_m: 0.0000005
+absolute_gate:
+  strict_max_m: 0.010
+  maximum_active_p95_m: 0.003
+decision:
+  keep_v1_when_contact_preserving_attainable: true
+  permit_v2_only_below_dynamic_contact_floor: true
+  forbid_corrected_candidate_floor: true

@@ -1,0 +1,19 @@
+schema_version: toporetarget.stage16c5a.physx_contract.v1
+identifier: physx_factor8_baseline_v1
+status: FROZEN_BASELINE_CONTROL_ONLY
+source_matrix: .local/reports/stage16c5a_r2_physx_contract/physx_contract_candidate_matrix.json
+device: cuda:0
+scene_construction: usd_clone_no_fabric_v1
+physx:
+  solver_type: tgs
+  enhanced_determinism: false
+  solve_articulation_contact_last: false
+  scene_solver_position_iterations: [4, 8]
+  scene_solver_velocity_iterations: [1, 2]
+  actor_solver_position_iterations: 8
+  actor_solver_velocity_iterations: 2
+  gpu_max_rigid_contact_count: 4194304
+  gpu_max_rigid_patch_count: 1048576
+selection_policy:
+  may_be_used_as_control: true
+  may_become_active_without_r2_selection: false

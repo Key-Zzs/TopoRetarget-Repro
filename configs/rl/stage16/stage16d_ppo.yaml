@@ -1,0 +1,23 @@
+schema_version: PhysicsCorrectionPPOV1
+observation_dimension: 764
+action_dimension: 26
+rollout_length: 16
+initial_num_envs: 4096
+sample_ladder: [1048576, 4194304, 16777216, 67108864]
+maximum_seeds_per_clip: 2
+curriculum: [P0, P1, P2, P3]
+actor: {hidden: [512, 256, 128], activation: ELU}
+critic: {hidden: [512, 512, 256, 128], activation: ELU}
+learning_rate: 0.0001
+learning_rate_fallback: 0.00005
+learning_rate_fallback_count: 1
+gamma: 0.99
+gae_lambda: 0.95
+clip_epsilon: 0.2
+epochs: 4
+minibatches: 32
+entropy_coefficient: 0.001
+max_grad_norm: 1.0
+observation_normalization: true
+advantage_normalization: true
+formal_evaluation: {episodes: 20, start: frame0, steps: 321}

@@ -1,0 +1,26 @@
+schema_version: toporetarget.stage16d.self_collision_physics_contract.v1
+identifier: stage16d_inter_finger_self_collision_v1
+enabled_self_collisions: true
+source_asset_config:
+  path: configs/rl/stage16/isaaclab_asset_validation.yaml
+  sha256: 3ac2f64a2d80513570329b77d44ba0f8db6e60e971f71deaaec83e0b401f1926
+generated_hand_usd:
+  path: .local/generated_assets/isaaclab/wuji_hand2_beta1/configuration/wujihand2_physics.usd
+  sha256: 344510dcaf307cb70cb53f8b9a53aa73d565ca441099c18cff1a477d8c56138e
+runtime_collision_manifest:
+  path: .local/reports/stage16d_metric_qualification_and_ppo/runtime_collision_geometry_manifest.json
+  sha256: ef29e783c9043df8e5f5315bd225a8b273587be4bd27f1018c772e7003bac9ae
+physx_collision_filtering: articulation_default_v1
+body_pair_scope: distinct_anatomical_fingers
+excluded_pair_classes:
+  - same_body
+  - same_finger
+  - wrist_or_palm
+inter_finger_metric: pca_capsule_inter_finger_penetration_v1
+capsule_radius_scale: 0.65
+maximum_inter_finger_penetration_m: 0.003
+penalty_normalization_m: 0.003
+notes:
+  - Stage16-C self-collision=false artifacts remain immutable historical evidence.
+  - The metric is a deterministic skeletal capsule proxy derived from the exact C.1 convex bodies.
+  - Enabling self-collision or changing any referenced geometry requires a new contract identifier.

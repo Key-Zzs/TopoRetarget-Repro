@@ -1,0 +1,17 @@
+schema_version: Stage16DPPO26DContactRewardConfigV1
+reward:
+  contact:
+    mode: aggregate_v3
+    available: [aggregate_v3, strict_per_finger_v4]
+    aggregate_v3_status: stable_baseline
+    strict_per_finger_v4_status: experimental_partial
+paper_terms:
+  object: {weight: 8.0, sigma_m: 0.04}
+  tracked_links: {weight: 1.0, sigma_m: 0.025}
+  finger_joints: {weight: 1.0, sigma_normalized: 0.10}
+  action_smoothness_26d: {weight: -0.01, first_and_second_difference: true}
+engineering_wrist_tracking:
+  translation: {weight: 2.0, sigma_m: 0.02}
+  rotation: {weight: 1.0, sigma_rad: 0.17453292519943295}
+excluded_initial_reward_terms:
+  [terminal_contact_bonus, penetration_reward, inter_finger_penalty, clip_specific_bonus, semantic_task_bonus]

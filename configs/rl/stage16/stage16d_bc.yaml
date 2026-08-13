@@ -1,0 +1,8 @@
+schema_version: PhysicsCorrectionBehaviorCloningV1
+dataset: PhysicsCorrectionDemonstrationV1
+split: {train: 0.80, validation: 0.20, unit: complete_trajectory}
+max_epochs: 50
+patience: 5
+actor_only: true
+critic_pseudo_labels: false
+future_state_input: false

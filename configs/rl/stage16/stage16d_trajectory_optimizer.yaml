@@ -1,0 +1,14 @@
+schema_version: PhaseWiseSplineCEMConfigV1
+path: phase_wise_robust_spline_cem
+parameterization: PiecewiseSplineResidualV1
+action_shape: [321, 26]
+action_bounds: [-1.0, 1.0]
+default: {knots: 16, population: 64, replicas: 4, iterations: 5, elites: 12}
+upgrade_1: {knots: 32, population: 96, replicas: 4, iterations: 8, elites: 12}
+upgrade_2_choices:
+  - {knots: 32, population: 96, replicas: 8, iterations: 8, elites: 12}
+  - {knots: 32, population: 128, replicas: 4, iterations: 8, elites: 12}
+initial_std: 0.25
+minimum_std: 0.03
+phases: [approach, contact_establishment, persistent_contact, manipulation_or_transport, terminal_hold_or_release]
+object_trajectory: free_physx_rollout_output_not_decision_variable

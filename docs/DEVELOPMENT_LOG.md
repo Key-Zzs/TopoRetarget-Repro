@@ -1,5 +1,47 @@
 # Development log
 
+## 2026-08-01 -- Stage 16-B contact-aware sequence MPC and object audit
+
+Replaced the repeated-constant-action H-step oracle with deterministic,
+bounded contact-aware CEM over a true H-by-26 action sequence. Candidate
+rollouts remain clone-only, execute only the formal wrist/finger action, and
+never control or write the object. MuJoCo snapshots now retain the complete
+integration state, and every 20 Hz control boundary performs a consistent
+forward pass; one optimized episode plus 19 exact action-only replays produce
+identical terminal tuples. Physics traces now retain every 10 ms hand-object
+contact, normal force/impulse, and penetration, including impacts that vanish
+before the control-frame endpoint.
+
+The reproducible object audit finds both collision meshes non-watertight and
+no authoritative source mass, inertia, support, or force metadata. The formal
+50 g object remains an unvalidated shared engineering assumption in zero
+gravity, with no ground, support, or damping. After a bounded shared 12x2,
+24x3, and 32x3 MPC comparison, 32x3 is selected by worst-clip H10 progress.
+Twenty deterministic H10 episodes pass all gates on `170650` (0.829 cm,
+7.912 deg, 1.300 cm axis), while `170105` reaches 97.5% and terminates on
+`FAILURE_OBJECT_POSITION` (5.160 cm, 17.803 deg, 6.184 cm axis). PPO remains
+`NOT_STARTED_GATE_BLOCKED`. Two real 5 fps MuJoCo overlay MP4s contain 40 and
+41 frames, lasting 8.0 and 8.2 seconds.
+
+## 2026-08-01 -- Stage 16-B wrist-frame and visualization correction
+
+Corrected the Stage-16B free-joint velocity boundary: reference angular
+velocity is world-frame, while MuJoCo free-joint angular `qvel` is body-local.
+Reset, observation, playback, object diagnostics, and Cartesian impedance now
+convert explicitly. The old 15--30 Nm/rad controller range was also unstable
+at the model's 10 ms step and effective wrist inertia; the shared bounded W2
+grid now selects 2 Nm/rad with damping ratio 0.5. Both frozen clips complete
+W2 with sub-centimetre position error, below-one-degree orientation error, and
+zero physics-substep force/torque saturation.
+
+Only after that W2 pass, the H=1/5/10 oracle qualification was rerun. H=10
+still has 0% success on both clips and ends on `FAILURE_OBJECT_AXIS_POINT`, so
+PPO remains blocked; wrist-orientation safety is no longer the cause. The
+MuJoCo visualizer now renders real reference ghosts, frames, link/axis error
+markers, contacts, forces, wrist wrench, a fixed camera, and a numerical HUD.
+Two complete W2 and two failing H=10 oracle 5 fps slow-motion MP4s are retained
+under the new ignored qualification report root.
+
 ## 2026-07-29 -- Stage 11 contract freeze
 
 Frozen the extension interfaces without adding a dataset or running a new

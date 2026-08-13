@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -181,6 +182,69 @@ class Stage161RecoveryStateMachine(Stage16RecoveryStateMachine):
         )
 
 
+class DynamicCouplingPhase(StrEnum):
+    """Ordered Stage-16.1a phases; no PPO phase is represented here."""
+
+    STEP_A_PD = "STEP_A_PD"
+    STEP_B_CONTACT = "STEP_B_CONTACT"
+    STEP_C_VELOCITY_RESET = "STEP_C_VELOCITY_RESET"
+    STEP_D_OBJECT_ORACLE = "STEP_D_OBJECT_ORACLE"
+    STEP_E_DYNAMIC_FEASIBILITY = "STEP_E_DYNAMIC_FEASIBILITY"
+    FINAL_REQUALIFICATION = "FINAL_REQUALIFICATION"
+
+
+class Stage161DynamicCouplingStateMachine(Stage161RecoveryStateMachine):
+    """Bounded A--E state machine for the dynamic-coupling repair protocol.
+
+    It adds an explicit ordered phase trace to the existing persisted budget
+    ledger.  Repeating a phase is allowed only while its normal five-rerun
+    budget remains; moving backwards or skipping a phase is rejected.
+    """
+
+    phase_order = tuple(DynamicCouplingPhase)
+
+    def __init__(self, budget: RecoveryBudget | None = None) -> None:
+        super().__init__(budget)
+        self._highest_phase = -1
+
+    def record_dynamic(
+        self,
+        *,
+        phase: DynamicCouplingPhase,
+        failure_class: FailureClass,
+        evidence: dict[str, Any],
+        repair: str,
+        rerun_scope: str,
+        result: str = "RECORDED",
+    ) -> FailureTransition:
+        phase_index = self.phase_order.index(phase)
+        if phase_index > self._highest_phase + 1:
+            raise ValueError(f"cannot skip from phase index {self._highest_phase} to {phase.value}")
+        if phase_index < self._highest_phase:
+            raise ValueError(
+                f"cannot move dynamic-coupling state machine backwards to {phase.value}"
+            )
+        self._highest_phase = max(self._highest_phase, phase_index)
+        return self.record(
+            phase=phase.value,
+            failure_class=failure_class,
+            evidence=evidence,
+            repair=repair,
+            rerun_scope=rerun_scope,
+            result=result,
+        )
+
+    def dynamic_summary(self) -> dict[str, Any]:
+        return {
+            **self.summary(),
+            "phase_order": [phase.value for phase in self.phase_order],
+            "highest_reached_phase": (
+                self.phase_order[self._highest_phase].value if self._highest_phase >= 0 else None
+            ),
+            "never_starts_ppo": True,
+        }
+
+
 class Stage162RecoveryStateMachine(Stage16RecoveryStateMachine):
     """Stage-16.2 bounded recovery with a sixteen-transition major budget."""
 
@@ -204,6 +268,8 @@ __all__ = [
     "RecoveryBudget",
     "Stage16RecoveryStateMachine",
     "Stage161RecoveryStateMachine",
+    "DynamicCouplingPhase",
+    "Stage161DynamicCouplingStateMachine",
     "Stage162RecoveryStateMachine",
     "Stage163RecoveryStateMachine",
 ]
