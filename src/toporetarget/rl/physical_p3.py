@@ -99,7 +99,12 @@ def checkpoint_state(
         raise ValueError("PHYSICAL_PPO_CHECKPOINT_STAGE_PHYSICS_MISMATCH")
     if curriculum_state.get("selected_contact_mode") != mode.value:
         raise ValueError("PHYSICAL_PPO_CHECKPOINT_CONTACT_MODE_MISMATCH")
-    if tuple(curriculum_state.get("allowed_reset_banks", ())) != INITIAL_SAFE_BANKS:
+    checkpoint_banks = curriculum_state.get("allowed_reset_banks")
+    if (
+        not isinstance(checkpoint_banks, (list, tuple))
+        or not all(isinstance(value, str) for value in checkpoint_banks)
+        or tuple(checkpoint_banks) != INITIAL_SAFE_BANKS
+    ):
         raise ValueError("PHYSICAL_PPO_CHECKPOINT_RESET_BANKS_MISMATCH")
     return {
         "physical_checkpoint_schema": PHYSICAL_PPO_CHECKPOINT_SCHEMA,

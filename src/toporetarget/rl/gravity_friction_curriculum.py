@@ -169,7 +169,18 @@ def load_gravity_friction_curriculum(path: Path) -> Stage16GravityFrictionCurric
         raise ValueError("CURRICULUM_PARENT_BOOTSTRAP_MISSING")
     parent = (resolved.parents[3] / parent_rel).resolve()
     bootstrap = load_physical_bootstrap_contract(parent)
-    gravity = tuple(document.get("target_gravity_world_mps2", ()))
+    raw_gravity = document.get("target_gravity_world_mps2")
+    if (
+        not isinstance(raw_gravity, (list, tuple))
+        or len(raw_gravity) != 3
+        or not all(isinstance(value, (int, float)) for value in raw_gravity)
+    ):
+        raise ValueError("CURRICULUM_TARGET_GRAVITY_FORMAT_INVALID")
+    gravity = (
+        float(raw_gravity[0]),
+        float(raw_gravity[1]),
+        float(raw_gravity[2]),
+    )
     if gravity != bootstrap.target_gravity_world_mps2:
         raise ValueError("CURRICULUM_PARENT_GRAVITY_DRIFT")
     nominal = _mapping(document.get("nominal_friction"), name="CURRICULUM_NOMINAL_FRICTION")
@@ -209,7 +220,12 @@ def load_gravity_friction_curriculum(path: Path) -> Stage16GravityFrictionCurric
     if set(raw_schedule) != set(CURRICULUM_STAGES):
         raise ValueError("CURRICULUM_STAGE_SET_DRIFT")
     reset = _mapping(document.get("reset_domain"), name="CURRICULUM_RESET_DOMAIN")
-    if tuple(reset.get("allowed_initial_banks", ())) != INITIAL_SAFE_BANKS:
+    allowed_banks = reset.get("allowed_initial_banks")
+    if (
+        not isinstance(allowed_banks, (list, tuple))
+        or not all(isinstance(value, str) for value in allowed_banks)
+        or tuple(allowed_banks) != INITIAL_SAFE_BANKS
+    ):
         raise ValueError("CURRICULUM_ALLOWED_RESET_BANKS_DRIFT")
     causal_flags = (
         "frame_zero_full_gravity_authorized",
@@ -229,7 +245,7 @@ def load_gravity_friction_curriculum(path: Path) -> Stage16GravityFrictionCurric
     ):
         raise ValueError("CURRICULUM_P4_CONTRACT_DRIFT")
     return Stage16GravityFrictionCurriculumV1(
-        target_gravity_world_mps2=tuple(float(value) for value in gravity),
+        target_gravity_world_mps2=gravity,
         material_roles=roles,
         stages=stages,
         scientific_label=str(document.get("scientific_label")),

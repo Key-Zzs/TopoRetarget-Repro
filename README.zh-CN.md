@@ -135,9 +135,12 @@ Stage16-D 因果 PPO workflow 见 [Physics-correction PPO](docs/rl/PHYSICS_CORRE
 没有 guidance force、support、attachment、隐藏 object controller，也没有 rollout-time object-state 或
 wrist-root write。不声称 full-gravity 或 real-world physical validation。
 
-后续 physical bootstrap 定义 Contact-ready RSI V2、source-support feasibility 与 fail-closed 的 P3 entry
-decision。它仅产生 diagnostic evidence，不启动 PPO 或 gravity/friction curriculum；见 [Stage 16 Physical
-Bootstrap](docs/stages/STAGE16_PHYSICAL_BOOTSTRAP.zh-CN.md)。
+后续物理路线定义 Contact-ready RSI V2、source-support feasibility 与 fail-closed 的重力/摩擦 curriculum。
+其 C0--C2 pilot 已完成，但两个 reward mode 均未能同时在两个 clip 上通过全局 C2 absolute geometry gate。
+因此该路线在 G3、C3/C4 与 P4 之前停止；仓库不声称 full-gravity 或 real-world validation。见
+[Physics curriculum](docs/rl/PHYSICS_CURRICULUM.md)、[support
+feasibility](docs/physics/SUPPORT_FEASIBILITY.md) 与 [Stage16 full-gravity causal
+status](docs/stages/STAGE16_FULL_GRAVITY_CAUSAL.md)。
 
 ### 5. 评价、replay 与可视化
 
@@ -231,6 +234,10 @@ artifact 保留在忽略的本地存储中。
   — 冻结范围、稳定/默认 V3、实验性 V4 与下一物理阶段。
 - [Stage 16 Physical Bootstrap](docs/stages/STAGE16_PHYSICAL_BOOTSTRAP.zh-CN.md)
   — P0/P1/P2 contract、safe-bank 边界与 P3 entry gate。
+- [Physics curriculum](docs/rl/PHYSICS_CURRICULUM.md) — staged gravity/friction
+  contract、global-mode selection 与 fail-closed promotion rule。
+- [Stage16 full-gravity causal status](docs/stages/STAGE16_FULL_GRAVITY_CAUSAL.md)
+  — 当前 P3 block 及任何 P4 claim 之前的边界。
 - [Terminal dynamics attribution](docs/stages/STAGE16D_PHASE1_TERMINAL_DYNAMICS.md)
   — Phase 1 方法与结论。
 - [PPO-26D reference tracking](docs/rl/REFERENCE_TRACKING_PPO_26D.md) — action、

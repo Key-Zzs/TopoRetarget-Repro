@@ -150,10 +150,14 @@ attachments, hidden object controller, or rollout-time object-state or
 wrist-root writes. It does not claim full-gravity or real-world physical
 validation.
 
-The follow-on physical bootstrap defines Contact-ready RSI V2, source-support
-feasibility, and a fail-closed P3 entry decision. It is diagnostic-only and
-does not start PPO or a gravity/friction curriculum; see [Stage 16 Physical
-Bootstrap](docs/stages/STAGE16_PHYSICAL_BOOTSTRAP.md).
+The follow-on physical route defines Contact-ready RSI V2, source-support
+feasibility, and a fail-closed gravity/friction curriculum. Its C0--C2 pilot
+is complete, but neither reward mode passed the required global C2 absolute
+geometry gate across both clips. The route is therefore blocked before G3,
+C3/C4, and P4: the repository makes no full-gravity or real-world validation
+claim. See [Physics curriculum](docs/rl/PHYSICS_CURRICULUM.md), [support
+feasibility](docs/physics/SUPPORT_FEASIBILITY.md), and [Stage16 full-gravity
+causal status](docs/stages/STAGE16_FULL_GRAVITY_CAUSAL.md).
 
 ### 5. Evaluation, replay, and visualization
 
@@ -262,6 +266,10 @@ local storage.
   — frozen scope, stable/default V3, experimental V4, and the next physical stage.
 - [Stage 16 Physical Bootstrap](docs/stages/STAGE16_PHYSICAL_BOOTSTRAP.md)
   — P0/P1/P2 contracts, safe-bank boundary, and P3 entry gates.
+- [Physics curriculum](docs/rl/PHYSICS_CURRICULUM.md) — staged gravity and
+  friction contract, global-mode selection, and fail-closed promotion rule.
+- [Stage16 full-gravity causal status](docs/stages/STAGE16_FULL_GRAVITY_CAUSAL.md)
+  — current P3 block and the boundary before any P4 claim.
 - [Terminal dynamics attribution](docs/stages/STAGE16D_PHASE1_TERMINAL_DYNAMICS.md)
   — Phase 1 method and conclusions.
 - [PPO-26D reference tracking](docs/rl/REFERENCE_TRACKING_PPO_26D.md) — action,

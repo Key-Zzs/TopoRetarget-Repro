@@ -319,7 +319,18 @@ def configure_stage16_gravity_friction_curriculum(
         raise RuntimeError("STAGE16_CURRICULUM_MATERIAL_ROLE_MISSING")
     if float(default["restitution"]) != 0.0 or float(object_material["restitution"]) != 0.0:
         raise RuntimeError("STAGE16_CURRICULUM_RESTITUTION_DRIFT")
-    gravity = tuple(float(value) for value in physics["gravity_world_mps2"])
+    gravity_values = physics["gravity_world_mps2"]
+    if (
+        not isinstance(gravity_values, (list, tuple))
+        or len(gravity_values) != 3
+        or not all(isinstance(value, (int, float)) for value in gravity_values)
+    ):
+        raise RuntimeError("STAGE16_CURRICULUM_GRAVITY_INVALID")
+    gravity = (
+        float(gravity_values[0]),
+        float(gravity_values[1]),
+        float(gravity_values[2]),
+    )
     cfg.sim.gravity = gravity
     # IsaacLab's default material is applied to all unbound rigid collision
     # prims (the hand).  HOCap's explicit source material is changed in the
@@ -336,8 +347,12 @@ def configure_stage16_gravity_friction_curriculum(
     cfg.object_170650.spawn.usd_path = str(assets["hocap_170650"]["derived_usd"])
     cfg.stage16_gravity_friction_curriculum = str(curriculum_contract_path.resolve())
     cfg.stage16_curriculum_stage = stage
-    cfg.stage16_gravity_scale = float(physics["gravity_scale"])
-    cfg.stage16_friction_scale = float(physics["friction_scale"])
+    gravity_scale = physics["gravity_scale"]
+    friction_scale = physics["friction_scale"]
+    if not isinstance(gravity_scale, (int, float)) or not isinstance(friction_scale, (int, float)):
+        raise RuntimeError("STAGE16_CURRICULUM_SCALE_INVALID")
+    cfg.stage16_gravity_scale = float(gravity_scale)
+    cfg.stage16_friction_scale = float(friction_scale)
     cfg.stage16_curriculum_material_roles = roles
     cfg.stage16_curriculum_material_assets = assets
     cfg.stage16_curriculum_target_gravity_world_mps2 = contract.target_gravity_world_mps2

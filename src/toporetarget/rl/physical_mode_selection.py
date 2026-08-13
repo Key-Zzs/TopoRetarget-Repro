@@ -159,6 +159,15 @@ def _selection_key(metrics: Mapping[str, float]) -> tuple[float, ...]:
     )
 
 
+def _metric_mapping(value: object, *, name: str) -> dict[str, float]:
+    """Narrow serialized metrics before ranking a candidate."""
+
+    return {
+        key: _number(metric, name=f"{name}_{key}")
+        for key, metric in _mapping(value, name=name).items()
+    }
+
+
 def _near_primary_tie(left: Mapping[str, float], right: Mapping[str, float]) -> bool:
     keys = (
         "minimum_per_clip_SRqualified",
@@ -232,8 +241,10 @@ def select_global_physical_contact_mode(
         selected = eligible[0]
         reason = "Only one global mode passed the mandatory C2 safety requirements on both clips."
     else:
-        v3 = _mapping(candidates["aggregate_v3"]["macro_metrics"], name="SELECTION_V3")
-        v4 = _mapping(candidates["strict_per_finger_v4"]["macro_metrics"], name="SELECTION_V4")
+        v3 = _metric_mapping(candidates["aggregate_v3"]["macro_metrics"], name="SELECTION_V3")
+        v4 = _metric_mapping(
+            candidates["strict_per_finger_v4"]["macro_metrics"], name="SELECTION_V4"
+        )
         if _near_primary_tie(v3, v4):
             selected = "aggregate_v3"
             reason = (
@@ -242,7 +253,10 @@ def select_global_physical_contact_mode(
             )
         else:
             selected = max(
-                eligible, key=lambda mode: _selection_key(candidates[mode]["macro_metrics"])
+                eligible,
+                key=lambda mode: _selection_key(
+                    _metric_mapping(candidates[mode]["macro_metrics"], name="SELECTION_SELECTED")
+                ),
             )
             reason = "Selected by the pre-registered global C2 lexicographic metric order."
     rejected = next(mode for mode in CONTACT_MODES if mode != selected)
@@ -253,7 +267,11 @@ def select_global_physical_contact_mode(
         "rejected_mode": rejected,
         "rejected_modes": [rejected],
         "selection_reason": reason,
-        "selection_key": list(_selection_key(candidates[selected]["macro_metrics"])),
+        "selection_key": list(
+            _selection_key(
+                _metric_mapping(candidates[selected]["macro_metrics"], name="SELECTION_SELECTED")
+            )
+        ),
     }
 
 

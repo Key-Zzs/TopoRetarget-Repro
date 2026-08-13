@@ -267,8 +267,9 @@ def flight_metrics(
         raise ValueError("PHYSICAL_EVALUATION_FLIGHT_SHAPE_INVALID")
     no_tip = valid_values & ~tips
     no_hand = valid_values & ~hand
+    runs = _runs(no_hand)
     events: list[dict[str, object]] = []
-    for start, end in _runs(no_hand):
+    for start, end in runs:
         recontact = next((index for index in range(end, len(hand)) if hand[index]), None)
         events.append(
             {
@@ -281,7 +282,7 @@ def flight_metrics(
                 "recontact_frame": recontact,
             }
         )
-    gaps = [int(event["duration_control_steps"]) for event in events]
+    gaps = [end - start for start, end in runs]
     recontacts = sum(event["recontact_frame"] is not None for event in events)
     return {
         "no_tip_contact_fraction": _rate(no_tip, valid_values),
