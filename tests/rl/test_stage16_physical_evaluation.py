@@ -17,6 +17,7 @@ from toporetarget.rl.physical_evaluation import (
     twist_metrics,
     validate_pair_set_against_safe_indices,
 )
+from toporetarget.rl.physical_mode_selection import select_global_physical_contact_mode
 
 
 def _root() -> Path:
@@ -126,3 +127,92 @@ def test_p95_geometry_violation_is_not_misreported_as_catastrophic_contact() -> 
     )
     assert failure["catastrophic_contact"] is False
     assert failure["absolute_geometry_violation"] is True
+
+
+def _selection_report(*, mode: str, clip: str, safe: bool, qualified: float) -> dict[str, object]:
+    return {
+        "status": "P3_CONTACT_READY_DEVELOPMENT_EVALUATION_COMPLETE",
+        "kind": "development",
+        "curriculum_stage": "C2",
+        "clip": clip,
+        "contact_mode": mode,
+        "finite_episode_count": 20,
+        "curriculum_physics": {
+            "curriculum_stage": "C2",
+            "gravity_scale": 0.5,
+            "friction_scale": 1.5,
+        },
+        "causal_contract": {
+            "external_guidance": False,
+            "support": "none",
+            "frame_zero_full_gravity": False,
+            "rollout_object_state_writes": 0,
+            "rollout_wrist_root_writes": 0,
+        },
+        "physical_failure": {"catastrophic_contact": 0, "joint_limit": 0},
+        "penetration": {"absolute_geometry_pass": safe, "hand_object_p95_penetration_m": 0.001},
+        "evaluation_suite_v2": {
+            "aggregate": {
+                "qualified_success": {"rate": qualified},
+                "physics_success": {"rate": qualified},
+            }
+        },
+        "interaction": {
+            "aggregate": {
+                "source_persistent_tip_recall": qualified,
+                "cross_finger_compensation": 0.1,
+            }
+        },
+        "flight": {"no_hand_object_contact_fraction": 0.1},
+        "twist": {
+            "Delta_omega_radps": {"terminal": 0.1},
+            "Delta_v_mps": {"terminal": 0.1},
+            "terminal_stability_rate": qualified,
+        },
+    }
+
+
+def test_global_c2_selection_is_deterministic_and_never_clip_specific() -> None:
+    reports = {
+        mode: {
+            clip: _selection_report(mode=mode, clip=clip, safe=True, qualified=value)
+            for clip in ("hocap_170105", "hocap_170650")
+        }
+        for mode, value in (("aggregate_v3", 0.5), ("strict_per_finger_v4", 0.7))
+    }
+    result = select_global_physical_contact_mode(reports)
+    assert result["status"] == "GLOBAL_PHYSICAL_CONTACT_MODE_SELECTED"
+    assert result["selected_mode"] == "strict_per_finger_v4"
+    assert result["clip_specific_selection_forbidden"] is True
+
+
+def test_global_c2_selection_blocks_when_no_mode_passes_both_clip_geometry() -> None:
+    reports = {
+        mode: {
+            clip: _selection_report(
+                mode=mode,
+                clip=clip,
+                safe=not (mode == "aggregate_v3" and clip == "hocap_170105"),
+                qualified=0.5,
+            )
+            for clip in ("hocap_170105", "hocap_170650")
+        }
+        for mode in ("aggregate_v3", "strict_per_finger_v4")
+    }
+    reports["strict_per_finger_v4"]["hocap_170650"]["penetration"]["absolute_geometry_pass"] = False
+    result = select_global_physical_contact_mode(reports)
+    assert result["status"] == "GLOBAL_PHYSICAL_CONTACT_MODE_SELECTION_BLOCKED"
+    assert result["selected_mode"] is None
+
+
+def test_global_c2_selection_rejects_formal_report_input() -> None:
+    reports = {
+        mode: {
+            clip: _selection_report(mode=mode, clip=clip, safe=True, qualified=0.5)
+            for clip in ("hocap_170105", "hocap_170650")
+        }
+        for mode in ("aggregate_v3", "strict_per_finger_v4")
+    }
+    reports["aggregate_v3"]["hocap_170105"]["kind"] = "formal"
+    with pytest.raises(ValueError, match="C2_DEVELOPMENT_ONLY"):
+        select_global_physical_contact_mode(reports)
