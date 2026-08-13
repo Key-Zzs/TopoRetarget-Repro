@@ -105,14 +105,15 @@ def _write_tables(root: Path, selection: dict[str, object]) -> None:
         "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in rows:
+        display = dict(row)
+        display["hand_object_p95_penetration_m"] = (
+            float(row["hand_object_p95_penetration_m"]) * 1000.0
+        )
         lines.append(
             "| {mode} | {clip} | {safety_pass} | {SRqualified:.3f} | {SRphysics:.3f} | "
             "{source_persistent_tip_recall:.3f} | {cross_finger_compensation:.3f} | "
             "{no_hand_object_contact_fraction:.3f} | {terminal_Delta_omega_radps:.3f} | "
-            "{terminal_Delta_v_mps:.3f} | {hand_object_p95_penetration_m:.3f} |".format(
-                **row,
-                hand_object_p95_penetration_m=float(row["hand_object_p95_penetration_m"]) * 1000.0,
-            )
+            "{terminal_Delta_v_mps:.3f} | {hand_object_p95_penetration_m:.3f} |".format(**display)
         )
     lines.extend(
         [
@@ -132,13 +133,13 @@ def main() -> int:
     args = parser.parse_args()
     root = args.output_root.resolve()
     output = root / "global_physical_contact_mode_selection.json"
-    if output.exists():
-        raise FileExistsError(f"SELECTION_OUTPUT_ALREADY_EXISTS:{output}")
     reports, paths = _reports(root)
     selection = select_global_physical_contact_mode(reports)
     selection["input_reports"] = paths
-    _write_json(output, selection)
+    if output.exists() and _read(output) != selection:
+        raise FileExistsError(f"SELECTION_OUTPUT_ALREADY_EXISTS_DIFFERENT:{output}")
     _write_tables(root, selection)
+    _write_json(output, selection)
     print(
         json.dumps({key: selection[key] for key in ("status", "selected_mode", "selection_reason")})
     )
