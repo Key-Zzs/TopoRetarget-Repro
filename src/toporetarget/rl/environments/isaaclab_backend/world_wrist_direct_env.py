@@ -1792,6 +1792,34 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
                 "source_keys_preserved": True,
                 "source_key_runtime_stride": self.cfg.reference_time_scale,
             },
+            "gravity_friction_curriculum": (
+                None
+                if self.cfg.stage16_gravity_friction_curriculum is None
+                else {
+                    "contract_path": self.cfg.stage16_gravity_friction_curriculum,
+                    "stage": self.cfg.stage16_curriculum_stage,
+                    "gravity_scale": self.cfg.stage16_gravity_scale,
+                    "friction_scale": self.cfg.stage16_friction_scale,
+                    "gravity_world_mps2": list(self.cfg.sim.gravity),
+                    "target_gravity_world_mps2": list(
+                        self.cfg.stage16_curriculum_target_gravity_world_mps2 or ()
+                    ),
+                    "global_default_material": {
+                        "static_friction": float(self.cfg.sim.physics_material.static_friction),
+                        "dynamic_friction": float(self.cfg.sim.physics_material.dynamic_friction),
+                        "restitution": float(self.cfg.sim.physics_material.restitution),
+                    },
+                    "object_material_assets": self.cfg.stage16_curriculum_material_assets,
+                    "support": self.cfg.stage16_support_mode,
+                    "external_guidance": bool(self.cfg.stage16_external_guidance),
+                    "frame_zero_full_gravity_authorized": bool(
+                        self.cfg.stage16_frame_zero_full_gravity_authorized
+                    ),
+                    "physics_switching": (
+                        "construction_time_stage_only_not_contact_or_episode_triggered"
+                    ),
+                }
+            ),
             "clip_assignment": {
                 "fixed_clip": getattr(self.cfg, "stage16d_fixed_clip", None),
                 "balanced": bool(self.cfg.balanced_clip_assignment),

@@ -1,0 +1,39 @@
+schema_version: Stage16P3EntryGateV2
+historical_entry_gate: configs/rl/stage16/stage16_p3_entry_gate_v1.yaml
+gates:
+  G0_provenance:
+    source_reference_hashes_valid: true
+    physics_parent_contract_valid: true
+    contact_semantics_valid: true
+  G1_rsi_v2:
+    contact_ready_state_bank_constructed: true
+    physically_viable_reset_states_required_per_clip: 1
+    rollout_object_state_writes: 0
+    rollout_wrist_root_state_writes: 0
+  G2_support:
+    required_classification: CONTACT_READY_ONLY_VALIDATED
+    frame_zero_full_gravity_authorized: false
+    invented_support_allowed: false
+  G4_controller_actuator:
+    joint_limit_failure_rate_max: 0.0
+    nonfinite_rate_max: 0.0
+    unstable_actuator_explosion_rate_max: 0.0
+  G5_causality:
+    external_guidance: 0
+    rollout_object_state_writes: 0
+    rollout_wrist_root_writes: 0
+    hidden_support: 0
+decision_contract:
+  status_on_pass: P3_READY_WITH_CONSTRAINTS
+  initial_rsi_mode: contact_ready_v2
+  allowed_initial_reset_banks: [CONTACT_READY_SAFE, PERSISTENT_SAFE, MANIPULATION_SAFE]
+  prohibited_reset_states: [GRAVITY_RISK, INVALID_RESET, AMBIGUOUS, PRE_CONTACT]
+  frame_zero_full_gravity_authorized: false
+  invented_support_allowed: false
+  external_guidance: false
+promotion_gate:
+  identifier: G3
+  placement: between_C2_and_C3
+  required_physics: full_gravity_nominal_friction
+  geometry_contract: current_absolute_geometry_gates
+  relaxation_allowed: false

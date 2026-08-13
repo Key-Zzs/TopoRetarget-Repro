@@ -14,6 +14,7 @@ from .reference_tracking.contact_reward_mode import ContactRewardMode
 EARTH_NOMINAL_GRAVITY = (0.0, 0.0, -9.81)
 PHYSICAL_BOOTSTRAP_SCHEMA = "Stage16PhysicalBootstrapContractV1"
 P3_ENTRY_GATE_SCHEMA = "Stage16P3EntryGateV1"
+P3_ENTRY_GATE_V2_SCHEMA = "Stage16P3EntryGateV2"
 
 
 def _mapping(value: object, *, name: str) -> Mapping[str, Any]:
@@ -198,6 +199,7 @@ __all__ = [
     "EARTH_NOMINAL_GRAVITY",
     "PHYSICAL_BOOTSTRAP_SCHEMA",
     "P3_ENTRY_GATE_SCHEMA",
+    "P3_ENTRY_GATE_V2_SCHEMA",
     "Stage16P1RSIAcceptanceContractV1",
     "Stage16PhysicalBootstrapContractV1",
     "load_p1_rsi_acceptance_contract",

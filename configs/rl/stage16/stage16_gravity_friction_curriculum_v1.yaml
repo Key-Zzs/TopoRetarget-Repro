@@ -1,0 +1,65 @@
+schema_version: Stage16GravityFrictionCurriculumV1
+scientific_label: ENGINEERING_CURRICULUM_V1
+parent_physical_bootstrap: configs/rl/stage16/stage16_physical_bootstrap.yaml
+target_gravity_world_mps2: [0.0, 0.0, -9.81]
+target_gravity_status: EARTH_NOMINAL_ENGINEERING_TARGET
+nominal_friction:
+  material_roles:
+    global_default_rigid_body:
+      static_friction: 0.5
+      dynamic_friction: 0.5
+      restitution: 0.0
+      source: IsaacLab_SimulationCfg_RigidBodyMaterialCfg_default
+    hocap_bound_object_material:
+      static_friction: 1.0
+      dynamic_friction: 1.0
+      restitution: 0.0
+      source: .local/generated_assets/isaaclab/hocap_{170105,170650}/hocap_*.usda
+schedule:
+  C0: {gravity_scale: 0.0, friction_scale: 2.0}
+  C1: {gravity_scale: 0.25, friction_scale: 1.75}
+  C2: {gravity_scale: 0.5, friction_scale: 1.5}
+  C3: {gravity_scale: 0.75, friction_scale: 1.25}
+  C4: {gravity_scale: 1.0, friction_scale: 1.0}
+stage_promotion_order: [C0, C1, C2, G3, C3, C4]
+physics_control:
+  mode: training_progress_driven_only
+  contact_triggered_gravity: forbidden
+  contact_triggered_friction: forbidden
+  per_episode_physics_override: forbidden
+  invariant_physics:
+    - mass
+    - inertia
+    - restitution
+    - damping
+    - collision_geometry
+    - self_collision
+    - controller
+reset_domain:
+  identifier: Stage16ContactReadyRSIV2
+  allowed_initial_banks: [CONTACT_READY_SAFE, PERSISTENT_SAFE, MANIPULATION_SAFE]
+  prohibited_banks: [PRE_CONTACT, GRAVITY_RISK, INVALID_RESET, AMBIGUOUS]
+  frame_zero_full_gravity_authorized: false
+  invented_support_allowed: false
+  external_guidance: false
+g3_promotion:
+  physics_stage: C4
+  replicas_per_safe_state: 4
+  control_steps: 20
+  minimum_retained_safe_states_per_clip: 1
+  geometry_contract: RuntimeCollisionProxyPenetrationV1
+  controller_requirements:
+    nonfinite_count: 0
+    systematic_joint_limit_failure: false
+    actuator_explosion: false
+    contact_solver_instability: false
+    rollout_object_state_writes: 0
+    rollout_wrist_root_writes: 0
+p4_formal:
+  schema_version: ContactReadyFullGravityQualificationV1
+  episodes_per_clip: 20
+  milestone_srqualified_min: 0.8
+  reset_domain: contact_ready_rsi_v2
+  support: none
+  external_guidance: false
+  frame_zero_full_gravity: false

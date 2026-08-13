@@ -77,6 +77,19 @@ class IsaacWorldWristFingerDirectRLEnvCfg(DirectRLEnvCfg):
             gpu_max_rigid_patch_count=2**20,
         ),
     )
+    # Set only by ``configure_stage16_gravity_friction_curriculum`` before
+    # environment construction.  It is evidence, not a simulator callback:
+    # physics must never switch in response to contact or episode state.
+    stage16_gravity_friction_curriculum: str | None = None
+    stage16_curriculum_stage: str | None = None
+    stage16_gravity_scale: float | None = None
+    stage16_friction_scale: float | None = None
+    stage16_curriculum_material_roles: dict[str, dict[str, object]] | None = None
+    stage16_curriculum_material_assets: dict[str, dict[str, object]] | None = None
+    stage16_curriculum_target_gravity_world_mps2: tuple[float, float, float] | None = None
+    stage16_external_guidance = False
+    stage16_support_mode = "none"
+    stage16_frame_zero_full_gravity_authorized = False
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
         num_envs=1,
         env_spacing=0.75,
@@ -277,6 +290,62 @@ def configure_uniform_reference_retiming(
     cfg.episode_length_s = (((41 - 1) * time_scale) + 1) / 20.0
 
 
+def configure_stage16_gravity_friction_curriculum(
+    cfg: IsaacWorldWristFingerDirectRLEnvCfg,
+    *,
+    curriculum_contract_path: Path,
+    stage: str,
+) -> None:
+    """Apply one pre-frozen P3/P4 stage before the Isaac scene exists.
+
+    The only mutable physical values are gravity and friction.  In particular,
+    this function deliberately leaves mass, inertia, restitution, damping,
+    collision geometry, self-collision, and controller settings untouched.
+    ``world_wrist_direct_env`` additionally overrides the authored object
+    material's two friction attributes before cloning the source environment.
+    """
+
+    from toporetarget.rl.curriculum_material_assets import materialize_curriculum_object_assets
+    from toporetarget.rl.gravity_friction_curriculum import load_gravity_friction_curriculum
+
+    contract = load_gravity_friction_curriculum(curriculum_contract_path)
+    physics = contract.physics(stage)
+    roles = physics["material_roles"]
+    if not isinstance(roles, dict):  # defensive: contract.physics is the sole producer
+        raise RuntimeError("STAGE16_CURRICULUM_MATERIAL_ROLES_INVALID")
+    default = roles.get("global_default_rigid_body")
+    object_material = roles.get("hocap_bound_object_material")
+    if not isinstance(default, dict) or not isinstance(object_material, dict):
+        raise RuntimeError("STAGE16_CURRICULUM_MATERIAL_ROLE_MISSING")
+    if float(default["restitution"]) != 0.0 or float(object_material["restitution"]) != 0.0:
+        raise RuntimeError("STAGE16_CURRICULUM_RESTITUTION_DRIFT")
+    gravity = tuple(float(value) for value in physics["gravity_world_mps2"])
+    cfg.sim.gravity = gravity
+    # IsaacLab's default material is applied to all unbound rigid collision
+    # prims (the hand).  HOCap's explicit source material is changed in the
+    # scene setup immediately before cloning, preserving its separate role.
+    cfg.sim.physics_material.static_friction = float(default["static_friction"])
+    cfg.sim.physics_material.dynamic_friction = float(default["dynamic_friction"])
+    cfg.sim.physics_material.restitution = 0.0
+    cfg.object_170105.spawn.rigid_props.disable_gravity = False
+    cfg.object_170650.spawn.rigid_props.disable_gravity = False
+    assets = materialize_curriculum_object_assets(
+        repo_root=REPO_ROOT, contract=contract, stage=stage
+    )
+    cfg.object_170105.spawn.usd_path = str(assets["hocap_170105"]["derived_usd"])
+    cfg.object_170650.spawn.usd_path = str(assets["hocap_170650"]["derived_usd"])
+    cfg.stage16_gravity_friction_curriculum = str(curriculum_contract_path.resolve())
+    cfg.stage16_curriculum_stage = stage
+    cfg.stage16_gravity_scale = float(physics["gravity_scale"])
+    cfg.stage16_friction_scale = float(physics["friction_scale"])
+    cfg.stage16_curriculum_material_roles = roles
+    cfg.stage16_curriculum_material_assets = assets
+    cfg.stage16_curriculum_target_gravity_world_mps2 = contract.target_gravity_world_mps2
+    cfg.stage16_external_guidance = False
+    cfg.stage16_support_mode = "none"
+    cfg.stage16_frame_zero_full_gravity_authorized = False
+
+
 def configure_full_articulation_computed_torque_wrist(
     cfg: IsaacWorldWristFingerDirectRLEnvCfg, *, profile_identifier: str
 ) -> None:
@@ -382,6 +451,7 @@ __all__ = [
     "IsaacWorldWristFingerDirectRLEnvCfg",
     "configure_explicit_virtual_wrist",
     "configure_uniform_reference_retiming",
+    "configure_stage16_gravity_friction_curriculum",
     "configure_full_articulation_computed_torque_wrist",
     "configure_bounded_tvlqr_wrist",
     "configure_bounded_mpc_wrist",

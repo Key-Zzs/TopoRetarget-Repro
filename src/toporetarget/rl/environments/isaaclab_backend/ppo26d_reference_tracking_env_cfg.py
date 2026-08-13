@@ -17,6 +17,7 @@ from .physics_consistent_retargeting_env_cfg import (
     IsaacPhysicsConsistentRetargetingEnvCfg,
     configure_stage16d_nominal,
 )
+from .world_wrist_direct_env_cfg import configure_stage16_gravity_friction_curriculum
 
 
 @configclass
@@ -198,6 +199,19 @@ def configure_stage16_contact_ready_rsi_v2(
     cfg.stage16_contact_ready_rsi_v2_allowed_banks = tuple(allowed_banks)
 
 
+def configure_stage16_p3_p4_curriculum(
+    cfg: IsaacPPO26DReferenceTrackingEnvCfg,
+    *,
+    curriculum_contract_path: Path,
+    stage: str,
+) -> None:
+    """Bind a frozen stage after nominal PPO configuration, before scene creation."""
+
+    configure_stage16_gravity_friction_curriculum(
+        cfg, curriculum_contract_path=curriculum_contract_path, stage=stage
+    )
+
+
 def configure_stage16d_strict_per_finger_contact_reward_v4(
     cfg: IsaacPPO26DReferenceTrackingEnvCfg,
     *,
@@ -223,6 +237,7 @@ __all__ = [
     "configure_stage16d_phase3_object_twist_reward",
     "configure_stage16d_contact_reward",
     "configure_stage16_contact_ready_rsi_v2",
+    "configure_stage16_p3_p4_curriculum",
     "configure_stage16d_reference_gated_contact_reward",
     "configure_stage16d_strict_per_finger_contact_reward_v4",
 ]
