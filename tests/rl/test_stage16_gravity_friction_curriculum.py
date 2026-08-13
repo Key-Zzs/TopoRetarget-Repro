@@ -6,6 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from toporetarget.rl.full_gravity_promotion import (
+    G3_BLOCKED,
+    G3_PASS_WITH_FILTERED_BANK,
+    decide_g3_promotion,
+    expected_g3_state_replica_pairs,
+    validate_g3_contract,
+)
 from toporetarget.rl.gravity_friction_curriculum import (
     CURRICULUM_STAGES,
     INITIAL_SAFE_BANKS,
@@ -66,3 +73,62 @@ def test_v2_entry_moves_g3_to_promotion_without_overwriting_v1() -> None:
     assert entry["decision_contract"]["status_on_pass"] == "P3_READY_WITH_CONSTRAINTS"
     assert entry["promotion_gate"]["placement"] == "between_C2_and_C3"
     assert entry["decision_contract"]["external_guidance"] is False
+
+
+def _g3_row(state: int, replica: int, *, initial_valid: bool = True) -> dict[str, object]:
+    return {
+        "runtime_index": state,
+        "replica": replica,
+        "initial_geometry_valid": initial_valid,
+        "finite": True,
+        "absolute_geometry_pass": True,
+        "interfinger_pass": True,
+        "joint_safe": True,
+        "action_safe": True,
+        "no_actuator_explosion": True,
+        "no_contact_solver_instability": True,
+    }
+
+
+def test_g3_uses_all_safe_states_and_only_predeclared_initial_geometry_filtering() -> None:
+    curriculum = _root() / "configs/rl/stage16/stage16_gravity_friction_curriculum_v1.yaml"
+    import yaml
+
+    contract = yaml.safe_load(curriculum.read_text(encoding="utf-8"))["g3_promotion"]
+    assert validate_g3_contract(contract)["gravity_scale"] == 1.0
+    safe = (7, 11)
+    assert expected_g3_state_replica_pairs(safe) == {
+        (state, replica) for state in safe for replica in range(4)
+    }
+    rows = [
+        _g3_row(state, replica, initial_valid=state != 7)
+        for state in safe
+        for replica in (0, 1, 2, 3)
+    ]
+    result = decide_g3_promotion(
+        safe_indices=safe,
+        rows=rows,
+        rollout_object_state_writes=0,
+        rollout_wrist_root_writes=0,
+    )
+    assert result["status"] == G3_PASS_WITH_FILTERED_BANK
+    assert result["filtered_initial_geometry_count"] == 1
+
+
+def test_g3_blocks_on_dynamic_failure_and_rejects_missing_safe_replica() -> None:
+    rows = [_g3_row(7, replica) for replica in range(4)]
+    rows[0]["finite"] = False
+    result = decide_g3_promotion(
+        safe_indices=(7,),
+        rows=rows,
+        rollout_object_state_writes=0,
+        rollout_wrist_root_writes=0,
+    )
+    assert result["status"] == G3_BLOCKED
+    with pytest.raises(ValueError, match="ROSTER_INCOMPLETE"):
+        decide_g3_promotion(
+            safe_indices=(7,),
+            rows=rows[:-1],
+            rollout_object_state_writes=0,
+            rollout_wrist_root_writes=0,
+        )
