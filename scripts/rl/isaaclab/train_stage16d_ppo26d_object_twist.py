@@ -25,6 +25,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 from toporetarget.rl.ppo.checkpoint import load_checkpoint, restore_rng_state, save_checkpoint
 from toporetarget.rl.ppo.ppo26d_contract import Stage16DPPO26DTrainingConfigV1
 from toporetarget.rl.ppo.ppo26d_trainer import PPO26DTrainer, parameter_hash
+from toporetarget.rl.reference_tracking.contact_reward_mode import ContactRewardMode
 from toporetarget.rl.reference_tracking.ppo26d_reward import (
     TopoRetargetReferenceTrackingReward26DV2,
 )
@@ -480,6 +481,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-envs", type=int, default=1024)
     parser.add_argument("--target-reward-v2-samples", type=int)
     parser.add_argument(
+        "--contact-mode",
+        choices=tuple(mode.value for mode in ContactRewardMode),
+        help=(
+            "Unified Stage16-D contact objective. New invocations default to aggregate_v3; "
+            "the older V3/V4 switches below remain deterministic compatibility aliases."
+        ),
+    )
+    parser.add_argument(
         "--reward-v3-contact",
         action="store_true",
         help=(
@@ -553,11 +562,40 @@ def main() -> int:
         raise ValueError("--accept-eula is required")
     if args.num_envs <= 0:
         raise ValueError("--num-envs must be positive")
-    is_reward_v3 = bool(args.reward_v3_contact)
-    is_strict_v4 = bool(args.strict_per_finger_contact_reward_v4)
-    is_contact_reward = is_reward_v3 or is_strict_v4
-    if is_reward_v3 and is_strict_v4:
+    if args.reward_v3_contact and args.strict_per_finger_contact_reward_v4:
         raise ValueError("REWARD_V3_AND_STRICT_V4_ARE_MUTUALLY_EXCLUSIVE")
+    legacy_mode = (
+        ContactRewardMode.AGGREGATE_V3
+        if args.reward_v3_contact
+        else (
+            ContactRewardMode.STRICT_PER_FINGER_V4
+            if args.strict_per_finger_contact_reward_v4
+            else None
+        )
+    )
+    configured_mode = (
+        ContactRewardMode.parse(args.contact_mode) if args.contact_mode is not None else None
+    )
+    if (
+        configured_mode is not None
+        and legacy_mode is not None
+        and configured_mode is not legacy_mode
+    ):
+        raise ValueError("STAGE16D_CONTACT_MODE_LEGACY_FLAG_CONFLICT")
+    # Explicit historical budget families are unambiguous migration evidence.
+    # All new contact invocations otherwise start from the frozen aggregate V3
+    # global default.
+    contact_mode = configured_mode or legacy_mode
+    if contact_mode is None:
+        if args.target_reward_v2_samples is not None:
+            contact_mode = None
+        elif args.target_reward_v4_samples is not None:
+            contact_mode = ContactRewardMode.STRICT_PER_FINGER_V4
+        else:
+            contact_mode = ContactRewardMode.AGGREGATE_V3
+    is_reward_v3 = contact_mode is ContactRewardMode.AGGREGATE_V3
+    is_strict_v4 = contact_mode is ContactRewardMode.STRICT_PER_FINGER_V4
+    is_contact_reward = is_reward_v3 or is_strict_v4
     if not is_contact_reward and args.clip != "hocap_170650":
         raise ValueError("PHASE3_ONLY_HOCAP_170650_IS_AUTHORIZED")
     if is_strict_v4:
@@ -669,19 +707,21 @@ def main() -> int:
             rsi=True,
             critical_dr=args.critical_dr,
         )
-        if is_strict_v4:
-            ppo_cfg.configure_stage16d_strict_per_finger_contact_reward_v4(
+        if contact_mode is not None:
+            ppo_cfg.configure_stage16d_contact_reward(
                 cfg,
+                mode=contact_mode,
                 reference_root=args.reference_root.resolve(),
-                contact_reward_contract=args.strict_v4_contract.resolve(),
-                source_mask_root=args.strict_v4_source_mask_root.resolve(),
-            )
-        elif is_reward_v3:
-            ppo_cfg.configure_stage16d_reference_gated_contact_reward(
-                cfg,
-                reference_root=args.reference_root.resolve(),
-                contact_reward_contract=args.contact_reward_contract.resolve(),
-                contact_mask_root=args.contact_mask_root.resolve(),
+                contact_reward_contract=(
+                    args.strict_v4_contract.resolve()
+                    if is_strict_v4
+                    else args.contact_reward_contract.resolve()
+                ),
+                contact_mask_root=(
+                    args.strict_v4_source_mask_root.resolve()
+                    if is_strict_v4
+                    else args.contact_mask_root.resolve()
+                ),
             )
         else:
             ppo_cfg.configure_stage16d_phase3_object_twist_reward(

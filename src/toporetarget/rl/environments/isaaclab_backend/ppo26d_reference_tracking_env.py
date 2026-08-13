@@ -17,6 +17,11 @@ import torch
 
 from toporetarget.rl.geometry_audit.hand_collision_reconstruction import HAND_COLLISION_BODY_NAMES
 from toporetarget.rl.ppo.ppo26d_contract import Stage16DPPO26DObservationV2
+from toporetarget.rl.reference_tracking.contact_reward_mode import (
+    build_contact_reward,
+    resolve_contact_mode,
+    validate_frozen_contact_contract,
+)
 from toporetarget.rl.reference_tracking.ppo26d_reward import (
     TopoRetargetReferenceTrackingReward26DV1,
     TopoRetargetReferenceTrackingReward26DV2,
@@ -59,45 +64,21 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         self._fingertip_force_sensor_indices: torch.Tensor | None = None
         self._ppo26d_trace_capture_exact_pair_force = False
         self._contact_reward_receipt: dict[str, object] | None = None
-        if cfg.ppo26d_reward_contract == "TopoRetargetReferenceTrackingReward26DV3":
+        contact_mode = resolve_contact_mode(
+            configured_mode=cfg.ppo26d_contact_reward_mode,
+            reward_contract_identifier=cfg.ppo26d_reward_contract,
+        )
+        if contact_mode is not None:
             if cfg.reference_kinematics_version != 2:
-                raise RuntimeError("PPO26D_REWARD_V3_REQUIRES_REFERENCE_KINEMATICS_V2")
+                raise RuntimeError("PPO26D_CONTACT_REWARD_REQUIRES_REFERENCE_KINEMATICS_V2")
             if cfg.ppo26d_contact_reward_contract_path is None:
-                raise RuntimeError("PPO26D_REWARD_V3_CONTACT_CONTRACT_PATH_MISSING")
+                raise RuntimeError("PPO26D_CONTACT_REWARD_CONTRACT_PATH_MISSING")
             receipt = json.loads(
                 Path(cfg.ppo26d_contact_reward_contract_path).read_text(encoding="utf-8")
             )
-            parameters = receipt.get("frozen_parameters")
-            if (
-                receipt.get("status") != "CONTACT_REWARD_CONTRACT_FROZEN"
-                or not isinstance(parameters, dict)
-                or not isinstance(parameters.get("lambda_c_n"), (int, float))
-            ):
-                raise RuntimeError("PPO26D_REWARD_V3_CONTACT_CONTRACT_INVALID")
+            parameters = validate_frozen_contact_contract(contact_mode, receipt)
             self._contact_reward_receipt = receipt
-            self._reward_contract = TopoRetargetReferenceTrackingReward26DV3(
-                contact_force_scale_lambda_n=float(parameters["lambda_c_n"])
-            )
-        elif cfg.ppo26d_reward_contract == "TopoRetargetReferenceTrackingReward26DV4":
-            if cfg.reference_kinematics_version != 2:
-                raise RuntimeError("STRICT_V4_REQUIRES_REFERENCE_KINEMATICS_V2")
-            if cfg.ppo26d_contact_reward_contract_path is None:
-                raise RuntimeError("STRICT_V4_CONTACT_CONTRACT_PATH_MISSING")
-            receipt = json.loads(
-                Path(cfg.ppo26d_contact_reward_contract_path).read_text(encoding="utf-8")
-            )
-            parameters = receipt.get("frozen_parameters")
-            if (
-                receipt.get("status") != "STRICT_V4_CONTACT_CONTRACT_FROZEN"
-                or not isinstance(parameters, dict)
-                or not isinstance(parameters.get("lambda_tip_n"), (int, float))
-            ):
-                raise RuntimeError("STRICT_V4_CONTACT_CONTRACT_INVALID")
-            self._contact_reward_receipt = receipt
-            self._reward_contract = TopoRetargetReferenceTrackingReward26DV4(
-                contact_force_scale_lambda_tip_n=float(parameters["lambda_tip_n"]),
-                contact_numerical_floor_n=float(parameters["numerical_floor_n"]),
-            )
+            self._reward_contract = build_contact_reward(contact_mode, frozen_parameters=parameters)
         elif cfg.ppo26d_reward_contract == "TopoRetargetReferenceTrackingReward26DV2":
             if cfg.reference_kinematics_version != 2:
                 raise RuntimeError("PPO26D_REWARD_V2_REQUIRES_REFERENCE_KINEMATICS_V2")

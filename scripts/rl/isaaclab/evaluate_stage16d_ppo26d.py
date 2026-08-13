@@ -29,6 +29,7 @@ from toporetarget.rl.geometry_audit.hand_collision_reconstruction import (
 from toporetarget.rl.ppo.checkpoint import load_checkpoint
 from toporetarget.rl.ppo.ppo26d_continuation import summarize_episodes
 from toporetarget.rl.ppo.ppo26d_trainer import PPO26DTrainer
+from toporetarget.rl.reference_tracking.contact_reward_mode import ContactRewardMode
 from toporetarget.rl.reference_tracking.reference_gated_contact import (
     EVALUATION_FINGERTIP_LINKS,
     fingertip_force_indices,
@@ -55,6 +56,14 @@ def parse_args() -> argparse.Namespace:
         "--object-twist-reward-v2",
         action="store_true",
         help="Evaluate a Phase 3 Reward V2 checkpoint; requires --reference-kinematics-v2-root.",
+    )
+    parser.add_argument(
+        "--contact-mode",
+        choices=tuple(mode.value for mode in ContactRewardMode),
+        help=(
+            "Unified contact objective. The historical V3/V4 flags remain compatibility aliases; "
+            "checkpoint provenance still determines the required evaluation contract."
+        ),
     )
     parser.add_argument(
         "--reference-gated-contact-reward-v3",
@@ -829,6 +838,30 @@ def main() -> int:
     args = parse_args()
     if not args.accept_eula:
         raise ValueError("--accept-eula is required")
+    legacy_mode = (
+        ContactRewardMode.AGGREGATE_V3
+        if args.reference_gated_contact_reward_v3
+        else (
+            ContactRewardMode.STRICT_PER_FINGER_V4
+            if args.strict_per_finger_contact_reward_v4
+            else None
+        )
+    )
+    configured_mode = (
+        ContactRewardMode.parse(args.contact_mode) if args.contact_mode is not None else None
+    )
+    if (
+        configured_mode is not None
+        and legacy_mode is not None
+        and configured_mode is not legacy_mode
+    ):
+        raise ValueError("STAGE16D_CONTACT_MODE_LEGACY_FLAG_CONFLICT")
+    contact_mode = configured_mode or legacy_mode
+    if contact_mode is not None:
+        args.reference_gated_contact_reward_v3 = contact_mode is ContactRewardMode.AGGREGATE_V3
+        args.strict_per_finger_contact_reward_v4 = (
+            contact_mode is ContactRewardMode.STRICT_PER_FINGER_V4
+        )
     if (
         args.object_twist_reward_v2
         or args.reference_gated_contact_reward_v3
@@ -900,22 +933,13 @@ def main() -> int:
         ppo26d_cfg.configure_stage16d_ppo26d(
             cfg, num_envs=evaluation_num_envs, clip=args.clip, rsi=False, critical_dr=False
         )
-        if args.strict_per_finger_contact_reward_v4:
+        if contact_mode is not None:
             assert args.reference_kinematics_v2_root is not None
             assert args.contact_reward_contract is not None
             assert args.contact_mask_root is not None
-            ppo26d_cfg.configure_stage16d_strict_per_finger_contact_reward_v4(
+            ppo26d_cfg.configure_stage16d_contact_reward(
                 cfg,
-                reference_root=args.reference_kinematics_v2_root,
-                contact_reward_contract=args.contact_reward_contract,
-                source_mask_root=args.contact_mask_root,
-            )
-        elif args.reference_gated_contact_reward_v3:
-            assert args.reference_kinematics_v2_root is not None
-            assert args.contact_reward_contract is not None
-            assert args.contact_mask_root is not None
-            ppo26d_cfg.configure_stage16d_reference_gated_contact_reward(
-                cfg,
+                mode=contact_mode,
                 reference_root=args.reference_kinematics_v2_root,
                 contact_reward_contract=args.contact_reward_contract,
                 contact_mask_root=args.contact_mask_root,

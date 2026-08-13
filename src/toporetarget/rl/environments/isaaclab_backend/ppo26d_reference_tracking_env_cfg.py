@@ -7,6 +7,11 @@ from pathlib import Path
 
 from isaaclab.utils import configclass
 
+from toporetarget.rl.reference_tracking.contact_reward_mode import (
+    ContactRewardMode,
+    validate_frozen_contact_contract,
+)
+
 from .physics_consistent_retargeting_env_cfg import (
     IsaacPhysicsConsistentRetargetingEnvCfg,
     configure_stage16d_nominal,
@@ -23,6 +28,7 @@ class IsaacPPO26DReferenceTrackingEnvCfg(IsaacPhysicsConsistentRetargetingEnvCfg
     ppo26d_observation_contract = "Stage16DPPO26DObservationV2"
     ppo26d_action_contract = "Stage16DReferenceResidualAction26DV1"
     ppo26d_reward_contract = "TopoRetargetReferenceTrackingReward26DV1"
+    ppo26d_contact_reward_mode: str | None = None
     ppo26d_reference_contact_mask_paths: dict[str, str] | None = None
     ppo26d_contact_reward_contract_path: str | None = None
     reference_kinematics_version = 1
@@ -101,6 +107,50 @@ def configure_stage16d_phase3_object_twist_reward(
     cfg.ppo26d_reward_contract = "TopoRetargetReferenceTrackingReward26DV2"
 
 
+def configure_stage16d_contact_reward(
+    cfg: IsaacPPO26DReferenceTrackingEnvCfg,
+    *,
+    mode: str | ContactRewardMode,
+    reference_root: Path,
+    contact_reward_contract: Path,
+    contact_mask_root: Path,
+) -> None:
+    """Bind a selected frozen contact objective without changing physics or observations."""
+
+    configure_stage16d_phase3_object_twist_reward(cfg, reference_root=reference_root)
+    selected = ContactRewardMode.parse(mode)
+    receipt_path = contact_reward_contract.resolve()
+    payload = json.loads(receipt_path.read_text(encoding="utf-8"))
+    validate_frozen_contact_contract(selected, payload)
+    paths = {
+        clip: (
+            contact_mask_root.resolve()
+            / (
+                f"reference_contact_mask_{clip.removeprefix('hocap_')}.npz"
+                if selected is ContactRewardMode.AGGREGATE_V3
+                else f"strict_source_contact_mask_{clip}.npz"
+            )
+        )
+        for clip in ("hocap_170105", "hocap_170650")
+    }
+    missing = [str(path) for path in paths.values() if not path.is_file()]
+    if missing:
+        marker = (
+            "PPO26D_REWARD_V3_CONTACT_MASK_MISSING"
+            if selected is ContactRewardMode.AGGREGATE_V3
+            else "STRICT_V4_SOURCE_CONTACT_MASK_MISSING"
+        )
+        raise FileNotFoundError(f"{marker}:{missing}")
+    cfg.ppo26d_reward_contract = (
+        "TopoRetargetReferenceTrackingReward26DV3"
+        if selected is ContactRewardMode.AGGREGATE_V3
+        else "TopoRetargetReferenceTrackingReward26DV4"
+    )
+    cfg.ppo26d_contact_reward_mode = selected.value
+    cfg.ppo26d_contact_reward_contract_path = str(receipt_path)
+    cfg.ppo26d_reference_contact_mask_paths = {clip: str(path) for clip, path in paths.items()}
+
+
 def configure_stage16d_reference_gated_contact_reward(
     cfg: IsaacPPO26DReferenceTrackingEnvCfg,
     *,
@@ -108,31 +158,15 @@ def configure_stage16d_reference_gated_contact_reward(
     contact_reward_contract: Path,
     contact_mask_root: Path,
 ) -> None:
-    """Bind a fully frozen V3 reward without changing physics or observations."""
+    """Compatibility wrapper for historical callers that explicitly chose V3."""
 
-    configure_stage16d_phase3_object_twist_reward(cfg, reference_root=reference_root)
-    receipt_path = contact_reward_contract.resolve()
-    payload = json.loads(receipt_path.read_text(encoding="utf-8"))
-    if payload.get("status") != "CONTACT_REWARD_CONTRACT_FROZEN":
-        raise ValueError("PPO26D_REWARD_V3_CONTACT_CONTRACT_NOT_FROZEN")
-    parameters = payload.get("frozen_parameters")
-    if not isinstance(parameters, dict) or not isinstance(
-        parameters.get("lambda_c_n"), (int, float)
-    ):
-        raise ValueError("PPO26D_REWARD_V3_CONTACT_LAMBDA_MISSING")
-    if float(parameters["lambda_c_n"]) <= 1.0e-5:
-        raise ValueError("PPO26D_REWARD_V3_CONTACT_LAMBDA_INVALID")
-    paths = {
-        clip: contact_mask_root.resolve()
-        / f"reference_contact_mask_{clip.removeprefix('hocap_')}.npz"
-        for clip in ("hocap_170105", "hocap_170650")
-    }
-    missing = [str(path) for path in paths.values() if not path.is_file()]
-    if missing:
-        raise FileNotFoundError(f"PPO26D_REWARD_V3_CONTACT_MASK_MISSING:{missing}")
-    cfg.ppo26d_reward_contract = "TopoRetargetReferenceTrackingReward26DV3"
-    cfg.ppo26d_contact_reward_contract_path = str(receipt_path)
-    cfg.ppo26d_reference_contact_mask_paths = {clip: str(path) for clip, path in paths.items()}
+    configure_stage16d_contact_reward(
+        cfg,
+        mode=ContactRewardMode.AGGREGATE_V3,
+        reference_root=reference_root,
+        contact_reward_contract=contact_reward_contract,
+        contact_mask_root=contact_mask_root,
+    )
 
 
 def configure_stage16d_strict_per_finger_contact_reward_v4(
@@ -142,29 +176,15 @@ def configure_stage16d_strict_per_finger_contact_reward_v4(
     contact_reward_contract: Path,
     source_mask_root: Path,
 ) -> None:
-    """Bind V4's source-confirmed masks without changing physics or observations."""
+    """Compatibility wrapper for historical callers that explicitly chose V4."""
 
-    configure_stage16d_phase3_object_twist_reward(cfg, reference_root=reference_root)
-    receipt_path = contact_reward_contract.resolve()
-    payload = json.loads(receipt_path.read_text(encoding="utf-8"))
-    parameters = payload.get("frozen_parameters")
-    if (
-        payload.get("status") != "STRICT_V4_CONTACT_CONTRACT_FROZEN"
-        or not isinstance(parameters, dict)
-        or not isinstance(parameters.get("lambda_tip_n"), (int, float))
-        or float(parameters["lambda_tip_n"]) <= 1.0e-5
-    ):
-        raise ValueError("STRICT_V4_CONTACT_CONTRACT_NOT_FROZEN")
-    paths = {
-        clip: source_mask_root.resolve() / f"strict_source_contact_mask_{clip}.npz"
-        for clip in ("hocap_170105", "hocap_170650")
-    }
-    missing = [str(path) for path in paths.values() if not path.is_file()]
-    if missing:
-        raise FileNotFoundError(f"STRICT_V4_SOURCE_CONTACT_MASK_MISSING:{missing}")
-    cfg.ppo26d_reward_contract = "TopoRetargetReferenceTrackingReward26DV4"
-    cfg.ppo26d_contact_reward_contract_path = str(receipt_path)
-    cfg.ppo26d_reference_contact_mask_paths = {clip: str(path) for clip, path in paths.items()}
+    configure_stage16d_contact_reward(
+        cfg,
+        mode=ContactRewardMode.STRICT_PER_FINGER_V4,
+        reference_root=reference_root,
+        contact_reward_contract=contact_reward_contract,
+        contact_mask_root=source_mask_root,
+    )
 
 
 __all__ = [
@@ -172,6 +192,7 @@ __all__ = [
     "configure_stage16d_ppo26d",
     "configure_stage16d_reference_kinematics_v2",
     "configure_stage16d_phase3_object_twist_reward",
+    "configure_stage16d_contact_reward",
     "configure_stage16d_reference_gated_contact_reward",
     "configure_stage16d_strict_per_finger_contact_reward_v4",
 ]
