@@ -56,6 +56,18 @@ Historical V1/V2/V3/V4 artifacts remain available through provenance-aware
 compatibility mapping. The closeout never reinterprets a historical V4 artifact
 as V3 merely because a newer configuration now defaults to V3.
 
+## Physical Bootstrap P0–P2 (COMPLETE; P3 BLOCKED)
+
+`feature/ppo-physical` now contains the physical bootstrap contracts,
+Contact-ready RSI V2, and source-support feasibility evidence. P1 uses bounded
+full-gravity true-PhysX diagnostics to construct named safe reset banks without
+guidance, support injection, or rollout writes. P2 never substitutes a generic
+plane/table when source support is unavailable.
+
+This is not a PPO or curriculum result. P3 remains blocked until its current
+absolute hand-object and inter-finger geometry gates pass. See [Stage 16
+Physical Bootstrap](stages/STAGE16_PHYSICAL_BOOTSTRAP.md).
+
 ## Next causal physical stage
 
 Create `feature/ppo-physical` only after this milestone PR is merged to
@@ -79,6 +91,7 @@ physics route; it is not a replacement for it.
 ## Documentation entry points
 
 - [Stage16-D causal zero-g milestone](stages/STAGE16D_CAUSAL_ZERO_G_MILESTONE.md)
+- [Stage 16 Physical Bootstrap](stages/STAGE16_PHYSICAL_BOOTSTRAP.md)
 - [Stage 16-D physics contract](stages/STAGE16D_PHYSICS_CONSISTENT_RETARGETING.md)
 - [Reference Kinematics V2 contract](rl/REFERENCE_KINEMATICS_CONTRACT.md)
 - [PPO-26D contract](rl/REFERENCE_TRACKING_PPO_26D.md)

@@ -11,6 +11,7 @@ from toporetarget.rl.reference_tracking.contact_reward_mode import (
     ContactRewardMode,
     validate_frozen_contact_contract,
 )
+from toporetarget.rl.rsi.contact_ready_v2 import INITIAL_P3_BANKS, ContactReadySamplerV2
 
 from .physics_consistent_retargeting_env_cfg import (
     IsaacPhysicsConsistentRetargetingEnvCfg,
@@ -42,6 +43,8 @@ class IsaacPPO26DReferenceTrackingEnvCfg(IsaacPhysicsConsistentRetargetingEnvCfg
     ppo26d_reset_joint_noise_rad = 0.02
     ppo26d_reset_object_position_noise_m = 0.005
     ppo26d_reset_object_orientation_noise_rad = 0.03
+    stage16_contact_ready_rsi_v2_safe_bank_path: str | None = None
+    stage16_contact_ready_rsi_v2_allowed_banks: tuple[str, ...] = ()
 
 
 def configure_stage16d_ppo26d(
@@ -169,6 +172,32 @@ def configure_stage16d_reference_gated_contact_reward(
     )
 
 
+def configure_stage16_contact_ready_rsi_v2(
+    cfg: IsaacPPO26DReferenceTrackingEnvCfg,
+    *,
+    safe_bank_path: Path,
+    allowed_banks: tuple[str, ...] = INITIAL_P3_BANKS,
+    bank_weights: dict[str, float] | None = None,
+) -> None:
+    """Bind a P1-qualified reset bank without changing dynamics or rewards.
+
+    The generic base environment already implements a named curriculum reset
+    distribution.  P1 supplies its indices/probabilities and records the
+    safe-bank provenance; it never introduces clip-specific branching or a
+    rollout-time state write.
+    """
+
+    sampler = ContactReadySamplerV2.from_safe_bank(safe_bank_path)
+    indices, probabilities = sampler.indices(allowed_banks, weights=bank_weights)
+    cfg.reset_reference_index = "curriculum"
+    cfg.curriculum_reference_indices = tuple(int(value) for value in indices)
+    cfg.curriculum_reference_probabilities = tuple(float(value) for value in probabilities)
+    cfg.curriculum_phase = "physical_contact_ready_v2"
+    cfg.ppo26d_rsi_enabled = True
+    cfg.stage16_contact_ready_rsi_v2_safe_bank_path = str(safe_bank_path.resolve())
+    cfg.stage16_contact_ready_rsi_v2_allowed_banks = tuple(allowed_banks)
+
+
 def configure_stage16d_strict_per_finger_contact_reward_v4(
     cfg: IsaacPPO26DReferenceTrackingEnvCfg,
     *,
@@ -193,6 +222,7 @@ __all__ = [
     "configure_stage16d_reference_kinematics_v2",
     "configure_stage16d_phase3_object_twist_reward",
     "configure_stage16d_contact_reward",
+    "configure_stage16_contact_ready_rsi_v2",
     "configure_stage16d_reference_gated_contact_reward",
     "configure_stage16d_strict_per_finger_contact_reward_v4",
 ]

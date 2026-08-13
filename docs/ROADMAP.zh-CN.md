@@ -50,6 +50,16 @@ global default。
 历史 V1/V2/V3/V4 artifact 仍通过 provenance-aware compatibility mapping 使用。closeout 不会仅因新
 配置默认 V3，就把历史 V4 artifact 静默重解释成 V3。
 
+## Physical Bootstrap P0–P2（COMPLETE；P3 BLOCKED）
+
+`feature/ppo-physical` 已包含 physical bootstrap contract、Contact-ready RSI V2 和
+source-support feasibility evidence。P1 使用有界的 full-gravity true-PhysX diagnostic 构造具名
+safe reset bank，不引入 guidance、support injection 或 rollout write。P2 在 source support 不可用时绝不
+用 generic plane/table 替代。
+
+这不是 PPO 或 curriculum 结果。P3 必须等待当前 absolute hand-object 和 inter-finger geometry gate 通过，
+目前保持 blocked。见 [Stage 16 Physical Bootstrap](stages/STAGE16_PHYSICAL_BOOTSTRAP.zh-CN.md)。
+
 ## 下一个因果物理阶段
 
 仅在该 milestone PR merge 到 `main` 后，才从 `main` 创建 `feature/ppo-physical`。顺序必须是：
@@ -71,6 +81,7 @@ external guidance 或 data-H2R 仍是该 causal physics 路线之后的 assisted
 ## 文档入口
 
 - [Stage16-D causal zero-g milestone](stages/STAGE16D_CAUSAL_ZERO_G_MILESTONE.zh-CN.md)
+- [Stage 16 Physical Bootstrap](stages/STAGE16_PHYSICAL_BOOTSTRAP.zh-CN.md)
 - [Stage 16-D physics contract](stages/STAGE16D_PHYSICS_CONSISTENT_RETARGETING.md)
 - [Reference Kinematics V2 contract](rl/REFERENCE_KINEMATICS_CONTRACT.md)
 - [PPO-26D contract](rl/REFERENCE_TRACKING_PPO_26D.md)

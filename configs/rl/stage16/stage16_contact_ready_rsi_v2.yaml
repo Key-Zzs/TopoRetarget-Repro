@@ -1,0 +1,11 @@
+schema_version: Stage16ContactReadyRSIV2ConfigV1
+rsi:
+  mode: contact_ready_v2
+  bank_schema: Stage16ContactReadyRSIV2StateBankV1
+  allowed_banks: [CONTACT_READY_SAFE, PERSISTENT_SAFE, MANIPULATION_SAFE]
+  weights: {}
+  source_contact_contract: SourcePerFingerContactEvidenceV1
+  forbidden_truth_source: ReferenceGatedContactRewardV1_3cm_mask
+  reset_only_state_writes: true
+  rollout_object_state_writes: 0
+  rollout_wrist_root_state_writes: 0

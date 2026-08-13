@@ -150,6 +150,11 @@ attachments, hidden object controller, or rollout-time object-state or
 wrist-root writes. It does not claim full-gravity or real-world physical
 validation.
 
+The follow-on physical bootstrap defines Contact-ready RSI V2, source-support
+feasibility, and a fail-closed P3 entry decision. It is diagnostic-only and
+does not start PPO or a gravity/friction curriculum; see [Stage 16 Physical
+Bootstrap](docs/stages/STAGE16_PHYSICAL_BOOTSTRAP.md).
+
 ### 5. Evaluation, replay, and visualization
 
 Geometry inspection is read-only; a frozen benchmark follows the explicit
@@ -255,6 +260,8 @@ local storage.
   — physics scope, provenance, and qualification boundary.
 - [Stage16-D causal zero-g milestone](docs/stages/STAGE16D_CAUSAL_ZERO_G_MILESTONE.md)
   — frozen scope, stable/default V3, experimental V4, and the next physical stage.
+- [Stage 16 Physical Bootstrap](docs/stages/STAGE16_PHYSICAL_BOOTSTRAP.md)
+  — P0/P1/P2 contracts, safe-bank boundary, and P3 entry gates.
 - [Terminal dynamics attribution](docs/stages/STAGE16D_PHASE1_TERMINAL_DYNAMICS.md)
   — Phase 1 method and conclusions.
 - [PPO-26D reference tracking](docs/rl/REFERENCE_TRACKING_PPO_26D.md) — action,

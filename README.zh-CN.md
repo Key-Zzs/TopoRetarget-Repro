@@ -135,6 +135,10 @@ Stage16-D 因果 PPO workflow 见 [Physics-correction PPO](docs/rl/PHYSICS_CORRE
 没有 guidance force、support、attachment、隐藏 object controller，也没有 rollout-time object-state 或
 wrist-root write。不声称 full-gravity 或 real-world physical validation。
 
+后续 physical bootstrap 定义 Contact-ready RSI V2、source-support feasibility 与 fail-closed 的 P3 entry
+decision。它仅产生 diagnostic evidence，不启动 PPO 或 gravity/friction curriculum；见 [Stage 16 Physical
+Bootstrap](docs/stages/STAGE16_PHYSICAL_BOOTSTRAP.zh-CN.md)。
+
 ### 5. 评价、replay 与可视化
 
 geometry inspection 是只读的；冻结 benchmark 按明确的
@@ -225,6 +229,8 @@ artifact 保留在忽略的本地存储中。
   — physics scope、provenance 与 qualification 边界。
 - [Stage16-D causal zero-g milestone](docs/stages/STAGE16D_CAUSAL_ZERO_G_MILESTONE.zh-CN.md)
   — 冻结范围、稳定/默认 V3、实验性 V4 与下一物理阶段。
+- [Stage 16 Physical Bootstrap](docs/stages/STAGE16_PHYSICAL_BOOTSTRAP.zh-CN.md)
+  — P0/P1/P2 contract、safe-bank 边界与 P3 entry gate。
 - [Terminal dynamics attribution](docs/stages/STAGE16D_PHASE1_TERMINAL_DYNAMICS.md)
   — Phase 1 方法与结论。
 - [PPO-26D reference tracking](docs/rl/REFERENCE_TRACKING_PPO_26D.md) — action、

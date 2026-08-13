@@ -1,0 +1,45 @@
+schema_version: Stage16P3EntryGateV1
+gates:
+  G0_provenance:
+    source_reference_hashes_valid: true
+    physics_parent_contract_valid: true
+    contact_semantics_valid: true
+  G1_rsi_v2:
+    contact_ready_state_bank_constructed: true
+    physically_viable_reset_states_required_per_clip: 1
+    rollout_object_state_writes: 0
+    rollout_wrist_root_state_writes: 0
+    full_gravity_systematic_catastrophic_failure_rate_max: 0.0
+  G2_support:
+    allowed_classifications:
+      - SUPPORT_EXPLICIT_VALIDATED
+      - SUPPORT_RECOVERED_VALIDATED
+      - HAND_SUPPORTED_VALIDATED
+      - CONTACT_READY_ONLY_VALIDATED
+    reject_classification: SUPPORT_UNKNOWN
+  G3_geometry:
+    suite: current_absolute_geometry_gates
+    relaxation_allowed: false
+  G4_controller_actuator:
+    joint_limit_failure_rate_max: 0.0
+    nonfinite_rate_max: 0.0
+    unstable_actuator_explosion_rate_max: 0.0
+  G5_causality:
+    external_guidance: 0
+    rollout_object_state_writes: 0
+    hidden_support: 0
+engineering_thresholds:
+  max_pre_contact_displacement_m: 0.01
+  max_pre_contact_downward_displacement_m: 0.01
+  max_object_linear_speed_mps: 2.0
+  max_object_angular_speed_radps: 100.0
+  min_contact_persistence_control_steps: 3
+  label: ENGINEERING_THRESHOLD
+decision_contract:
+  allowed_initial_reset_banks:
+    - CONTACT_READY_SAFE
+    - PERSISTENT_SAFE
+    - MANIPULATION_SAFE
+  optional_later_reset_banks: [NEAR_CONTACT_SAFE, TERMINAL_SAFE]
+  prohibited_reset_states: [GRAVITY_RISK, INVALID_RESET, AMBIGUOUS, PRE_CONTACT]
+  p3_training_started: false

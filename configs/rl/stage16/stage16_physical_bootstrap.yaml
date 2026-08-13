@@ -1,0 +1,32 @@
+schema_version: Stage16PhysicalBootstrapContractV1
+parent:
+  milestone: stage16d_causal_zero_gravity
+  contract: configs/rl/stage16/stage16d_causal_zero_g_milestone.yaml
+  reference_kinematics: Stage16DReferenceKinematicsV2
+  evaluation: TopoRetargetEvaluationSuiteV2
+  source_contact: SourcePerFingerContactEvidenceV1
+  action: Stage16DReferenceResidualAction26DV1
+physical_target:
+  target_gravity_world_mps2: [0.0, 0.0, -9.81]
+  target_gravity_status: EARTH_NOMINAL_ENGINEERING_TARGET
+  support_semantics_required: true
+  nominal_physics_lineage: stage16d_frozen_nominal_uncalibrated
+  external_guidance: false
+  rollout_object_state_write: false
+  rollout_wrist_root_write: false
+rsi:
+  target_version: contact_ready_v2
+  control_dt_s: 0.05
+  near_contact_window_control_steps: 8
+  terminal_hold_window_control_steps: 16
+  contact_reward_candidates: [aggregate_v3, strict_per_finger_v4]
+diagnostic:
+  replicas_per_state: 4
+  control_steps: 20
+  max_envs: 64
+  controller: zero_policy_residual_plus_reference_following
+  ppo_training: false
+  rollout_object_state_writes: 0
+  rollout_wrist_root_state_writes: 0
+next_stage:
+  gravity_friction_curriculum: gated
