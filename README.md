@@ -80,12 +80,78 @@ export MANO_MODEL_ROOT=/path/to/body_models/mano
 export PYTHONNOUSERSITE=1
 export PYTHONPATH=src
 export TOPORETARGET_PYTHON="${CONDA_PREFIX}/bin/python"
+export TOPORETARGET_OUTPUT=/path/to/toporetarget-output
 ```
 
 Set local paths directly or start from
 [configs/paths.example.yaml](configs/paths.example.yaml). `GRAB_ROOT` must
 contain the licensed dataset; `MANO_MODEL_ROOT` must contain the licensed MANO
 model files.
+
+## Core workflows
+
+Use one explicitly selected sequence at a time. Raw licensed data is read-only;
+write derived caches, reports, and HTML outside the repository, for example
+under `$TOPORETARGET_OUTPUT`.
+
+1. **Preflight the installation and target assets.**
+
+   ```bash
+   "$TOPORETARGET_PYTHON" -m toporetarget doctor paper
+   "$TOPORETARGET_PYTHON" -m toporetarget robots list
+   "$TOPORETARGET_PYTHON" -m toporetarget robots validate wuji_hand2_beta1_rh \
+     --asset-root third_party/robot_hands/wuji_hand2_beta1
+   ```
+
+2. **Convert and inspect one HOI sequence.** This creates a manifest-bound
+   canonical cache without resampling the source sequence.
+
+   ```bash
+   "$TOPORETARGET_PYTHON" -m toporetarget data convert \
+     --dataset grab --sequence <sequence-id> --grab-root "$GRAB_ROOT" \
+     --mano-model-root "$MANO_MODEL_ROOT" \
+     --output "$TOPORETARGET_OUTPUT/<sequence-id>.zarr"
+   "$TOPORETARGET_PYTHON" -m toporetarget data inspect \
+     "$TOPORETARGET_OUTPUT/<sequence-id>.zarr"
+   ```
+
+3. **Run the bounded retargeting workflow.** Inspect the exact options first,
+   then use `plan-grab`, `run-grab`, `status`, and `validate` against the same
+   explicit sequence/window and output root. The workflow is resumable and
+   does not scan or mutate unrelated source data.
+
+   ```bash
+   "$TOPORETARGET_PYTHON" -m toporetarget workflow plan-grab --help
+   "$TOPORETARGET_PYTHON" -m toporetarget workflow run-grab --help
+   "$TOPORETARGET_PYTHON" -m toporetarget workflow status --help
+   "$TOPORETARGET_PYTHON" -m toporetarget workflow validate --help
+   ```
+
+4. **Audit geometry and evaluate a frozen benchmark.** Geometry inspection is
+   read-only; the benchmark follows the explicit `inspect-datasets -> select
+   -> freeze -> run -> evaluate` state machine.
+
+   ```bash
+   "$TOPORETARGET_PYTHON" -m toporetarget geometry --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark inspect-datasets --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark select --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark freeze --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark run --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark evaluate --help
+   ```
+
+5. **Inspect an existing Isaac Lab trace.** Replay is diagnostic only: it does
+   not retrain PPO, alter the trace, or create a new physics qualification.
+
+   ```bash
+   conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
+     python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py --help
+   ```
+
+For the full argument contracts and acceptance boundaries, see
+[configs/README.md](configs/README.md),
+[workflow resume and provenance](docs/WORKFLOW_RESUME_AND_PROVENANCE.md), and
+[the Isaac Lab direct environment contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md).
 
 ## Quick start and reproduction
 
@@ -129,8 +195,9 @@ origin removed; legacy metrics remain available for comparison but are not
 silently redefined.
 
 The Stage 16-D causal PPO pipeline supports reference pose and object-twist
-tracking together with versioned contact rewards. Reward V3 remains frozen as a
-reference-proximity aggregate baseline. Strict Per-Finger V4 instead uses
+tracking together with versioned contact rewards. **Aggregate V3 is the current
+stable/default contact baseline** (`aggregate_v3`). **Strict Per-Finger V4 is
+experimental and opt-in** (`strict_per_finger_v4`); it instead uses
 `SourcePerFingerContactEvidenceV1`: only source-confirmed or
 persistent-confirmed MANO/object contact for a named finger requires that same
 Wuji distal/tip body to contact the active object. Probable, transition,
@@ -145,6 +212,26 @@ named-tip-to-active-object pair force and never directly controls the object.
 Its shared per-tip force scale is frozen from exact V1 Formal20 pair-force
 telemetry before PPO.
 
+The completed Stage16-D milestone is a physically causal reference-tracking
+baseline under a frozen simplified **zero-gravity, no-support** Isaac/PhysX
+contract. It has no external object guidance and no rollout-time object-state
+or wrist-root writes. This is not physically realistic, real-world calibrated,
+or full-gravity validation. New configurations use the stable default:
+
+```yaml
+reward:
+  contact:
+    mode: aggregate_v3
+```
+
+To explicitly opt into the experimental objective:
+
+```yaml
+reward:
+  contact:
+    mode: strict_per_finger_v4
+```
+
 Phase-specific terminal-dynamics attribution and detailed results are recorded
 in stage and RL documentation, with machine-readable artifacts kept in ignored
 local storage.
@@ -154,6 +241,8 @@ local storage.
 - [Roadmap](docs/ROADMAP.md) — current causal research route and future lanes.
 - [Stage 16-D physics-consistent retargeting](docs/stages/STAGE16D_PHYSICS_CONSISTENT_RETARGETING.md)
   — physics scope, provenance, and qualification boundary.
+- [Stage16-D causal zero-g milestone](docs/stages/STAGE16D_CAUSAL_ZERO_G_MILESTONE.md)
+  — frozen scope, stable/default V3, experimental V4, and the next physical stage.
 - [Terminal dynamics attribution](docs/stages/STAGE16D_PHASE1_TERMINAL_DYNAMICS.md)
   — Phase 1 method and conclusions.
 - [PPO-26D reference tracking](docs/rl/REFERENCE_TRACKING_PPO_26D.md) — action,

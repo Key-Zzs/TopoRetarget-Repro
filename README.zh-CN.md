@@ -74,10 +74,71 @@ export MANO_MODEL_ROOT=/path/to/body_models/mano
 export PYTHONNOUSERSITE=1
 export PYTHONPATH=src
 export TOPORETARGET_PYTHON="${CONDA_PREFIX}/bin/python"
+export TOPORETARGET_OUTPUT=/path/to/toporetarget-output
 ```
 
 直接设置本地路径，或从 [configs/paths.example.yaml](configs/paths.example.yaml) 开始。
 `GRAB_ROOT` 必须包含已授权的数据集，`MANO_MODEL_ROOT` 必须包含已授权的 MANO 模型文件。
+
+## 核心工作流
+
+一次只操作一条明确指定的 sequence。授权的原始数据保持只读；派生 cache、report 和 HTML 请写到仓库外，
+例如 `$TOPORETARGET_OUTPUT` 下。
+
+1. **环境与目标手资产预检。**
+
+   ```bash
+   "$TOPORETARGET_PYTHON" -m toporetarget doctor paper
+   "$TOPORETARGET_PYTHON" -m toporetarget robots list
+   "$TOPORETARGET_PYTHON" -m toporetarget robots validate wuji_hand2_beta1_rh \
+     --asset-root third_party/robot_hands/wuji_hand2_beta1
+   ```
+
+2. **转换并检查一条 HOI sequence。** 该步骤生成绑定 manifest 的 canonical cache，且不对 source
+   sequence 做重采样。
+
+   ```bash
+   "$TOPORETARGET_PYTHON" -m toporetarget data convert \
+     --dataset grab --sequence <sequence-id> --grab-root "$GRAB_ROOT" \
+     --mano-model-root "$MANO_MODEL_ROOT" \
+     --output "$TOPORETARGET_OUTPUT/<sequence-id>.zarr"
+   "$TOPORETARGET_PYTHON" -m toporetarget data inspect \
+     "$TOPORETARGET_OUTPUT/<sequence-id>.zarr"
+   ```
+
+3. **运行有界的 retargeting workflow。** 先检查精确参数，再让 `plan-grab`、`run-grab`、`status`
+   和 `validate` 指向同一条明确 sequence/window 与 output root。该 workflow 支持恢复，且不会扫描或修改
+   无关的 source data。
+
+   ```bash
+   "$TOPORETARGET_PYTHON" -m toporetarget workflow plan-grab --help
+   "$TOPORETARGET_PYTHON" -m toporetarget workflow run-grab --help
+   "$TOPORETARGET_PYTHON" -m toporetarget workflow status --help
+   "$TOPORETARGET_PYTHON" -m toporetarget workflow validate --help
+   ```
+
+4. **审计几何并评价冻结 benchmark。** geometry inspection 是只读的；benchmark 按明确的
+   `inspect-datasets -> select -> freeze -> run -> evaluate` 状态机执行。
+
+   ```bash
+   "$TOPORETARGET_PYTHON" -m toporetarget geometry --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark inspect-datasets --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark select --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark freeze --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark run --help
+   "$TOPORETARGET_PYTHON" -m toporetarget benchmark evaluate --help
+   ```
+
+5. **检查已有 Isaac Lab trace。** replay 仅用于诊断：不会重新训练 PPO、修改 trace，或生成新的物理资格化。
+
+   ```bash
+   conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
+     python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py --help
+   ```
+
+完整的参数合同与验收边界见 [configs/README.md](configs/README.md)、
+[workflow resume and provenance](docs/WORKFLOW_RESUME_AND_PROVENANCE.md) 和
+[Isaac Lab direct environment contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md)。
 
 ## Quick start 与复现入口
 
@@ -115,7 +176,8 @@ kinematic、physics 和 qualified success rate。轨迹指标使用移除 enviro
 world/env frame；legacy metrics 仍会保留，但不会被静默重定义。
 
 Stage 16-D 因果 PPO pipeline 支持 reference pose、object twist tracking 和版本化 contact reward。
-Reward V3 作为 reference-proximity aggregate baseline 保持冻结。Strict Per-Finger V4 使用
+**Aggregate V3 是当前稳定的默认 contact baseline**（`aggregate_v3`）。**Strict Per-Finger V4
+是实验性 opt-in**（`strict_per_finger_v4`），它使用
 `SourcePerFingerContactEvidenceV1`：只有 source-confirmed 或 persistent-confirmed 的指定 finger
 的 MANO/object contact，才要求同名 Wuji distal/tip body 与 active object 接触。probable、
 transition、proximity-only、no-contact 和 ambiguous source state 都不是 V4 的 mandatory contact
@@ -126,6 +188,25 @@ required finger 记分，source 要求更多 fingers 也不会改变总 contact 
 经 filter 的 PhysX named-tip-to-active-object pair force，从不直接控制 object；共享 per-tip force
 scale 在 PPO 前由精确的 V1 Formal20 pair-force telemetry 冻结。
 
+已完成的 Stage16-D milestone 是在冻结、简化的 **zero-gravity / no-support** Isaac/PhysX 合同下的
+物理因果 reference-tracking baseline：没有 external object guidance，也没有 rollout-time object-state
+或 wrist-root write。这不是 physically realistic、real-world calibrated 或 full-gravity validation。
+新配置使用稳定默认值：
+
+```yaml
+reward:
+  contact:
+    mode: aggregate_v3
+```
+
+如需明确 opt-in 到实验目标：
+
+```yaml
+reward:
+  contact:
+    mode: strict_per_finger_v4
+```
+
 阶段性的 terminal-dynamics attribution 与详细结果进入 stage/RL 文档；machine-readable
 artifact 保留在忽略的本地存储中。
 
@@ -134,6 +215,8 @@ artifact 保留在忽略的本地存储中。
 - [Roadmap](docs/ROADMAP.zh-CN.md) — 当前因果科研路线与未来 lanes。
 - [Stage 16-D physics-consistent retargeting](docs/stages/STAGE16D_PHYSICS_CONSISTENT_RETARGETING.md)
   — physics scope、provenance 与 qualification 边界。
+- [Stage16-D causal zero-g milestone](docs/stages/STAGE16D_CAUSAL_ZERO_G_MILESTONE.zh-CN.md)
+  — 冻结范围、稳定/默认 V3、实验性 V4 与下一物理阶段。
 - [Terminal dynamics attribution](docs/stages/STAGE16D_PHASE1_TERMINAL_DYNAMICS.md)
   — Phase 1 方法与结论。
 - [PPO-26D reference tracking](docs/rl/REFERENCE_TRACKING_PPO_26D.md) — action、
