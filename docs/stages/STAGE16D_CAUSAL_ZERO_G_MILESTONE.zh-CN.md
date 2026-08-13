@@ -12,6 +12,10 @@ robot action -> hand-object contact -> object dynamics
 和 no rollout-time wrist-root write。它是因果仿真 baseline，不是 physically realistic、real-world
 calibrated 或 full-gravity validation。
 
+可版本控制的 machine-readable contract 位于
+[`stage16d_causal_zero_g_milestone.yaml`](../../configs/rl/stage16/stage16d_causal_zero_g_milestone.yaml)。
+它只记录 durable 的范围和方法状态，绝不写入 run path、checkpoint、sample count 或 clip-specific result。
+
 ## 稳定基线
 
 **Aggregate V3** 是 `STABLE_BASELINE`，并通过以下配置成为 global default：

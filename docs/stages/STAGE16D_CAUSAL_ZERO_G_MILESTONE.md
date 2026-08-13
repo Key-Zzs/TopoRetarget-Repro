@@ -14,6 +14,11 @@ rollout-time object-state write, and no rollout-time wrist-root write. It is a
 causal simulation baseline, not physically realistic, real-world calibrated,
 or full-gravity validation.
 
+The tracked, machine-readable contract is
+[`stage16d_causal_zero_g_milestone.yaml`](../../configs/rl/stage16/stage16d_causal_zero_g_milestone.yaml).
+It records only durable scope and method state, never run paths, checkpoints,
+sample counts, or clip-specific results.
+
 ## Stable baseline
 
 **Aggregate V3** is `STABLE_BASELINE` and the global default through:

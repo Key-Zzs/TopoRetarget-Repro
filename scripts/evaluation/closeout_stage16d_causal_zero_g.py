@@ -15,6 +15,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
@@ -34,6 +37,7 @@ from toporetarget.rl.reference_tracking.contact_reward_mode import (  # noqa: E4
 DEFAULT_OUTPUT = REPO_ROOT / ".local/reports/stage16d_causal_zero_g_closeout"
 V3_ROOT = REPO_ROOT / ".local/reports/stage16d_reward_v3_pairforce_unblock"
 V4_ROOT = REPO_ROOT / ".local/reports/stage16d_strict_per_finger_v4"
+MILESTONE_CONTRACT_PATH = REPO_ROOT / "configs/rl/stage16/stage16d_causal_zero_g_milestone.yaml"
 
 
 def _sha256(path: Path) -> str:
@@ -62,15 +66,53 @@ def _load_json(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _milestone_contract() -> dict[str, object]:
+    """Load the durable, run-log-free milestone contract exactly as tracked."""
+
+    loaded = yaml.safe_load(_require_file(MILESTONE_CONTRACT_PATH).read_text(encoding="utf-8"))
+    if not isinstance(loaded, dict):
+        raise ValueError("STAGE16D_CLOSEOUT_MILESTONE_CONTRACT_OBJECT_REQUIRED")
+    expected: dict[str, object] = {
+        "schema_version": "Stage16DCausalZeroGravityMilestoneV1",
+        "milestone": {"name": "stage16d_causal_zero_gravity", "version": 1},
+        "physics": {
+            "causal": True,
+            "gravity_mode": "zero",
+            "support": "absent",
+            "external_guidance": False,
+            "rollout_object_state_write": False,
+            "rollout_wrist_root_write": False,
+        },
+        "reference": {"kinematics": "v2"},
+        "action": {"ppo26d": True},
+        "evaluation": {"suite": "v2"},
+        "contact_reward": {
+            "default": ContactRewardMode.AGGREGATE_V3.value,
+            "available": [item.value for item in ContactRewardMode],
+        },
+        "method_status": {
+            "aggregate_v3": "stable_baseline",
+            "strict_per_finger_v4": "experimental_partial",
+        },
+    }
+    if loaded != expected:
+        raise ValueError("STAGE16D_CLOSEOUT_MILESTONE_CONTRACT_MISMATCH")
+    return expected
+
+
 def _config_audit() -> dict[str, object]:
     path = REPO_ROOT / "configs/rl/stage16/stage16d_ppo26d_reward.yaml"
-    text = _require_file(path).read_text(encoding="utf-8")
-    expected = "contact:\n    mode: aggregate_v3"
-    if expected not in text or "strict_per_finger_v4" not in text:
-        raise ValueError("STAGE16D_CLOSEOUT_CONTACT_CONFIG_DEFAULT_MISSING")
-    config = Stage16DContactRewardConfigV1.from_mapping(
-        {"reward": {"contact": {"mode": "aggregate_v3"}}}
-    )
+    payload = yaml.safe_load(_require_file(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("STAGE16D_CLOSEOUT_CONTACT_CONFIG_OBJECT_REQUIRED")
+    config = Stage16DContactRewardConfigV1.from_mapping(payload)
+    reward = payload.get("reward")
+    contact = reward.get("contact") if isinstance(reward, dict) else None
+    if not isinstance(contact, dict) or contact.get("available") != [
+        "aggregate_v3",
+        "strict_per_finger_v4",
+    ]:
+        raise ValueError("STAGE16D_CLOSEOUT_CONTACT_CONFIG_AVAILABLE_MODES_MISSING")
     return {
         "path": str(path),
         "sha256": _sha256(path),
@@ -132,17 +174,58 @@ def _trace(name: str, path: Path) -> dict[str, object]:
     }
 
 
-def _manifest(name: str, path: Path, expected_mode: str) -> dict[str, object]:
+def _manifest(
+    name: str,
+    path: Path,
+    *,
+    expected_mode: str,
+    expected_schema: str,
+    expected_status: str,
+) -> dict[str, object]:
+    """Validate manifest provenance and read one existing Zarr episode."""
+
     payload = _load_json(path)
     encoded = json.dumps(payload, sort_keys=True)
     if expected_mode not in encoded:
         raise ValueError(f"STAGE16D_CLOSEOUT_SIM_DATA_PROVENANCE_MISSING:{name}")
+    if payload.get("schema_version") != expected_schema or payload.get("status") != expected_status:
+        raise ValueError(f"STAGE16D_CLOSEOUT_SIM_DATA_SCHEMA_MISMATCH:{name}")
+    files = payload.get("files")
+    if not isinstance(files, dict) or not files:
+        raise ValueError(f"STAGE16D_CLOSEOUT_SIM_DATA_FILES_MISSING:{name}")
+    for relative, expected_hash in files.items():
+        if not isinstance(relative, str) or not isinstance(expected_hash, str):
+            raise ValueError(f"STAGE16D_CLOSEOUT_SIM_DATA_FILE_ENTRY_INVALID:{name}")
+        if _sha256(_require_file(path.parent / relative)) != expected_hash:
+            raise ValueError(f"STAGE16D_CLOSEOUT_SIM_DATA_FILE_HASH_MISMATCH:{name}:{relative}")
+    episode_count = payload.get("episode_count")
+    if not isinstance(episode_count, int) or episode_count <= 0:
+        raise ValueError(f"STAGE16D_CLOSEOUT_SIM_DATA_EPISODE_COUNT_INVALID:{name}")
+    import zarr
+
+    rollout_root = zarr.open_group(str(path.parent / "rollouts.zarr"), mode="r")
+    episodes = rollout_root["episodes"]
+    episode_names = sorted(episodes.group_keys())
+    if len(episode_names) != episode_count:
+        raise ValueError(f"STAGE16D_CLOSEOUT_SIM_DATA_EPISODE_GROUP_COUNT_MISMATCH:{name}")
+    sample = episodes[episode_names[0]]
+    pose = np.asarray(sample["object"]["object_pose"][0])
+    if pose.shape != (7,) or not np.isfinite(pose).all():
+        raise ValueError(f"STAGE16D_CLOSEOUT_SIM_DATA_SAMPLE_INVALID:{name}")
+    if (
+        sample.attrs.get("causal_physics") is not True
+        or sample.attrs.get("external_guidance") is not False
+    ):
+        raise ValueError(f"STAGE16D_CLOSEOUT_SIM_DATA_CAUSAL_SAMPLE_INVALID:{name}")
     return {
         "name": name,
         "path": str(path),
         "sha256": _sha256(path),
         "top_level_keys": sorted(payload),
-        "schema_and_sample_manifest_load": "PASS",
+        "schema_and_hash_validation": "PASS",
+        "sample_episode": episode_names[0],
+        "sample_object_pose_shape": list(pose.shape),
+        "sample_episode_read": "PASS",
     }
 
 
@@ -504,13 +587,17 @@ def main() -> int:
             "v3",
             REPO_ROOT / ".local/sim_data/stage16d_reward_v3/hocap_170650/"
             "v3_formal_selected_2129920/manifest.json",
-            "v3",
+            expected_mode="v3",
+            expected_schema="Stage16DRewardV3FormalSimulationManifestV1",
+            expected_status="STAGE16D_REWARD_V3_FORMAL_SIM_DATA_EXPORTED",
         ),
         _manifest(
             "v4",
             REPO_ROOT / ".local/sim_data/stage16d_strict_per_finger_v4/hocap_170650/"
             "v4_formal_selected_1064960/manifest.json",
-            "v4",
+            expected_mode="v4",
+            expected_schema="Stage16DStrictPerFingerV4FormalSimulationManifestV1",
+            expected_status="STAGE16D_STRICT_V4_FORMAL_SIM_DATA_EXPORTED",
         ),
     ]
     smokes = [
@@ -525,29 +612,7 @@ def main() -> int:
             "STRICT_V4_321_STEP_REWARD_SMOKE_PASS",
         ),
     ]
-    milestone = {
-        "schema_version": "Stage16DCausalZeroGravityMilestoneV1",
-        "milestone": {"name": "stage16d_causal_zero_gravity", "version": 1},
-        "physics": {
-            "causal": True,
-            "gravity_mode": "zero",
-            "support": "absent",
-            "external_guidance": False,
-            "rollout_object_state_write": False,
-            "rollout_wrist_root_write": False,
-        },
-        "reference": {"kinematics": "v2"},
-        "action": {"ppo26d": True},
-        "evaluation": {"suite": "v2"},
-        "contact_reward": {
-            "default": ContactRewardMode.AGGREGATE_V3.value,
-            "available": [item.value for item in ContactRewardMode],
-        },
-        "method_status": {
-            "aggregate_v3": "stable_baseline",
-            "strict_per_finger_v4": "experimental_partial",
-        },
-    }
+    milestone = _milestone_contract()
     _write_json(output / "milestone_contract.json", milestone)
     _write_json(output / "config_interface_audit.json", _config_audit())
     _write_json(

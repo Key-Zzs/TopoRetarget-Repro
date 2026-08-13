@@ -1,0 +1,23 @@
+schema_version: Stage16DCausalZeroGravityMilestoneV1
+milestone:
+  name: stage16d_causal_zero_gravity
+  version: 1
+physics:
+  causal: true
+  gravity_mode: zero
+  support: absent
+  external_guidance: false
+  rollout_object_state_write: false
+  rollout_wrist_root_write: false
+reference:
+  kinematics: v2
+action:
+  ppo26d: true
+evaluation:
+  suite: v2
+contact_reward:
+  default: aggregate_v3
+  available: [aggregate_v3, strict_per_finger_v4]
+method_status:
+  aggregate_v3: stable_baseline
+  strict_per_finger_v4: experimental_partial

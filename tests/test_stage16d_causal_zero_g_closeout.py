@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 import torch
+import yaml
 
 from toporetarget.rl.reference_tracking.contact_reward_mode import (
     ContactRewardMode,
@@ -111,11 +112,48 @@ def test_v3_and_v4_contact_smokes_are_finite_and_distinct() -> None:
 
 
 def test_tracked_contact_config_exposes_the_stable_default() -> None:
-    config = (REPO_ROOT / "configs/rl/stage16/stage16d_ppo26d_reward.yaml").read_text(
-        encoding="utf-8"
+    payload = yaml.safe_load(
+        (REPO_ROOT / "configs/rl/stage16/stage16d_ppo26d_reward.yaml").read_text(encoding="utf-8")
     )
-    assert "contact:\n    mode: aggregate_v3" in config
-    assert "strict_per_finger_v4" in config
+    assert isinstance(payload, dict)
+    assert (
+        Stage16DContactRewardConfigV1.from_mapping(payload).mode is ContactRewardMode.AGGREGATE_V3
+    )
+    assert payload["reward"]["contact"]["available"] == [
+        "aggregate_v3",
+        "strict_per_finger_v4",
+    ]
+
+
+def test_durable_milestone_contract_freezes_only_the_closeout_boundary() -> None:
+    payload = yaml.safe_load(
+        (REPO_ROOT / "configs/rl/stage16/stage16d_causal_zero_g_milestone.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert payload == {
+        "schema_version": "Stage16DCausalZeroGravityMilestoneV1",
+        "milestone": {"name": "stage16d_causal_zero_gravity", "version": 1},
+        "physics": {
+            "causal": True,
+            "gravity_mode": "zero",
+            "support": "absent",
+            "external_guidance": False,
+            "rollout_object_state_write": False,
+            "rollout_wrist_root_write": False,
+        },
+        "reference": {"kinematics": "v2"},
+        "action": {"ppo26d": True},
+        "evaluation": {"suite": "v2"},
+        "contact_reward": {
+            "default": "aggregate_v3",
+            "available": ["aggregate_v3", "strict_per_finger_v4"],
+        },
+        "method_status": {
+            "aggregate_v3": "stable_baseline",
+            "strict_per_finger_v4": "experimental_partial",
+        },
+    }
 
 
 def test_local_artifacts_remain_untracked() -> None:
