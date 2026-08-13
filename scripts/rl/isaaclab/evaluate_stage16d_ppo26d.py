@@ -26,6 +26,7 @@ from toporetarget.rl.geometry_audit.hand_collision_reconstruction import (
 from toporetarget.rl.geometry_audit.hand_collision_reconstruction import (
     reconstruct_hand_collision_body_pose,
 )
+from toporetarget.rl.physical_p3 import PHYSICAL_PPO_CHECKPOINT_SCHEMA
 from toporetarget.rl.ppo.checkpoint import load_checkpoint
 from toporetarget.rl.ppo.ppo26d_continuation import summarize_episodes
 from toporetarget.rl.ppo.ppo26d_trainer import PPO26DTrainer
@@ -201,6 +202,7 @@ def model_from_checkpoint(
         PHASE3_CHECKPOINT_SCHEMA,
         REWARD_V3_CHECKPOINT_SCHEMA,
         STRICT_V4_CHECKPOINT_SCHEMA,
+        PHYSICAL_PPO_CHECKPOINT_SCHEMA,
     }:
         raise ValueError("CHECKPOINT_ROUNDTRIP_FAILURE: unexpected checkpoint schema")
     checkpoint_clip = payload.get("clip")
@@ -223,9 +225,13 @@ def model_from_checkpoint(
             payload["reward_v3_samples"]
             if schema == REWARD_V3_CHECKPOINT_SCHEMA
             else (
-                payload["reward_v4_samples"]
-                if schema == STRICT_V4_CHECKPOINT_SCHEMA
-                else payload["cumulative_samples"]
+                payload["policy_training_samples"]
+                if schema == PHYSICAL_PPO_CHECKPOINT_SCHEMA
+                else (
+                    payload["reward_v4_samples"]
+                    if schema == STRICT_V4_CHECKPOINT_SCHEMA
+                    else payload["cumulative_samples"]
+                )
             )
         )
     )
@@ -242,6 +248,8 @@ def checkpoint_sample_counter(payload: dict[str, Any]) -> tuple[str, int]:
         return "reward_v3_samples", int(payload["reward_v3_samples"])
     if payload.get("schema_version") == STRICT_V4_CHECKPOINT_SCHEMA:
         return "reward_v4_samples", int(payload["reward_v4_samples"])
+    if payload.get("schema_version") == PHYSICAL_PPO_CHECKPOINT_SCHEMA:
+        return "policy_training_samples", int(payload["policy_training_samples"])
     return "cumulative_training_samples", int(payload["cumulative_samples"])
 
 
@@ -439,6 +447,7 @@ def run_episode(
     capture_exact_fingertip_object_pair_force: bool,
     capture_full_hand_object_pair_telemetry: bool,
     expected_clip: str,
+    seed: int | None = None,
 ) -> dict[str, Any]:
     """Run one physical rollout without reading collision articulation tensors.
 
@@ -448,7 +457,9 @@ def run_episode(
     tensor read from the Python evaluation loop.
     """
 
-    observation, _ = env.reset()
+    if seed is not None:
+        apply_episode_seed(seed)
+    observation, _ = env.reset(seed=seed)
     active_clip_indices = sorted(set(env._clip_index.detach().cpu().tolist()))
     expected_clip_index = env.reference_bank.clip_ids.index(expected_clip)
     if active_clip_indices != [expected_clip_index]:
@@ -456,6 +467,15 @@ def run_episode(
             "PPO26D_FIXED_CLIP_MISMATCH_AFTER_RESET: "
             f"expected={expected_clip_index} active={active_clip_indices}"
         )
+    initial_trace = (
+        _initial_trace_snapshot(
+            env,
+            capture_exact_fingertip_object_pair_force=capture_exact_fingertip_object_pair_force,
+            capture_full_hand_object_pair_telemetry=capture_full_hand_object_pair_telemetry,
+        )
+        if capture
+        else None
+    )
     if capture:
         env.start_trace_capture(
             capacity=env.reference_bank.frame_count,
@@ -558,7 +578,15 @@ def run_episode(
             contact_indices.append(len(object_tracking_errors) - 1)
         if bool(terminated[0] | timed_out[0]):
             break
-    trace = _device_trace_to_numpy(env.finish_trace_capture()) if capture else None
+    trace = (
+        _prepend_initial_trace(
+            _device_trace_to_numpy(env.finish_trace_capture()),
+            initial_trace,
+            all_replicas=False,
+        )
+        if capture
+        else None
+    )
     linear_speed = _to_float(final_extras["object_linear_speed_mps"][0])
     angular_speed = _to_float(final_extras["object_angular_speed_radps"][0])
     termination_reason = int(final_extras["primary_reason_code"][0].detach().cpu())

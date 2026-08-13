@@ -1,0 +1,108 @@
+schema_version: Stage16P3P4ContactReadyEvaluationPairsV1
+contract_semantics: >-
+  Each pair is frozen before P3 development evaluation or P4 Formal20. Reset
+  indices are all drawn from the P1 ContactReady RSI V2 safe bank. Development
+  pairs are never formal pairs and formal pairs cannot drive selection.
+clips:
+  hocap_170105:
+    development:
+      identifier: p3_development_contact_ready_hocap_170105_v1
+      source_seed_manifest: .local/reports/stage16d_ppo26d_continuation/frozen_seed_sets_170105.json
+      source_seed_set: development_eval_seed_set_170105_v1
+      pairs:
+        - {seed: 1939104670, reset_index: 205}
+        - {seed: 1854469514, reset_index: 222}
+        - {seed: 903103360, reset_index: 186}
+        - {seed: 112378865, reset_index: 203}
+        - {seed: 1598410638, reset_index: 211}
+        - {seed: 81001670, reset_index: 210}
+        - {seed: 356069244, reset_index: 210}
+        - {seed: 779738141, reset_index: 205}
+        - {seed: 200321063, reset_index: 211}
+        - {seed: 1090321458, reset_index: 205}
+        - {seed: 1869175411, reset_index: 203}
+        - {seed: 1118000050, reset_index: 206}
+        - {seed: 2015389104, reset_index: 211}
+        - {seed: 1607517204, reset_index: 222}
+        - {seed: 682112095, reset_index: 211}
+        - {seed: 1470961157, reset_index: 203}
+        - {seed: 2076525713, reset_index: 206}
+        - {seed: 1141770851, reset_index: 205}
+        - {seed: 842030327, reset_index: 206}
+        - {seed: 1118408497, reset_index: 211}
+    formal:
+      identifier: p4_formal_contact_ready_hocap_170105_v1
+      source_seed_manifest: .local/reports/stage16d_ppo26d_continuation/frozen_seed_sets_170105.json
+      source_seed_set: formal_holdout_seed_set_170105_v1
+      pairs:
+        - {seed: 1785431974, reset_index: 186}
+        - {seed: 1076412163, reset_index: 203}
+        - {seed: 136443266, reset_index: 203}
+        - {seed: 528701398, reset_index: 206}
+        - {seed: 838593624, reset_index: 203}
+        - {seed: 1788404070, reset_index: 206}
+        - {seed: 1241445471, reset_index: 238}
+        - {seed: 914481964, reset_index: 238}
+        - {seed: 1911299432, reset_index: 222}
+        - {seed: 2075061475, reset_index: 205}
+        - {seed: 962088696, reset_index: 210}
+        - {seed: 1788077573, reset_index: 210}
+        - {seed: 1826778206, reset_index: 205}
+        - {seed: 1516636021, reset_index: 203}
+        - {seed: 752420828, reset_index: 206}
+        - {seed: 492547481, reset_index: 210}
+        - {seed: 1818682461, reset_index: 222}
+        - {seed: 63611679, reset_index: 222}
+        - {seed: 2143459948, reset_index: 222}
+        - {seed: 1486393819, reset_index: 211}
+  hocap_170650:
+    development:
+      identifier: p3_development_contact_ready_hocap_170650_v1
+      source_seed_manifest: .local/reports/stage16d_ppo26d_continuation/frozen_seed_sets.json
+      source_seed_set: development_eval_seed_set_v1
+      pairs:
+        - {seed: 959942505, reset_index: 158}
+        - {seed: 743280319, reset_index: 161}
+        - {seed: 950660438, reset_index: 251}
+        - {seed: 808204459, reset_index: 149}
+        - {seed: 1187397658, reset_index: 257}
+        - {seed: 210162573, reset_index: 144}
+        - {seed: 996968292, reset_index: 254}
+        - {seed: 1316336618, reset_index: 147}
+        - {seed: 2073301030, reset_index: 254}
+        - {seed: 499284354, reset_index: 157}
+        - {seed: 142037401, reset_index: 149}
+        - {seed: 1052899917, reset_index: 222}
+        - {seed: 1601219500, reset_index: 152}
+        - {seed: 1776477096, reset_index: 144}
+        - {seed: 1902990777, reset_index: 145}
+        - {seed: 29584144, reset_index: 148}
+        - {seed: 1636361967, reset_index: 117}
+        - {seed: 1378436747, reset_index: 247}
+        - {seed: 1660967911, reset_index: 152}
+        - {seed: 1083905284, reset_index: 263}
+    formal:
+      identifier: p4_formal_contact_ready_hocap_170650_v1
+      source_seed_manifest: .local/reports/stage16d_ppo26d_continuation/frozen_seed_sets.json
+      source_seed_set: formal_holdout_seed_set_v1
+      pairs:
+        - {seed: 650199828, reset_index: 251}
+        - {seed: 307373725, reset_index: 143}
+        - {seed: 1176368811, reset_index: 248}
+        - {seed: 429144819, reset_index: 150}
+        - {seed: 225051478, reset_index: 143}
+        - {seed: 1204239371, reset_index: 117}
+        - {seed: 1442952928, reset_index: 248}
+        - {seed: 513857566, reset_index: 167}
+        - {seed: 30928848, reset_index: 146}
+        - {seed: 1793986359, reset_index: 295}
+        - {seed: 173009719, reset_index: 145}
+        - {seed: 1593858680, reset_index: 167}
+        - {seed: 619781274, reset_index: 168}
+        - {seed: 1083463537, reset_index: 167}
+        - {seed: 864833681, reset_index: 263}
+        - {seed: 1168195053, reset_index: 147}
+        - {seed: 1879074893, reset_index: 295}
+        - {seed: 574011327, reset_index: 168}
+        - {seed: 1292272541, reset_index: 149}
+        - {seed: 1001830754, reset_index: 254}
