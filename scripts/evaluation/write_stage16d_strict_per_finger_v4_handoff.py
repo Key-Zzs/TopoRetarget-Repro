@@ -111,7 +111,7 @@ def _visualization_commands(
     selected_samples = int(item["selection"]["reward_v4_samples"])
     suffix = f"v4_formal_selected_{selected_samples}"
     qualification = formal / f"{suffix}_qualification.json"
-    formal_trace = formal / clip / f"{suffix}_trace_replica0.npz"
+    formal_trace = formal / clip / f"ppo_{suffix}_trace_replica0.npz"
     manifest = item["representative_traces"]
     selected = manifest.get("selected", {})
     best = selected.get("best_interaction_qualified") or selected.get("best_physics_qualified")
