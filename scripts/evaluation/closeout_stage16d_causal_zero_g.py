@@ -324,6 +324,18 @@ def _find_pull_request_ci_run(*, expected_head: str) -> str:
     return str(run_id)
 
 
+def _open_pull_requests(branch: str) -> list[dict[str, object]]:
+    """Return the currently open PRs for one exact branch name."""
+
+    listed = _command_output(
+        "gh", "pr", "list", "--head", branch, "--state", "open", "--json", "number,url"
+    )
+    parsed = json.loads(listed)
+    if not isinstance(parsed, list) or not all(isinstance(item, dict) for item in parsed):
+        raise ValueError(f"STAGE16D_CLOSEOUT_OPEN_PR_QUERY_INVALID:{branch}")
+    return [{"number": item.get("number"), "url": item.get("url")} for item in parsed]
+
+
 def _branch_cleanup_audit(*, delivery_branch: str, pr_number: int) -> dict[str, object]:
     """Audit only the two named branches; this routine never deletes either."""
 
@@ -363,15 +375,25 @@ def _branch_cleanup_audit(*, delivery_branch: str, pr_number: int) -> dict[str, 
             if local_exists
             else False
         )
+        unique_commits_against_delivery = (
+            int(_command_output("git", "rev-list", "--count", f"{delivery_branch}..{branch}"))
+            if local_exists
+            else None
+        )
         # The delivery branch has an open PR by construction.  The older PPO
         # branch can be deleted only after this PR merges if it is contained in
         # the delivery branch and is not occupied by a worktree.
         occupied = f"branch refs/heads/{branch}" in worktrees
+        open_prs = _open_pull_requests(branch)
+        can_delete_after_merge = (
+            ancestor_of_delivery
+            and unique_commits_against_delivery == 0
+            and not occupied
+            and not open_prs
+        )
         decision = (
             "DELETE_AFTER_PR_MERGE"
-            if branch == delivery_branch
-            else "DELETE_AFTER_PR_MERGE"
-            if ancestor_of_delivery and not occupied
+            if branch == delivery_branch or can_delete_after_merge
             else "RETAIN"
         )
         audit["branches"][branch] = {
@@ -379,9 +401,17 @@ def _branch_cleanup_audit(*, delivery_branch: str, pr_number: int) -> dict[str, 
             "remote_exists": remote_exists,
             "tip": tip,
             "ancestor_of_delivery": ancestor_of_delivery,
+            "unique_commits_against_delivery": unique_commits_against_delivery,
             "occupied_by_worktree": occupied,
-            "open_pr": pr_number if branch == delivery_branch else None,
+            "open_prs": open_prs,
             "decision": decision,
+            "reason": (
+                "active_delivery_pr_must_merge_first"
+                if branch == delivery_branch
+                else "contained_in_delivery_and_safe_only_after_its_pr_merges"
+                if can_delete_after_merge
+                else "has_open_pr_active_worktree_or_unique_commits"
+            ),
         }
     return audit
 
