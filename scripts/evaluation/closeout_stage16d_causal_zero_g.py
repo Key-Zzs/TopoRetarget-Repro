@@ -419,6 +419,31 @@ def _open_pull_requests(branch: str) -> list[dict[str, object]]:
     return [{"number": item.get("number"), "url": item.get("url")} for item in parsed]
 
 
+def _is_ancestor(ancestor: str, descendant: str) -> bool:
+    return (
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+            cwd=REPO_ROOT,
+            check=False,
+        ).returncode
+        == 0
+    )
+
+
+def _downstream_refs(branch: str) -> list[str]:
+    """List named branch refs whose tips contain ``branch`` without mutating refs."""
+
+    refs = _command_output(
+        "git",
+        "for-each-ref",
+        "--format=%(refname:short)",
+        "refs/heads",
+        "refs/remotes/origin",
+    ).splitlines()
+    excluded = {branch, f"origin/{branch}", "origin/HEAD"}
+    return sorted(ref for ref in refs if ref not in excluded and _is_ancestor(branch, ref))
+
+
 def _branch_cleanup_audit(*, delivery_branch: str, pr_number: int) -> dict[str, object]:
     """Audit only the two named branches; this routine never deletes either."""
 
@@ -448,21 +473,25 @@ def _branch_cleanup_audit(*, delivery_branch: str, pr_number: int) -> dict[str, 
             == 0
         )
         tip = _command_output("git", "rev-parse", branch) if local_exists else None
-        ancestor_of_delivery = (
-            subprocess.run(
-                ["git", "merge-base", "--is-ancestor", branch, delivery_branch],
-                cwd=REPO_ROOT,
-                check=False,
-            ).returncode
-            == 0
-            if local_exists
-            else False
+        remote_tip = (
+            _command_output("git", "rev-parse", f"origin/{branch}") if remote_exists else None
         )
+        ancestor_of_delivery = _is_ancestor(branch, delivery_branch) if local_exists else False
+        ancestor_of_origin_main = _is_ancestor(branch, "origin/main") if local_exists else False
         unique_commits_against_delivery = (
             int(_command_output("git", "rev-list", "--count", f"{delivery_branch}..{branch}"))
             if local_exists
             else None
         )
+        unique_counts_vs_main = (
+            _command_output("git", "rev-list", "--left-right", "--count", f"origin/main...{branch}")
+            if local_exists
+            else None
+        )
+        if unique_counts_vs_main is not None:
+            main_unique, branch_unique = (int(value) for value in unique_counts_vs_main.split())
+        else:
+            main_unique = branch_unique = None
         # The delivery branch has an open PR by construction.  The older PPO
         # branch can be deleted only after this PR merges if it is contained in
         # the delivery branch and is not occupied by a worktree.
@@ -483,10 +512,15 @@ def _branch_cleanup_audit(*, delivery_branch: str, pr_number: int) -> dict[str, 
             "local_exists": local_exists,
             "remote_exists": remote_exists,
             "tip": tip,
+            "remote_tip": remote_tip,
             "ancestor_of_delivery": ancestor_of_delivery,
+            "ancestor_of_origin_main": ancestor_of_origin_main,
             "unique_commits_against_delivery": unique_commits_against_delivery,
+            "origin_main_unique_commits": main_unique,
+            "unique_commits_vs_main": branch_unique,
             "occupied_by_worktree": occupied,
             "open_prs": open_prs,
+            "downstream_refs": _downstream_refs(branch) if local_exists else [],
             "decision": decision,
             "reason": (
                 "active_delivery_pr_must_merge_first"
