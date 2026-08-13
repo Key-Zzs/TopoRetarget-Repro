@@ -54,6 +54,7 @@ from toporetarget.rl.reference_tracking.reference_gated_contact import (
     fingertip_force_indices,
     reference_expected_contact_mask,
     reference_gated_contact_reward,
+    reference_mask_summary,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -174,6 +175,19 @@ def test_reward_excludes_post_ppo_bonus_leakage() -> None:
     assert profile.inter_finger_penalty == 0.0
     with pytest.raises(ValueError, match="post-PPO"):
         TopoRetargetReferenceTrackingReward26DV1(terminal_contact_bonus=1.0)
+
+
+def test_reference_mask_summary_tracks_window_and_endpoints() -> None:
+    mask = np.zeros((5, 5), dtype=bool)
+    mask[1:4, 2] = True
+    mask[4, 0] = True
+
+    summary = reference_mask_summary(mask, clip="hocap_170105")
+
+    assert summary["any_finger_expected_contact_frames"] == 4
+    assert summary["longest_expected_contact_window_control_steps"] == 4
+    assert summary["expected_contact_onset"] == 1
+    assert summary["expected_contact_final_frame"] is True
 
 
 def test_reference_gated_contact_reward_is_explicitly_zero_without_reference_mask() -> None:

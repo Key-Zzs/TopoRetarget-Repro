@@ -94,7 +94,7 @@ def reference_mask_summary(mask: np.ndarray, *, clip: str) -> dict[str, object]:
     values = np.asarray(mask, dtype=bool)
     if values.ndim != 2 or values.shape[1] != 5:
         raise ValueError("CONTACT_REWARD_MASK_MUST_BE_[T,5]")
-    any_mask = values.any(axis=1)
+    any_mask = np.asarray(values.any(axis=1), dtype=np.bool_)
     longest = 0
     current = 0
     for active in any_mask:
