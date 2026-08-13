@@ -8,6 +8,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import subprocess
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -282,7 +283,13 @@ def main() -> int:
         OUTPUT / "git_commits.json",
         {
             "start_head": "c125189393bf204488c8681cb76b438189b5bb4f",
-            "commits": "PENDING_LOCAL_COMMIT",
+            "summary_generated_at_head": subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=REPO_ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip(),
         },
     )
     summary_md = """# Stage 16 P3-B.5 C2 Geometry Failure Attribution
