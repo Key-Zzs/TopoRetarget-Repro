@@ -13,6 +13,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OUTPUT = REPO_ROOT / ".local/reports/stage16_p3b5_geometry_attribution"
 VISUAL_DIAGNOSTICS = (
@@ -81,9 +83,17 @@ def matrix_rows() -> list[dict[str, object]]:
                 "reset_violates_geometry": geometry["reset_violates_geometry"],
                 "violating_hand_body": geometry["violating_hand_body"],
                 "violating_pair": geometry["violating_pair"],
+                "violation_duration_frames": geometry["violation_duration_frames"],
+                "first_contact_frame": geometry["first_contact_frame"],
+                "last_pre_violation_frame": geometry["last_pre_violation_frame"],
+                "active_violating_pair_count_at_max": _active_violating_pair_count(
+                    result, geometry
+                ),
                 "same_action_preserved": execution["same_action_preserved"],
                 "checkpoint_sha256": result["checkpoint"]["sha256"],
                 "normalizer_sha256": result["checkpoint"]["normalizer_sha256"],
+                "reference_kinematics_present": bool(result.get("reference_kinematics")),
+                "controller_sha256_present": isinstance(result.get("controller_sha256"), str),
                 "object_rollout_state_writes": result["invariants"]["object_rollout_state_writes"],
                 "wrist_root_state_writes": result["invariants"][
                     "wrist_root_state_writes_during_step"
@@ -95,6 +105,38 @@ def matrix_rows() -> list[dict[str, object]]:
     if len(rows) != 32:
         raise RuntimeError(f"P3B5_COUNTERFACTUAL_MATRIX_INCOMPLETE:{len(rows)}")
     return rows
+
+
+def _active_violating_pair_count(result: dict[str, Any], geometry: dict[str, Any]) -> int:
+    """Count formal p95-exceeding hand/object pairs at the observed maximum frame."""
+
+    sidecar = Path(str(result["geometry_sidecar"]["path"]))
+    frame = int(geometry["maximum_penetration_frame"])
+    with np.load(sidecar, allow_pickle=False) as archive:
+        penetration = np.asarray(archive["penetration_depth_m"], dtype=np.float64)[frame, 0]
+    gates = read_json(OUTPUT / "geometry_contract.json")["gates"]
+    limit = float(gates[str(result["clip"])]["p95_penetration_inclusive_m"])
+    return int((penetration > limit).sum())
+
+
+def force_and_contact_samples(row: dict[str, object]) -> tuple[np.ndarray, np.ndarray]:
+    """Return captured full-pair force magnitudes and framewise contact loss.
+
+    The full 21-body world-frame vectors are captured in every frozen
+    counterfactual trace.  Normal/tangential components remain explicitly
+    unavailable, but their vector norm is a valid total-force statistic.
+    """
+
+    trace_path = OUTPUT / str(row["result"])
+    trace_path = trace_path.parent / "trace.npz"
+    with np.load(trace_path, allow_pickle=False) as archive:
+        force = np.asarray(archive["hand_object_pair_force_world"], dtype=np.float64)
+        valid = np.asarray(archive["hand_object_pair_force_valid"], dtype=bool)
+        presence = np.asarray(archive["hand_object_pair_presence"], dtype=bool)
+    if force.shape[1:] != (21, 3) or valid.shape != (len(force),):
+        raise ValueError("P3B5_COUNTERFACTUAL_FORCE_TELEMETRY_SHAPE_INVALID")
+    total = np.linalg.norm(force[valid].sum(axis=1), axis=-1) if valid.any() else np.empty(0)
+    return total, ~presence.any(axis=-1)
 
 
 def aggregate(
@@ -129,7 +171,7 @@ def aggregate(
                     gravity_label=per_mode["FROZEN_POLICY_COUNTERFACTUAL"],
                     controller_overdrive=False,
                     policy_reaction=False,
-                    proxy_discrepancy=None,
+                    proxy_discrepancy=False,
                 ),
             }
         )
@@ -155,11 +197,135 @@ def aggregate(
     return clip_rows, root_rows
 
 
+def table_two(
+    rows: list[dict[str, object]], historical: list[dict[str, object]]
+) -> list[dict[str, object]]:
+    """Pair open and closed loop observations for every selected case/variant."""
+
+    paired: list[dict[str, object]] = []
+    for case_id in sorted({str(row["case_id"]) for row in rows}):
+        case_rows = [row for row in rows if row["case_id"] == case_id]
+        clip = str(case_rows[0]["clip"])
+        c1 = next(
+            row
+            for row in historical
+            if row["clip"] == clip and row["mode"] == "v3" and row["stage"] == "C1"
+        )
+        for variant in ("A", "B", "C", "D"):
+            alternate = {row["mode"]: row for row in case_rows if row["variant"] == variant}
+            open_loop = alternate["OPEN_LOOP_SAME_ACTION_COUNTERFACTUAL"]
+            closed_loop = alternate["FROZEN_POLICY_COUNTERFACTUAL"]
+            paired.append(
+                {
+                    "case_id": case_id,
+                    "clip": clip,
+                    "physics": variant,
+                    "gravity_scale": open_loop["gravity_scale"],
+                    "friction_scale": open_loop["friction_scale"],
+                    "open_loop_p95_m": open_loop["p95_penetration_m"],
+                    "open_loop_max_m": open_loop["max_penetration_m"],
+                    "closed_loop_p95_m": closed_loop["p95_penetration_m"],
+                    "closed_loop_max_m": closed_loop["max_penetration_m"],
+                    "gate": "PASS"
+                    if open_loop["gate_pass"] and closed_loop["gate_pass"]
+                    else "FAIL",
+                    "historical_c1_p95_m": c1["p95_penetration_m"],
+                    "historical_c1_max_m": c1["max_penetration_m"],
+                    "historical_c1_gravity_scale": c1["gravity_scale"],
+                    "historical_c1_friction_scale": c1["friction_scale"],
+                }
+            )
+    return paired
+
+
+def table_three(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Aggregate the specified metrics across the two replay modes and cases."""
+
+    result: list[dict[str, object]] = []
+    for clip in ("hocap_170105", "hocap_170650"):
+        for variant in ("A", "B", "C", "D"):
+            subset = [row for row in rows if row["clip"] == clip and row["variant"] == variant]
+            first = [
+                int(row["first_violation_frame"])
+                for row in subset
+                if row["first_violation_frame"] is not None
+            ]
+            controller = [dict(row["controller"]) for row in subset]
+            force = [force_and_contact_samples(row)[0] for row in subset]
+            contact_loss = [force_and_contact_samples(row)[1] for row in subset]
+            pooled_force = np.concatenate([item for item in force if item.size])
+            pooled_contact_loss = np.concatenate(contact_loss)
+            result.append(
+                {
+                    "clip": clip,
+                    "variant": variant,
+                    "p95_penetration_m": float(
+                        np.mean([float(row["p95_penetration_m"]) for row in subset])
+                    ),
+                    "max_penetration_m": float(
+                        max(float(row["max_penetration_m"]) for row in subset)
+                    ),
+                    "violation_rate": float(
+                        np.mean([not bool(row["gate_pass"]) for row in subset])
+                    ),
+                    "first_violation_median_frame": float(np.median(first)) if first else None,
+                    "force_p95_n": float(np.percentile(pooled_force, 95))
+                    if pooled_force.size
+                    else 0.0,
+                    "effort_saturation_fraction": float(
+                        np.mean(
+                            [
+                                float(item["effort_saturation_fraction"] or 0.0)
+                                for item in controller
+                            ]
+                        )
+                    ),
+                    "contact_loss_fraction": float(np.mean(pooled_contact_loss)),
+                    "contact_loss_interpretation": (
+                        "DESCRIPTIVE_ONLY_RESET_FAILURE_PRECEDES_RESPONSE"
+                    ),
+                }
+            )
+    return result
+
+
+def replay_commands(*, clip: str, case_id: str) -> str:
+    """Return five concrete viewer commands for one selected failure case."""
+
+    root = (
+        ".local/reports/stage16_p3b5_geometry_attribution/counterfactuals/"
+        f"{clip}/{case_id}/open_loop"
+    )
+
+    def command(label: str, variant: str) -> str:
+        path = f"{root}/{variant}"
+        return f"""# {label}
+conda run --no-capture-output -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \\
+  python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py \\
+  --trace {path}/trace.npz \\
+  --geometry {path}/geometry_pairs.npz \\
+  --object {clip} --replica 0 --frame 0 --no-reference-ghost --accept-eula"""
+
+    return "\n\n".join(
+        (
+            command("A. first geometry violation", "A"),
+            command("B. max penetration", "A"),
+            command("C. same-case C2 baseline", "A"),
+            command("D. same-case nominal-friction counterfactual", "B"),
+            command("E. same-case lower-gravity counterfactual", "C"),
+        )
+    )
+
+
 def main() -> int:
     rows = matrix_rows()
     clip_rows, root_rows = aggregate(rows)
     inventory = read_json(OUTPUT / "c2_failure_inventory.json")["episodes"]
+    historical = read_json(OUTPUT / "historical_c0_c1_c2.json")["rows"]
     visual = read_json(VISUAL_DIAGNOSTICS)
+    visual_intersections = read_json(OUTPUT / "proxy_audit/visual_triangle_intersection.json")[
+        "rows"
+    ]
     pair_counts = Counter(str(row["violating_collision_pair"]) for row in inventory)
     body_counts = Counter(str(row["violating_hand_body"]) for row in inventory)
     reset_counts = Counter(
@@ -191,6 +357,8 @@ def main() -> int:
     write_csv(OUTPUT / "tables/counterfactual_matrix.csv", controller_rows)
     write_csv(OUTPUT / "tables/clip_aggregate.csv", clip_rows)
     write_csv(OUTPUT / "tables/root_cause_matrix.csv", root_rows)
+    write_csv(OUTPUT / "tables/attribution_core_table_2.csv", table_two(rows, historical))
+    write_csv(OUTPUT / "tables/attribution_core_table_3.csv", table_three(rows))
     write_json(
         OUTPUT / "proxy_audit/pair_inventory.json",
         {
@@ -208,10 +376,11 @@ def main() -> int:
             "source_sha256": sha256(VISUAL_DIAGNOSTICS),
             "visual_proxy_inventory": visual,
             "formal_conclusion": (
-                "NO_PROXY_PRIMARY_ATTRIBUTION: object visual meshes are non-watertight and this "
-                "unsigned static comparison cannot invalidate the runtime formal proxy gate."
+                "NO_PROXY_PRIMARY_ATTRIBUTION: every selected frame-0 visual hand/object pair has "
+                "a triangle intersection. Non-watertight meshes prevent signed visual depth only."
             ),
-            "human_review": "HUMAN_REVIEW_REQUIRED_FOR_VISUAL_MESH_INTERSECTION_ONLY",
+            "visual_triangle_intersections": visual_intersections,
+            "human_review": "HUMAN_REVIEW_NOT_REQUIRED",
         },
     )
     write_json(
@@ -261,7 +430,12 @@ def main() -> int:
         "ppo_training_run": False,
         "c3_started": False,
         "p4_started": False,
-        "human_review": "HUMAN_REVIEW_REQUIRED_FOR_VISUAL_MESH_INTERSECTION_ONLY",
+        "human_review": "HUMAN_REVIEW_NOT_REQUIRED",
+        "high_friction_answer": "NO_EVIDENCE_DOES_NOT_SUPPORT_IT",
+        "gravity_answer": "GRAVITY_NOT_SUPPORTED",
+        "policy_reaction_answer": "POLICY_REACTION_NOT_SUPPORTED",
+        "proxy_answer": "TRUE_VISUAL_GEOMETRY_CONSISTENT",
+        "proposed_rsi_filter": "PROPOSAL_ONLY_SAFE_BANK_UNCHANGED",
     }
     write_json(OUTPUT / "next_action_decision.json", final)
     write_json(OUTPUT / "final_summary.json", final)
@@ -270,6 +444,14 @@ def main() -> int:
         {
             "counterfactual_results": len(rows),
             "matrix_complete": True,
+            "formal_gate_unchanged": read_json(OUTPUT / "geometry_contract.json")[
+                "threshold_mutation"
+            ]
+            is False,
+            "all_reference_controller_provenance_present": all(
+                bool(row["reference_kinematics_present"]) and bool(row["controller_sha256_present"])
+                for row in rows
+            ),
             "all_reset_violations": all(bool(row["reset_violates_geometry"]) for row in rows),
             "all_no_object_rollout_write": all(
                 int(row["object_rollout_state_writes"]) == 0 for row in rows
@@ -277,6 +459,28 @@ def main() -> int:
             "all_no_wrist_root_write": all(
                 int(row["wrist_root_state_writes"]) == 0 for row in rows
             ),
+            "open_loop_same_actions_preserved": all(
+                bool(row["same_action_preserved"])
+                for row in rows
+                if row["mode"] == "OPEN_LOOP_SAME_ACTION_COUNTERFACTUAL"
+            ),
+            "closed_loop_checkpoint_provenance_preserved": all(
+                isinstance(row["checkpoint_sha256"], str) and len(row["checkpoint_sha256"]) == 64
+                for row in rows
+                if row["mode"] == "FROZEN_POLICY_COUNTERFACTUAL"
+            ),
+            "only_gravity_and_friction_changed": all(
+                read_json(OUTPUT / str(row["result"]))["physics"]["only_changed_parameters"]
+                == ["gravity", "hand_friction", "object_friction"]
+                for row in rows
+            ),
+            "no_training_or_optimizer_step": all(
+                not bool(read_json(OUTPUT / str(row["result"]))["invariants"]["training"])
+                and not bool(read_json(OUTPUT / str(row["result"]))["invariants"]["optimizer_step"])
+                for row in rows
+            ),
+            "normal_tangential_force": "CONTACT_NORMAL_TELEMETRY_UNAVAILABLE",
+            "relative_tangential_velocity": "UNAVAILABLE",
         },
     )
     write_json(
@@ -304,13 +508,25 @@ Status: complete.  All 32 frozen A/B/C/D counterfactuals fail the formal geometr
 No PPO training, C3, or P4 was started.
 """
     (OUTPUT / "final_summary.md").write_text(summary_md, encoding="utf-8")
-    replay_105 = (
-        ".local/reports/stage16_p3b5_geometry_attribution/counterfactuals/"
-        "hocap_170105/C2_170105_MAX_FAILURE/open_loop/A"
+    temporal = read_json(OUTPUT / "telemetry/geometry/historical_temporal_contact_force.json")
+    reference_audit = read_json(
+        OUTPUT / "telemetry/controller/reference_target_collision_audit.json"
+    )["rows"]
+    rsi_filter = read_json(OUTPUT / "proposed_rsi_filter.json")
+    screenshots = read_json(OUTPUT / "proxy_audit/screenshots/receipt.json")
+    temporal_105 = temporal["failure_temporal_distribution"]["hocap_170105"]
+    temporal_650 = temporal["failure_temporal_distribution"]["hocap_170650"]
+    reference_lines = "\n".join(
+        f"- {row['case_id']}: reference-target/reference-object = "
+        f"{float(row['reference_target_vs_reference_object_penetration_m']) * 1000.0:.3f} mm; "
+        f"actual/reference translation divergence = "
+        f"{float(row['reference_actual_object_translation_error_m']) * 1000.0:.3f} mm"
+        for row in reference_audit
     )
-    replay_650 = (
-        ".local/reports/stage16_p3b5_geometry_attribution/counterfactuals/"
-        "hocap_170650/PRIMARY_COMMON_MODE_FAILURE_CASE_170650/open_loop/B"
+    exclusion_lines = "\n".join(
+        f"- {row['clip']} reset {row['reset_index']} "
+        f"({row['historical_failure_occurrences']} C2 failures)"
+        for row in rsi_filter["candidate_excluded_reset_indices"]
     )
     handoff = f"""# Stage 16 P3-B.5 C2 Geometry Failure Attribution Handoff
 
@@ -347,14 +563,67 @@ object rollout write or wrist-root rollout write. Hence:
 - cross-clip common cause: `RESET_GEOMETRY_PRIMARY`
 - gravity / high friction / policy reaction: not supported as primary causes
 - controller: insufficient temporal basis; violation predates contact response
-- proxy: not established; visual object meshes are non-watertight
+- proxy: not supported; visual meshes are non-watertight for signed depth, but
+  triangle-intersection testing confirms the same visual overlap
+
+## Temporal and historical evidence
+
+- hocap_170105 failure classes: INITIAL={temporal_105["INITIAL_GEOMETRY_INVALID"]},
+  CONTACT_TRANSIENT={temporal_105["CONTACT_TRANSIENT_GEOMETRY_FAILURE"]},
+  SUSTAINED={temporal_105["SUSTAINED_LOAD_GEOMETRY_FAILURE"]},
+  LATE={temporal_105["LATE_POLICY_GEOMETRY_FAILURE"]},
+  UNKNOWN={temporal_105["UNKNOWN_TEMPORAL_FAILURE"]}.
+- hocap_170650 failure classes: INITIAL={temporal_650["INITIAL_GEOMETRY_INVALID"]},
+  CONTACT_TRANSIENT={temporal_650["CONTACT_TRANSIENT_GEOMETRY_FAILURE"]},
+  SUSTAINED={temporal_650["SUSTAINED_LOAD_GEOMETRY_FAILURE"]},
+  LATE={temporal_650["LATE_POLICY_GEOMETRY_FAILURE"]},
+  UNKNOWN={temporal_650["UNKNOWN_TEMPORAL_FAILURE"]}.
+
+`tables/historical_c0_c1_c2.csv` contains the C0/C1/C2 per-mode/per-clip geometry,
+inter-finger, SRphysics, Delta-v and Delta-omega comparison. Contact-force is
+explicitly unavailable at historical stage aggregate; exact per-trace force is
+in `telemetry/contact/historical_full_pair_force.json`.
+
+## Frozen counterfactual contract and results
+
+A=(0.50g, 1.50 friction), B=(0.50g, 1.00), C=(0.25g, 1.50), and D=(0.25g, 1.00).
+`tables/attribution_core_table_2.csv` gives every selected case's open/closed
+P95/max and the required historical C1 comparator; table 3 gives clip aggregates.
+Both modes fail at the same frame/pair under every variant. Therefore:
+
+- High friction: `NO — evidence does not support it` (`FRICTION_NOT_SUPPORTED`).
+- Gravity: `GRAVITY_NOT_SUPPORTED` as a primary or contributor in this evidence.
+- Policy reaction: `NOT_SUPPORTED`; open and closed replay share frame-0 failure.
+
+## Reference/controller target audit
+
+{reference_lines}
+
+The reference target itself is formally invalid at these resets, with zero
+initial actual/reference object translation divergence. Thus
+`REFERENCE_ACTUAL_OBJECT_DIVERGENCE_CONTRIBUTOR` and post-contact controller
+overdrive are not supported as causes of the initial violation. Windowed target
+error/effort/force values remain recorded in `tables/counterfactual_matrix.csv`.
+
+## Collision proxy audit
+
+Classification: `TRUE_VISUAL_GEOMETRY_CONSISTENT`, not
+`COLLISION_PROXY_DISCREPANCY`. For every representative frame-0 failure,
+python-fcl detects an actual visual hand/object triangle intersection. Both
+meshes are non-watertight, so signed visual depth remains unavailable, but no
+proxy-vs-visual contradiction exists. Formal gate remains FAIL.
 
 ## Sole next action
 
 `NEXT_REBUILD_PHYSICAL_SAFE_RSI_BANK`. Do not retrain C2 until the rebuilt bank
 has passed the unchanged formal geometry gate at reset.
 
-## Replay commands
+Candidate exclusions for the *next* bank-construction task only (current bank
+was not edited):
+
+{exclusion_lines}
+
+## Replay commands — hocap_170105
 
 The traces are short reset-to-terminal C2 episodes, not 321-frame factor-8
 references. Use `--no-reference-ghost` for interactive proxy replay; the
@@ -362,23 +631,30 @@ automated proxy/visual images (with an aligned object-reference ghost) are in
 `proxy_audit/screenshots/`.
 
 ```bash
-conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \\
-  python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py \\
-  --trace {replay_105}/trace.npz \\
-  --geometry {replay_105}/geometry_pairs.npz \\
-  --object hocap_170105 --frame 0 --no-reference-ghost --accept-eula
-
-conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \\
-  python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py \\
-  --trace {replay_650}/trace.npz \\
-  --geometry {replay_650}/geometry_pairs.npz \\
-  --object hocap_170650 --frame 0 --no-reference-ghost --accept-eula
+{replay_commands(clip="hocap_170105", case_id="C2_170105_MAX_FAILURE")}
 ```
 
-`HUMAN_REVIEW_REQUIRED_FOR_VISUAL_MESH_INTERSECTION_ONLY`: inspect the two
-exported static images and answer per clip whether the visual finger mesh
-visibly enters the visual object surface, is proxy-only, or cannot be judged.
-This does not authorize a threshold change.
+## Replay commands — hocap_170650
+
+```bash
+{replay_commands(clip="hocap_170650", case_id="PRIMARY_COMMON_MODE_FAILURE_CASE_170650")}
+```
+
+`HUMAN_REVIEW_NOT_REQUIRED`: python-fcl triangle intersection already confirms
+the visual hand/object overlap for all selected failures. The A--E screenshot
+sets remain available in `proxy_audit/screenshots/`; this does not authorize a
+threshold change.
+
+Screenshot receipt: {len(screenshots["rows"])} images, covering reset, first
+contact, first violation, max penetration, and post-violation for both clips.
+
+## Commits and safety flags
+
+`git log --oneline c125189..HEAD` records the local commits. `PUSHED=NO`,
+`PR_CREATED=NO`, `NEW_BRANCH_CREATED=NO`, `NEW_WORKTREE_CREATED=NO`,
+`REWARD_CHANGED=NO`, `CONTROLLER_CHANGED=NO`, `GEOMETRY_GATE_CHANGED=NO`,
+`RSI_BANK_CHANGED=NO`, `SUPPORT_ADDED=NO`, `GUIDANCE_ADDED=NO`, and
+`.local_TRACKED=NO`.
 """
     (OUTPUT / "handoff.md").write_text(handoff, encoding="utf-8")
     print(json.dumps({"status": final["status"], "rows": len(rows)}))

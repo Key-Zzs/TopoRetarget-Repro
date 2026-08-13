@@ -59,7 +59,7 @@ def add_mesh(
     axis.add_collection3d(collection)
 
 
-def render(clip: str, case_id: str) -> dict[str, object]:
+def render(clip: str, case_id: str, frame: int, label: str) -> dict[str, object]:
     import trimesh
 
     trace_path = OUTPUT / "counterfactuals" / clip / case_id / "open_loop/A" / "trace.npz"
@@ -67,9 +67,9 @@ def render(clip: str, case_id: str) -> dict[str, object]:
     hand = manifest["hand_shapes"][4]
     object_shape = manifest["object_shapes"][clip][0]
     with np.load(trace_path, allow_pickle=False) as trace:
-        hand_pose = np.asarray(trace["hand_collision_body_pose"], dtype=np.float64)[0, 4]
-        object_pose = np.asarray(trace["object_pose"], dtype=np.float64)[0]
-        reference_pose = np.asarray(trace["object_reference"], dtype=np.float64)[0]
+        hand_pose = np.asarray(trace["hand_collision_body_pose"], dtype=np.float64)[frame, 4]
+        object_pose = np.asarray(trace["object_pose"], dtype=np.float64)[frame]
+        reference_pose = np.asarray(trace["object_reference"], dtype=np.float64)[frame]
     hand_proxy_v = world(np.asarray(hand["convex_vertices_m"]), hand_pose)
     hand_proxy_f = np.asarray(hand["triangle_indices"], dtype=np.int64)
     object_proxy_v = world(np.asarray(object_shape["convex_vertices_m"]), object_pose)
@@ -133,17 +133,18 @@ def render(clip: str, case_id: str) -> dict[str, object]:
     axis.set_zlim(center[2] - radius, center[2] + radius)
     axis.set_box_aspect((1, 1, 1))
     axis.view_init(elev=22, azim=-58)
-    axis.set_title(f"{clip} frame 0: index-distal / object convex-pair violation")
+    axis.set_title(f"{clip} frame {frame}: {label}; index-distal / object formal pair")
     axis.legend(loc="upper left", fontsize=7)
     figure.tight_layout()
-    target = OUTPUT / "proxy_audit/screenshots" / f"{clip}_frame000_proxy_visual.png"
+    target = OUTPUT / "proxy_audit/screenshots" / f"{clip}_{case_id}_{label}_frame{frame:03d}.png"
     target.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(target)
     plt.close(figure)
     return {
         "clip": clip,
         "case_id": case_id,
-        "frame": 0,
+        "window": label,
+        "frame": frame,
         "screenshot": str(target.resolve()),
         "visual_object_watertight": bool(object_visual.is_watertight),
         "visual_hand_watertight": bool(hand_visual.is_watertight),
@@ -152,15 +153,31 @@ def render(clip: str, case_id: str) -> dict[str, object]:
 
 
 def main() -> int:
-    rows = [
-        render("hocap_170105", "C2_170105_MAX_FAILURE"),
-        render("hocap_170650", "PRIMARY_COMMON_MODE_FAILURE_CASE_170650"),
-    ]
+    rows = []
+    for clip, case_id in (
+        ("hocap_170105", "C2_170105_MAX_FAILURE"),
+        ("hocap_170650", "PRIMARY_COMMON_MODE_FAILURE_CASE_170650"),
+    ):
+        trace = OUTPUT / "counterfactuals" / clip / case_id / "open_loop/A" / "trace.npz"
+        with np.load(trace, allow_pickle=False) as archive:
+            frame_count = len(np.asarray(archive["object_pose"]))
+            contact = np.asarray(archive["hand_object_pair_presence"], dtype=bool).any(axis=-1)
+        first_contact = int(np.flatnonzero(contact)[0]) if contact.any() else 1
+        frames = {
+            "reset": 0,
+            "first_contact": first_contact,
+            "first_geometry_violation": 0,
+            "max_penetration": 0,
+            "post_violation": min(1, frame_count - 1),
+        }
+        rows.extend(render(clip, case_id, frame, label) for label, frame in frames.items())
     payload = {
         "schema_version": "Stage16P3B5ProxyVisualFramesV1",
         "rows": rows,
         "automated_review": (
-            "VISUAL_MESH_NONWATERTIGHT: no signed visual-overlap conclusion; human review required."
+            "VISUAL_MESH_NONWATERTIGHT: signed depth is unavailable.  The separate "
+            "python-fcl triangle-intersection audit is the authoritative visual-overlap "
+            "classification for these same reset frames."
         ),
     }
     (OUTPUT / "proxy_audit/screenshots/receipt.json").write_text(

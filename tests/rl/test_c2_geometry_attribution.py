@@ -110,3 +110,27 @@ def test_controller_indicators_and_root_cause_matrix() -> None:
     )
     assert matrix["Reset"] == "STRONG"
     assert matrix["Proxy"] == "WEAK"
+
+
+def test_first_violation_uses_the_unchanged_p95_gate_not_catastrophic_gate(
+    gate: GeometryGateV1,
+) -> None:
+    assert first_violation(np.asarray([0.0, 0.003, 0.003001, 0.009]), gate=gate) == 2
+    assert gate.passes(maximum_m=0.009, p95_m=0.003, inter_finger_m=0.003)
+    assert not gate.passes(maximum_m=0.01, p95_m=0.003, inter_finger_m=0.003)
+
+
+def test_controller_saturation_ignores_mixed_unit_virtual_wrist_effort() -> None:
+    fingers = np.zeros((2, 20))
+    efforts = np.concatenate((np.full((2, 6), 999.0), np.zeros((2, 20))), axis=1)
+    report = controller_indicators(
+        finger_target=fingers,
+        finger_actual=fingers,
+        wrist_target=np.zeros((2, 7)),
+        wrist_actual=np.zeros((2, 7)),
+        actuator_effort=efforts,
+        effort_limit=0.6,
+        contact_force_world=np.zeros((2, 3)),
+        center_frame=0,
+    )
+    assert report["effort_saturation_fraction"] == 0.0
