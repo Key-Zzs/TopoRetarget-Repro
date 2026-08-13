@@ -80,67 +80,13 @@ export TOPORETARGET_OUTPUT=/path/to/toporetarget-output
 直接设置本地路径，或从 [configs/paths.example.yaml](configs/paths.example.yaml) 开始。
 `GRAB_ROOT` 必须包含已授权的数据集，`MANO_MODEL_ROOT` 必须包含已授权的 MANO 模型文件。
 
-## 核心工作流
+## 快速开始与核心工作流
 
-一次只操作一条明确指定的 sequence。授权的原始数据保持只读；派生 cache、report 和 HTML 请写到仓库外，
-例如 `$TOPORETARGET_OUTPUT` 下。
+先完成[环境配置](#环境配置)。下面的顺序从最小 smoke check 开始，依次进入数据准备、几何重定向、
+Stage16-D、评价和 replay。授权的原始数据保持只读；派生 cache、report 和 HTML 请写到仓库外，例如
+`$TOPORETARGET_OUTPUT` 下。
 
-1. **环境与目标手资产预检。**
-
-   ```bash
-   "$TOPORETARGET_PYTHON" -m toporetarget doctor paper
-   "$TOPORETARGET_PYTHON" -m toporetarget robots list
-   "$TOPORETARGET_PYTHON" -m toporetarget robots validate wuji_hand2_beta1_rh \
-     --asset-root third_party/robot_hands/wuji_hand2_beta1
-   ```
-
-2. **转换并检查一条 HOI sequence。** 该步骤生成绑定 manifest 的 canonical cache，且不对 source
-   sequence 做重采样。
-
-   ```bash
-   "$TOPORETARGET_PYTHON" -m toporetarget data convert \
-     --dataset grab --sequence <sequence-id> --grab-root "$GRAB_ROOT" \
-     --mano-model-root "$MANO_MODEL_ROOT" \
-     --output "$TOPORETARGET_OUTPUT/<sequence-id>.zarr"
-   "$TOPORETARGET_PYTHON" -m toporetarget data inspect \
-     "$TOPORETARGET_OUTPUT/<sequence-id>.zarr"
-   ```
-
-3. **运行有界的 retargeting workflow。** 先检查精确参数，再让 `plan-grab`、`run-grab`、`status`
-   和 `validate` 指向同一条明确 sequence/window 与 output root。该 workflow 支持恢复，且不会扫描或修改
-   无关的 source data。
-
-   ```bash
-   "$TOPORETARGET_PYTHON" -m toporetarget workflow plan-grab --help
-   "$TOPORETARGET_PYTHON" -m toporetarget workflow run-grab --help
-   "$TOPORETARGET_PYTHON" -m toporetarget workflow status --help
-   "$TOPORETARGET_PYTHON" -m toporetarget workflow validate --help
-   ```
-
-4. **审计几何并评价冻结 benchmark。** geometry inspection 是只读的；benchmark 按明确的
-   `inspect-datasets -> select -> freeze -> run -> evaluate` 状态机执行。
-
-   ```bash
-   "$TOPORETARGET_PYTHON" -m toporetarget geometry --help
-   "$TOPORETARGET_PYTHON" -m toporetarget benchmark inspect-datasets --help
-   "$TOPORETARGET_PYTHON" -m toporetarget benchmark select --help
-   "$TOPORETARGET_PYTHON" -m toporetarget benchmark freeze --help
-   "$TOPORETARGET_PYTHON" -m toporetarget benchmark run --help
-   "$TOPORETARGET_PYTHON" -m toporetarget benchmark evaluate --help
-   ```
-
-5. **检查已有 Isaac Lab trace。** replay 仅用于诊断：不会重新训练 PPO、修改 trace，或生成新的物理资格化。
-
-   ```bash
-   conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
-     python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py --help
-   ```
-
-完整的参数合同与验收边界见 [configs/README.md](configs/README.md)、
-[workflow resume and provenance](docs/WORKFLOW_RESUME_AND_PROVENANCE.md) 和
-[Isaac Lab direct environment contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md)。
-
-## Quick start 与复现入口
+### 1. 环境入口与最小 smoke check
 
 查看命令并验证随仓库提供的目标手资产：
 
@@ -154,8 +100,70 @@ export TOPORETARGET_OUTPUT=/path/to/toporetarget-output
   --asset-root third_party/robot_hands/wuji_hand2_beta1
 ```
 
-主要离线 pipeline 见 [configs/README.md](configs/README.md) 与 CLI help。它保留 source
-数据，创建绑定 manifest 的派生产物，并将人工验收保留为明确边界。运行 paper-fidelity 检查：
+### 2. 数据集与 reference 准备
+
+一次只操作一条明确指定的 sequence。转换并检查一条 HOI sequence，生成绑定 manifest 的 canonical cache，
+且不对 source sequence 做重采样：
+
+```bash
+"$TOPORETARGET_PYTHON" -m toporetarget data convert \
+  --dataset grab --sequence <sequence-id> --grab-root "$GRAB_ROOT" \
+  --mano-model-root "$MANO_MODEL_ROOT" \
+  --output "$TOPORETARGET_OUTPUT/<sequence-id>.zarr"
+"$TOPORETARGET_PYTHON" -m toporetarget data inspect \
+  "$TOPORETARGET_OUTPUT/<sequence-id>.zarr"
+```
+
+### 3. 核心几何重定向
+
+先检查精确参数，再让 `plan-grab`、`run-grab`、`status` 和 `validate` 指向同一条明确的 sequence/window
+与 output root。该 workflow 支持恢复，且不会扫描或修改无关的 source data。
+
+```bash
+"$TOPORETARGET_PYTHON" -m toporetarget workflow plan-grab --help
+"$TOPORETARGET_PYTHON" -m toporetarget workflow run-grab --help
+"$TOPORETARGET_PYTHON" -m toporetarget workflow status --help
+"$TOPORETARGET_PYTHON" -m toporetarget workflow validate --help
+"$TOPORETARGET_PYTHON" -m toporetarget geometry --help
+```
+
+### 4. Stage16-D 因果 PPO 入口
+
+Stage16-D 因果 PPO workflow 见 [Physics-correction PPO](docs/rl/PHYSICS_CORRECTION_PPO.md) 和
+[Stage 16-D physics-consistent retargeting](docs/stages/STAGE16D_PHYSICS_CONSISTENT_RETARGETING.md)。
+它仍是在冻结、简化的 zero-gravity / no-support Isaac/PhysX 合同下的因果 reference-tracking baseline：
+没有 guidance force、support、attachment、隐藏 object controller，也没有 rollout-time object-state 或
+wrist-root write。不声称 full-gravity 或 real-world physical validation。
+
+### 5. 评价、replay 与可视化
+
+geometry inspection 是只读的；冻结 benchmark 按明确的
+`inspect-datasets -> select -> freeze -> run -> evaluate` 状态机执行：
+
+```bash
+"$TOPORETARGET_PYTHON" -m toporetarget benchmark inspect-datasets --help
+"$TOPORETARGET_PYTHON" -m toporetarget benchmark select --help
+"$TOPORETARGET_PYTHON" -m toporetarget benchmark freeze --help
+"$TOPORETARGET_PYTHON" -m toporetarget benchmark run --help
+"$TOPORETARGET_PYTHON" -m toporetarget benchmark evaluate --help
+```
+
+检查已有 Isaac Lab trace。replay 仅用于诊断：不会重新训练 PPO、修改 trace，或生成新的物理资格化。
+
+```bash
+conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
+  python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py --help
+```
+
+项目生成独立浏览器 HTML，用于查看 source、warm-start、final mesh、interaction graph、contact 和
+collision diagnostics、continuity 以及 provenance。请使用所选 pipeline manifest 给出的可视化命令，
+并在浏览器中检查生成的 HTML。
+
+### 6. 进一步复现
+
+主要离线 pipeline 见 [configs/README.md](configs/README.md) 与 CLI help。完整的参数合同与验收边界见
+[workflow resume and provenance](docs/WORKFLOW_RESUME_AND_PROVENANCE.md) 和
+[Isaac Lab direct environment contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md)。运行 paper-fidelity 检查：
 
 ```bash
 "$TOPORETARGET_PYTHON" scripts/check_paper_fidelity.py
@@ -237,11 +245,53 @@ artifact 保留在忽略的本地存储中。
 README 文件是稳定的项目入口文档；实验日志和 run-specific metrics 位于 README 之外，进入
 stage 文档和本地 machine-readable reports。
 
+## 致谢
+
+本仓库是对 [*TopoRetarget: Interaction-Preserving Retargeting for Dexterous
+Manipulation*](https://arxiv.org/abs/2606.16272) 所述思想的独立复现与工程扩展。感谢原始作者及其研究贡献。
+
+同时感谢为本项目提供核心基础的上游项目，包括 MANO/SMPL-X、PyTorch、Trimesh、python-fcl、MuJoCo、
+NVIDIA Isaac Sim/Isaac Lab，以及本 workflow 使用的外部数据集的作者与维护者。仓库中跟踪的 Arti-MANO
+快照来源于 [ManipTrans](https://github.com/ManipTrans/ManipTrans)；跟踪的 Wuji Hand2 Beta1 子集来源于
+[wuji-description](https://github.com/wuji-technology/wuji-description)。
+
+第三方数据集、人体模型、机器人资产和软件仍分别受其原始许可证与使用条款约束；本仓库许可证不会自动
+重新授权这些材料。
+
+## 引用
+
+如果你使用了本仓库复现的 TopoRetarget 方法，请引用原论文：
+
+```bibtex
+@article{wu2026toporetarget,
+  title   = {TopoRetarget: Interaction-Preserving Retargeting for Dexterous Manipulation},
+  author  = {Wu, Jielin and Yao, Shenzhe and He, Guanqi and Liu, Xiaohan and Zeng, Zhaoqing
+             and Jiang, Xiangrui and Yang, Han and Zhang, Wentao and Zhao, Hang},
+  journal = {arXiv preprint arXiv:2606.16272},
+  year    = {2026},
+  doi     = {10.48550/arXiv.2606.16272}
+}
+```
+
+如果你使用了本仓库提供的工程扩展、评价工具或仿真基础设施，也请同时引用本仓库：
+
+```bibtex
+@software{keyzzs_toporetarget_repro_2026,
+  author = {{Key-Zzs}},
+  title  = {TopoRetarget-Repro},
+  url    = {https://github.com/Key-Zzs/TopoRetarget-Repro},
+  year   = {2026}
+}
+```
+
+该 software citation 使用仓库 metadata 中可确认的 owner identity，没有推断个人作者姓名，也没有声明 DOI。
+使用外部数据集、人体模型、机器人资产或上游软件时，也请按照各自项目的说明进行引用。本地论文副本见
+[docs/TopoRetarget.pdf](docs/TopoRetarget.pdf)，上游资产 provenance 见
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
 ## License
 
-见 [LICENSE](LICENSE)。请遵守上游数据集、模型、机器人资产和依赖的许可证。
-
-## Citation
-
-方法请引用原始 TopoRetarget 论文。使用本仓库的实现或派生产物时，请按其 release metadata
-引用本仓库。
+仓库代码和文档采用 GNU General Public License v3.0，见 [LICENSE](LICENSE)。Tracked 第三方资产继续保留
+其上游许可证与 `third_party/robot_hands/` 中的 notices。外部 GRAB、MANO/SMPL-X 以及其它数据集/模型资源
+不会在此重新分发，仍受各自条款约束。使用外部资源前请阅读
+[docs/LICENSE_AND_DATA_POLICY.md](docs/LICENSE_AND_DATA_POLICY.md) 和 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

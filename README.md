@@ -88,72 +88,15 @@ Set local paths directly or start from
 contain the licensed dataset; `MANO_MODEL_ROOT` must contain the licensed MANO
 model files.
 
-## Core workflows
+## Quick Start and Core Workflows
 
-Use one explicitly selected sequence at a time. Raw licensed data is read-only;
-write derived caches, reports, and HTML outside the repository, for example
-under `$TOPORETARGET_OUTPUT`.
+Complete [Setup](#setup) first. The sequence below starts with a small smoke
+check, then moves through dataset preparation, geometric retargeting,
+Stage16-D, evaluation, and replay. Raw licensed data is read-only; write
+derived caches, reports, and HTML outside the repository, for example under
+`$TOPORETARGET_OUTPUT`.
 
-1. **Preflight the installation and target assets.**
-
-   ```bash
-   "$TOPORETARGET_PYTHON" -m toporetarget doctor paper
-   "$TOPORETARGET_PYTHON" -m toporetarget robots list
-   "$TOPORETARGET_PYTHON" -m toporetarget robots validate wuji_hand2_beta1_rh \
-     --asset-root third_party/robot_hands/wuji_hand2_beta1
-   ```
-
-2. **Convert and inspect one HOI sequence.** This creates a manifest-bound
-   canonical cache without resampling the source sequence.
-
-   ```bash
-   "$TOPORETARGET_PYTHON" -m toporetarget data convert \
-     --dataset grab --sequence <sequence-id> --grab-root "$GRAB_ROOT" \
-     --mano-model-root "$MANO_MODEL_ROOT" \
-     --output "$TOPORETARGET_OUTPUT/<sequence-id>.zarr"
-   "$TOPORETARGET_PYTHON" -m toporetarget data inspect \
-     "$TOPORETARGET_OUTPUT/<sequence-id>.zarr"
-   ```
-
-3. **Run the bounded retargeting workflow.** Inspect the exact options first,
-   then use `plan-grab`, `run-grab`, `status`, and `validate` against the same
-   explicit sequence/window and output root. The workflow is resumable and
-   does not scan or mutate unrelated source data.
-
-   ```bash
-   "$TOPORETARGET_PYTHON" -m toporetarget workflow plan-grab --help
-   "$TOPORETARGET_PYTHON" -m toporetarget workflow run-grab --help
-   "$TOPORETARGET_PYTHON" -m toporetarget workflow status --help
-   "$TOPORETARGET_PYTHON" -m toporetarget workflow validate --help
-   ```
-
-4. **Audit geometry and evaluate a frozen benchmark.** Geometry inspection is
-   read-only; the benchmark follows the explicit `inspect-datasets -> select
-   -> freeze -> run -> evaluate` state machine.
-
-   ```bash
-   "$TOPORETARGET_PYTHON" -m toporetarget geometry --help
-   "$TOPORETARGET_PYTHON" -m toporetarget benchmark inspect-datasets --help
-   "$TOPORETARGET_PYTHON" -m toporetarget benchmark select --help
-   "$TOPORETARGET_PYTHON" -m toporetarget benchmark freeze --help
-   "$TOPORETARGET_PYTHON" -m toporetarget benchmark run --help
-   "$TOPORETARGET_PYTHON" -m toporetarget benchmark evaluate --help
-   ```
-
-5. **Inspect an existing Isaac Lab trace.** Replay is diagnostic only: it does
-   not retrain PPO, alter the trace, or create a new physics qualification.
-
-   ```bash
-   conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
-     python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py --help
-   ```
-
-For the full argument contracts and acceptance boundaries, see
-[configs/README.md](configs/README.md),
-[workflow resume and provenance](docs/WORKFLOW_RESUME_AND_PROVENANCE.md), and
-[the Isaac Lab direct environment contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md).
-
-## Quick start and reproduction
+### 1. Environment entry and minimal smoke check
 
 Inspect the available commands and validate the shipped target assets:
 
@@ -167,10 +110,79 @@ Inspect the available commands and validate the shipped target assets:
   --asset-root third_party/robot_hands/wuji_hand2_beta1
 ```
 
+### 2. Dataset and reference preparation
+
+Use one explicitly selected sequence at a time. Convert and inspect one HOI
+sequence to create a manifest-bound canonical cache without resampling the
+source sequence:
+
+```bash
+"$TOPORETARGET_PYTHON" -m toporetarget data convert \
+  --dataset grab --sequence <sequence-id> --grab-root "$GRAB_ROOT" \
+  --mano-model-root "$MANO_MODEL_ROOT" \
+  --output "$TOPORETARGET_OUTPUT/<sequence-id>.zarr"
+"$TOPORETARGET_PYTHON" -m toporetarget data inspect \
+  "$TOPORETARGET_OUTPUT/<sequence-id>.zarr"
+```
+
+### 3. Core geometric retargeting
+
+Inspect the exact options first, then use `plan-grab`, `run-grab`, `status`,
+and `validate` against the same explicit sequence/window and output root. The
+workflow is resumable and does not scan or mutate unrelated source data.
+
+```bash
+"$TOPORETARGET_PYTHON" -m toporetarget workflow plan-grab --help
+"$TOPORETARGET_PYTHON" -m toporetarget workflow run-grab --help
+"$TOPORETARGET_PYTHON" -m toporetarget workflow status --help
+"$TOPORETARGET_PYTHON" -m toporetarget workflow validate --help
+"$TOPORETARGET_PYTHON" -m toporetarget geometry --help
+```
+
+### 4. Stage16-D causal PPO entry
+
+The Stage16-D causal PPO workflow is documented in [Physics-correction
+PPO](docs/rl/PHYSICS_CORRECTION_PPO.md) and [Stage 16-D
+physics-consistent retargeting](docs/stages/STAGE16D_PHYSICS_CONSISTENT_RETARGETING.md).
+It remains a causal reference-tracking baseline under the frozen simplified
+zero-gravity, no-support Isaac/PhysX contract: no guidance forces, support,
+attachments, hidden object controller, or rollout-time object-state or
+wrist-root writes. It does not claim full-gravity or real-world physical
+validation.
+
+### 5. Evaluation, replay, and visualization
+
+Geometry inspection is read-only; a frozen benchmark follows the explicit
+`inspect-datasets -> select -> freeze -> run -> evaluate` state machine:
+
+```bash
+"$TOPORETARGET_PYTHON" -m toporetarget benchmark inspect-datasets --help
+"$TOPORETARGET_PYTHON" -m toporetarget benchmark select --help
+"$TOPORETARGET_PYTHON" -m toporetarget benchmark freeze --help
+"$TOPORETARGET_PYTHON" -m toporetarget benchmark run --help
+"$TOPORETARGET_PYTHON" -m toporetarget benchmark evaluate --help
+```
+
+Inspect an existing Isaac Lab trace. Replay is diagnostic only: it does not
+retrain PPO, alter the trace, or create a new physics qualification.
+
+```bash
+conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
+  python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py --help
+```
+
+The project generates self-contained browser HTML for source, warm-start, and
+final meshes; interaction graphs; contact and collision diagnostics; continuity;
+and provenance. Use the visualization commands emitted by the selected
+pipeline manifest, then inspect the generated HTML in a browser.
+
+### 6. Further reproduction
+
 The main offline pipeline is documented in [configs/README.md](configs/README.md)
-and the CLI help. It preserves source data, creates manifest-bound derived
-outputs, and keeps human acceptance as an explicit boundary. For a paper-fidelity
-check, run:
+and the CLI help. For the full argument contracts and acceptance boundaries,
+see [workflow resume and provenance](docs/WORKFLOW_RESUME_AND_PROVENANCE.md) and
+[the Isaac Lab direct environment contract](docs/rl/ISAACLAB_DIRECT_RL_ENV.md).
+For a paper-fidelity check, run:
 
 ```bash
 "$TOPORETARGET_PYTHON" scripts/check_paper_fidelity.py
@@ -266,13 +278,65 @@ README files are stable project entry documents; experiment logs and
 run-specific metrics live outside README, in stage documentation and local
 machine-readable reports.
 
-## License
+## Acknowledgements
 
-See [LICENSE](LICENSE). Respect the licenses of upstream datasets, models,
-robot assets, and dependencies.
+This repository is an independent reproduction and engineering extension of
+the ideas presented in [*TopoRetarget: Interaction-Preserving Retargeting for
+Dexterous Manipulation*](https://arxiv.org/abs/2606.16272). We thank the
+original authors for that research contribution.
+
+We also acknowledge the upstream projects that provide core foundations used
+here, including MANO/SMPL-X, PyTorch, Trimesh, python-fcl, MuJoCo, and NVIDIA
+Isaac Sim/Isaac Lab, as well as the authors and maintainers of the external
+datasets used by the workflows. The tracked Arti-MANO snapshot is sourced from
+[ManipTrans](https://github.com/ManipTrans/ManipTrans), and the tracked Wuji
+Hand2 Beta1 subset is sourced from
+[wuji-description](https://github.com/wuji-technology/wuji-description).
+
+Third-party datasets, body models, robot assets, and software remain subject to
+their respective licenses and terms of use; this repository's license does not
+automatically relicense those materials.
 
 ## Citation
 
-Please cite the original TopoRetarget paper for the method. Cite this repository
-according to its release metadata when using its implementation or derivative
-artifacts.
+If you use the reproduced TopoRetarget method, please cite the original paper:
+
+```bibtex
+@article{wu2026toporetarget,
+  title   = {TopoRetarget: Interaction-Preserving Retargeting for Dexterous Manipulation},
+  author  = {Wu, Jielin and Yao, Shenzhe and He, Guanqi and Liu, Xiaohan and Zeng, Zhaoqing
+             and Jiang, Xiangrui and Yang, Han and Zhang, Wentao and Zhao, Hang},
+  journal = {arXiv preprint arXiv:2606.16272},
+  year    = {2026},
+  doi     = {10.48550/arXiv.2606.16272}
+}
+```
+
+If you use this repository's engineering extensions, evaluation tools, or
+simulation infrastructure, please also cite the repository:
+
+```bibtex
+@software{keyzzs_toporetarget_repro_2026,
+  author = {{Key-Zzs}},
+  title  = {TopoRetarget-Repro},
+  url    = {https://github.com/Key-Zzs/TopoRetarget-Repro},
+  year   = {2026}
+}
+```
+
+The repository owner identity in this software citation is taken from the
+repository metadata; no personal author name or DOI is inferred. When using
+external datasets, body models, robot assets, or upstream software, also cite
+those projects according to their own instructions. The local paper copy is
+[docs/TopoRetarget.pdf](docs/TopoRetarget.pdf), and upstream asset provenance is
+recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## License
+
+The repository code and documentation are released under the GNU General Public
+License v3.0; see [LICENSE](LICENSE). Tracked third-party assets retain their
+upstream licenses and notices under `third_party/robot_hands/`. External GRAB,
+MANO/SMPL-X, and other dataset/model resources are not redistributed here and
+remain subject to their own terms. See [docs/LICENSE_AND_DATA_POLICY.md](docs/LICENSE_AND_DATA_POLICY.md)
+and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) before using external
+resources.
