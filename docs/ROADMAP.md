@@ -73,7 +73,9 @@ status](stages/STAGE16_FULL_GRAVITY_CAUSAL.md).
 
 ## Next causal physical stage
 
-The next permitted work is an explicit repair of the C2 absolute-geometry
+P3-B.5 attributes the C2 failure to reset geometry: selected safe-bank states
+already fail the frozen geometry gate at frame 0 under all frozen A/B/C/D
+counterfactuals. The next permitted work is an explicit repair of the C2 absolute-geometry
 failure under the frozen causal contract. The required order after that repair
 is:
 

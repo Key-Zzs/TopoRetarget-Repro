@@ -28,6 +28,16 @@ The current C2 selection rejected both modes at the absolute geometry gate.
 Consequently the current status is **P3 BLOCKED at C2 selection**. This is a
 safety conclusion, not a claim that either policy has been physically promoted.
 
+## P3-B.5 geometry attribution
+
+Frozen A/B/C/D gravity--friction counterfactuals established that the selected
+C2 failures already violate the absolute hand--object geometry gate at reset
+frame 0. The result holds for saved-action and deterministic frozen-policy
+replay. The current attribution is therefore `RESET_GEOMETRY_PRIMARY`, not a
+gravity, friction, or policy-reaction primary cause. The only permitted next
+task is `NEXT_REBUILD_PHYSICAL_SAFE_RSI_BANK`; C2 must not be retrained until
+that rebuilt reset bank is formally geometry-qualified.
+
 ## G3 and P4 boundary
 
 G3 requires the selected global C2 policy, nominal C4 physics, four replicas

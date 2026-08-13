@@ -64,7 +64,9 @@ P3 C0--C2 development pilot 已对两个冻结 reward mode 和两个 clip 完成
 
 ## 下一个因果物理阶段
 
-接下来允许的工作是在冻结 causal contract 下显式修复 C2 absolute-geometry failure。修复后的顺序必须是：
+P3-B.5 已确认 C2 的主要原因是 reset geometry：所选 safe-bank state 在所有冻结的
+A/B/C/D 反事实中第 0 帧即违反 geometry gate。接下来允许的工作是在冻结 causal contract 下
+显式修复 C2 absolute-geometry failure。修复后的顺序必须是：
 
 ```text
 Contact-ready RSI V2
