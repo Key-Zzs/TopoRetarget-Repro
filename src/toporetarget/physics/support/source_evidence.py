@@ -126,7 +126,8 @@ def evidence_from_sequence_directory(sequence_dir: Any) -> NormalizedSourceEvide
     discovered = discover_source_support_evidence(sequence_dir)
     candidates = discovered.get("source_scene_geometry_candidates", [])
     metadata_hits = discovered.get("metadata_support_hits", [])
-    assets = tuple(item for item in candidates if isinstance(item, Mapping))
+    candidate_items = candidates if isinstance(candidates, (list, tuple)) else ()
+    assets = tuple(item for item in candidate_items if isinstance(item, Mapping))
     return normalize_source_evidence(
         {
             "explicit": bool(metadata_hits),

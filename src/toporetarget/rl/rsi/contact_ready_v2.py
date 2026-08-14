@@ -203,10 +203,14 @@ def classify_contact_ready_states(
     if not np.isfinite(gaps).all() or np.any(gaps < 0.0) or not np.isfinite(twist).all():
         raise ValueError("RSI_CLASSIFICATION_NONFINITE_INPUT")
 
-    source_expected = np.asarray(expected, dtype=bool).any(axis=1)
-    source_near = np.isin(labels, tuple(_SOURCE_NEAR_CLASSES)).any(axis=1)
-    source_confirmed = np.isin(labels, tuple(_SOURCE_CONTACT_CLASSES)).any(axis=1)
-    source_no_contact = np.all(labels == "SOURCE_NO_CONTACT", axis=1)
+    source_expected = np.asarray(np.asarray(expected, dtype=bool).any(axis=1), dtype=np.bool_)
+    source_near = np.asarray(
+        np.isin(labels, tuple(_SOURCE_NEAR_CLASSES)).any(axis=1), dtype=np.bool_
+    )
+    source_confirmed = np.asarray(
+        np.isin(labels, tuple(_SOURCE_CONTACT_CLASSES)).any(axis=1), dtype=np.bool_
+    )
+    source_no_contact = np.asarray(np.all(labels == "SOURCE_NO_CONTACT", axis=1), dtype=np.bool_)
     next_expected = _next_expected_distance(source_expected)
     near = (
         ~source_expected

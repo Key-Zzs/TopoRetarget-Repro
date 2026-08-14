@@ -8,6 +8,7 @@ Isaac, and prevents a visual replay from being mistaken for a physics rollout.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import Any, cast
 
 import numpy as np
 
@@ -110,7 +111,7 @@ def summarize_static_support_test(
         "support_normal": normal.tolist(),
         "external_guidance": bool(any(row.get("external_guidance", False) for row in records)),
         "object_rollout_state_writes": int(
-            sum(int(row.get("object_state_writes", 0)) for row in records)
+            sum(int(cast(Any, row.get("object_state_writes", 0))) for row in records)
         ),
         "hidden_attachment": bool(any(row.get("hidden_attachment", False) for row in records)),
         "kinematic_support_force": bool(
@@ -127,8 +128,8 @@ def compare_support_counterfactuals(
 ) -> dict[str, object]:
     """Establish the support effect from matched object-only A/B runs."""
 
-    with_drift = float(with_support.get("position_drift_max_m", np.nan))
-    without_drift = float(without_support.get("position_drift_max_m", np.nan))
+    with_drift = float(cast(Any, with_support.get("position_drift_max_m", np.nan)))
+    without_drift = float(cast(Any, without_support.get("position_drift_max_m", np.nan)))
     without_falls = without_drift >= fall_drift_threshold_m
     with_stable = with_support.get("status") == "PASS"
     causal = bool(with_stable and without_falls)
@@ -159,7 +160,7 @@ def build_physics_validation(
         not bool(row.get(key, False))
         for row in flags
         for key in ("external_guidance", "hidden_attachment", "kinematic_support_force")
-    ) and all(int(row.get("object_rollout_state_writes", 0)) == 0 for row in flags)
+    ) and all(int(cast(Any, row.get("object_rollout_state_writes", 0))) == 0 for row in flags)
     status = "PASS" if causal_comparison.get("status") == "PASS" and safe_causality else "FAIL"
     return PhysicsValidation(
         object_only_with_support=dict(with_support),
@@ -168,7 +169,7 @@ def build_physics_validation(
         status=status,
         external_guidance=not safe_causality,
         object_rollout_state_writes=sum(
-            int(row.get("object_rollout_state_writes", 0)) for row in flags
+            int(cast(Any, row.get("object_rollout_state_writes", 0))) for row in flags
         ),
         hidden_attachment=any(bool(row.get("hidden_attachment", False)) for row in flags),
         kinematic_support_force=any(

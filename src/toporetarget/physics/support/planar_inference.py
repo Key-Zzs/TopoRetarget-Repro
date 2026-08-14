@@ -290,7 +290,7 @@ def infer_planar_support(
     rotation = np.column_stack((tangent_u, tangent_v, normal))
     table_pose = (*center_world.tolist(), *_rotation_matrix_to_quaternion(rotation).tolist())
     fit = SupportPlaneFit(
-        plane_normal=tuple(float(v) for v in normal),
+        plane_normal=(float(normal[0]), float(normal[1]), float(normal[2])),
         plane_offset=plane_offset,
         h_visual=tuple(float(v) for v in h_visual),
         h_collision=tuple(float(v) for v in h_collision),

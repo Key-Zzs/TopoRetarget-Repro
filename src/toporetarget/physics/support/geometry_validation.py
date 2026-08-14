@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any, cast
 
 import numpy as np
 
@@ -108,10 +109,11 @@ def validate_object_table_geometry(
     )
     return {
         "status": "PASS"
-        if float(visual_metrics["max_penetration_m"]) <= active_gate.max_object_table_penetration_m
-        and float(collision_metrics["max_penetration_m"])
+        if float(cast(Any, visual_metrics["max_penetration_m"]))
         <= active_gate.max_object_table_penetration_m
-        and float(visual_metrics["max_gap_m"]) <= active_gate.max_object_table_gap_m
+        and float(cast(Any, collision_metrics["max_penetration_m"]))
+        <= active_gate.max_object_table_penetration_m
+        and float(cast(Any, visual_metrics["max_gap_m"])) <= active_gate.max_object_table_gap_m
         else "FAIL",
         "interval": [start, stop],
         "plane_normal": normal.tolist(),
@@ -150,7 +152,8 @@ def validate_hand_table_geometry(
     metrics = _surface_metrics(points, normal=normal, plane_offset=plane_offset)
     return {
         "status": "PASS"
-        if float(metrics["max_penetration_m"]) <= active_gate.max_hand_table_penetration_m
+        if float(cast(Any, metrics["max_penetration_m"]))
+        <= active_gate.max_hand_table_penetration_m
         else "FAIL",
         "source": source,
         "metrics": metrics,

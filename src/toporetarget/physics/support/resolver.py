@@ -19,6 +19,7 @@ from .source_evidence import (
 from .types import (
     GeometryValidation,
     PhysicsValidation,
+    StableIntervalResult,
     StablePreContactDetectionContractV1,
     SupportExtentContractV1,
     SupportPlaneConsistencyGateV1,
@@ -266,7 +267,7 @@ def _unknown_result(
     hashes: Mapping[str, str],
     source: NormalizedSourceEvidence,
     reason: str,
-    stable: object | None = None,
+    stable: StableIntervalResult | None = None,
 ) -> SupportResolutionResult:
     return SupportResolutionResult(
         status=SupportResolutionStatus.SUPPORT_UNKNOWN.value,
@@ -292,7 +293,7 @@ def _unknown_result(
             "source_support": source.as_dict(),
         },
         hashes=dict(hashes),
-        stable_interval=stable if hasattr(stable, "as_dict") else None,
+        stable_interval=stable,
         diagnostics={"reason": reason},
     )
 
