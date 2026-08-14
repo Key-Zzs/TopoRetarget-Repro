@@ -1,4 +1,6 @@
-"""Physics-stage support provenance and feasibility contracts."""
+"""Physics-stage support provenance, feasibility, and reconstruction APIs."""
+
+from .support import resolve_support, validate_and_finalize_resolution
 
 from .support_contract import (
     SourceSupportContractV1,
@@ -15,4 +17,6 @@ __all__ = [
     "build_support_timeline",
     "decide_support_mode",
     "discover_source_support_evidence",
+    "resolve_support",
+    "validate_and_finalize_resolution",
 ]

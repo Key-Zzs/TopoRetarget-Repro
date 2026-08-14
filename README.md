@@ -159,6 +159,12 @@ claim. See [Physics curriculum](docs/rl/PHYSICS_CURRICULUM.md), [support
 feasibility](docs/physics/SUPPORT_FEASIBILITY.md), and [Stage16 full-gravity
 causal status](docs/stages/STAGE16_FULL_GRAVITY_CAUSAL.md).
 
+The reusable source-first support resolver and finite-planar reconstruction
+contract are documented in [Support resolution](docs/physics/SUPPORT_RESOLUTION.md).
+The current HOCap receipts qualify the inferred support geometry and object-only
+full-gravity physics; runtime support transfer remains deferred by the existing
+hand-object geometry blocker.
+
 ### 5. Evaluation, replay, and visualization
 
 Geometry inspection is read-only; a frozen benchmark follows the explicit

@@ -71,6 +71,18 @@ P4 has not run and no full-gravity causal result exists. See [Physics
 curriculum](rl/PHYSICS_CURRICULUM.md) and [Stage16 full-gravity causal
 status](stages/STAGE16_FULL_GRAVITY_CAUSAL.md).
 
+### Support resolution reconstruction (implemented, not promoted)
+
+The source-first resolver, stable-pre-contact planar inference, finite runtime
+proxy, geometry audit, and object-only full-gravity PhysX A/B are implemented
+for `hocap_170105` and `hocap_170650`. Neither clip has recoverable source
+support, so both use an explicitly labeled inferred plane. The proxy receives
+continuous contact and approximately `mg`, while object position and quaternion
+pose remain stable in the nominal object-only runs. The support contract is
+therefore qualified with runtime transfer deferred by the existing hand-object
+geometry blocker; it is not an authorization to add a table to the RL
+environment or advance P3/G3/P4. See [Support resolution](physics/SUPPORT_RESOLUTION.md).
+
 ## Next causal physical stage
 
 P3-B.5 attributes the C2 failure to reset geometry: selected safe-bank states

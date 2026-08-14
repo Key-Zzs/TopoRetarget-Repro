@@ -1,0 +1,44 @@
+# Tracked support-resolution algorithm contract.  Sequence-specific assets and
+# reports remain under .local/support_assets and .local/reports.
+schema_version: SupportResolutionContractV1
+support:
+  mode: auto
+  priority:
+    - source_explicit
+    - source_recovered
+    - inferred_planar
+    - unsupported
+  allow_inference_after_source_rejection: true
+  source_support_failure: SOURCE_SUPPORT_REJECTED
+stable_pre_contact:
+  schema_version: StablePreContactDetectionContractV1
+  min_consecutive_frames: 8
+  max_linear_speed_mps: 0.03
+  max_angular_speed_radps: 0.03
+  max_translation_step_m: 0.003
+  max_rotation_step_rad: 0.03
+  max_height_mad_m: 0.0025
+  max_height_range_m: 0.01
+  support_patch_tolerance_m: 0.0015
+extent:
+  schema_version: SupportExtentContractV1
+  support_extent_margin_m: 0.02
+  table_thickness_m: 0.02
+material:
+  schema_version: NOMINAL_UNCALIBRATED_SUPPORT_MATERIAL_V1
+  static_friction: 0.8
+  dynamic_friction: 0.6
+  restitution: 0.0
+geometry_gate:
+  schema_version: SupportPlaneConsistencyGateV1
+  max_mad_m: 0.0025
+  max_range_m: 0.01
+  max_object_table_penetration_m: 0.002
+  max_object_table_gap_m: 0.005
+  max_hand_table_penetration_m: 0.002
+runtime:
+  representation: static_kinematic_rigid_box
+  external_guidance: false
+  object_rollout_state_writes: 0
+  hidden_attachment: false
+  kinematic_support_force: false

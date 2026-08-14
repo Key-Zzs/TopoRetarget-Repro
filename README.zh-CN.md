@@ -142,6 +142,8 @@ wrist-root write。不声称 full-gravity 或 real-world physical validation。
 feasibility](docs/physics/SUPPORT_FEASIBILITY.md) 与 [Stage16 full-gravity causal
 status](docs/stages/STAGE16_FULL_GRAVITY_CAUSAL.md)。
 
+可复用的 source-first 支撑解析与有限平面 proxy 合同见 [Support resolution](docs/physics/SUPPORT_RESOLUTION.zh-CN.md)。当前 HOCap receipt 已通过 inferred support geometry 与 object-only full-gravity physics；runtime support transfer 仍受现有 hand-object geometry blocker 延后。
+
 ### 5. 评价、replay 与可视化
 
 geometry inspection 是只读的；冻结 benchmark 按明确的

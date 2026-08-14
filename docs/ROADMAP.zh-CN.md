@@ -62,6 +62,14 @@ P3 C0--C2 development pilot 已对两个冻结 reward mode 和两个 clip 完成
 不存在 full-gravity causal result。见 [Physics curriculum](rl/PHYSICS_CURRICULUM.md) 与
 [Stage16 full-gravity causal status](stages/STAGE16_FULL_GRAVITY_CAUSAL.md)。
 
+### Support resolution reconstruction（已实现，不提升）
+
+source-first resolver、stable-pre-contact 平面推断、有限运行时 proxy、几何 audit 以及 object-only 全重力 PhysX A/B
+已经对 `hocap_170105` 与 `hocap_170650` 实现。两段都没有可恢复的 source support，因此使用显式标注的 inferred plane。
+proxy 持续产生接触且法向力约为 `mg`，nominal object-only 的位置与四元数姿态保持稳定。因此支撑 contract 已通过，
+但 runtime transfer 受现有 hand-object geometry blocker 延后；这不授权向 RL environment 加桌面，也不推进 P3/G3/P4。
+见 [Support resolution](physics/SUPPORT_RESOLUTION.zh-CN.md)。
+
 ## 下一个因果物理阶段
 
 P3-B.5 已确认 C2 的主要原因是 reset geometry：所选 safe-bank state 在所有冻结的
