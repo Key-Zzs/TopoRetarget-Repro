@@ -225,8 +225,8 @@ def classify_contact_ready_states(
     terminal_window = _terminal_hold_mask(
         source_expected, minimum_steps=frozen.terminal_hold_window_control_steps
     )
-    linear_speed = np.linalg.vector_norm(twist[:, :3], axis=1)
-    angular_speed = np.linalg.vector_norm(twist[:, 3:], axis=1)
+    linear_speed = np.linalg.norm(twist[:, :3], axis=1)
+    angular_speed = np.linalg.norm(twist[:, 3:], axis=1)
     manipulation = source_expected & (
         (linear_speed >= frozen.manipulation_linear_speed_mps)
         | (angular_speed >= frozen.manipulation_angular_speed_radps)
@@ -303,7 +303,7 @@ def _reference_state_arrays(path: Path) -> tuple[np.ndarray, np.ndarray, np.ndar
         raise ValueError("RSI_REFERENCE_NONFINITE")
     pose = np.concatenate((position, quaternion), axis=1)
     link_axis_delta = links[:, :, None, :] - axes[:, None, :, :]
-    gap = np.linalg.vector_norm(link_axis_delta, axis=-1).min(axis=(1, 2))
+    gap = np.linalg.norm(link_axis_delta, axis=-1).min(axis=(1, 2))
     return pose, twist, gap
 
 
