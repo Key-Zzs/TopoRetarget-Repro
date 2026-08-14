@@ -62,6 +62,10 @@ P3 C0--C2 development pilot 已对两个冻结 reward mode 和两个 clip 完成
 不存在 full-gravity causal result。见 [Physics curriculum](rl/PHYSICS_CURRICULUM.md) 与
 [Stage16 full-gravity causal status](stages/STAGE16_FULL_GRAVITY_CAUSAL.md)。
 
+冻结 V3 `hocap_170105` C1 saturation gate 现有 durable pre-gate instrumentation；它只用于诊断和
+可复现性，不授权 C2，也不改变 physical route。见 [C1 saturation
+instrumentation](rl/C1_SATURATION_INSTRUMENTATION.md)。
+
 ### Support resolution reconstruction（已实现，不提升）
 
 source-first resolver、stable-pre-contact 平面推断、有限运行时 proxy、几何 audit 以及 object-only 全重力 PhysX A/B

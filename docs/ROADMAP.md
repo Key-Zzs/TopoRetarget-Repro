@@ -71,6 +71,11 @@ P4 has not run and no full-gravity causal result exists. See [Physics
 curriculum](rl/PHYSICS_CURRICULUM.md) and [Stage16 full-gravity causal
 status](stages/STAGE16_FULL_GRAVITY_CAUSAL.md).
 
+The frozen V3 `hocap_170105` C1 saturation gate also has durable pre-gate
+instrumentation; it remains a diagnostic/reproducibility interface and does
+not authorize C2 or alter the physical route. See [C1 saturation
+instrumentation](rl/C1_SATURATION_INSTRUMENTATION.md).
+
 ### Support resolution reconstruction (implemented, not promoted)
 
 The source-first resolver, stable-pre-contact planar inference, finite runtime

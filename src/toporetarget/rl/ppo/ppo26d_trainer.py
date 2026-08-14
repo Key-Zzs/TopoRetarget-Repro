@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import time
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 import torch
 
+from ..instrumentation.saturation import SaturationRecorder
 from .checkpoint import load_checkpoint, rng_state, save_checkpoint
 from .gae import generalized_advantage_estimate
 from .ppo26d_contract import (
@@ -76,6 +78,7 @@ class PPO26DTrainer:
         *,
         sampled_actions: torch.Tensor | None = None,
         phase: str,
+        enforce_saturation_gate: bool = True,
     ) -> dict[str, float | bool | str]:
         normalized_abs_max = 0.0
         normalized_abs_sum = 0.0
@@ -139,14 +142,25 @@ class PPO26DTrainer:
                 "PPO26D_NORMALIZED_OBSERVATION_FAIL_FAST: "
                 f"phase={phase} finite={finite} abs_max={normalized_abs_max:.6g}"
             )
-        if deterministic_fraction > self.training_contract.action_saturation_fraction_limit:
+        if (
+            enforce_saturation_gate
+            and deterministic_fraction > self.training_contract.action_saturation_fraction_limit
+        ):
             raise FloatingPointError(
                 "PPO26D_ACTION_SATURATION_FAIL_FAST: "
                 f"phase={phase} fraction={deterministic_fraction:.6f}"
             )
         return metrics
 
-    def collect_and_update(self, env: Any, *, rollout_length: int | None = None) -> dict[str, Any]:
+    def collect_and_update(
+        self,
+        env: Any,
+        *,
+        rollout_length: int | None = None,
+        saturation_recorder: SaturationRecorder | None = None,
+        pre_gate_failure_callback: Callable[[dict[str, Any], Path], None] | None = None,
+        update_policy: bool = True,
+    ) -> dict[str, Any]:
         """Collect one PPO update, optionally ending a fixed-budget run exactly.
 
         Normal Stage 16-D updates always use the frozen 40-control-step rollout.
@@ -174,8 +188,25 @@ class PPO26DTrainer:
         reference_index_count = 0
         for _ in range(steps):
             policy_observation = _policy_observation(observation)
-            action, log_prob, value = self.trainer.act(policy_observation)
+            # This is intentionally the same distribution/sample path as
+            # PPOTrainer.act.  The recorder consumes detached copies only.
+            with torch.no_grad():
+                distribution = self.trainer.distribution(policy_observation)
+                action = distribution.sample()
+                log_prob = distribution.log_prob(action)
+                value = self.trainer.model.value(
+                    self.trainer.normalizer.normalize(policy_observation)
+                )
             next_observation, reward, terminated, timed_out, _ = env.step(action)
+            if saturation_recorder is not None:
+                telemetry = env.stage16_saturation_telemetry()
+                saturation_recorder.record_step(
+                    actor_location=distribution.location,
+                    actor_mean=distribution.mean,
+                    actor_log_std=torch.log(distribution.std),
+                    sampled_action=action,
+                    environment=telemetry,
+                )
             done = terminated | timed_out
             for key, value_tensor in (
                 ("observations", policy_observation),
@@ -239,7 +270,34 @@ class PPO26DTrainer:
             storage.observations,
             sampled_actions=storage.actions,
             phase="before_update",
+            enforce_saturation_gate=saturation_recorder is None,
         )
+        saturation_summary: dict[str, Any] | None = None
+        saturation_rollout: Path | None = None
+        if saturation_recorder is not None:
+            saturation_summary, saturation_rollout = saturation_recorder.persist_pre_gate(
+                samples_before=self.cumulative_samples,
+                samples_after=self.cumulative_samples + storage.sample_count,
+            )
+            # The persisted action-time actor means are the authority.  The
+            # old post-collection re-forward is only a redundant diagnostic:
+            # vector-environment observation buffers may be recycled after a
+            # step, so it must never supersede the production action receipt.
+            safety_before_update["deterministic_action_saturation_fraction"] = float(
+                saturation_summary["global_saturation"]
+            )
+            if (
+                float(saturation_summary["global_saturation"])
+                > self.training_contract.action_saturation_fraction_limit
+            ):
+                saturation_recorder.preserve_failure_window(triggering=saturation_rollout)
+                if pre_gate_failure_callback is not None:
+                    pre_gate_failure_callback(saturation_summary, saturation_rollout)
+                raise FloatingPointError(
+                    "PPO26D_ACTION_SATURATION_FAIL_FAST: "
+                    "phase=before_update "
+                    f"fraction={float(saturation_summary['global_saturation']):.6f}"
+                )
         rollout_storage_mib = (
             sum(
                 value.numel() * value.element_size()
@@ -254,6 +312,40 @@ class PPO26DTrainer:
             )
             / 2**20
         )
+        if not update_policy:
+            elapsed = time.perf_counter() - started
+            actor_hash = parameter_hash(self.model, "actor")
+            critic_hash = parameter_hash(self.model, "critic")
+            return {
+                "rollout_length": storage.rollout_steps,
+                "num_envs": storage.num_envs,
+                "samples": storage.sample_count,
+                "cumulative_samples": self.cumulative_samples,
+                "wall_time_s": elapsed,
+                "rollout_collection_s": rollout_collection_s,
+                "ppo_update_s": 0.0,
+                "samples_per_s": storage.sample_count / max(elapsed, 1.0e-12),
+                "rollout_storage_mib": rollout_storage_mib,
+                "finite": finite,
+                "safety": {
+                    "before_update": safety_before_update,
+                    "normalizer_count_before": normalizer_count_before,
+                    "normalizer_frozen_during_rollout_and_update": True,
+                },
+                "ppo": {"updates": 0.0, "optimizer_steps": 0.0},
+                "actor_parameter_hash_before": actor_hash,
+                "actor_parameter_hash_after": actor_hash,
+                "critic_parameter_hash_before": critic_hash,
+                "critic_parameter_hash_after": critic_hash,
+                "actor_parameter_changed": False,
+                "critic_parameter_changed": False,
+                "reward": {
+                    name: sum(values) / len(values) for name, values in reward_terms.items()
+                },
+                "reference": {"rsi": env.rsi_report()},
+                "last_policy_observation": policy_observation.detach().clone(),
+                "saturation_instrumentation": saturation_summary,
+            }
         with torch.no_grad():
             distribution_before = self.trainer.distribution(storage.observations.flatten(0, 1))
             policy_mean_before = distribution_before.mean.detach().clone()
@@ -348,6 +440,7 @@ class PPO26DTrainer:
                 "rsi": env.rsi_report(),
             },
             "last_policy_observation": policy_observation.detach().clone(),
+            "saturation_instrumentation": saturation_summary,
         }
 
     def checkpoint_payload(

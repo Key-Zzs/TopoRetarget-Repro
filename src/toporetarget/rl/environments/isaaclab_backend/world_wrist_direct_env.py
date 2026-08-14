@@ -512,7 +512,14 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         reference_q = self.reference_bank.gather(
             "q_finger_ref", self._clip_index, self._target_reference_index
         )
+        self._pre_safety_finger_target_canonical = (
+            reference_q
+            + self._actions[:, 6:]
+            * (self.joint_upper - self.joint_lower)
+            * self.action_adapter.contract.finger_joint_range_fraction
+        )
         target_canonical = self.action_adapter.finger_target_canonical(reference_q, self._actions)
+        self._post_safety_finger_target_canonical = target_canonical
         self._joint_target_isaac = self.action_adapter.canonical_to_isaac(target_canonical)
         reference_position = self.reference_bank.gather(
             "wrist_pose_translation_world_ref", self._clip_index, self._target_reference_index
@@ -1439,6 +1446,89 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             "object_twist_world": object_state[:, 7:13],
             "object_axis_points_scene": self._object_axis_points_scene(object_state),
             "tracked_links_scene": tracked_links_scene,
+        }
+
+    @torch.no_grad()
+    def stage16_saturation_telemetry(self) -> dict[str, torch.Tensor]:
+        """Return detached production-path state for C1 instrumentation.
+
+        It is a read-only snapshot after the control step: no targets, state,
+        reward, RNG, or simulator settings are changed here.
+        """
+
+        state = self._state()
+        reference_index = self._target_reference_index
+        wrist_reference = self.reference_bank.gather(
+            "wrist_pose_translation_world_ref", self._clip_index, reference_index
+        )
+        wrist_command = torch.cat(
+            (self._wrist_target_position - self.scene.env_origins, self._actions[:, 3:6]), dim=-1
+        )
+        pre_safety_wrist_command = torch.cat(
+            (
+                wrist_reference
+                + self._actions[:, :3] * self.action_adapter.contract.wrist_translation_scale_m,
+                self._actions[:, 3:6],
+            ),
+            dim=-1,
+        )
+        scaled_residual = torch.cat(
+            (
+                self._actions[:, :3] * self.action_adapter.contract.wrist_translation_scale_m,
+                self._actions[:, 3:6] * self.action_adapter.contract.wrist_rotation_scale_rad,
+                self._actions[:, 6:]
+                * (self.joint_upper - self.joint_lower)
+                * self.action_adapter.contract.finger_joint_range_fraction,
+            ),
+            dim=-1,
+        )
+        pre_command = torch.cat(
+            (pre_safety_wrist_command, self._pre_safety_finger_target_canonical), dim=-1
+        )
+        post_command = torch.cat((wrist_command, self._post_safety_finger_target_canonical), dim=-1)
+        finger_actual = self.action_adapter.isaac_to_canonical(
+            self._robot.data.joint_pos[:, self._finger_target_joint_ids]
+        )
+        finger_qdot = self.action_adapter.isaac_to_canonical(
+            self._robot.data.joint_vel[:, self._finger_target_joint_ids]
+        )
+        wrist_actual = torch.cat(
+            (state["wrist_position_scene"], torch.zeros_like(self._actions[:, :3])), dim=-1
+        )
+        phase = torch.clamp(
+            (reference_index * 4) // max(self.reference_bank.frame_count, 1), min=0, max=4
+        )
+        object_reference = self.reference_bank.gather(
+            "object_pose_translation_world_ref", self._clip_index, reference_index
+        )
+        object_error = torch.linalg.vector_norm(
+            state["object_position_scene"] - object_reference, dim=-1
+        )
+        contact = self._last_reward_terms.get("contact")
+        if not isinstance(contact, torch.Tensor):
+            contact = torch.zeros(self.num_envs, device=self.device)
+        return {
+            "scaled_residual": scaled_residual,
+            "pre_safety_command": pre_command,
+            "post_safety_command": post_command,
+            "actuator_target": post_command,
+            "actual_joint_q": torch.cat((wrist_actual, finger_actual), dim=-1),
+            "actual_joint_qdot": torch.cat((torch.zeros_like(wrist_actual), finger_qdot), dim=-1),
+            "wrist_state": torch.cat(
+                (
+                    state["wrist_position_scene"],
+                    state["wrist_quaternion_wxyz"],
+                    state["wrist_twist_world"],
+                ),
+                dim=-1,
+            ),
+            "phase_code": phase,
+            "hand_object_contact": contact > 0,
+            "hand_object_force": contact.to(torch.float32),
+            "table_object_contact": torch.zeros(
+                self.num_envs, dtype=torch.bool, device=self.device
+            ),
+            "object_tracking_error": object_error,
         }
 
     def _get_observations(self) -> dict[str, torch.Tensor]:

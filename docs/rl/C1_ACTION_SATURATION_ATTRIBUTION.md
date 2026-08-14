@@ -50,6 +50,12 @@ the following are deliberately **inconclusive**, not negative findings:
 - C0-versus-C1 physics contribution; and
 - whether the 24-step estimator itself is primary.
 
+Future authorized C1 continuations use
+[C1 saturation instrumentation](C1_SATURATION_INSTRUMENTATION.md): detached
+action-time receipts are flushed before the unchanged hard gate, so a failure
+preserves the policy and downstream action pipeline rather than reconstructing
+them from a predecessor checkpoint.
+
 Run the read-only extractor after the immutable receipts exist:
 
 ```bash

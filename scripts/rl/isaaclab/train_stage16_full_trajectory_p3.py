@@ -30,6 +30,7 @@ from toporetarget.rl.full_trajectory_p3 import (
     checkpoint_metadata,
     validate_resume_metadata,
 )
+from toporetarget.rl.instrumentation.saturation import SaturationRecorder
 from toporetarget.rl.physical_p3 import physical_stage_budget
 from toporetarget.rl.ppo.checkpoint import load_checkpoint, restore_rng_state, save_checkpoint
 from toporetarget.rl.ppo.ppo26d_contract import Stage16DPPO26DTrainingConfigV1
@@ -62,6 +63,16 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-envs", type=int, default=1024)
     parser.add_argument("--resume-checkpoint", type=Path)
     parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
+    parser.add_argument(
+        "--saturation-instrumentation-root",
+        type=Path,
+        help="Persist detached pre-gate C1 action-pipeline receipts under this root.",
+    )
+    parser.add_argument(
+        "--no-update-smoke",
+        action="store_true",
+        help="Collect one bounded instrumented rollout and assert zero PPO optimizer updates.",
+    )
     return parser
 
 
@@ -156,6 +167,10 @@ def main() -> int:
         raise ValueError("FULL_TRAJECTORY_P3_C0_RESUME_FORBIDDEN")
     if args.stage != "C0" and args.resume_checkpoint is None:
         raise ValueError("FULL_TRAJECTORY_P3_PREDECESSOR_REQUIRED")
+    if args.saturation_instrumentation_root is not None and args.stage != "C1":
+        raise ValueError("SATURATION_INSTRUMENTATION_C1_ONLY")
+    if args.no_update_smoke and args.saturation_instrumentation_root is None:
+        raise ValueError("SATURATION_INSTRUMENTATION_SMOKE_ROOT_REQUIRED")
     budget = physical_stage_budget(args.stage)
     if budget.additional_samples % args.num_envs:
         raise ValueError("FULL_TRAJECTORY_P3_BUDGET_ALIGNMENT_INVALID")
@@ -220,6 +235,57 @@ def main() -> int:
         }
         _write(output / "training_config.json", config)
         metrics_path = output / "training_metrics.jsonl"
+        saturation_recorder = (
+            None
+            if args.saturation_instrumentation_root is None
+            else SaturationRecorder(args.saturation_instrumentation_root.resolve())
+        )
+
+        def persist_failure_snapshot(summary: dict[str, Any], rollout: Path) -> None:
+            if saturation_recorder is None:
+                return
+            failure = saturation_recorder.root / "failure"
+            failure.mkdir(parents=True, exist_ok=True)
+            payload = trainer.checkpoint_payload(
+                environment_contract=env.contract_report(), selected_num_envs=args.num_envs
+            )
+            payload["failure_pre_gate"] = {
+                "summary": summary,
+                "rollout": str(rollout),
+                "optimizer_update_executed": False,
+                "curriculum_stage": args.stage,
+            }
+            save_checkpoint(failure / "failure_pre_gate_full.pt", payload)
+            # Explicit component files make failure-time restoration auditable
+            # without relying on a monolithic checkpoint convention.
+            import torch
+
+            actor_state = {
+                key: value
+                for key, value in payload["actor_critic"].items()
+                if key.startswith("actor") or key == "log_std_parameter"
+            }
+            critic_state = {
+                key: value
+                for key, value in payload["actor_critic"].items()
+                if key.startswith("critic")
+            }
+            torch.save(actor_state, failure / "failure_pre_gate_actor.pt")
+            torch.save(critic_state, failure / "failure_pre_gate_critic.pt")
+            torch.save(payload["optimizer"], failure / "failure_pre_gate_optimizer.pt")
+            torch.save(
+                payload["observation_normalization"], failure / "failure_pre_gate_normalizer.pt"
+            )
+            torch.save(payload["rng"], failure / "failure_rng.pt")
+            _write(
+                failure / "failure_curriculum.json",
+                {"stage": args.stage, "clip": args.clip, "contact_mode": mode.value},
+            )
+            _write(
+                failure / "failure_receipt.json",
+                {"summary": summary, "rollout": str(rollout), "persistence_before_gate": True},
+            )
+
         stage_samples = 0
         checkpoint: Path | None = None
         finite = True
@@ -230,7 +296,13 @@ def main() -> int:
                     Stage16DPPO26DTrainingConfigV1().rollout_length,
                     remaining // args.num_envs,
                 )
-                metric = trainer.collect_and_update(env, rollout_length=rollout_length)
+                metric = trainer.collect_and_update(
+                    env,
+                    rollout_length=rollout_length,
+                    saturation_recorder=saturation_recorder,
+                    pre_gate_failure_callback=persist_failure_snapshot,
+                    update_policy=not args.no_update_smoke,
+                )
                 metric.pop("last_policy_observation")
                 stage_samples += int(metric["samples"])
                 cumulative_samples += int(metric["samples"])
@@ -245,6 +317,17 @@ def main() -> int:
                 )
                 stream.write(json.dumps(metric, sort_keys=True) + "\n")
                 stream.flush()
+                if args.no_update_smoke:
+                    _write(
+                        output / "instrumentation_smoke.json",
+                        {
+                            "status": "PASS",
+                            "optimizer_steps": 0,
+                            "actor_parameter_changed": metric["actor_parameter_changed"],
+                            "instrumentation_root": str(args.saturation_instrumentation_root),
+                        },
+                    )
+                    return 0
         metadata = checkpoint_metadata(
             stage=args.stage,
             stage_samples=stage_samples,
