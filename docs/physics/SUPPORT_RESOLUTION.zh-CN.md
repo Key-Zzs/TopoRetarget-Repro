@@ -28,6 +28,12 @@
 
 运行时 reference-following transfer 保持 `DEFERRED_BY_HAND_OBJECT_GEOMETRY`，P3/G3/P4 仍然阻塞。完整 receipt 位于被忽略的 `.local/reports/stage16_support_reconstruction/`。
 
+随后 P3-B.6 将 finite support actor 与完整 21-body Wuji collision reconstruction
+一起纳入评估。dynamic reset receipt 中 support contact 与物体稳定性仍然成立，
+但 reference trajectory 仍未通过 formal H-O/H-T geometry gate。见
+[P3-B.6 物理场景与 RSI 再资格化](../rl/PHYSICAL_SCENE_RSI_REQUALIFICATION.zh-CN.md)；
+这不会把 support actor 提升为主 RL environment 的一部分。
+
 ## 复现命令
 
 几何推断和可视化：

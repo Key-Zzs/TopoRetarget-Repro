@@ -68,6 +68,13 @@ Runtime reference-following transfer remains
 receipts are in ignored local storage under
 `.local/reports/stage16_support_reconstruction/`.
 
+P3-B.6 subsequently evaluated the finite support actor together with the full
+21-body Wuji collision reconstruction. Support contact and object stability
+remain valid in the dynamic reset evidence, but the reference trajectory still
+fails the formal H-O/H-T geometry gates. See [physical scene and RSI
+requalification](../rl/PHYSICAL_SCENE_RSI_REQUALIFICATION.md); this does not
+promote the support actor into the main RL environment.
+
 ## Reproduction commands
 
 Geometry inference and overlays:

@@ -103,6 +103,11 @@ Full-gravity / zero-guidance qualification
 Multi-Clip
 ```
 
+P3-B.6 completed the full 321-frame physical mask, finite-support RSI bank,
+dynamic reset, and joint zero-replay receipts. Both clips remain
+`P3_RESTART_BLOCKED_REFERENCE_GEOMETRY`; PPO was not started. See [P3-B.6
+physical scene and RSI requalification](rl/PHYSICAL_SCENE_RSI_REQUALIFICATION.md).
+
 External guidance or data-H2R remains an assisted fallback after this causal
 physics route; it is not a replacement for it.
 

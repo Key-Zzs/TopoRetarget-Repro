@@ -28,6 +28,13 @@ The current C2 selection rejected both modes at the absolute geometry gate.
 Consequently the current status is **P3 BLOCKED at C2 selection**. This is a
 safety conclusion, not a claim that either policy has been physically promoted.
 
+P3-B.6 requalified the physical reference mask, finite inferred support, and
+support-aware RSI bank over all 321 frames of both HOCap clips. The formal
+reference geometry gate still fails, and joint zero replay is not authorized
+after runtime joint-limit terminations. The frozen decision is
+`P3_RESTART_BLOCKED_REFERENCE_GEOMETRY`; PPO gravity training remains not run.
+See [physical scene and RSI requalification](PHYSICAL_SCENE_RSI_REQUALIFICATION.md).
+
 ## P3-B.5 geometry attribution
 
 Frozen A/B/C/D gravity--friction counterfactuals established that the selected

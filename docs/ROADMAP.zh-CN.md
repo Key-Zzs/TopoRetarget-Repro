@@ -88,6 +88,11 @@ Full-gravity / zero-guidance qualification
 Multi-Clip
 ```
 
+P3-B.6 已完成两个 clip 的 321 帧 physical mask、finite-support RSI bank、dynamic
+reset 与 joint zero-replay receipt。两个 clip 仍为
+`P3_RESTART_BLOCKED_REFERENCE_GEOMETRY`，没有启动 PPO。见 [P3-B.6 物理场景与 RSI
+再资格化](rl/PHYSICAL_SCENE_RSI_REQUALIFICATION.zh-CN.md)。
+
 external guidance 或 data-H2R 仍是该 causal physics 路线之后的 assisted fallback，不能替代它。
 
 ## 文档入口
