@@ -67,6 +67,9 @@ P3 C0--C2 development pilot 已对两个冻结 reward mode 和两个 clip 完成
 instrumentation](rl/C1_SATURATION_INSTRUMENTATION.md)。
 
 其授权重跑已强复现历史 C1 gate failure；下一步只允许 attribution，不得自动推进 C2。
+有界的 P3-C1.2 PPO optimization attribution 记录在 [C1 PPO optimization
+attribution](rl/C1_PPO_OPTIMIZATION_ATTRIBUTION.md)。若缺少 exact PPO batch
+证据而得到 `INCONCLUSIVE`，仍保持 fail-closed，不授权 formal P3 继续。
 
 ### Support resolution reconstruction（已实现，不提升）
 
@@ -110,6 +113,7 @@ external guidance 或 data-H2R 仍是该 causal physics 路线之后的 assisted
 - [Stage 16-D physics contract](stages/STAGE16D_PHYSICS_CONSISTENT_RETARGETING.md)
 - [Reference Kinematics V2 contract](rl/REFERENCE_KINEMATICS_CONTRACT.md)
 - [PPO-26D contract](rl/REFERENCE_TRACKING_PPO_26D.md)
+- [C1 PPO optimization attribution](rl/C1_PPO_OPTIMIZATION_ATTRIBUTION.md)
 - [Reference-gated contact reward V3](rl/REFERENCE_GATED_CONTACT_REWARD.zh-CN.md)
 - [Strict per-finger contact reward V4](rl/STRICT_PER_FINGER_CONTACT_REWARD.zh-CN.md)
 - [Source contact semantics](rl/SOURCE_CONTACT_SEMANTICS.zh-CN.md)

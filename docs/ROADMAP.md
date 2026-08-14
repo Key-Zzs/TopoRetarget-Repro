@@ -78,6 +78,10 @@ instrumentation](rl/C1_SATURATION_INSTRUMENTATION.md).
 
 Its authorized reproduction strongly reproduced the historical C1 gate failure;
 the next permitted work is attribution only, never an automatic C2 advance.
+The bounded P3-C1.2 PPO optimization attribution is recorded in [C1 PPO
+optimization attribution](rl/C1_PPO_OPTIMIZATION_ATTRIBUTION.md); an
+`INCONCLUSIVE` result due to missing exact PPO-batch evidence remains fail-closed
+and does not authorize formal P3 continuation.
 
 ### Support resolution reconstruction (implemented, not promoted)
 
@@ -128,6 +132,7 @@ physics route; it is not a replacement for it.
 - [Stage 16-D physics contract](stages/STAGE16D_PHYSICS_CONSISTENT_RETARGETING.md)
 - [Reference Kinematics V2 contract](rl/REFERENCE_KINEMATICS_CONTRACT.md)
 - [PPO-26D contract](rl/REFERENCE_TRACKING_PPO_26D.md)
+- [C1 PPO optimization attribution](rl/C1_PPO_OPTIMIZATION_ATTRIBUTION.md)
 - [Reference-gated contact reward V3](rl/REFERENCE_GATED_CONTACT_REWARD.md)
 - [Strict per-finger contact reward V4](rl/STRICT_PER_FINGER_CONTACT_REWARD.md)
 - [Source contact semantics](rl/SOURCE_CONTACT_SEMANTICS.md)

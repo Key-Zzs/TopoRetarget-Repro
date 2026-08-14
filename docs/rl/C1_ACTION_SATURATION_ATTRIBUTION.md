@@ -64,6 +64,11 @@ then a 24-step pre-gate receipt of `0.260371`. The saved failure actor's
 clamp was zero. This preserves `POLICY_OUTPUT_SATURATION_PRIMARY`; it does not
 authorize C2 or any action-contract, threshold, or optimizer change.
 
+The next bounded step is [C1 PPO optimization attribution](C1_PPO_OPTIMIZATION_ATTRIBUTION.md).
+That pass must use a fixed raw-observation probe and the exact stored PPO batch
+for causal gradient/reward claims. If either is absent, it reports
+`INCONCLUSIVE` rather than substituting downstream telemetry or a C0 actor.
+
 Run the read-only extractor after the immutable receipts exist:
 
 ```bash
