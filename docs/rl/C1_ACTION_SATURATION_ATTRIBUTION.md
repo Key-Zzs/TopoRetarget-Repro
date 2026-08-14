@@ -56,6 +56,14 @@ action-time receipts are flushed before the unchanged hard gate, so a failure
 preserves the policy and downstream action pipeline rather than reconstructing
 them from a predecessor checkpoint.
 
+The authorized instrumentation reproduction strongly reproduced the historical
+failure: the same C0 endpoint produced 25 full rollouts ending at `0.207148`,
+then a 24-step pre-gate receipt of `0.260371`. The saved failure actor's
+40-step deterministic and stochastic diagnostics were below the gate
+(`0.219231` and `0.219159`); C0 same-actor was `0.225000`. Finger command
+clamp was zero. This preserves `POLICY_OUTPUT_SATURATION_PRIMARY`; it does not
+authorize C2 or any action-contract, threshold, or optimizer change.
+
 Run the read-only extractor after the immutable receipts exist:
 
 ```bash

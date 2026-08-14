@@ -66,6 +66,8 @@ P3 C0--C2 development pilot 已对两个冻结 reward mode 和两个 clip 完成
 可复现性，不授权 C2，也不改变 physical route。见 [C1 saturation
 instrumentation](rl/C1_SATURATION_INSTRUMENTATION.md)。
 
+其授权重跑已强复现历史 C1 gate failure；下一步只允许 attribution，不得自动推进 C2。
+
 ### Support resolution reconstruction（已实现，不提升）
 
 source-first resolver、stable-pre-contact 平面推断、有限运行时 proxy、几何 audit 以及 object-only 全重力 PhysX A/B

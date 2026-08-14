@@ -76,6 +76,9 @@ instrumentation; it remains a diagnostic/reproducibility interface and does
 not authorize C2 or alter the physical route. See [C1 saturation
 instrumentation](rl/C1_SATURATION_INSTRUMENTATION.md).
 
+Its authorized reproduction strongly reproduced the historical C1 gate failure;
+the next permitted work is attribution only, never an automatic C2 advance.
+
 ### Support resolution reconstruction (implemented, not promoted)
 
 The source-first resolver, stable-pre-contact planar inference, finite runtime
