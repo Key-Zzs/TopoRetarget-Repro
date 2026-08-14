@@ -1,7 +1,6 @@
 """Physics-stage support provenance, feasibility, and reconstruction APIs."""
 
 from .support import resolve_support, validate_and_finalize_resolution
-
 from .support_contract import (
     SourceSupportContractV1,
     SupportClassification,
