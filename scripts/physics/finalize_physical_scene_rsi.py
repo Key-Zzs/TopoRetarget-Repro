@@ -39,6 +39,15 @@ def main() -> int:
         "JOINT_ZERO_REPLAY_NOT_AUTHORIZED",
     ]
     if any(dynamic_failures.values()):
+        blockers.append("DYNAMIC_RESET_SUPPORT_OR_OBJECT_STABILITY_REJECTIONS_PRESENT")
+    if any(
+        any(
+            row.get("first_termination_reason") == "FAILURE_JOINT_LIMIT"
+            for chunk in dynamic[clip]["chunks"]
+            for row in read_json(Path(chunk["path"])).get("rows", [])
+        )
+        for clip in CLIPS
+    ):
         blockers.append("DYNAMIC_RESET_JOINT_LIMIT_FAILURES_PRESENT")
     final = {
         "schema_version": "PhysicalSceneRSIFinalReceiptV1",

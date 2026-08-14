@@ -33,11 +33,12 @@ The current receipt is:
 | `hocap_170105` | 162 | 66 | not authorized; `FAILURE_JOINT_LIMIT` at step 4 |
 | `hocap_170650` | 102 | 2 | not authorized; `FAILURE_JOINT_LIMIT` at step 5 |
 
-The dynamic passes have zero object/wrist-root rollout writes and continuous
-support contact. Dynamic failures are runtime joint-limit failures, not table
-falling or object displacement. Both full reference trajectories nevertheless
-fail the formal active H-O p95 gate; `hocap_170105` also fails the formal H-T
-gate. Therefore the only decision is:
+The dynamic passes have zero object/wrist-root rollout writes; the 170105 safe
+states also have continuous table contact. Rejected candidates include runtime
+joint-limit terminations, and 170650 pre-contact candidates additionally fail
+the table-contact/object-stability checks. Both full reference trajectories
+nevertheless fail the formal active H-O p95 gate; `hocap_170105` also fails the
+formal H-T gate. Therefore the only decision is:
 
 ```text
 P3_RESTART_BLOCKED_REFERENCE_GEOMETRY

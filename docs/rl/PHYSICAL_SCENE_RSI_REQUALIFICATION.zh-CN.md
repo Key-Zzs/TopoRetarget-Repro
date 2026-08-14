@@ -27,10 +27,11 @@ active finite table、zero residual action，并禁止 guidance、attachment、�
 | `hocap_170105` | 162 | 66 | 未授权；step 4 `FAILURE_JOINT_LIMIT` |
 | `hocap_170650` | 102 | 2 | 未授权；step 5 `FAILURE_JOINT_LIMIT` |
 
-动态通过项均满足零 object/wrist-root rollout write 且 support contact 持续；
-失败项是 runtime joint-limit，而不是桌面下落或物体位移。两个完整 reference
-trajectory 都未通过 active H-O p95 gate；`hocap_170105` 还未通过 formal H-T
-gate。因此唯一决策为：
+动态通过项均满足零 object/wrist-root rollout write；170105 的通过项还具有
+持续 table contact。被拒绝的候选包含 runtime joint-limit termination，
+170650 的 pre-contact 候选还未通过 table-contact/object-stability 检查。两个完整
+reference trajectory 都未通过 active H-O p95 gate；`hocap_170105` 还未通过
+formal H-T gate。因此唯一决策为：
 
 ```text
 P3_RESTART_BLOCKED_REFERENCE_GEOMETRY
