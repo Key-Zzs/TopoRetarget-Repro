@@ -165,6 +165,11 @@ def test_generated_runtime_reports_when_present() -> None:
         assert payload["all_finite"] is True
         assert payload["cuda_tensors"] is True
         assert payload["joints_with_response"] == 20
+        assert len(payload["joint_response_by_name_rad"]) == 20
+        if payload["num_envs"] == 1 and "joint_response_threshold_rad" in payload:
+            assert payload["joint_response_threshold_rad"] == pytest.approx(1.0e-5)
+            assert payload["joint_probe_amplitude_rad"] == pytest.approx(0.35)
+            assert payload["joint_probe_dwell_steps"] == 40
         assert payload["tracked_links_resolved"] == 16
         assert payload["joint_limit_max_abs_error_rad"] < 1e-5
         assert payload["tensor_shapes"]["finger_action"] == [payload["num_envs"], 20]

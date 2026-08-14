@@ -15,6 +15,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+JOINT_RESPONSE_THRESHOLD_RAD = 1.0e-5
+SINGLE_ENV_INDIVIDUAL_PROBE_AMPLITUDE_RAD = 0.35
+SINGLE_ENV_INDIVIDUAL_PROBE_DWELL_STEPS = 40
+
 from toporetarget.rl.environments.isaaclab_backend.asset_contracts import (  # noqa: E402
     load_asset_migration_config,
     write_json,
@@ -230,8 +234,12 @@ def main() -> None:
                 torque = torch.zeros_like(force)
                 robot.set_external_force_and_torque(force, torque, body_ids=wrist_ids)
             else:
-                if args.num_envs == 1 and step < min(400, args.steps):
-                    target_semantic[:, min(step // 20, 19)] = 0.15
+                if args.num_envs == 1 and step < min(
+                    20 * SINGLE_ENV_INDIVIDUAL_PROBE_DWELL_STEPS, args.steps
+                ):
+                    target_semantic[:, min(step // SINGLE_ENV_INDIVIDUAL_PROBE_DWELL_STEPS, 19)] = (
+                        SINGLE_ENV_INDIVIDUAL_PROBE_AMPLITUDE_RAD
+                    )
                 else:
                     target_semantic[:, :] = 0.4 * (
                         torch.rand(
@@ -432,7 +440,16 @@ def main() -> None:
             "all_finite": all_finite,
             "joint_max_motion_rad": joint_motion.tolist(),
             "joint_response_by_name_rad": joint_response_by_name,
-            "joints_with_response": int(torch.count_nonzero(joint_motion > 1e-5).item()),
+            "joint_response_threshold_rad": JOINT_RESPONSE_THRESHOLD_RAD,
+            "joint_probe_amplitude_rad": (
+                SINGLE_ENV_INDIVIDUAL_PROBE_AMPLITUDE_RAD if args.num_envs == 1 else None
+            ),
+            "joint_probe_dwell_steps": (
+                SINGLE_ENV_INDIVIDUAL_PROBE_DWELL_STEPS if args.num_envs == 1 else None
+            ),
+            "joints_with_response": int(
+                torch.count_nonzero(joint_motion > JOINT_RESPONSE_THRESHOLD_RAD).item()
+            ),
             "joint_target_mode": (
                 "contact_closure"
                 if args.contact
