@@ -71,3 +71,12 @@ receipt is under `.local/reports/stage16_p3b6_scene_rsi_requalification/`:
 `physical_reference_validity_mask.parquet`, `.npz` masks, safe banks, dynamic
 qualification reports, joint traces, screenshots, `p3_restart_decision.json`,
 and `handoff.md`.
+## P3-B.7 semantic correction
+
+The complete geometric reference audit remains a diagnostic.  It is not a PPO
+entry gate: reference penetration or a reference joint-margin defect is the
+soft-target error that a bounded residual policy may need to correct.  A PPO
+entry instead requires an exact-geometry, table-supported hard-reset state
+that has passed its 1g dynamic qualification.  Actual PhysX rollout geometry
+remains a hard qualification gate.  Do not reinterpret this as reference
+repair, collision-aware command projection, guidance, or an object write.

@@ -60,3 +60,11 @@ zero-gravity baseline nor a partial pilot may be presented as a 1g result.
 P4, if unlocked, is a 20-episode-per-clip full-gravity causal qualification
 with no support injection or external guidance. Its milestone target is
 `SRqualified >= 0.8` on each clip.
+## P3-B.7 reset boundary
+
+P3 C0--C2 may start only from `Stage16EarlyTableResetPoolV1`: a continuous
+`PRE_CONTACT`, finite-table-supported, exact-geometry-safe window qualified
+under 1g dynamics.  The table stays active for every curriculum stage; gravity
+and friction still follow the fixed stage schedule for the whole episode.
+Whole-reference geometry is diagnostic, while hard-reset and actual-rollout
+geometry are hard gates.

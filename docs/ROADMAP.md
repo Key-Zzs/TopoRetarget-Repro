@@ -125,3 +125,9 @@ physics route; it is not a replacement for it.
 - [Source contact semantics](rl/SOURCE_CONTACT_SEMANTICS.md)
 - [Evaluation Suite V2](rl/EVALUATION_SUITE_V2.md)
 - [Paper fidelity policy](PAPER_FIDELITY.md)
+## P3-B.7 restart contract
+
+P3-B.7 distinguishes an immutable geometric reference (diagnostic soft
+target) from a physically valid hard reset and the actual PPO trajectory
+(both hard gates).  A failed reference-wide geometry audit no longer blocks
+training by itself; absent safe early table-supported resets does.

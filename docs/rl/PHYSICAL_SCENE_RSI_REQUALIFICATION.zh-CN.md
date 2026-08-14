@@ -27,6 +27,15 @@ active finite table、zero residual action，并禁止 guidance、attachment、�
 | `hocap_170105` | 162 | 66 | 未授权；step 4 `FAILURE_JOINT_LIMIT` |
 | `hocap_170650` | 102 | 2 | 未授权；step 5 `FAILURE_JOINT_LIMIT` |
 
+## P3-B.7 语义修正
+
+完整几何 reference audit 仍然是 diagnostic，不是 PPO entry gate：reference
+penetration 或 joint-margin defect 是 bounded residual policy 可能需要修正的
+soft-target error。PPO entry 必须使用通过精确几何和 1g dynamic qualification 的
+table-supported hard-reset state；actual PhysX rollout geometry 仍然是 hard gate。
+这不允许 reference repair、collision-aware command projection、guidance 或 object
+write。
+
 动态通过项均满足零 object/wrist-root rollout write；170105 的通过项还具有
 持续 table contact。被拒绝的候选包含 runtime joint-limit termination，
 170650 的 pre-contact 候选还未通过 table-contact/object-stability 检查。两个完整

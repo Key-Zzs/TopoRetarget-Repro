@@ -109,3 +109,8 @@ external guidance 或 data-H2R 仍是该 causal physics 路线之后的 assisted
 - [Source contact semantics](rl/SOURCE_CONTACT_SEMANTICS.zh-CN.md)
 - [Evaluation Suite V2](rl/EVALUATION_SUITE_V2.md)
 - [Paper fidelity policy](PAPER_FIDELITY.md)
+## P3-B.7 重启合同
+
+P3-B.7 严格区分不可修改的几何参考（诊断性的 soft target）与物理合法的
+hard reset、实际 PPO 轨迹（两者均为 hard gate）。整条参考轨迹的几何失败
+本身不再阻止训练；缺少安全的早期桌面支撑 reset 才会阻止重启。
