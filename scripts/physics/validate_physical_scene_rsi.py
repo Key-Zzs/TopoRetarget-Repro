@@ -256,7 +256,14 @@ def _support_contact(sensor: Any) -> np.ndarray:
     return (values.norm(dim=-1) > 1.0e-4).cpu().numpy().astype(bool)
 
 
-def _make_physical_env(*, clip: str, count: int, start_indices: tuple[int, ...]) -> tuple[Any, Any]:
+def _make_physical_env(
+    *,
+    clip: str,
+    count: int,
+    start_indices: tuple[int, ...],
+    global_static_friction: float = 0.8,
+    global_dynamic_friction: float = 0.6,
+) -> tuple[Any, Any]:
     """Create the reference env with two explicit finite support actors."""
 
     import isaaclab.sim as sim_utils
@@ -351,8 +358,8 @@ def _make_physical_env(*, clip: str, count: int, start_indices: tuple[int, ...])
         object_170650_support_contact=support_sensor("Object170650", "Support170650"),
     )
     cfg.sim.gravity = (0.0, 0.0, -9.81)
-    cfg.sim.physics_material.static_friction = 0.8
-    cfg.sim.physics_material.dynamic_friction = 0.6
+    cfg.sim.physics_material.static_friction = global_static_friction
+    cfg.sim.physics_material.dynamic_friction = global_dynamic_friction
     cfg.sim.physics_material.restitution = 0.0
     cfg.object_170105.spawn.rigid_props.disable_gravity = clip != "hocap_170105"
     cfg.object_170650.spawn.rigid_props.disable_gravity = clip != "hocap_170650"
