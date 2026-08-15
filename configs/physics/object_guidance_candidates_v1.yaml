@@ -1,0 +1,44 @@
+schema_version: ObjectGuidanceCandidateMatrixV1
+selection_rule:
+  - finite_and_no_solver_failure
+  - no_rollout_state_writes
+  - bounded_wrench
+  - lower_macro_object_tracking_error_across_both_clips
+  - lower_guidance_work
+  - lower_guidance_impulse
+  - lower_absolute_penetration
+  - weaker_profile_on_tie
+candidates:
+  - id: weak
+    translation_natural_frequency_hz: 1.0
+    translation_damping_ratio: 1.0
+    rotation_natural_frequency_hz: 1.0
+    rotation_damping_ratio: 1.0
+    translation_acceleration_cap_mps2: 1.5
+    rotation_acceleration_cap_radps2: 6.0
+    position_deadband_m: 0.001
+    rotation_deadband_rad: 0.01
+    linear_velocity_deadband_mps: 0.0
+    angular_velocity_deadband_radps: 0.0
+  - id: nominal
+    translation_natural_frequency_hz: 2.0
+    translation_damping_ratio: 1.0
+    rotation_natural_frequency_hz: 2.0
+    rotation_damping_ratio: 1.0
+    translation_acceleration_cap_mps2: 3.0
+    rotation_acceleration_cap_radps2: 12.0
+    position_deadband_m: 0.001
+    rotation_deadband_rad: 0.01
+    linear_velocity_deadband_mps: 0.0
+    angular_velocity_deadband_radps: 0.0
+  - id: strong_bounded
+    translation_natural_frequency_hz: 3.0
+    translation_damping_ratio: 1.0
+    rotation_natural_frequency_hz: 3.0
+    rotation_damping_ratio: 1.0
+    translation_acceleration_cap_mps2: 4.5
+    rotation_acceleration_cap_radps2: 18.0
+    position_deadband_m: 0.001
+    rotation_deadband_rad: 0.01
+    linear_velocity_deadband_mps: 0.0
+    angular_velocity_deadband_radps: 0.0
