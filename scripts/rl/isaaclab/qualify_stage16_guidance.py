@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import traceback
 from pathlib import Path
@@ -29,6 +30,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", type=Path, default=DEFAULT_ROOT)
     parser.add_argument("--reference-root", type=Path, default=REFERENCE_ROOT)
     parser.add_argument("--steps", type=int, default=4)
+    parser.add_argument("--worker-clip", choices=("hocap_170105", "hocap_170650"))
+    parser.add_argument("--worker-frame", type=int)
+    parser.add_argument("--worker-mode", choices=("none", "reference_wrench_v1"))
+    parser.add_argument("--worker-output", type=Path)
     return parser.parse_args()
 
 
@@ -132,6 +137,83 @@ def run_case(
         close_env(env)
 
 
+def run_worker(args: argparse.Namespace) -> int:
+    """Run one case in a fresh Isaac process and persist its receipt.
+
+    Isaac Sim 5.1 cannot reliably create a second direct-RL environment after
+    ``SimulationContext.clear_instance()`` in this workload.  A worker owns
+    exactly one app and environment, so each counterfactual remains isolated
+    while the parent can still aggregate one complete G2 report.
+    """
+
+    if (
+        args.worker_clip is None
+        or args.worker_frame is None
+        or args.worker_mode is None
+        or args.worker_output is None
+    ):
+        raise ValueError("GUIDANCE_G2_WORKER_ARGUMENTS_INCOMPLETE")
+    from isaaclab.app import AppLauncher
+
+    app = AppLauncher(headless=True).app
+    try:
+        row = run_case(
+            clip=args.worker_clip,
+            frame=args.worker_frame,
+            mode=args.worker_mode,
+            steps=args.steps,
+            reference_root=args.reference_root.resolve(),
+        )
+        write_json(args.worker_output, row)
+    finally:
+        app.close()
+    return 0
+
+
+def run_case_in_worker(
+    *,
+    args: argparse.Namespace,
+    clip: str,
+    frame: int,
+    mode: str,
+) -> dict[str, Any]:
+    output = args.output_root / "worker_receipts" / f"{clip}_{frame}_{mode}.json"
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "--accept-eula",
+        "--steps",
+        str(args.steps),
+        "--reference-root",
+        str(args.reference_root.resolve()),
+        "--worker-clip",
+        clip,
+        "--worker-frame",
+        str(frame),
+        "--worker-mode",
+        mode,
+        "--worker-output",
+        str(output),
+    ]
+    environment = os.environ.copy()
+    environment["OMNI_KIT_ACCEPT_EULA"] = "YES"
+    completed = subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0 or not output.is_file():
+        raise RuntimeError(
+            "GUIDANCE_G2_WORKER_FAILED "
+            f"clip={clip} frame={frame} mode={mode} exit_code={completed.returncode}\n"
+            f"stdout:\n{completed.stdout[-4000:]}\nstderr:\n{completed.stderr[-4000:]}"
+        )
+    return json.loads(output.read_text(encoding="utf-8"))
+
+
 def main() -> int:
     args = parse_args()
     if not args.accept_eula:
@@ -139,28 +221,15 @@ def main() -> int:
     if args.steps < 1:
         raise ValueError("GUIDANCE_G2_STEPS_INVALID")
     os.environ["OMNI_KIT_ACCEPT_EULA"] = "YES"
-    from isaaclab.app import AppLauncher
-
-    reference_root = args.reference_root.resolve()
-    launcher = AppLauncher(headless=True)
-    app = launcher.app
+    if args.worker_clip is not None:
+        return run_worker(args)
     try:
         rows: list[dict[str, Any]] = []
         for clip in ("hocap_170105", "hocap_170650"):
             for phase, frame in (("early", 0), ("contact_rich", 160), ("late", 300)):
-                none = run_case(
-                    clip=clip,
-                    frame=frame,
-                    mode="none",
-                    steps=args.steps,
-                    reference_root=reference_root,
-                )
-                guided = run_case(
-                    clip=clip,
-                    frame=frame,
-                    mode="reference_wrench_v1",
-                    steps=args.steps,
-                    reference_root=reference_root,
+                none = run_case_in_worker(args=args, clip=clip, frame=frame, mode="none")
+                guided = run_case_in_worker(
+                    args=args, clip=clip, frame=frame, mode="reference_wrench_v1"
                 )
                 pair = {"phase": phase, "none": none, "guided": guided}
                 rows.append(pair)
@@ -194,8 +263,6 @@ def main() -> int:
         write_json(args.output_root / "technical_failure.json", failure)
         print(json.dumps(failure, sort_keys=True), file=sys.stderr, flush=True)
         raise
-    finally:
-        app.close()
     return 0
 
 
