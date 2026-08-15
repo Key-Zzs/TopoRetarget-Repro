@@ -475,6 +475,16 @@ def _write_handoff(
         "- `REFERENCE_MODIFIED=NO`; `INFERRED_TABLE_ACTIVE=YES`.\n",
         "- `GUIDANCE_ADDED=NO`; `OBJECT_ROLLOUT_WRITE_ADDED=NO`; "
         "`WRIST_ROOT_ROLLOUT_WRITE_ADDED=NO`.\n\n",
+        "## Curriculum and timeline\n\n",
+        "| Stage | Gravity scale | Friction scale | Cumulative samples |\n",
+        "| --- | ---: | ---: | ---: |\n",
+        "| C0 | 0.00 | 2.00 | 1,048,576 |\n",
+        "| C1 | 0.25 | 1.75 | 2,097,152 |\n",
+        "| C2 | 0.50 | 1.50 | 4,194,304 |\n",
+        "| C3 | 0.75 | 1.25 | 8,388,608 |\n",
+        "| C4 | 1.00 | 1.00 | 12,582,912 |\n\n",
+        "`REFERENCE_INDEX_PROGRESSING=YES`; `FULL_TRAJECTORY_PHASES_REACHED=` "
+        "`PRE_CONTACT → APPROACH → CONTACT → GRASP → LIFT → MANIPULATION → TERMINAL`.\n\n",
         "## Four PPO lineages\n\n",
         "| Reward / clip | C0 | C1 | C2 | C3 | C4 |\n| --- | --- | --- | --- | --- | --- |\n",
     ]
@@ -530,6 +540,21 @@ def _write_handoff(
             "- Curriculum: [curriculum_contract.json](curriculum_contract.json)\n",
             "- Warnings: [warning_contract.json](warning_contract.json)\n",
             "- Technical recoveries: [technical_failures.json](technical_failures.json)\n",
+            "- Git receipt: [git_commits.json](git_commits.json)\n\n",
+            "## Safety flags\n\n",
+            "`NEW_BRANCH_CREATED=NO`; `NEW_WORKTREE_CREATED=NO`; `PUSHED=NO`; "
+            "`PR_CREATED=NO`; `.local_TRACKED=NO`.\n\n",
+            "`FOUR_LINEAGES_ATTEMPTED=YES`; `SATURATION_HARD_STOP=NO`; "
+            "`SATURATION_WARNING=YES`; `KL_WARNING_HARD_STOP=NO`; "
+            "`TASK_PERFORMANCE_HARD_STOP=NO`; `INTERACTION_HARD_STOP=NO`; "
+            "`TWIST_HARD_STOP=NO`; `PENETRATION_METRIC_HARD_STOP=NO`; "
+            "`EVALUATION_SUITE_HARD_STOP=NO`; `REFERENCE_GEOMETRY_HARD_STOP=NO`.\n\n",
+            "`REWARD_V3_CHANGED=NO`; `REWARD_V4_CHANGED=NO`; "
+            "`ACTION_BOUND_CHANGED=NO`; `ACTION_MAPPING_CHANGED=NO`; "
+            "`CONTROLLER_CHANGED=NO`; `REFERENCE_CHANGED=NO`; "
+            "`INFERRED_TABLE_ACTIVE=YES`; `GUIDANCE_ADDED=NO`; "
+            "`HIDDEN_SUPPORT_ADDED=NO`; `OBJECT_ROLLOUT_WRITE_ADDED=NO`; "
+            "`WRIST_ROOT_ROLLOUT_WRITE_ADDED=NO`.\n",
         ]
     )
     path.write_text("".join(lines), encoding="utf-8")
