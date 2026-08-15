@@ -768,12 +768,13 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             mass_kg=mass,
             inertia_world_kgm2=inertia_world,
         )
-        self.object_guidance.apply(
-            wrench=wrench,
-            active_first=active_first,
-            first_object=self._object_170105,
-            second_object=self._object_170650,
-        )
+        if self.object_guidance_contract.mode != "none":
+            self.object_guidance.apply(
+                wrench=wrench,
+                active_first=active_first,
+                first_object=self._object_170105,
+                second_object=self._object_170650,
+            )
         self._last_object_guidance = wrench
 
     def _apply_explicit_virtual_wrist_target(

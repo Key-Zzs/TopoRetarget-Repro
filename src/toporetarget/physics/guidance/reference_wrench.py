@@ -130,6 +130,28 @@ class ReferenceWrenchGuidance:
         )
         linear_velocity_error = reference_twist_world[:, :3] - object_twist_world[:, :3]
         angular_velocity_error = reference_twist_world[:, 3:] - object_twist_world[:, 3:]
+        # The default mode is observationally inert.  Keep useful zero-wrench
+        # telemetry, but do not run the controller (notably its eigensolve) on
+        # a path that is contractually forbidden from influencing physics.
+        if self.contract.mode == "none":
+            zero = torch.zeros_like(position_error)
+            return GuidanceWrench(
+                force_world=zero,
+                torque_world=zero,
+                position_error_world=position_error,
+                orientation_error_world=orientation_error,
+                linear_velocity_error_world=linear_velocity_error,
+                angular_velocity_error_world=angular_velocity_error,
+                force_clipped=torch.zeros(batch, dtype=torch.bool, device=mass.device),
+                torque_clipped=torch.zeros(batch, dtype=torch.bool, device=mass.device),
+                guidance_active=torch.zeros(batch, dtype=torch.bool, device=mass.device),
+                force_limit_n=mass * self.contract.translation_acceleration_cap_mps2,
+                # This is only a diagnostic bound in disabled mode.  No torque
+                # is submitted to PhysX, so an inexpensive finite upper bound
+                # is preferable to an eigensolve on every substep.
+                torque_limit_nm=inertia_world_kgm2.abs().sum(dim=(-2, -1))
+                * self.contract.rotation_acceleration_cap_radps2,
+            )
         position_control_error = _zero_small(position_error, self.contract.position_deadband_m)
         orientation_control_error = _zero_small(
             orientation_error, self.contract.rotation_deadband_rad
@@ -178,11 +200,6 @@ class ReferenceWrenchGuidance:
         torque, torque_roundoff_clipped = _clamp_vector_norm(torque, torque_limit)
         force_clipped |= force_roundoff_clipped
         torque_clipped |= torque_roundoff_clipped
-        if self.contract.mode == "none":
-            force = torch.zeros_like(force)
-            torque = torch.zeros_like(torque)
-            force_clipped = torch.zeros_like(force_clipped)
-            torque_clipped = torch.zeros_like(torque_clipped)
         if not torch.isfinite(force).all() or not torch.isfinite(torque).all():
             raise RuntimeError("OBJECT_GUIDANCE_NONFINITE_WRENCH")
         return GuidanceWrench(
