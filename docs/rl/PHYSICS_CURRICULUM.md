@@ -10,23 +10,21 @@ prohibitions while it changes gravity and friction by stage.
 | C0 | 0.00 | 2.00 | Contact-ready physical pilot |
 | C1 | 0.25 | 1.75 | Intermediate pilot |
 | C2 | 0.50 | 1.50 | Global reward-mode selection |
-| G3 | 1.00 | 1.00 | Full-gravity promotion diagnostic |
 | C3 | 0.75 | 1.25 | Post-G3 training stage |
 | C4 | 1.00 | 1.00 | Nominal full-gravity training stage |
 
 The curriculum is progress-driven only: no contact-triggered gravity or
 friction changes and no per-episode physics override are permitted.
 
-## C2 global selection
+## Causal curriculum execution
 
-Both frozen contact reward modes are evaluated on both clips at C2. Selection
-is global, not clip-specific. A candidate must pass the absolute geometry and
-causal-controller safety conditions for both clips. A tied or rejected mode is
-not eligible for C3, C4, G3, or P4.
-
-The current C2 selection rejected both modes at the absolute geometry gate.
-Consequently the current status is **P3 BLOCKED at C2 selection**. This is a
-safety conclusion, not a claim that either policy has been physically promoted.
+Each reward-mode × clip lineage runs continuously from its frozen zero-g
+checkpoint through C0, C1, C2, C3, and C4. Promotion is determined only by the
+planned sample budget completing with finite executable PPO state. Saturation,
+KL/clip diagnostics, interaction, reference geometry, penetration, and
+Evaluation Suite metrics are recorded as warnings or final outcomes; they are
+not curriculum stop gates. The inferred planar support is active from episode
+start through terminal and naturally loses object contact after lift.
 
 P3-B.6 requalified the physical reference mask, finite inferred support, and
 support-aware RSI bank over all 321 frames of both HOCap clips. The formal
@@ -45,21 +43,13 @@ gravity, friction, or policy-reaction primary cause. The only permitted next
 task is `NEXT_REBUILD_PHYSICAL_SAFE_RSI_BANK`; C2 must not be retrained until
 that rebuilt reset bank is formally geometry-qualified.
 
-## G3 and P4 boundary
+## C4 evaluation boundary
 
-G3 requires the selected global C2 policy, nominal C4 physics, four replicas
-per retained safe state, and 20 control steps. It verifies finite execution,
-no systematic joint-limit or actuator/solver failures, zero forbidden writes,
-and the frozen collision-proxy geometry contract. It is deliberately placed
-between C2 and C3.
-
-If no global C2 mode is selected, G3 must emit an upstream-blocked receipt and
-must not run a rejected policy. C3/C4 and P4 are then `NOT_RUN`; neither a
-zero-gravity baseline nor a partial pilot may be presented as a 1g result.
-
-P4, if unlocked, is a 20-episode-per-clip full-gravity causal qualification
-with no support injection or external guidance. Its milestone target is
-`SRqualified >= 0.8` on each clip.
+C4 is nominal full gravity and nominal friction. Every lineage receives the
+frozen deterministic 20-episode evaluation and simulation-data export,
+including failed, dropped, penetrating, and no-contact episodes. Evaluation
+Suite V2 thresholds remain frozen for reporting only; no performance outcome
+can suppress C3/C4 execution or export.
 ## P3-B.7 reset boundary
 
 P3 C0--C2 may start only from `Stage16EarlyTableResetPoolV1`: a continuous

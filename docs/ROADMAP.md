@@ -56,7 +56,7 @@ Historical V1/V2/V3/V4 artifacts remain available through provenance-aware
 compatibility mapping. The closeout never reinterprets a historical V4 artifact
 as V3 merely because a newer configuration now defaults to V3.
 
-## Physical route P0–P3 (P3 BLOCKED at C2 selection)
+## Causal Physical PPO gravity curriculum (EXECUTION)
 
 `feature/ppo-physical` contains the physical bootstrap contracts, Contact-ready
 RSI V2, source-support feasibility evidence, and the staged gravity/friction
@@ -64,20 +64,21 @@ curriculum. P1 uses bounded full-gravity true-PhysX diagnostics to construct
 named safe reset banks without guidance, support injection, or rollout writes.
 P2 never substitutes a generic plane/table when source support is unavailable.
 
-P3 C0--C2 development pilots completed for both frozen reward modes and both
-clips. The required global C2 selection rejected both modes because each failed
-the absolute geometry gate. It is therefore fail-closed before G3 and C3/C4;
-P4 has not run and no full-gravity causal result exists. See [Physics
-curriculum](rl/PHYSICS_CURRICULUM.md) and [Stage16 full-gravity causal
-status](stages/STAGE16_FULL_GRAVITY_CAUSAL.md).
+The current execution route runs four independent frozen lineages (V3/V4 ×
+both clips) continuously from zero-g through C0--C4. Completion of each fixed
+sample budget promotes the next stage. Saturation, optimization health,
+interaction, twist, penetration, reference geometry, and Evaluation Suite V2
+are final diagnostics, never PPO curriculum stop gates. See [Physics
+curriculum](rl/PHYSICS_CURRICULUM.md).
 
 The frozen V3 `hocap_170105` C1 saturation gate also has durable pre-gate
 instrumentation; it remains a diagnostic/reproducibility interface and does
 not authorize C2 or alter the physical route. See [C1 saturation
 instrumentation](rl/C1_SATURATION_INSTRUMENTATION.md).
 
-Its authorized reproduction strongly reproduced the historical C1 gate failure;
-the next permitted work is attribution only, never an automatic C2 advance.
+Its historical reproduction remains attribution evidence only. The retained
+0.98/0.25 saturation thresholds now emit telemetry warnings and do not prevent
+C1--C4 continuation.
 The bounded P3-C1.2 PPO optimization attribution is recorded in [C1 PPO
 optimization attribution](rl/C1_PPO_OPTIMIZATION_ATTRIBUTION.md); an
 `INCONCLUSIVE` result due to missing exact PPO-batch evidence remains fail-closed

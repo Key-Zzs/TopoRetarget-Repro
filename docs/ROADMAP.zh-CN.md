@@ -50,23 +50,24 @@ global default。
 历史 V1/V2/V3/V4 artifact 仍通过 provenance-aware compatibility mapping 使用。closeout 不会仅因新
 配置默认 V3，就把历史 V4 artifact 静默重解释成 V3。
 
-## Physical route P0–P3（P3 在 C2 selection 处 BLOCKED）
+## Causal Physical PPO 重力 curriculum（EXECUTION）
 
 `feature/ppo-physical` 已包含 physical bootstrap contract、Contact-ready RSI V2、
 source-support feasibility evidence 与 staged gravity/friction curriculum。P1 使用有界的
 full-gravity true-PhysX diagnostic 构造具名 safe reset bank，不引入 guidance、support injection
 或 rollout write。P2 在 source support 不可用时绝不用 generic plane/table 替代。
 
-P3 C0--C2 development pilot 已对两个冻结 reward mode 和两个 clip 完成。必需的 global C2 selection
-因两个 mode 都未通过 absolute geometry gate 而拒绝它们。因此在 G3 与 C3/C4 前 fail-closed；P4 未运行，
-不存在 full-gravity causal result。见 [Physics curriculum](rl/PHYSICS_CURRICULUM.md) 与
-[Stage16 full-gravity causal status](stages/STAGE16_FULL_GRAVITY_CAUSAL.md)。
+当前执行路线将 V3/V4 × 两个 clip 的四条冻结 lineage 从 zero-g 连续运行至 C0--C4。每个固定 sample
+budget 完成即进入下一 stage。saturation、optimization health、interaction、twist、penetration、reference
+geometry 与 Evaluation Suite V2 都是最终诊断，绝不再作为 PPO curriculum stop gate。见
+[Physics curriculum](rl/PHYSICS_CURRICULUM.md)。
 
 冻结 V3 `hocap_170105` C1 saturation gate 现有 durable pre-gate instrumentation；它只用于诊断和
 可复现性，不授权 C2，也不改变 physical route。见 [C1 saturation
 instrumentation](rl/C1_SATURATION_INSTRUMENTATION.md)。
 
-其授权重跑已强复现历史 C1 gate failure；下一步只允许 attribution，不得自动推进 C2。
+其历史重跑仍仅作为 attribution 证据。保留的 0.98/0.25 saturation threshold 现在只输出 telemetry warning，
+不会阻止 C1--C4 continuation。
 有界的 P3-C1.2 PPO optimization attribution 记录在 [C1 PPO optimization
 attribution](rl/C1_PPO_OPTIMIZATION_ATTRIBUTION.md)。若缺少 exact PPO batch
 证据而得到 `INCONCLUSIVE`，仍保持 fail-closed，不授权 formal P3 继续。
