@@ -730,7 +730,7 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
     def _apply_object_guidance(self) -> None:
         """Compute and submit the explicit object wrench for this PhysX substep."""
 
-        active_first = self._clip_index == 0
+        active_first = (self._clip_index == 0).to(self.device)
         object_state = self._active_object_state()
         reference_position = scene_to_global(
             self.reference_bank.gather(
@@ -744,11 +744,17 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         reference_twist = self.reference_bank.gather(
             "object_twist_world_ref", self._clip_index, self._target_reference_index
         )
-        first_mass = self._object_170105.data.default_mass[:, 0]
-        second_mass = self._object_170650.data.default_mass[:, 0]
+        # IsaacLab keeps these static USD defaults on CPU even when the live
+        # PhysX state is CUDA-resident; move the immutable tensors explicitly.
+        first_mass = self._object_170105.data.default_mass[:, 0].to(self.device)
+        second_mass = self._object_170650.data.default_mass[:, 0].to(self.device)
         mass = torch.where(active_first, first_mass, second_mass)
-        first_inertia = self._object_170105.data.default_inertia.reshape(self.num_envs, 3, 3)
-        second_inertia = self._object_170650.data.default_inertia.reshape(self.num_envs, 3, 3)
+        first_inertia = self._object_170105.data.default_inertia.to(self.device).reshape(
+            self.num_envs, 3, 3
+        )
+        second_inertia = self._object_170650.data.default_inertia.to(self.device).reshape(
+            self.num_envs, 3, 3
+        )
         local_inertia = torch.where(active_first[:, None, None], first_inertia, second_inertia)
         rotation = quaternion_to_matrix_wxyz(object_state[:, 3:7])
         inertia_world = rotation @ local_inertia @ rotation.transpose(-1, -2)

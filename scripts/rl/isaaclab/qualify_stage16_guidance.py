@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import sys
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -183,6 +184,16 @@ def main() -> int:
         }
         write_json(args.output_root / "qualification.json", qualification)
         print(json.dumps({"status": qualification["status"], "output_root": str(args.output_root)}))
+    except Exception as error:
+        failure = {
+            "schema_version": "Stage16GuidanceG2TechnicalFailureV1",
+            "error_type": type(error).__name__,
+            "error": str(error),
+            "traceback": traceback.format_exc(),
+        }
+        write_json(args.output_root / "technical_failure.json", failure)
+        print(json.dumps(failure, sort_keys=True), file=sys.stderr, flush=True)
+        raise
     finally:
         app.close()
     return 0
