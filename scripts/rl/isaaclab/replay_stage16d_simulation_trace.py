@@ -34,6 +34,7 @@ DEFAULT_MANIFEST = (
     "runtime_collision_geometry_manifest.json"
 )
 DEFAULT_REFERENCE_ROOT = REPO_ROOT / ".local/stage16_reference_tracking_ppo/world_wrist_references"
+INFERRED_TABLE_ROOT = REPO_ROOT / ".local/reports/stage16_support_reconstruction/inference"
 
 
 def parse_args() -> argparse.Namespace:
@@ -94,6 +95,22 @@ def parse_args() -> argparse.Namespace:
 
 def _safe_prim_name(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_]", "_", value)
+
+
+def _inferred_table_proxy(clip: str) -> dict[str, object]:
+    """Load the frozen finite support used by C4 without changing replay physics."""
+
+    path = INFERRED_TABLE_ROOT / clip / "table_proxy.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    required = {"table_pose", "table_extent", "table_thickness", "plane_normal"}
+    if not required.issubset(payload):
+        raise ValueError("C4_REPLAY_INFERRED_TABLE_CONTRACT_INVALID")
+    return payload
+
+
+def _trace_has_inferred_table_contact(trace_path: Path) -> bool:
+    with np.load(trace_path, allow_pickle=False) as archive:
+        return "table_object_contact" in archive.files
 
 
 def _finger_color(body_name: str) -> tuple[float, float, float]:
@@ -164,6 +181,7 @@ def _write_validation_receipt(
     frames: range,
     reference_ghost: str,
     ppo_metadata: dict[str, object],
+    inferred_table_rendered: bool,
 ) -> None:
     """Materialize replay evidence without changing legacy trace playback."""
 
@@ -182,6 +200,7 @@ def _write_validation_receipt(
         "qualification_status": trace.qualification_status,
         "hand_collision_proxy_count": len(trace.hand_collision_body_names),
         "reference_ghost": reference_ghost,
+        "inferred_table_rendered": inferred_table_rendered,
         "ppo_action_contract": ppo_metadata.get("action_contract"),
         "finite": all(trace.diagnostics(frame, args.replica).finite for frame in frames),
     }
@@ -275,6 +294,7 @@ def main() -> int:
             )
         )
     trace.validate_replica(args.replica)
+    inferred_table_rendered = _trace_has_inferred_table_contact(args.trace)
     if ppo_metadata:
         print(
             "PPO26D metadata "
@@ -311,6 +331,29 @@ def main() -> int:
         light_cfg.func("/World/ReplayLight", light_cfg)
         stage = omni.usd.get_context().get_stage()
         UsdGeom.Xform.Define(stage, "/World/Replay")
+
+        if inferred_table_rendered:
+            table = _inferred_table_proxy(object_id)
+            pose = np.asarray(table["table_pose"], dtype=np.float64)
+            normal = np.asarray(table["plane_normal"], dtype=np.float64)
+            extent = np.asarray(table["table_extent"], dtype=np.float64)
+            thickness = float(table["table_thickness"])
+            if pose.shape != (7,) or normal.shape != (3,) or extent.shape != (2,):
+                raise ValueError("C4_REPLAY_INFERRED_TABLE_SHAPE_INVALID")
+            table_parent = UsdGeom.Xform.Define(stage, "/World/Replay/InferredTable")
+            table_parent.AddTranslateOp(UsdGeom.XformOp.PrecisionDouble, "replay").Set(
+                Gf.Vec3d(*(pose[:3] - 0.5 * thickness * normal))
+            )
+            table_parent.AddOrientOp(UsdGeom.XformOp.PrecisionDouble, "replay").Set(
+                Gf.Quatd(float(pose[3]), Gf.Vec3d(*pose[4:]))
+            )
+            table_parent.AddScaleOp(UsdGeom.XformOp.PrecisionDouble, "replay").Set(
+                Gf.Vec3d(float(extent[0]), float(extent[1]), thickness)
+            )
+            table_cube = UsdGeom.Cube.Define(stage, "/World/Replay/InferredTable/Proxy")
+            table_cube.CreateSizeAttr(1.0)
+            table_cube.CreateDisplayColorAttr([Gf.Vec3f(0.32, 0.38, 0.44)])
+            table_cube.CreateDisplayOpacityAttr([0.32])
 
         def create_proxy(
             proxy: ConvexProxyGeometry,
@@ -430,6 +473,7 @@ def main() -> int:
             f"qualification={trace.qualification_status} metrics={qualification_metrics} "
             "reference_ghost="
             f"{ghost_kind} "
+            f"inferred_table_rendered={inferred_table_rendered} "
             f"reference={reference_label}",
             flush=True,
         )
@@ -472,6 +516,7 @@ def main() -> int:
                 frames=frames,
                 reference_ghost=ghost_kind,
                 ppo_metadata=ppo_metadata,
+                inferred_table_rendered=inferred_table_rendered,
             )
         print(
             f"REPLAY_COMPLETE object={object_id} trace={args.trace.resolve()} "

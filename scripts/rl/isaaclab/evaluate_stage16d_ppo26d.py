@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import sys
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from toporetarget.evaluation.full_hand_contact import hand_body_manifest
+from toporetarget.rl.full_trajectory_p3 import FULL_TRAJECTORY_P3_CHECKPOINT_SCHEMA
 from toporetarget.rl.geometry_audit.hand_collision_reconstruction import (
     HAND_COLLISION_BODY_NAMES as FK_HAND_COLLISION_BODY_NAMES,
 )
@@ -48,6 +50,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--clip", choices=("hocap_170105", "hocap_170650"), default="hocap_170650")
     parser.add_argument("--output-root", type=Path, default=DEFAULT_ROOT)
     parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument(
+        "--full-trajectory-table",
+        action="store_true",
+        help="Evaluate a C4 full-trajectory checkpoint with inferred table support active.",
+    )
+    parser.add_argument("--curriculum-stage", choices=("C4",), default="C4")
     parser.add_argument(
         "--reference-kinematics-v2-root",
         type=Path,
@@ -203,6 +211,7 @@ def model_from_checkpoint(
         REWARD_V3_CHECKPOINT_SCHEMA,
         STRICT_V4_CHECKPOINT_SCHEMA,
         PHYSICAL_PPO_CHECKPOINT_SCHEMA,
+        FULL_TRAJECTORY_P3_CHECKPOINT_SCHEMA,
     }:
         raise ValueError("CHECKPOINT_ROUNDTRIP_FAILURE: unexpected checkpoint schema")
     checkpoint_clip = payload.get("clip")
@@ -249,6 +258,8 @@ def checkpoint_sample_counter(payload: dict[str, Any]) -> tuple[str, int]:
     if payload.get("schema_version") == STRICT_V4_CHECKPOINT_SCHEMA:
         return "reward_v4_samples", int(payload["reward_v4_samples"])
     if payload.get("schema_version") == PHYSICAL_PPO_CHECKPOINT_SCHEMA:
+        return "policy_training_samples", int(payload["policy_training_samples"])
+    if payload.get("schema_version") == FULL_TRAJECTORY_P3_CHECKPOINT_SCHEMA:
         return "policy_training_samples", int(payload["policy_training_samples"])
     return "cumulative_training_samples", int(payload["cumulative_samples"])
 
@@ -421,6 +432,16 @@ def _initial_trace_snapshot(
                 ),
                 "hand_object_pair_force_valid": torch.zeros(count, dtype=torch.bool, device=device),
             }
+        )
+    if getattr(env.cfg, "stage16_support_mode", None) == "finite_inferred_table_proxy_v1":
+        sensor_name = (
+            "object_170105_support_contact"
+            if env.cfg.stage16d_fixed_clip == "hocap_170105"
+            else "object_170650_support_contact"
+        )
+        force = env.scene[sensor_name].data.force_matrix_w
+        values["table_object_contact"] = (
+            torch.linalg.vector_norm(force, dim=-1).amax(dim=(1, 2)) > 1.0e-4
         )
     return {name: value.detach().cpu().numpy().copy() for name, value in values.items()}
 
@@ -923,6 +944,10 @@ def main() -> int:
         raise ValueError("STRICT_CONTACT_DIAGNOSTIC_REQUIRES_V4_RUNTIME_MODE")
     if args.frame_zero_replicas <= 0 or args.rsi_replicas < 0:
         raise ValueError("--frame-zero-replicas must be positive and --rsi-replicas non-negative")
+    if args.full_trajectory_table and (
+        contact_mode is None or args.rsi_replicas != 0 or args.curriculum_stage != "C4"
+    ):
+        raise ValueError("FULL_TRAJECTORY_C4_EVALUATION_REQUIRES_CONTACT_MODE_AND_NO_RSI")
     if not args.artifact_label.replace("_", "").isalnum():
         raise ValueError("--artifact-label must be alphanumeric/underscore")
     if args.capture_exact_fingertip_object_pair_force and not args.capture_all_frame_zero_replicas:
@@ -942,52 +967,80 @@ def main() -> int:
     checkpoint = (
         args.checkpoint or output / f"stage16d_ppo26d_{args.clip.removeprefix('hocap_')}_l0.pt"
     )
-    app = AppLauncher(headless=True).app
+    # Keep the launcher alive for the complete evaluation.  Constructing only
+    # ``AppLauncher(...).app`` lets the temporary launcher be finalized and
+    # closes Isaac before the table-supported environment is built.
+    app_launcher = AppLauncher(headless=True)
+    app = app_launcher.app
     env = None
+    output.mkdir(parents=True, exist_ok=True)
     try:
         # Import optional Isaac modules only after this process owns the app.
-        from toporetarget.rl.environments.isaaclab_backend import (
-            ppo26d_reference_tracking_env_cfg as ppo26d_cfg,
-        )
-        from toporetarget.rl.environments.isaaclab_backend.ppo26d_reference_tracking_env import (
-            IsaacPPO26DReferenceTrackingEnv,
-        )
         from toporetarget.rl.environments.isaaclab_backend.world_wrist_direct_env import (
             HAND_COLLISION_BODY_NAMES,
         )
 
         evaluation_num_envs = max(args.frame_zero_replicas, args.rsi_replicas)
-        cfg = ppo26d_cfg.IsaacPPO26DReferenceTrackingEnvCfg()
-        ppo26d_cfg.configure_stage16d_ppo26d(
-            cfg, num_envs=evaluation_num_envs, clip=args.clip, rsi=False, critical_dr=False
-        )
-        if contact_mode is not None:
-            assert args.reference_kinematics_v2_root is not None
-            assert args.contact_reward_contract is not None
-            assert args.contact_mask_root is not None
-            ppo26d_cfg.configure_stage16d_contact_reward(
-                cfg,
+        if args.full_trajectory_table:
+            full_trajectory_helper = REPO_ROOT / "scripts/rl/isaaclab"
+            if str(full_trajectory_helper) not in sys.path:
+                sys.path.insert(0, str(full_trajectory_helper))
+            from smoke_stage16_full_trajectory_ppo import _load_start, _make_table_env
+
+            assert contact_mode is not None
+            start = _load_start(args.clip)
+            env = _make_table_env(
+                clip=args.clip,
+                num_envs=evaluation_num_envs,
+                start_index=int(start["start_index"]),
                 mode=contact_mode,
-                reference_root=args.reference_kinematics_v2_root,
-                contact_reward_contract=args.contact_reward_contract,
-                contact_mask_root=args.contact_mask_root,
+                stage=args.curriculum_stage,
             )
-        elif args.object_twist_reward_v2:
-            assert args.reference_kinematics_v2_root is not None
-            ppo26d_cfg.configure_stage16d_phase3_object_twist_reward(
-                cfg, reference_root=args.reference_kinematics_v2_root
+            env.cfg.ppo26d_full_horizon_evaluation = True
+        else:
+            from toporetarget.rl.environments.isaaclab_backend import (
+                ppo26d_reference_tracking_env,
             )
-        elif args.reference_kinematics_v2_root is not None:
-            ppo26d_cfg.configure_stage16d_reference_kinematics_v2(
-                cfg, reference_root=args.reference_kinematics_v2_root
+            from toporetarget.rl.environments.isaaclab_backend import (
+                ppo26d_reference_tracking_env_cfg as ppo26d_cfg,
             )
-        env = IsaacPPO26DReferenceTrackingEnv(cfg)
+
+            cfg = ppo26d_cfg.IsaacPPO26DReferenceTrackingEnvCfg()
+            ppo26d_cfg.configure_stage16d_ppo26d(
+                cfg, num_envs=evaluation_num_envs, clip=args.clip, rsi=False, critical_dr=False
+            )
+            if contact_mode is not None:
+                assert args.reference_kinematics_v2_root is not None
+                assert args.contact_reward_contract is not None
+                assert args.contact_mask_root is not None
+                ppo26d_cfg.configure_stage16d_contact_reward(
+                    cfg,
+                    mode=contact_mode,
+                    reference_root=args.reference_kinematics_v2_root,
+                    contact_reward_contract=args.contact_reward_contract,
+                    contact_mask_root=args.contact_mask_root,
+                )
+            elif args.object_twist_reward_v2:
+                assert args.reference_kinematics_v2_root is not None
+                ppo26d_cfg.configure_stage16d_phase3_object_twist_reward(
+                    cfg, reference_root=args.reference_kinematics_v2_root
+                )
+            elif args.reference_kinematics_v2_root is not None:
+                ppo26d_cfg.configure_stage16d_reference_kinematics_v2(
+                    cfg, reference_root=args.reference_kinematics_v2_root
+                )
+            env = ppo26d_reference_tracking_env.IsaacPPO26DReferenceTrackingEnv(cfg)
+        reference_kinematics_version = int(env.cfg.reference_kinematics_version)
         trainer, payload = model_from_checkpoint(
             checkpoint, str(env.device), expected_clip=args.clip
         )
         strict_contact_diagnostic = bool(args.strict_contact_diagnostic_allow_non_v4_checkpoint)
         if args.strict_per_finger_contact_reward_v4:
-            if payload.get("schema_version") != STRICT_V4_CHECKPOINT_SCHEMA:
+            full_v4 = (
+                payload.get("schema_version") == FULL_TRAJECTORY_P3_CHECKPOINT_SCHEMA
+                and payload.get("contact_mode") == ContactRewardMode.STRICT_PER_FINGER_V4.value
+            )
+            if payload.get("schema_version") != STRICT_V4_CHECKPOINT_SCHEMA and not full_v4:
                 if not strict_contact_diagnostic or payload.get("schema_version") not in {
                     "Stage16DPPO26DCheckpointV1",
                     REWARD_V3_CHECKPOINT_SCHEMA,
@@ -997,16 +1050,24 @@ def main() -> int:
                 raise ValueError("STRICT_CONTACT_DIAGNOSTIC_REQUIRES_V1_OR_V3_CHECKPOINT")
             assert args.contact_reward_contract is not None
             checkpoint_entry = payload.get("strict_v4_contact_entry", {}).get("contract", {})
-            if not strict_contact_diagnostic and checkpoint_entry.get("sha256") != checkpoint_hash(
-                args.contact_reward_contract
+            if (
+                not full_v4
+                and not strict_contact_diagnostic
+                and checkpoint_entry.get("sha256") != checkpoint_hash(args.contact_reward_contract)
             ):
                 raise ValueError("STRICT_V4_CONTACT_CONTRACT_HASH_MISMATCH")
         elif args.reference_gated_contact_reward_v3:
-            if payload.get("schema_version") != REWARD_V3_CHECKPOINT_SCHEMA:
+            full_v3 = (
+                payload.get("schema_version") == FULL_TRAJECTORY_P3_CHECKPOINT_SCHEMA
+                and payload.get("contact_mode") == ContactRewardMode.AGGREGATE_V3.value
+            )
+            if payload.get("schema_version") != REWARD_V3_CHECKPOINT_SCHEMA and not full_v3:
                 raise ValueError("PPO26D_REWARD_V3_EVALUATION_REQUIRES_V3_CHECKPOINT")
             assert args.contact_reward_contract is not None
             checkpoint_entry = payload.get("reward_v3_contact_entry", {}).get("contract", {})
-            if checkpoint_entry.get("sha256") != checkpoint_hash(args.contact_reward_contract):
+            if not full_v3 and checkpoint_entry.get("sha256") != checkpoint_hash(
+                args.contact_reward_contract
+            ):
                 raise ValueError("PPO26D_REWARD_V3_CONTACT_CONTRACT_HASH_MISMATCH")
         elif payload.get("schema_version") in {
             REWARD_V3_CHECKPOINT_SCHEMA,
@@ -1135,7 +1196,7 @@ def main() -> int:
             **{sample_counter_name: np.asarray(sample_counter)},
             selected_num_envs=np.asarray(selected),
             reference_hash=np.asarray(json.dumps(payload["reference_hash"], sort_keys=True)),
-            reference_kinematics_version=np.asarray(int(cfg.reference_kinematics_version)),
+            reference_kinematics_version=np.asarray(reference_kinematics_version),
             simulation_data_capture_version=np.asarray(
                 "Stage16DStrictPerFingerV4DiagnosticTraceV1"
                 if strict_contact_diagnostic
@@ -1276,6 +1337,7 @@ def main() -> int:
                     "replica_terminated": all_replica_trace["terminated"].astype(bool),
                     "replica_timed_out": all_replica_trace["timed_out"].astype(bool),
                     "replica_action": all_replica_trace["action"].astype(np.float32),
+                    "replica_clip_index": all_replica_trace["clip_index"].astype(np.int64),
                     "replica_wrist_residual": all_replica_trace["wrist_residual"].astype(
                         np.float32
                     ),
@@ -1303,6 +1365,15 @@ def main() -> int:
                     "replica_embedded_reference_tracked_links": all_replica_trace[
                         "tracked_link_reference"
                     ].astype(np.float32),
+                    **(
+                        {}
+                        if "table_object_contact" not in all_replica_trace
+                        else {
+                            "replica_table_object_contact": all_replica_trace[
+                                "table_object_contact"
+                            ].astype(bool)
+                        }
+                    ),
                     "replica_reward_total": all_replica_trace["reward_total"].astype(np.float32),
                     "replica_reward_object": all_replica_trace["reward_object"].astype(np.float32),
                     "replica_reward_link": all_replica_trace["reward_link"].astype(np.float32),
@@ -1383,6 +1454,9 @@ def main() -> int:
                             "replica_r_contact_v4": all_replica_trace["r_contact_v4"].astype(
                                 np.float32
                             ),
+                            "replica_object_twist_reference": all_replica_trace[
+                                "object_twist_reference"
+                            ].astype(np.float32),
                         }
                     ),
                     **(
@@ -1413,6 +1487,11 @@ def main() -> int:
                         }
                     ),
                 }
+            ),
+            **(
+                {}
+                if "table_object_contact" not in trace_rows
+                else {"table_object_contact": trace_rows["table_object_contact"].astype(bool)}
             ),
             **(
                 {}
@@ -1484,7 +1563,10 @@ def main() -> int:
             "schema_version": "Stage16DPPO26DEvaluationV2",
             "status": "PPO_DEVELOPMENT_EVALUATION_COMPLETE",
             "artifact_label": args.artifact_label,
-            "reference_kinematics_version": int(cfg.reference_kinematics_version),
+            "contact_mode": None if contact_mode is None else contact_mode.value,
+            "full_trajectory_table": bool(args.full_trajectory_table),
+            "curriculum_stage": args.curriculum_stage if args.full_trajectory_table else None,
+            "reference_kinematics_version": reference_kinematics_version,
             "reward_contract": environment_contract["ppo26d"]["reward"],
             "physics_contract": environment_contract,
             "physics_contract_sha256": canonical_json_hash(environment_contract),
@@ -1549,6 +1631,20 @@ def main() -> int:
         write_progress(output, "evaluation_artifacts_written")
         print(json.dumps({"status": qualification["status"], "trace": str(trace_path.resolve())}))
         return 0
+    except BaseException as error:
+        # Isaac's close path may terminate the process before Python can render
+        # an uncaught traceback.  Persist the technical receipt first so formal
+        # recovery can distinguish an app-startup failure from a bad result.
+        write_json(
+            output / "evaluation_failure.json",
+            {
+                "schema_version": "Stage16CausalPhysicalEvaluationFailureV1",
+                "exception_type": type(error).__name__,
+                "message": str(error),
+                "traceback": traceback.format_exc(),
+            },
+        )
+        raise
     finally:
         if env is not None:
             env.close()
