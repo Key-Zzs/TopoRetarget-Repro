@@ -13,6 +13,7 @@ import csv
 import hashlib
 import json
 import math
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -458,9 +459,15 @@ def _write_handoff(
     results: dict[tuple[str, str], dict[str, Any]],
     latest: list[dict[str, object]],
     conclusions: dict[str, dict[str, dict[str, object]]],
+    git_receipt: dict[str, object],
 ) -> None:
     lines = [
         "# Stage16 Causal Physical PPO C0→C4 Handoff\n\n",
+        "## Git\n\n",
+        f"- branch: `{git_receipt['branch']}`\n",
+        f"- START_HEAD: `{git_receipt['start_head']}`\n",
+        f"- FINAL_HEAD: `{git_receipt['final_head']}`\n",
+        f"- worktree: `{git_receipt['worktree']}`\n\n",
         "## Contract\n\n",
         "- `BRANCH=feature/ppo-physical`\n",
         "- `SATURATION_0_25_HARD_STOP=NO`; `SATURATION_0_25_WARNING=YES`\n",
@@ -528,13 +535,37 @@ def _write_handoff(
     path.write_text("".join(lines), encoding="utf-8")
 
 
+def _git_receipt(start_head: str) -> dict[str, object]:
+    """Record the exact local commits without altering Git state."""
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ("git", *args), cwd=REPO_ROOT, check=True, text=True, capture_output=True
+        ).stdout.strip()
+
+    return {
+        "branch": git("branch", "--show-current"),
+        "start_head": start_head,
+        "final_head": git("rev-parse", "HEAD"),
+        "worktree": git("rev-parse", "--show-toplevel"),
+        "commits": [
+            {"sha": line.split(" ", 1)[0], "subject": line.split(" ", 1)[1]}
+            for line in git("log", "--format=%H %s", f"{start_head}..HEAD").splitlines()
+        ],
+        "pushed": False,
+        "pr_created": False,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--root", type=Path, default=REPO_ROOT / ".local/reports/stage16_causal_physical_c0_c4"
     )
+    parser.add_argument("--start-head", required=True)
     args = parser.parse_args()
     root = args.root.resolve()
+    git_receipt = _git_receipt(args.start_head)
     results: dict[tuple[str, str], dict[str, Any]] = {}
     selections: dict[str, dict[str, int]] = {}
     for directory, _mode, _label in MODES:
@@ -698,12 +729,14 @@ def main() -> int:
     if technical_path.is_file():
         failures = [json.loads(line) for line in technical_path.read_text().splitlines() if line]
     _write_json(root / "technical_failures.json", {"failures": failures})
+    _write_json(root / "git_commits.json", git_receipt)
     _write_handoff(
         root / "handoff.md",
         root=root,
         results=results,
         latest=latest,
         conclusions=conclusions,
+        git_receipt=git_receipt,
     )
     (root / "final_summary.md").write_text(
         "# Stage16 Causal Physical PPO C0→C4 Summary\n\n"
