@@ -98,7 +98,12 @@ def main() -> int:
     reward_sources = {
         "v3_contract": SOURCE_REPORTS
         / "stage16d_reward_v3_pairforce_unblock/reward_v3_contract.json",
+        "v3_preflight": SOURCE_REPORTS
+        / "stage16d_reward_v3_pairforce_unblock/reward_v3_preflight.json",
         "v4_contract": SOURCE_REPORTS / "stage16d_strict_per_finger_v4/strict_v4_contract.json",
+        "v4_frozen_inputs": SOURCE_REPORTS / "stage16d_strict_per_finger_v4/frozen_inputs.json",
+        "v4_calibration": SOURCE_REPORTS
+        / "stage16d_strict_per_finger_v4/strict_v4_force_scale_calibration.json",
         "v3_mask_170105": SOURCE_REPORTS
         / "stage16d_reward_v3_contact/reference_contact_mask_170105.npz",
         "v3_mask_170650": SOURCE_REPORTS
