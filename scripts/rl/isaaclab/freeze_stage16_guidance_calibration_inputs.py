@@ -95,11 +95,29 @@ def main() -> int:
                 "checkpoint": copy_verified(checkpoint, base / "checkpoint.pt", checkpoint_hash),
                 "action_trace": copy_verified(trace, base / "action_trace.npz", trace_hash),
             }
+    reward_sources = {
+        "v3_contract": SOURCE_REPORTS
+        / "stage16d_reward_v3_pairforce_unblock/reward_v3_contract.json",
+        "v4_contract": SOURCE_REPORTS / "stage16d_strict_per_finger_v4/strict_v4_contract.json",
+        "v3_mask_170105": SOURCE_REPORTS
+        / "stage16d_reward_v3_contact/reference_contact_mask_170105.npz",
+        "v3_mask_170650": SOURCE_REPORTS
+        / "stage16d_reward_v3_contact/reference_contact_mask_170650.npz",
+        "v4_mask_170105": SOURCE_REPORTS
+        / "stage16d_strict_per_finger_v4/strict_source_contact_mask_hocap_170105.npz",
+        "v4_mask_170650": SOURCE_REPORTS
+        / "stage16d_strict_per_finger_v4/strict_source_contact_mask_hocap_170650.npz",
+    }
+    reward_artifacts = {
+        key: copy_verified(source, OUTPUT_ROOT / "reward_inputs" / source.name, sha256(source))
+        for key, source in reward_sources.items()
+    }
     payload = {
         "schema_version": "Stage16GuidanceG3FrozenBaselinesV1",
         "source_worktree": str(PHYSICAL_ROOT),
         "source_read_only": True,
         "records": records,
+        "reward_artifacts": reward_artifacts,
     }
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
