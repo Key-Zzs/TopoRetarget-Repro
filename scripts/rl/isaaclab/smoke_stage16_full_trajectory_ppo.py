@@ -77,6 +77,7 @@ def _make_table_env(
 
     import isaaclab.sim as sim_utils
     import numpy as np
+    import torch
     from isaaclab.assets import Articulation, RigidObject, RigidObjectCfg
     from isaaclab.scene import InteractiveSceneCfg
     from isaaclab.sensors import ContactSensorCfg
@@ -177,21 +178,65 @@ def _make_table_env(
             physical["table_resting_reset_semantics"] = "TABLE_RESTING_RESET_SEMANTICS_V1"
             return report
 
+        def stage16_saturation_telemetry(self) -> dict[str, Any]:
+            telemetry = super().stage16_saturation_telemetry()
+            sensor_name = (
+                "object_170105_support_contact"
+                if self.cfg.stage16d_fixed_clip == "hocap_170105"
+                else "object_170650_support_contact"
+            )
+            force = self.scene[sensor_name].data.force_matrix_w
+            telemetry["table_object_contact"] = (
+                torch.linalg.vector_norm(force, dim=-1).amax(dim=(1, 2)) > 1.0e-4
+            )
+            return telemetry
+
+        def _capture_ppo26d_trace_row(self) -> None:
+            super()._capture_ppo26d_trace_row()
+            capture = self._ppo26d_trace_capture
+            # Training has no trace capture.  The base environment already
+            # returns in that case; the table-only telemetry must do the same
+            # instead of turning ordinary C1--C4 PPO collection into an error.
+            if capture is None or self._ppo26d_trace_length <= 0:
+                return
+            sensor_name = (
+                "object_170105_support_contact"
+                if self.cfg.stage16d_fixed_clip == "hocap_170105"
+                else "object_170650_support_contact"
+            )
+            force = self.scene[sensor_name].data.force_matrix_w
+            contact = torch.linalg.vector_norm(force, dim=-1).amax(dim=(1, 2)) > 1.0e-4
+            if "table_object_contact" not in capture:
+                capture["table_object_contact"] = torch.empty(
+                    (self._ppo26d_trace_capacity, self.num_envs),
+                    dtype=torch.bool,
+                    device=self.device,
+                )
+            capture["table_object_contact"][self._ppo26d_trace_length - 1].copy_(contact)
+
     cfg = ppo_cfg.IsaacPPO26DReferenceTrackingEnvCfg()
     ppo_cfg.configure_stage16d_ppo26d(
         cfg, num_envs=num_envs, clip=clip, rsi=False, critical_dr=False
     )
     selected_mode = ContactRewardMode.AGGREGATE_V3 if mode is None else mode
+    if selected_mode is ContactRewardMode.AGGREGATE_V3:
+        contact_contract = (
+            REPO_ROOT
+            / ".local/reports/stage16d_reward_v3_pairforce_unblock"
+            / "contact_reward_contract.json"
+        )
+        contact_mask_root = REPO_ROOT / ".local/reports/stage16d_reward_v3_contact"
+    else:
+        contact_contract = (
+            REPO_ROOT / ".local/reports/stage16d_strict_per_finger_v4/strict_v4_contract.json"
+        )
+        contact_mask_root = REPO_ROOT / ".local/reports/stage16d_strict_per_finger_v4"
     ppo_cfg.configure_stage16d_contact_reward(
         cfg,
         mode=selected_mode,
         reference_root=REFERENCE_ROOT,
-        contact_reward_contract=(
-            REPO_ROOT
-            / ".local/reports/stage16d_reward_v3_pairforce_unblock"
-            / "contact_reward_contract.json"
-        ),
-        contact_mask_root=REPO_ROOT / ".local/reports/stage16d_reward_v3_contact",
+        contact_reward_contract=contact_contract,
+        contact_mask_root=contact_mask_root,
     )
     ppo_cfg.configure_stage16_p3_p4_curriculum(
         cfg,

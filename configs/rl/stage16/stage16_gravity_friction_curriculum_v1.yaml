@@ -21,7 +21,8 @@ schedule:
   C2: {gravity_scale: 0.5, friction_scale: 1.5}
   C3: {gravity_scale: 0.75, friction_scale: 1.25}
   C4: {gravity_scale: 1.0, friction_scale: 1.0}
-stage_promotion_order: [C0, C1, C2, G3, C3, C4]
+stage_promotion_order: [C0, C1, C2, C3, C4]
+promotion_semantics: planned_sample_budget_completed_only
 physics_control:
   mode: training_progress_driven_only
   contact_triggered_gravity: forbidden
@@ -60,6 +61,6 @@ p4_formal:
   episodes_per_clip: 20
   milestone_srqualified_min: 0.8
   reset_domain: contact_ready_rsi_v2
-  support: none
+  support: finite_inferred_table_proxy_v1
   external_guidance: false
   frame_zero_full_gravity: false

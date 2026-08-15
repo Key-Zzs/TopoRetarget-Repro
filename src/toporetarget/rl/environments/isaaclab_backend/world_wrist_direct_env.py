@@ -1495,8 +1495,11 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         wrist_actual = torch.cat(
             (state["wrist_position_scene"], torch.zeros_like(self._actions[:, :3])), dim=-1
         )
+        # A timeline-only telemetry label.  It is derived exclusively from the
+        # advancing reference index, so logging cannot alter reward, physics,
+        # termination, or the action/controller path.
         phase = torch.clamp(
-            (reference_index * 4) // max(self.reference_bank.frame_count, 1), min=0, max=4
+            (reference_index * 7) // max(self.reference_bank.frame_count, 1), min=0, max=6
         )
         object_reference = self.reference_bank.gather(
             "object_pose_translation_world_ref", self._clip_index, reference_index

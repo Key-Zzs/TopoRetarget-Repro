@@ -432,6 +432,55 @@ def test_ppo26d_normalizer_uses_full_rollout_after_frozen_update(monkeypatch) ->
         trainer.collect_and_update(FakeEnv(), rollout_length=41)
 
 
+def test_ppo26d_reuses_the_live_environment_observation_between_updates(monkeypatch) -> None:
+    class ReferenceBank:
+        frame_count = 321
+
+    class FakeEnv:
+        def __init__(self) -> None:
+            self.num_envs = 1
+            self.reference_bank = ReferenceBank()
+            self._reference_index = torch.zeros(1, dtype=torch.long)
+            self._last_reward_terms = {}
+            self.reset_calls = 0
+
+        def reset(self):
+            self.reset_calls += 1
+            return {"policy": torch.zeros(1, 764)}, {}
+
+        def step(self, action):
+            del action
+            self._reference_index += 1
+            done = torch.zeros(1, dtype=torch.bool)
+            return {"policy": torch.zeros(1, 764)}, torch.ones(1), done, done, {}
+
+        def rsi_report(self):
+            return {}
+
+    env = FakeEnv()
+    trainer = PPO26DTrainer(observation_dim=764, device="cpu")
+    monkeypatch.setattr(
+        trainer.trainer,
+        "update",
+        lambda storage, last_value: {
+            "actor_loss": 0.0,
+            "value_loss": 0.0,
+            "entropy": 0.0,
+            "kl": 0.0,
+            "clip_fraction": 0.0,
+            "grad_norm": 0.0,
+            "ratio": 1.0,
+            "action_std": 1.0,
+            "sample_count": float(storage.sample_count),
+            "updates": 1.0,
+        },
+    )
+    trainer.collect_and_update(env, rollout_length=1)
+    trainer.collect_and_update(env, rollout_length=1)
+    assert env.reset_calls == 1
+    assert int(env._reference_index.item()) == 2
+
+
 def test_torch_is_available_for_ppo26d_pure_contracts() -> None:
     assert torch.isfinite(torch.tensor([0.0])).all()
 

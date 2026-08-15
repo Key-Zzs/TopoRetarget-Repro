@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train one formal table-supported Stage16 P3 C0/C1/C2 lineage segment."""
+"""Train one formal table-supported Stage16 causal PPO C0--C4 lineage segment."""
 
 # ruff: noqa: E402
 
@@ -59,14 +59,14 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--contact-mode", choices=tuple(mode.value for mode in ContactRewardMode), required=True
     )
-    parser.add_argument("--stage", choices=("C0", "C1", "C2"), required=True)
+    parser.add_argument("--stage", choices=("C0", "C1", "C2", "C3", "C4"), required=True)
     parser.add_argument("--num-envs", type=int, default=1024)
     parser.add_argument("--resume-checkpoint", type=Path)
     parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
     parser.add_argument(
         "--saturation-instrumentation-root",
         type=Path,
-        help="Persist detached pre-gate C1 action-pipeline receipts under this root.",
+        help="Persist detached saturation telemetry and warning receipts under this root.",
     )
     parser.add_argument(
         "--no-update-smoke",
@@ -167,8 +167,6 @@ def main() -> int:
         raise ValueError("FULL_TRAJECTORY_P3_C0_RESUME_FORBIDDEN")
     if args.stage != "C0" and args.resume_checkpoint is None:
         raise ValueError("FULL_TRAJECTORY_P3_PREDECESSOR_REQUIRED")
-    if args.saturation_instrumentation_root is not None and args.stage != "C1":
-        raise ValueError("SATURATION_INSTRUMENTATION_C1_ONLY")
     if args.no_update_smoke and args.saturation_instrumentation_root is None:
         raise ValueError("SATURATION_INSTRUMENTATION_SMOKE_ROOT_REQUIRED")
     budget = physical_stage_budget(args.stage)
@@ -241,23 +239,23 @@ def main() -> int:
             else SaturationRecorder(args.saturation_instrumentation_root.resolve())
         )
 
-        def persist_failure_snapshot(summary: dict[str, Any], rollout: Path) -> None:
+        def persist_saturation_warning_snapshot(summary: dict[str, Any], rollout: Path) -> None:
             if saturation_recorder is None:
                 return
-            failure = saturation_recorder.root / "failure"
-            failure.mkdir(parents=True, exist_ok=True)
+            warning = saturation_recorder.root / "warnings"
+            warning.mkdir(parents=True, exist_ok=True)
             payload = trainer.checkpoint_payload(
                 environment_contract=env.contract_report(), selected_num_envs=args.num_envs
             )
-            payload["failure_pre_gate"] = {
+            payload["saturation_warning_pre_update"] = {
                 "summary": summary,
                 "rollout": str(rollout),
                 "optimizer_update_executed": False,
                 "curriculum_stage": args.stage,
+                "status": "SATURATION_WARNING",
             }
-            save_checkpoint(failure / "failure_pre_gate_full.pt", payload)
-            # Explicit component files make failure-time restoration auditable
-            # without relying on a monolithic checkpoint convention.
+            save_checkpoint(warning / "pre_update_full.pt", payload)
+            # Explicit component files make pre-update restoration auditable.
             import torch
 
             actor_state = {
@@ -270,20 +268,24 @@ def main() -> int:
                 for key, value in payload["actor_critic"].items()
                 if key.startswith("critic")
             }
-            torch.save(actor_state, failure / "failure_pre_gate_actor.pt")
-            torch.save(critic_state, failure / "failure_pre_gate_critic.pt")
-            torch.save(payload["optimizer"], failure / "failure_pre_gate_optimizer.pt")
-            torch.save(
-                payload["observation_normalization"], failure / "failure_pre_gate_normalizer.pt"
-            )
-            torch.save(payload["rng"], failure / "failure_rng.pt")
+            torch.save(actor_state, warning / "pre_update_actor.pt")
+            torch.save(critic_state, warning / "pre_update_critic.pt")
+            torch.save(payload["optimizer"], warning / "pre_update_optimizer.pt")
+            torch.save(payload["observation_normalization"], warning / "pre_update_normalizer.pt")
+            torch.save(payload["rng"], warning / "pre_update_rng.pt")
             _write(
-                failure / "failure_curriculum.json",
+                warning / "curriculum.json",
                 {"stage": args.stage, "clip": args.clip, "contact_mode": mode.value},
             )
             _write(
-                failure / "failure_receipt.json",
-                {"summary": summary, "rollout": str(rollout), "persistence_before_gate": True},
+                warning / "receipt.json",
+                {
+                    "summary": summary,
+                    "rollout": str(rollout),
+                    "persistence_before_update": True,
+                    "status": "SATURATION_WARNING",
+                    "continued": True,
+                },
             )
 
         stage_samples = 0
@@ -300,7 +302,7 @@ def main() -> int:
                     env,
                     rollout_length=rollout_length,
                     saturation_recorder=saturation_recorder,
-                    pre_gate_failure_callback=persist_failure_snapshot,
+                    pre_gate_failure_callback=persist_saturation_warning_snapshot,
                     update_policy=not args.no_update_smoke,
                 )
                 metric.pop("last_policy_observation")

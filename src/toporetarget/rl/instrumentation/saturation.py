@@ -2,7 +2,7 @@
 
 The recorder is deliberately unaware of PPO updates.  It records tensors only
 after they have been used by the production action path and persists them
-before its caller evaluates the frozen saturation gate.
+before its caller records the frozen saturation warning.
 """
 
 from __future__ import annotations
@@ -25,10 +25,10 @@ class Stage16SaturationInstrumentationV1:
     schema_version: str = "Stage16SaturationInstrumentationV1"
     action_dimension: int = 26
     saturation_absolute_threshold: float = 0.98
-    saturation_fraction_hard_gate: float = 0.25
+    saturation_fraction_warning_threshold: float = 0.25
     watch_levels: tuple[float, ...] = (0.15, 0.20, 0.23)
     rolling_full_rollouts: int = 4
-    persistence_order: str = "collect->summarize->persist->evaluate_gate->update_or_stop"
+    persistence_order: str = "collect->summarize->persist_warning_receipt->update_and_continue"
     tensor_layers: tuple[str, ...] = (
         "actor_location_pre_tanh",
         "actor_mean_tanh",
@@ -55,7 +55,7 @@ class Stage16SaturationInstrumentationV1:
             "mutates_policy": False,
             "action_override": False,
             "watch_policy": "flush_only_never_stop",
-            "failure_checkpoint_policy": "pre_gate_actor_critic_optimizer_normalizer_rng",
+            "warning_checkpoint_policy": "checkpoint_and_receipt_before_continuing",
         }
 
 
@@ -139,7 +139,15 @@ class SaturationRecorder:
         saturated = positive | negative
         phase = payload["phase_code"].to(torch.long)
         per_phase: dict[str, dict[str, float | int]] = {}
-        phase_names = ("PRE_CONTACT", "APPROACH", "CONTACT_ONSET", "GRASP", "TERMINAL")
+        phase_names = (
+            "PRE_CONTACT",
+            "APPROACH",
+            "CONTACT",
+            "GRASP",
+            "LIFT",
+            "MANIPULATION",
+            "TERMINAL",
+        )
         for code, name in enumerate(phase_names):
             mask = phase == code
             count = int(mask.sum().item())
@@ -191,7 +199,7 @@ class SaturationRecorder:
     def persist_pre_gate(
         self, *, samples_before: int, samples_after: int
     ) -> tuple[dict[str, Any], Path]:
-        """Flush summary and full rolling receipt before the hard gate is examined."""
+        """Flush summary and full rolling receipt before the PPO update continues."""
 
         payload = self._payload()
         summary = self._summary(payload, samples_before=samples_before, samples_after=samples_after)

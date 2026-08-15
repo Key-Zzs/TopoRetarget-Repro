@@ -626,13 +626,22 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         numerical_failure = ~finite
         joint_failure = ~joint_safe
         action_failure = ~action_valid
-        terminated = (
+        diagnostic_terminated = (
             numerical_failure
             | joint_failure
             | action_failure
             | object_linear_failure
             | object_angular_failure
             | wrist_workspace
+        )
+        # C4 Formal20 must export the actual continuation of every finite
+        # trajectory, including physically bad outcomes.  Do not reset merely
+        # for diagnostic speed/joint/workspace failures; non-finite state or
+        # command remains a genuine technical runtime failure.
+        terminated = (
+            numerical_failure | action_failure
+            if self.cfg.ppo26d_full_horizon_evaluation
+            else diagnostic_terminated
         )
         timeout = self._target_reference_index >= self.reference_bank.frame_count - 1
         timed_out = timeout & ~terminated
@@ -671,6 +680,8 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             "joint_safe": joint_safe.clone(),
             "action_valid": action_valid.clone(),
             "finite": finite.clone(),
+            "diagnostic_terminated": diagnostic_terminated.clone(),
+            "full_horizon_evaluation": bool(self.cfg.ppo26d_full_horizon_evaluation),
             "terminal_contact_is_post_ppo_diagnostic": True,
             "terminal_stability_is_post_ppo_diagnostic": True,
             **write_report,

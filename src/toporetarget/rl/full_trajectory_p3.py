@@ -23,11 +23,11 @@ def checkpoint_metadata(
     support_contract_hash: str,
     reference_hash: str,
 ) -> dict[str, object]:
-    """Build immutable lineage metadata for a formal C0--C2 checkpoint."""
+    """Build immutable lineage metadata for a formal C0--C4 checkpoint."""
 
     selected_mode = ContactRewardMode.parse(mode)
     budget = physical_stage_budget(stage)
-    if stage not in {"C0", "C1", "C2"}:
+    if stage not in {"C0", "C1", "C2", "C3", "C4"}:
         raise ValueError("FULL_TRAJECTORY_P3_STAGE_FORBIDDEN")
     if not 0 <= stage_samples <= budget.additional_samples:
         raise ValueError("FULL_TRAJECTORY_P3_STAGE_SAMPLES_INVALID")
@@ -69,7 +69,7 @@ def validate_resume_metadata(
     """Accept only the direct predecessor with the identical start contract."""
 
     selected_mode = ContactRewardMode.parse(mode)
-    if stage not in {"C1", "C2"}:
+    if stage not in {"C1", "C2", "C3", "C4"}:
         raise ValueError("FULL_TRAJECTORY_P3_RESUME_TARGET_INVALID")
     if payload.get("schema_version") != FULL_TRAJECTORY_P3_CHECKPOINT_SCHEMA:
         raise ValueError("FULL_TRAJECTORY_P3_RESUME_SCHEMA_INVALID")

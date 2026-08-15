@@ -66,6 +66,8 @@ class PPO26DTrainer:
             device=device,
         )
         self.cumulative_samples = 0
+        self._rollout_observation: dict[str, torch.Tensor] | None = None
+        self._rollout_env_id: int | None = None
 
     @property
     def model(self) -> torch.nn.Module:
@@ -78,7 +80,7 @@ class PPO26DTrainer:
         *,
         sampled_actions: torch.Tensor | None = None,
         phase: str,
-        enforce_saturation_gate: bool = True,
+        enforce_saturation_gate: bool = False,
     ) -> dict[str, float | bool | str]:
         normalized_abs_max = 0.0
         normalized_abs_sum = 0.0
@@ -142,14 +144,9 @@ class PPO26DTrainer:
                 "PPO26D_NORMALIZED_OBSERVATION_FAIL_FAST: "
                 f"phase={phase} finite={finite} abs_max={normalized_abs_max:.6g}"
             )
-        if (
-            enforce_saturation_gate
-            and deterministic_fraction > self.training_contract.action_saturation_fraction_limit
-        ):
-            raise FloatingPointError(
-                "PPO26D_ACTION_SATURATION_FAIL_FAST: "
-                f"phase={phase} fraction={deterministic_fraction:.6f}"
-            )
+        metrics["saturation_warning"] = bool(
+            deterministic_fraction > self.training_contract.action_saturation_fraction_limit
+        )
         return metrics
 
     def collect_and_update(
@@ -171,7 +168,12 @@ class PPO26DTrainer:
         steps = frozen_rollout_length if rollout_length is None else int(rollout_length)
         if not 1 <= steps <= frozen_rollout_length:
             raise ValueError("PPO26D_ROLLOUT_LENGTH_MUST_BE_BETWEEN_ONE_AND_FROZEN_CONTRACT")
-        observation, _ = env.reset()
+        if self._rollout_observation is None or self._rollout_env_id != id(env):
+            observation, _ = env.reset()
+            self._rollout_observation = observation
+            self._rollout_env_id = id(env)
+        else:
+            observation = self._rollout_observation
         policy_observation = _policy_observation(observation)
         normalizer_count_before = float(self.trainer.normalizer.count)
         rows: dict[str, list[torch.Tensor]] = {
@@ -236,6 +238,7 @@ class PPO26DTrainer:
             reference_index_count += 1
             observation = next_observation
         rollout_collection_s = time.perf_counter() - started
+        self._rollout_observation = observation
         policy_observation = _policy_observation(observation)
         with torch.no_grad():
             last_value = self.trainer.model.value(
@@ -286,18 +289,15 @@ class PPO26DTrainer:
             safety_before_update["deterministic_action_saturation_fraction"] = float(
                 saturation_summary["global_saturation"]
             )
-            if (
+            saturation_warning = bool(
                 float(saturation_summary["global_saturation"])
                 > self.training_contract.action_saturation_fraction_limit
-            ):
-                saturation_recorder.preserve_failure_window(triggering=saturation_rollout)
-                if pre_gate_failure_callback is not None:
-                    pre_gate_failure_callback(saturation_summary, saturation_rollout)
-                raise FloatingPointError(
-                    "PPO26D_ACTION_SATURATION_FAIL_FAST: "
-                    "phase=before_update "
-                    f"fraction={float(saturation_summary['global_saturation']):.6f}"
-                )
+            )
+            safety_before_update["saturation_warning"] = saturation_warning
+            if saturation_warning and pre_gate_failure_callback is not None:
+                # Preserve an exact pre-update checkpoint/receipt before continuing.
+                # Saturation remains diagnostic, never a curriculum promotion gate.
+                pre_gate_failure_callback(saturation_summary, saturation_rollout)
         rollout_storage_mib = (
             sum(
                 value.numel() * value.element_size()

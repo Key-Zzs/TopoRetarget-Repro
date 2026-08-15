@@ -37,6 +37,10 @@ class IsaacPPO26DReferenceTrackingEnvCfg(IsaacPhysicsConsistentRetargetingEnvCfg
     ppo26d_workspace_radius_m = 0.75
     ppo26d_object_linear_speed_max_mps = 10.0
     ppo26d_object_angular_speed_max_radps = 500.0
+    # Formal C4 evaluation records the entire frozen reference horizon even
+    # when a finite physical trajectory has already failed a safety diagnostic.
+    # Training and ordinary evaluation retain the normal terminating behavior.
+    ppo26d_full_horizon_evaluation = False
     ppo26d_enable_critical_dr = False
     ppo26d_observation_joint_position_noise_std_rad = 0.02
     ppo26d_observation_joint_velocity_noise_std_radps = 0.05

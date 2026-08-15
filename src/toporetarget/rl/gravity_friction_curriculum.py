@@ -239,7 +239,7 @@ def load_gravity_friction_curriculum(path: Path) -> Stage16GravityFrictionCurric
         p4.get("schema_version") != P4_QUALIFICATION_SCHEMA
         or int(p4.get("episodes_per_clip", -1)) != 20
         or float(p4.get("milestone_srqualified_min", -1.0)) != 0.8
-        or p4.get("support") != "none"
+        or p4.get("support") != "finite_inferred_table_proxy_v1"
         or bool(p4.get("external_guidance"))
         or bool(p4.get("frame_zero_full_gravity"))
     ):

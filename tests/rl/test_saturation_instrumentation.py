@@ -52,7 +52,8 @@ def test_metric_sign_split_phase_and_pre_gate_persistence(tmp_path) -> None:
     payload = torch.load(full, weights_only=True)
     assert payload["actor_mean_tanh"].shape == (2, 3, 26)
     contract = json.loads((tmp_path / "instrumentation_contract.json").read_text())
-    assert contract["persistence_order"].endswith("evaluate_gate->update_or_stop")
+    assert contract["persistence_order"].endswith("persist_warning_receipt->update_and_continue")
+    assert contract["saturation_fraction_warning_threshold"] == pytest.approx(0.25)
 
 
 def test_recorder_does_not_mutate_actor_or_actions(tmp_path) -> None:
