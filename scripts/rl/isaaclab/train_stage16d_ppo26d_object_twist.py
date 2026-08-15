@@ -18,10 +18,12 @@ from typing import Any
 
 import numpy as np
 import torch
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from toporetarget.physics.guidance import ObjectGuidanceContractV1
 from toporetarget.rl.ppo.checkpoint import load_checkpoint, restore_rng_state, save_checkpoint
 from toporetarget.rl.ppo.ppo26d_contract import Stage16DPPO26DTrainingConfigV1
 from toporetarget.rl.ppo.ppo26d_trainer import PPO26DTrainer, parameter_hash
@@ -49,6 +51,7 @@ DEFAULT_L0_CHECKPOINT_170105 = (
     REPO_ROOT
     / ".local/reports/stage16d_ppo26d_continuation/hocap_170105/stage16d_ppo26d_170105_l0.pt"
 )
+DEFAULT_GUIDANCE_CANDIDATE_MATRIX = REPO_ROOT / "configs/physics/object_guidance_candidates_v1.yaml"
 
 
 def _sha256(path: Path) -> str:
@@ -58,6 +61,27 @@ def _sha256(path: Path) -> str:
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _load_guidance_profile(matrix_path: Path, profile_id: str) -> dict[str, Any]:
+    resolved = matrix_path.resolve()
+    matrix = yaml.safe_load(resolved.read_text(encoding="utf-8"))
+    candidate = next(
+        (item for item in matrix.get("candidates", []) if item["id"] == profile_id), None
+    )
+    if candidate is None:
+        raise ValueError("GUIDANCE_PROFILE_ID_UNKNOWN")
+    contract = ObjectGuidanceContractV1(
+        mode="reference_wrench_v1",
+        **{key: value for key, value in candidate.items() if key != "id"},
+    )
+    return {
+        "id": profile_id,
+        "matrix_path": str(resolved),
+        "matrix_sha256": _sha256(resolved),
+        "contract": {**contract.as_dict(), "sha256": contract.sha256()},
+        "runtime_contract": contract,
+    }
 
 
 def _gpu_probe() -> dict[str, str]:
@@ -464,6 +488,10 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--reference-root", type=Path, default=DEFAULT_REFERENCE_ROOT)
+    parser.add_argument("--guidance-profile-id")
+    parser.add_argument(
+        "--guidance-candidate-matrix", type=Path, default=DEFAULT_GUIDANCE_CANDIDATE_MATRIX
+    )
     parser.add_argument(
         "--capacity-selection",
         type=Path,
@@ -562,6 +590,16 @@ def main() -> int:
         raise ValueError("--accept-eula is required")
     if args.num_envs <= 0:
         raise ValueError("--num-envs must be positive")
+    if (
+        args.guidance_profile_id is None
+        and args.guidance_candidate_matrix != DEFAULT_GUIDANCE_CANDIDATE_MATRIX
+    ):
+        raise ValueError("GUIDANCE_MATRIX_REQUIRES_PROFILE_ID")
+    guidance_profile = (
+        _load_guidance_profile(args.guidance_candidate_matrix, args.guidance_profile_id)
+        if args.guidance_profile_id is not None
+        else None
+    )
     if args.reward_v3_contact and args.strict_per_finger_contact_reward_v4:
         raise ValueError("REWARD_V3_AND_STRICT_V4_ARE_MUTUALLY_EXCLUSIVE")
     legacy_mode = (
@@ -727,6 +765,10 @@ def main() -> int:
             ppo_cfg.configure_stage16d_phase3_object_twist_reward(
                 cfg, reference_root=args.reference_root.resolve()
             )
+        if guidance_profile is not None:
+            ppo_cfg.configure_stage16d_object_guidance(
+                cfg, contract=guidance_profile["runtime_contract"]
+            )
         _write_json(
             output / "launch_progress.json",
             {
@@ -813,6 +855,15 @@ def main() -> int:
             "reward_scale_freeze": scale_freeze,
             "entry": entry,
             "initialization": initialization,
+            "guidance_profile": (
+                None
+                if guidance_profile is None
+                else {
+                    key: value
+                    for key, value in guidance_profile.items()
+                    if key != "runtime_contract"
+                }
+            ),
             "environment": env.contract_report(),
         }
         _write_json(output / "training_config.json", config)
