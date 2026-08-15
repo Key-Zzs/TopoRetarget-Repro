@@ -7,6 +7,7 @@ from pathlib import Path
 
 from isaaclab.utils import configclass
 
+from toporetarget.physics.guidance import ObjectGuidanceContractV1
 from toporetarget.rl.reference_tracking.contact_reward_mode import (
     ContactRewardMode,
     validate_frozen_contact_contract,
@@ -151,6 +152,30 @@ def configure_stage16d_contact_reward(
     cfg.ppo26d_reference_contact_mask_paths = {clip: str(path) for clip, path in paths.items()}
 
 
+def configure_stage16d_object_guidance(
+    cfg: IsaacPPO26DReferenceTrackingEnvCfg,
+    *,
+    contract: ObjectGuidanceContractV1,
+) -> None:
+    """Bind an explicit assisted-dynamics contract without changing PPO I/O."""
+
+    if contract.mode != "none" and cfg.reference_kinematics_version != 2:
+        raise RuntimeError("PPO26D_GUIDANCE_REQUIRES_REFERENCE_KINEMATICS_V2")
+    cfg.object_guidance_mode = contract.mode
+    cfg.object_guidance_translation_natural_frequency_hz = contract.translation_natural_frequency_hz
+    cfg.object_guidance_translation_damping_ratio = contract.translation_damping_ratio
+    cfg.object_guidance_rotation_natural_frequency_hz = contract.rotation_natural_frequency_hz
+    cfg.object_guidance_rotation_damping_ratio = contract.rotation_damping_ratio
+    cfg.object_guidance_translation_acceleration_cap_mps2 = (
+        contract.translation_acceleration_cap_mps2
+    )
+    cfg.object_guidance_rotation_acceleration_cap_radps2 = contract.rotation_acceleration_cap_radps2
+    cfg.object_guidance_position_deadband_m = contract.position_deadband_m
+    cfg.object_guidance_rotation_deadband_rad = contract.rotation_deadband_rad
+    cfg.object_guidance_linear_velocity_deadband_mps = contract.linear_velocity_deadband_mps
+    cfg.object_guidance_angular_velocity_deadband_radps = contract.angular_velocity_deadband_radps
+
+
 def configure_stage16d_reference_gated_contact_reward(
     cfg: IsaacPPO26DReferenceTrackingEnvCfg,
     *,
@@ -193,6 +218,7 @@ __all__ = [
     "configure_stage16d_reference_kinematics_v2",
     "configure_stage16d_phase3_object_twist_reward",
     "configure_stage16d_contact_reward",
+    "configure_stage16d_object_guidance",
     "configure_stage16d_reference_gated_contact_reward",
     "configure_stage16d_strict_per_finger_contact_reward_v4",
 ]

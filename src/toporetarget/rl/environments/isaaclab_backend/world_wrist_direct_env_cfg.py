@@ -56,6 +56,20 @@ _JOINT_ORDER = (
 class IsaacWorldWristFingerDirectRLEnvCfg(DirectRLEnvCfg):
     """Frozen nominal zero-gravity direct environment, not a PPO config."""
 
+    # External reference guidance is an opt-in engineering extension.  It is
+    # not a policy input or reward term, and ``none`` retains historical runs.
+    object_guidance_mode: str = "none"
+    object_guidance_translation_natural_frequency_hz: float = 2.0
+    object_guidance_translation_damping_ratio: float = 1.0
+    object_guidance_rotation_natural_frequency_hz: float = 2.0
+    object_guidance_rotation_damping_ratio: float = 1.0
+    object_guidance_translation_acceleration_cap_mps2: float = 3.0
+    object_guidance_rotation_acceleration_cap_radps2: float = 12.0
+    object_guidance_position_deadband_m: float = 0.001
+    object_guidance_rotation_deadband_rad: float = 0.01
+    object_guidance_linear_velocity_deadband_mps: float = 0.0
+    object_guidance_angular_velocity_deadband_radps: float = 0.0
+
     decimation = 6
     episode_length_s = 2.05
     action_space = 26

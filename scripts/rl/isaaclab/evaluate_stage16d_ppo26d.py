@@ -340,6 +340,26 @@ def _initial_trace_snapshot(
             "tracked_link_positions_world_ref", clips, indices
         ),
         "reference_index": indices,
+        # Frame zero is a reset snapshot, not a simulator control row.  Keep
+        # guidance explicitly inactive rather than fabricating an applied
+        # force, while retaining a schema compatible with post-physics rows.
+        "F_guid_world": torch.zeros((count, 3), device=device),
+        "tau_guid_world": torch.zeros((count, 3), device=device),
+        "position_error": torch.zeros((count, 3), device=device),
+        "orientation_error": torch.zeros((count, 3), device=device),
+        "linear_velocity_error": torch.zeros((count, 3), device=device),
+        "angular_velocity_error": torch.zeros((count, 3), device=device),
+        "force_clip_mask": torch.zeros(count, dtype=torch.bool, device=device),
+        "torque_clip_mask": torch.zeros(count, dtype=torch.bool, device=device),
+        "guidance_active": torch.zeros(count, dtype=torch.bool, device=device),
+        "guidance_force_limit_n": torch.zeros(count, device=device),
+        "guidance_torque_limit_nm": torch.zeros(count, device=device),
+        "external_guidance": torch.full(
+            (count,),
+            env.object_guidance_contract.mode != "none",
+            dtype=torch.bool,
+            device=device,
+        ),
     }
     if env.cfg.ppo26d_reward_contract in {
         "TopoRetargetReferenceTrackingReward26DV2",

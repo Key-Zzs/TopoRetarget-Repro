@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 import isaaclab.sim as sim_utils
 import numpy as np
@@ -19,6 +19,12 @@ import torch
 from isaaclab.assets import Articulation, RigidObject
 from isaaclab.envs import DirectRLEnv
 from isaaclab.sensors import ContactSensorCfg
+
+from toporetarget.physics.guidance import (
+    GuidanceWrench,
+    ObjectGuidanceContractV1,
+    ReferenceWrenchGuidance,
+)
 
 from .action_adapter import Stage16ActionAdapter
 from .articulation_dynamics import (
@@ -103,6 +109,21 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         self.scene_frame_contract = Stage16CSceneFrameContractV1()
         self.reference_bank = WorldWristReferenceBank(cfg.reference_paths, device=self.device)
         self.reference_bank.apply_uniform_time_scale(cfg.reference_time_scale)
+        self.object_guidance_contract = ObjectGuidanceContractV1(
+            mode=cast(Literal["none", "reference_wrench_v1"], cfg.object_guidance_mode),
+            reference_kinematics_version=getattr(cfg, "reference_kinematics_version", 1),
+            translation_natural_frequency_hz=cfg.object_guidance_translation_natural_frequency_hz,
+            translation_damping_ratio=cfg.object_guidance_translation_damping_ratio,
+            rotation_natural_frequency_hz=cfg.object_guidance_rotation_natural_frequency_hz,
+            rotation_damping_ratio=cfg.object_guidance_rotation_damping_ratio,
+            translation_acceleration_cap_mps2=cfg.object_guidance_translation_acceleration_cap_mps2,
+            rotation_acceleration_cap_radps2=cfg.object_guidance_rotation_acceleration_cap_radps2,
+            position_deadband_m=cfg.object_guidance_position_deadband_m,
+            rotation_deadband_rad=cfg.object_guidance_rotation_deadband_rad,
+            linear_velocity_deadband_mps=cfg.object_guidance_linear_velocity_deadband_mps,
+            angular_velocity_deadband_radps=cfg.object_guidance_angular_velocity_deadband_radps,
+        )
+        self.object_guidance = ReferenceWrenchGuidance(self.object_guidance_contract)
         self._object_contact_sensors = {
             "Object170105": self.scene["object_170105_hand_contact"],
             "Object170650": self.scene["object_170650_hand_contact"],
@@ -421,6 +442,7 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         self._object_state_write_count = torch.zeros(
             self.num_envs, dtype=torch.long, device=self.device
         )
+        self._last_object_guidance: GuidanceWrench | None = None
         self._diagnostic_object_state_write_count = torch.zeros_like(self._object_state_write_count)
         self._wrist_step_state_write_count = torch.zeros_like(self._object_state_write_count)
         self._identified_map_condition_number = torch.zeros(
@@ -687,6 +709,7 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
                 body_ids=torch.tensor([self._wrist_body_id], device=self.device),
                 is_global=True,
             )
+        self._apply_object_guidance()
         self._force_saturated |= wrench["force_saturated"]
         self._torque_saturated |= wrench["torque_saturated"]
         self._force_saturation_substeps += wrench["force_saturated"].to(torch.long)
@@ -703,6 +726,49 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         if self.cfg.collect_wrist_diagnostics and composite is not None:
             self._append_wrist_diagnostic(composite, wrench, target.alpha)
         self._physics_substep += 1
+
+    def _apply_object_guidance(self) -> None:
+        """Compute and submit the explicit object wrench for this PhysX substep."""
+
+        active_first = self._clip_index == 0
+        object_state = self._active_object_state()
+        reference_position = scene_to_global(
+            self.reference_bank.gather(
+                "object_pose_translation_world_ref", self._clip_index, self._target_reference_index
+            ),
+            self.scene.env_origins,
+        )
+        reference_quaternion = self.reference_bank.gather(
+            "object_pose_quaternion_world_ref_wxyz", self._clip_index, self._target_reference_index
+        )
+        reference_twist = self.reference_bank.gather(
+            "object_twist_world_ref", self._clip_index, self._target_reference_index
+        )
+        first_mass = self._object_170105.data.default_mass[:, 0]
+        second_mass = self._object_170650.data.default_mass[:, 0]
+        mass = torch.where(active_first, first_mass, second_mass)
+        first_inertia = self._object_170105.data.default_inertia.reshape(self.num_envs, 3, 3)
+        second_inertia = self._object_170650.data.default_inertia.reshape(self.num_envs, 3, 3)
+        local_inertia = torch.where(active_first[:, None, None], first_inertia, second_inertia)
+        rotation = quaternion_to_matrix_wxyz(object_state[:, 3:7])
+        inertia_world = rotation @ local_inertia @ rotation.transpose(-1, -2)
+        wrench = self.object_guidance.compute(
+            reference_position_world=reference_position,
+            reference_quaternion_wxyz=reference_quaternion,
+            reference_twist_world=reference_twist,
+            object_position_world=object_state[:, :3],
+            object_quaternion_wxyz=object_state[:, 3:7],
+            object_twist_world=object_state[:, 7:13],
+            mass_kg=mass,
+            inertia_world_kgm2=inertia_world,
+        )
+        self.object_guidance.apply(
+            wrench=wrench,
+            active_first=active_first,
+            first_object=self._object_170105,
+            second_object=self._object_170650,
+        )
+        self._last_object_guidance = wrench
 
     def _apply_explicit_virtual_wrist_target(
         self, target_position_scene: torch.Tensor, target_quaternion: torch.Tensor
@@ -1808,6 +1874,17 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             ),
             "object_state_writes": int(self._object_state_write_count.sum().item()),
             "object_rollout_state_writes": 0,
+            "object_guidance": {
+                **self.object_guidance_contract.as_dict(),
+                "sha256": self.object_guidance_contract.sha256(),
+                "runtime_mode": self.object_guidance_contract.mode,
+                "external_guidance": self.object_guidance_contract.mode != "none",
+                "policy_observes_guidance": False,
+                "guidance_in_reward": False,
+                "application": "instantaneous_world_wrench_before_physx_step",
+                "object_teleport": False,
+                "hidden_attachment": False,
+            },
             "diagnostic_kinematic_object": bool(self.cfg.diagnostic_kinematic_object),
             "diagnostic_object_state_writes": int(
                 self._diagnostic_object_state_write_count.sum().item()

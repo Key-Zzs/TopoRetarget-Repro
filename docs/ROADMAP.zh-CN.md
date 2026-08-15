@@ -68,6 +68,13 @@ Multi-Clip
 
 external guidance 或 data-H2R 仍是该 causal physics 路线之后的 assisted fallback，不能替代它。
 
+## 可选 assisted 数据生成
+
+`feature/guidance-force` 实验增加显式、有界的 reference-wrench 通道，用于 assisted simulation
+data。它默认关闭，与 causal PPO 路径分离，并明确是
+`ENGINEERING_EXTENSION_ASSISTED_DYNAMICS`；不得称为 causal physics 或论文作者原样的
+TopoRetarget RL。
+
 ## 文档入口
 
 - [Stage16-D causal zero-g milestone](stages/STAGE16D_CAUSAL_ZERO_G_MILESTONE.zh-CN.md)

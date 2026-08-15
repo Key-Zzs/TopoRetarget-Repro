@@ -744,6 +744,9 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             raise RuntimeError("PPO26D trace capture requires done flags")
         if effort.shape != (self.num_envs, 26):
             raise RuntimeError(f"PPO26D actuator effort has unexpected shape {tuple(effort.shape)}")
+        guidance = self._last_object_guidance
+        if guidance is None:
+            raise RuntimeError("PPO26D_TRACE_GUIDANCE_TELEMETRY_UNINITIALIZED")
         virtual_wrist_ids = self._virtual_wrist_joint_ids
         if len(virtual_wrist_ids) != 6:
             raise RuntimeError(
@@ -832,6 +835,25 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
                 "tracked_link_positions_world_ref", self._clip_index, self._reference_index
             ),
             "reference_index": self._reference_index,
+            # Guidance is trace-only telemetry.  It is absent from both the
+            # fixed 764-D observation and frozen V3/V4 reward implementations.
+            "F_guid_world": guidance.force_world,
+            "tau_guid_world": guidance.torque_world,
+            "position_error": guidance.position_error_world,
+            "orientation_error": guidance.orientation_error_world,
+            "linear_velocity_error": guidance.linear_velocity_error_world,
+            "angular_velocity_error": guidance.angular_velocity_error_world,
+            "force_clip_mask": guidance.force_clipped,
+            "torque_clip_mask": guidance.torque_clipped,
+            "guidance_active": guidance.guidance_active,
+            "guidance_force_limit_n": guidance.force_limit_n,
+            "guidance_torque_limit_nm": guidance.torque_limit_nm,
+            "external_guidance": torch.full(
+                (self.num_envs,),
+                self.object_guidance_contract.mode != "none",
+                dtype=torch.bool,
+                device=self.device,
+            ),
         }
         if isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV2):
             values.update(

@@ -1,0 +1,25 @@
+schema_version: ObjectGuidanceContractV1
+status: ENGINEERING_EXTENSION_ASSISTED_DYNAMICS
+guidance:
+  # Production/default path remains identical to the causal zero-g baseline.
+  mode: none
+  reference_kinematics_version: 2
+  reference_source: Stage16DReferenceKinematicsV2
+  translation_natural_frequency_hz: 2.0
+  translation_damping_ratio: 1.0
+  rotation_natural_frequency_hz: 2.0
+  rotation_damping_ratio: 1.0
+  translation_acceleration_cap_mps2: 3.0
+  rotation_acceleration_cap_radps2: 12.0
+  position_deadband_m: 0.001
+  rotation_deadband_rad: 0.01
+  linear_velocity_deadband_mps: 0.0
+  angular_velocity_deadband_radps: 0.0
+semantics:
+  external_guidance: true
+  assisted_dynamics: true
+  causal_physics: false
+  policy_observes_guidance: false
+  guidance_in_reward: false
+  object_teleport: false
+  hidden_attachment: false

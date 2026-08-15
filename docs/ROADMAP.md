@@ -76,6 +76,14 @@ Multi-Clip
 External guidance or data-H2R remains an assisted fallback after this causal
 physics route; it is not a replacement for it.
 
+## Optional assisted data generation
+
+The `feature/guidance-force` experiment adds an explicit bounded
+reference-wrench channel for assisted simulation data. It is disabled by
+default, outside the causal PPO path, and explicitly an
+`ENGINEERING_EXTENSION_ASSISTED_DYNAMICS`; it must not be reported as causal
+physics or author-exact TopoRetarget RL.
+
 ## Documentation entry points
 
 - [Stage16-D causal zero-g milestone](stages/STAGE16D_CAUSAL_ZERO_G_MILESTONE.md)
