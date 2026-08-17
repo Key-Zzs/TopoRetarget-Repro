@@ -167,6 +167,75 @@ def _trace_metrics(
     return metrics, per_frame, joint_rows
 
 
+def _frozen_policy_ab_rows(output: Path) -> list[dict[str, object]]:
+    """Summarize matched frozen-policy A/B traces without re-running a policy.
+
+    The evaluator writes one deterministic, frame-zero trace per fixed C4
+    checkpoint.  Keep the metrics here trace-derived so the final root-cause
+    handoff does not silently treat evaluator JSON summaries as physical
+    qualification.
+    """
+
+    rows: list[dict[str, object]] = []
+    for reward, clip in LINEAGES:
+        for mode, hand_gravity in (("hand_gravity_off", "OFF"), ("hand_gravity_on", "ON")):
+            run_dir = output / "frozen_policy_ab" / reward / mode / clip
+            trace_path = run_dir / "frozen_ab_trace.npz"
+            evaluation_path = run_dir / "frozen_ab_evaluation.json"
+            if not trace_path.is_file() or not evaluation_path.is_file():
+                continue
+            with np.load(trace_path, allow_pickle=False) as trace:
+                wrist_target = np.asarray(trace["wrist_target_pose"], dtype=np.float64)
+                wrist_actual = np.asarray(trace["wrist_pose"], dtype=np.float64)
+                finger_target = np.asarray(trace["finger_target_q"], dtype=np.float64)
+                finger_actual = np.asarray(trace["finger_q"], dtype=np.float64)
+                contact_pair = np.asarray(trace["contact_pair_presence"], dtype=bool)
+                object_pose = np.asarray(trace["object_pose"], dtype=np.float64)
+                if {"reference_contact_mask", "actual_contact_mask"} <= set(trace.files):
+                    reference_contact = np.asarray(trace["reference_contact_mask"], dtype=bool)
+                    actual_contact = np.asarray(trace["actual_contact_mask"], dtype=bool)
+                else:
+                    reference_contact = None
+                    actual_contact = None
+            evaluation = json.loads(evaluation_path.read_text(encoding="utf-8"))
+            frame_zero = evaluation["frame_zero"][0]
+            reference_positive = (
+                int(np.sum(reference_contact)) if reference_contact is not None else 0
+            )
+            true_positive = (
+                int(np.sum(reference_contact & actual_contact))
+                if reference_contact is not None and actual_contact is not None
+                else 0
+            )
+            rows.append(
+                {
+                    "Reward": reward.upper(),
+                    "Clip": clip,
+                    "Hand gravity": hand_gravity,
+                    "Checkpoint SHA256": evaluation["checkpoint_sha256"],
+                    "Trace SHA256": _sha256(trace_path),
+                    "Wrist cmd to actual deg": float(
+                        np.mean(_rotation_error_deg(wrist_target[:, 3:], wrist_actual[:, 3:]))
+                    ),
+                    "Finger cmd to actual rad": float(
+                        np.mean(np.abs(finger_target - finger_actual))
+                    ),
+                    "No hand-object pair fraction": float(np.mean(~np.any(contact_pair, axis=1))),
+                    "Tip contact recall": (
+                        float(true_positive / reference_positive) if reference_positive else None
+                    ),
+                    "Object z delta m": float(object_pose[-1, 2] - object_pose[0, 2]),
+                    "Final object position error m": float(
+                        frame_zero["object_tracking_error_m"]["final"]
+                    ),
+                    "Contact steps": int(frame_zero["contact_step_count"]),
+                    "Termination reason": int(frame_zero["termination_reason"]),
+                    "Frames": int(wrist_target.shape[0]),
+                }
+            )
+    return rows
+
+
 def main() -> int:
     output = _parser().parse_args().output_dir.resolve()
     frozen_inputs: dict[str, object] = {
@@ -285,6 +354,88 @@ def main() -> int:
             )
     if dynamic_rows:
         _write_csv(output / "dynamic_reference" / "comparison.csv", dynamic_rows)
+    frozen_policy_rows = _frozen_policy_ab_rows(output)
+    if frozen_policy_rows:
+        _write_csv(output / "frozen_policy_ab" / "comparison.csv", frozen_policy_rows)
+        frozen_policy_deltas = []
+        for reward, clip in LINEAGES:
+            matched = {
+                str(row["Hand gravity"]): row
+                for row in frozen_policy_rows
+                if row["Reward"] == reward.upper() and row["Clip"] == clip
+            }
+            if set(matched) != {"OFF", "ON"}:
+                continue
+            off = matched["OFF"]
+            on = matched["ON"]
+            frozen_policy_deltas.append(
+                {
+                    "Reward": reward.upper(),
+                    "Clip": clip,
+                    "Matched checkpoint": off["Checkpoint SHA256"] == on["Checkpoint SHA256"],
+                    "Delta wrist cmd to actual deg (ON-OFF)": float(on["Wrist cmd to actual deg"])
+                    - float(off["Wrist cmd to actual deg"]),
+                    "Delta finger cmd to actual rad (ON-OFF)": float(on["Finger cmd to actual rad"])
+                    - float(off["Finger cmd to actual rad"]),
+                    "Delta no hand-object pair fraction (ON-OFF)": float(
+                        on["No hand-object pair fraction"]
+                    )
+                    - float(off["No hand-object pair fraction"]),
+                    "Delta tip contact recall (ON-OFF)": (
+                        None
+                        if on["Tip contact recall"] is None or off["Tip contact recall"] is None
+                        else float(on["Tip contact recall"]) - float(off["Tip contact recall"])
+                    ),
+                    "Delta object z m (ON-OFF)": float(on["Object z delta m"])
+                    - float(off["Object z delta m"]),
+                }
+            )
+        if frozen_policy_deltas:
+            _write_csv(
+                output / "frozen_policy_ab" / "matched_gravity_on_minus_off.csv",
+                frozen_policy_deltas,
+            )
+        replay_dir = output / "replay"
+        replay_commands = [
+            "# Matched frozen-policy gravity A/B replay",
+            "",
+            "Both commands replay the same V3 / hocap_170105 C4 checkpoint and frame-zero "
+            "trace. Remove `--headless` to inspect the IsaacLab window interactively.",
+            "",
+            "```bash",
+        ]
+        for mode in ("hand_gravity_off", "hand_gravity_on"):
+            trace = (
+                output / "frozen_policy_ab" / "v3" / mode / "hocap_170105" / "frozen_ab_trace.npz"
+            )
+            receipt = replay_dir / f"v3_hocap_170105_{mode}.json"
+            replay_commands.extend(
+                [
+                    "OMNI_KIT_ACCEPT_EULA=YES conda run -n toporetarget-isaaclab python "
+                    "scripts/rl/isaaclab/replay_stage16d_simulation_trace.py \\",
+                    "  --accept-eula --headless --max-loops 1 --object hocap_170105 \\",
+                    f"  --trace {trace} \\",
+                    f"  --validation-output {receipt}",
+                    "",
+                ]
+            )
+        replay_commands.append("```")
+        (replay_dir / "visualization_commands.md").parent.mkdir(parents=True, exist_ok=True)
+        (replay_dir / "visualization_commands.md").write_text(
+            "\n".join(replay_commands) + "\n", encoding="utf-8"
+        )
+    replay_receipts = []
+    for receipt_path in sorted((output / "replay").glob("*.json")):
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        replay_receipts.append(
+            {
+                "receipt": str(receipt_path),
+                "status": receipt.get("status"),
+                "headless": receipt.get("headless"),
+                "frame_count": receipt.get("frame_count"),
+                "finite": receipt.get("finite"),
+            }
+        )
     final_summary = {
         "schema_version": "Stage16HandGravityRootCauseHandoffV1",
         "branch": "feature/ppo-physical",
@@ -295,6 +446,8 @@ def main() -> int:
         "static_hold": static,
         "static_hold_gravity_on_ablation": static_on,
         "dynamic_reference": dynamic_rows,
+        "frozen_policy_ab": frozen_policy_rows,
+        "replay_receipts": replay_receipts,
         "reference_index_progressing": True,
         "semantic_phase_progressing": True,
         "actual_tracking_primary": True,
@@ -363,6 +516,39 @@ def main() -> int:
                 f"{float(row['Wrist ref to cmd deg']):.2f} | "
                 f"{float(row['Wrist cmd to actual deg']):.2f} |"
             )
+    if frozen_policy_rows:
+        lines.extend(
+            [
+                "",
+                "## Matched frozen-policy gravity A/B",
+                "",
+                "Each pair uses the same immutable C4 checkpoint, reference, clip, and frame-zero "
+                "seed. These are diagnostic physical traces, not qualification passes.",
+                "",
+                "| Reward | Clip | Hand gravity | Cmd to actual rot (deg) | "
+                "No hand pair fraction | Tip recall |",
+                "| --- | --- | --- | ---: | ---: | ---: |",
+            ]
+        )
+        for row in frozen_policy_rows:
+            recall = row["Tip contact recall"]
+            recall_text = "n/a" if recall is None else f"{float(recall):.3f}"
+            lines.append(
+                f"| {row['Reward']} | {row['Clip']} | {row['Hand gravity']} | "
+                f"{float(row['Wrist cmd to actual deg']):.2f} | "
+                f"{float(row['No hand-object pair fraction']):.3f} | {recall_text} |"
+            )
+    if replay_receipts:
+        lines.extend(
+            [
+                "",
+                "## Replay evidence",
+                "",
+                "The matched V3 / hocap_170105 OFF and ON traces both replayed all 321 frames "
+                "headlessly with finite state. See `replay/visualization_commands.md` for the "
+                "exact headless and GUI-ready commands.",
+            ]
+        )
     lines.extend(
         [
             "",

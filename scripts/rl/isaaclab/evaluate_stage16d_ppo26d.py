@@ -142,6 +142,12 @@ def parse_args() -> argparse.Namespace:
         "--trace-name",
         help="Optional trace filename under the selected clip output directory.",
     )
+    parser.add_argument(
+        "--hand-gravity-mode",
+        choices=("current_off", "ablation_on"),
+        default="current_off",
+        help="Diagnostic-only controlled-hand gravity setting for full-trajectory evaluation.",
+    )
     return parser.parse_args()
 
 
@@ -948,6 +954,8 @@ def main() -> int:
         contact_mode is None or args.rsi_replicas != 0 or args.curriculum_stage != "C4"
     ):
         raise ValueError("FULL_TRAJECTORY_C4_EVALUATION_REQUIRES_CONTACT_MODE_AND_NO_RSI")
+    if args.hand_gravity_mode != "current_off" and not args.full_trajectory_table:
+        raise ValueError("HAND_GRAVITY_ABLATION_REQUIRES_FULL_TRAJECTORY_TABLE")
     if not args.artifact_label.replace("_", "").isalnum():
         raise ValueError("--artifact-label must be alphanumeric/underscore")
     if args.capture_exact_fingertip_object_pair_force and not args.capture_all_frame_zero_replicas:
@@ -989,12 +997,20 @@ def main() -> int:
 
             assert contact_mode is not None
             start = _load_start(args.clip)
+            robot_usd_path = None
+            if args.hand_gravity_mode == "ablation_on":
+                from scripts.rl.isaaclab.inspect_stage16_hand_gravity import (
+                    _materialize_gravity_on_ablation,
+                )
+
+                robot_usd_path = _materialize_gravity_on_ablation()
             env = _make_table_env(
                 clip=args.clip,
                 num_envs=evaluation_num_envs,
                 start_index=int(start["start_index"]),
                 mode=contact_mode,
                 stage=args.curriculum_stage,
+                robot_usd_path=robot_usd_path,
             )
             env.cfg.ppo26d_full_horizon_evaluation = True
         else:
@@ -1566,6 +1582,7 @@ def main() -> int:
             "contact_mode": None if contact_mode is None else contact_mode.value,
             "full_trajectory_table": bool(args.full_trajectory_table),
             "curriculum_stage": args.curriculum_stage if args.full_trajectory_table else None,
+            "hand_gravity_mode": args.hand_gravity_mode,
             "reference_kinematics_version": reference_kinematics_version,
             "reward_contract": environment_contract["ppo26d"]["reward"],
             "physics_contract": environment_contract,
