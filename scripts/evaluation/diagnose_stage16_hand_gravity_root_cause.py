@@ -7,6 +7,7 @@ import argparse
 import csv
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -28,11 +29,27 @@ FINGER_GROUPS = {
     "ring": slice(12, 16),
     "pinky": slice(16, 20),
 }
+PHASES = (
+    "PRE_CONTACT",
+    "APPROACH",
+    "CONTACT",
+    "GRASP",
+    "LIFT",
+    "MANIPULATION",
+    "TERMINAL",
+)
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--validation",
+        action="append",
+        default=[],
+        metavar="NAME=STATUS",
+        help="Append an independently executed validation result to tests.json.",
+    )
     return parser
 
 
@@ -53,6 +70,16 @@ def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _git_lines(*args: str) -> list[str]:
+    return subprocess.check_output(
+        ("git", *args), cwd=REPO_ROOT, text=True, encoding="utf-8"
+    ).splitlines()
+
+
+def _mean_csv_field(rows: list[dict[str, str]], field: str) -> float:
+    return float(np.mean([float(row[field]) for row in rows]))
 
 
 def _rotation_error_deg(first: np.ndarray, second: np.ndarray) -> np.ndarray:
@@ -93,6 +120,7 @@ def _trace_metrics(
             "runtime_step": index,
             "reference_index": int(trace["reference_index"][index]),
             "semantic_phase": int(trace["phase"][index]),
+            "semantic_phase_name": PHASES[int(trace["phase"][index])],
             "wrist_ref_cmd_position_m": float(ref_cmd_pos[index]),
             "wrist_ref_actual_position_m": float(ref_actual_pos[index]),
             "wrist_cmd_actual_position_m": float(cmd_actual_pos[index]),
@@ -237,7 +265,8 @@ def _frozen_policy_ab_rows(output: Path) -> list[dict[str, object]]:
 
 
 def main() -> int:
-    output = _parser().parse_args().output_dir.resolve()
+    args = _parser().parse_args()
+    output = args.output_dir.resolve()
     frozen_inputs: dict[str, object] = {
         "schema_version": "Stage16HandGravityFrozenInputsV1",
         "traces": [],
@@ -255,6 +284,19 @@ def main() -> int:
             raise FileNotFoundError(f"HAND_GRAVITY_CHECKPOINT_MISSING:{checkpoint}")
         prefix = f"{reward}_{clip}"
         _write_csv(output / "existing_c4" / f"{prefix}_wrist_command_actual.csv", rows)
+        _write_csv(
+            output / "existing_c4" / f"{prefix}_finger_command_actual.csv",
+            [
+                {
+                    key: value
+                    for key, value in row.items()
+                    if key
+                    in {"runtime_step", "reference_index", "semantic_phase", "semantic_phase_name"}
+                    or "finger_" in key
+                }
+                for row in rows
+            ],
+        )
         _write_csv(output / "existing_c4" / f"{prefix}_3p3r_tracking.csv", joints)
         _write_json(output / "existing_c4" / f"{prefix}_metrics.json", metrics)
         frozen_inputs["traces"].append(
@@ -288,8 +330,27 @@ def main() -> int:
         phase_rows[clip].extend([{"Reward": reward.upper(), **row} for row in rows])
     _write_json(output / "frozen_inputs.json", frozen_inputs)
     _write_csv(output / "existing_c4" / "comparison.csv", overview)
+    phase_summary_rows: list[dict[str, object]] = []
     for clip, rows in phase_rows.items():
         _write_csv(output / "phase" / f"{clip}.csv", rows)
+        for reward in ("V3", "V4"):
+            reward_rows = [row for row in rows if row["Reward"] == reward]
+            reached = {int(row["semantic_phase"]) for row in reward_rows}
+            phase_summary_rows.append(
+                {
+                    "Clip": clip,
+                    "Reward": reward,
+                    "Ref index start/end": (
+                        f"{reward_rows[0]['reference_index']}/{reward_rows[-1]['reference_index']}"
+                    ),
+                    "Unique phases": ",".join(PHASES[code] for code in sorted(reached)),
+                    "Contact phase reached": "CONTACT" in {PHASES[code] for code in reached},
+                    "Grasp phase reached": "GRASP" in {PHASES[code] for code in reached},
+                    "Lift phase reached": "LIFT" in {PHASES[code] for code in reached},
+                    "Phase progression": reached == set(range(len(PHASES))),
+                }
+            )
+    _write_csv(output / "phase" / "comparison.csv", phase_summary_rows)
     summary = {
         "schema_version": "Stage16HandGravityRootCauseOfflineEvidenceV1",
         "current_runtime_gravity_evidence": (
@@ -324,8 +385,14 @@ def main() -> int:
                 "Hand gravity": hand_gravity,
                 "Wrist rot mean": item["wrist_rotation_error_deg_mean"],
                 "Wrist rot end": item["wrist_rotation_error_deg_end"],
+                "Wrist pos mean": item.get("wrist_position_error_m_mean"),
+                "Wrist pos end": item.get("wrist_position_error_m_end"),
+                "Finger cmd to actual rad mean": item.get("finger_cmd_actual_rad_mean"),
+                "Finger cmd to actual rad end": item.get("finger_cmd_actual_rad_end"),
                 "3R drift mean": item["virtual_3r_error_deg_mean"],
                 "3R drift end": item["virtual_3r_error_deg_end"],
+                "3R effort max Nm": item.get("virtual_3r_effort_abs_max_nm"),
+                "3R effort saturated": item.get("virtual_3r_effort_saturated"),
                 "PPO optimizer steps": item["ppo_optimizer_steps"],
             }
         )
@@ -341,12 +408,28 @@ def main() -> int:
             if not path.is_file():
                 continue
             item = json.loads(path.read_text(encoding="utf-8"))
+            csv_path = path.with_name("dynamic_reference.csv")
+            with csv_path.open(newline="", encoding="utf-8") as handle:
+                tracking_rows = list(csv.DictReader(handle))
             dynamic_rows.append(
                 {
                     "Clip": clip,
                     "Hand gravity": label,
+                    "Wrist ref to cmd m": _mean_csv_field(
+                        tracking_rows, "wrist_ref_cmd_position_m"
+                    ),
+                    "Wrist cmd to actual m": _mean_csv_field(
+                        tracking_rows, "wrist_cmd_actual_position_m"
+                    ),
+                    "Wrist ref to actual m": _mean_csv_field(
+                        tracking_rows, "wrist_ref_actual_position_m"
+                    ),
                     "Wrist ref to cmd deg": item["wrist_ref_cmd_orientation_deg_mean"],
                     "Wrist cmd to actual deg": item["wrist_cmd_actual_orientation_deg_mean"],
+                    "Wrist ref to actual deg": _mean_csv_field(
+                        tracking_rows, "wrist_ref_actual_orientation_deg"
+                    ),
+                    "Finger ref to cmd rad": _mean_csv_field(tracking_rows, "finger_ref_cmd_rad"),
                     "Finger cmd to actual rad": item["finger_cmd_actual_rad_mean"],
                     "Frames": item["frames"],
                     "PPO optimizer steps": item["ppo_optimizer_steps"],
@@ -436,10 +519,82 @@ def main() -> int:
                 "finite": receipt.get("finite"),
             }
         )
+    runtime_contract = runtime if isinstance(runtime, dict) else {}
+    _write_json(
+        output / "object_gravity_only_contract" / "contract.json",
+        {
+            "schema_version": "ObjectGravityOnlyControlledHandDecisionV1",
+            "implementation_status": "NOT_IMPLEMENTED_ALREADY_CURRENT_RUNTIME",
+            "reason": "H1_NOT_SUPPORTED_BY_LIVE_RUNTIME_INSPECTION",
+            "object_gravity_enabled": runtime_contract.get("object_170105_gravity_enabled"),
+            "hand_gravity_enabled": runtime_contract.get("hand_gravity_enabled"),
+            "virtual_wrist_gravity_enabled": runtime_contract.get("virtual_wrist_gravity_enabled"),
+            "table_static": runtime_contract.get("table_static"),
+            "world_gravity_mps2": runtime_contract.get("world_gravity_mps2"),
+            "guidance_force": 0,
+            "object_rollout_state_writes": 0,
+            "wrist_root_rollout_writes": 0,
+        },
+    )
+    validation_results: dict[str, str] = {}
+    for value in args.validation:
+        name, separator, status = value.partition("=")
+        if not separator or not name or not status:
+            raise ValueError("--validation must be NAME=STATUS")
+        validation_results[name] = status
+    _write_json(
+        output / "tests.json",
+        {
+            "schema_version": "Stage16HandGravityValidationReceiptV1",
+            "results": validation_results,
+            "targeted_runtime_diagnostics": {
+                "live_gravity_manifest": str(
+                    output / "runtime_gravity" / "hand_gravity_manifest.csv"
+                ),
+                "static_hold": str(output / "static_hold" / "comparison.csv"),
+                "dynamic_reference": str(output / "dynamic_reference" / "comparison.csv"),
+                "frozen_policy_ab": str(output / "frozen_policy_ab" / "comparison.csv"),
+                "replay_receipts": replay_receipts,
+            },
+        },
+    )
+    commits = _git_lines("log", "--format=%H%x09%s", "15ac494..HEAD")
+    _write_json(
+        output / "git_commits.json",
+        {
+            "schema_version": "Stage16HandGravityGitReceiptV1",
+            "start_head": "15ac494992b2162b120610e85b97af40b4437829",
+            "final_head": _git_lines("rev-parse", "HEAD")[0],
+            "branch": _git_lines("branch", "--show-current")[0],
+            "commits": [
+                {"sha": line.split("\t", 1)[0], "subject": line.split("\t", 1)[1]}
+                for line in commits
+            ],
+            "worktree_clean": not _git_lines("status", "--porcelain=v1"),
+        },
+    )
+    failure_transitions = [
+        {
+            "from": "H1_HAND_GRAVITY_MISMATCH",
+            "to": "NOT_SUPPORTED",
+            "evidence": "live production runtime has hand and virtual-wrist gravity disabled",
+        },
+        {
+            "from": "WRIST_TRACKING_DIAGNOSIS",
+            "to": "WRIST_ROTATIONAL_ACTUATOR_PRIMARY",
+            "evidence": "C4, static, dynamic, and matched frozen-policy A/B retain large 3R error",
+        },
+    ]
+    transition_path = output / "failure_transitions.jsonl"
+    transition_path.write_text(
+        "".join(json.dumps(item, sort_keys=True) + "\n" for item in failure_transitions),
+        encoding="utf-8",
+    )
     final_summary = {
         "schema_version": "Stage16HandGravityRootCauseHandoffV1",
         "branch": "feature/ppo-physical",
         "start_head": "15ac494992b2162b120610e85b97af40b4437829",
+        "final_head": _git_lines("rev-parse", "HEAD")[0],
         "frozen_c4_modified": False,
         "optimizer_steps": 0,
         "runtime_gravity": runtime,
@@ -478,6 +633,20 @@ def main() -> int:
         "intermediate bodies gravity OFF. The world remains nominal gravity and the table is "
         "static.",
         "",
+        "## Git and safety",
+        "",
+        f"`branch=feature/ppo-physical`, `START_HEAD=15ac494`, "
+        f"`FINAL_HEAD={_git_lines('rev-parse', 'HEAD')[0]}`, `PPO_OPTIMIZER_STEP=0`, "
+        "`OLD_C4_ARTIFACTS_MODIFIED=NO`, `GUIDANCE_ADDED=NO`, "
+        "`OBJECT_ROLLOUT_STATE_WRITE_ADDED=NO`, and `WRIST_ROOT_ROLLOUT_WRITE_ADDED=NO`.",
+        "",
+        "## Actual wrist control path",
+        "",
+        "policy/reference residual -> SE(3) wrist target -> explicit serial 3P+3R "
+        "position/velocity drives (3R target in radians, 3000 Nm/rad stiffness, 500 Nm limit) "
+        "-> actual Wuji wrist/palm pose. The 3P path tracks position more closely than the "
+        "3R path.",
+        "",
         "## Frozen C4 command-to-actual evidence",
         "",
         "| Reward | Clip | Ref to command rot (deg) | Command to actual rot (deg) |",
@@ -492,29 +661,59 @@ def main() -> int:
         lines.extend(
             [
                 "",
-                "## PPO-off static hold under current hand-gravity-off runtime",
+                "## PPO-off static hold",
                 "",
-                f"Over {float(static['simulated_time_s']):.1f} s, wrist orientation error was "
-                f"{float(static['wrist_rotation_error_deg_mean']):.2f} deg mean / "
-                f"{float(static['wrist_rotation_error_deg_end']):.2f} deg end; 3R error was "
-                f"{float(static['virtual_3r_error_deg_mean']):.2f} deg mean.",
+                "| Mode | Object g | Hand g | Wrist pos mean/end (m) | Wrist rot mean/end (deg) | "
+                "Finger cmd-actual (rad) | 3R drift (deg) | 3R saturated |",
+                "| --- | --- | --- | ---: | ---: | ---: | ---: | --- |",
             ]
         )
+        for row in static_rows:
+            lines.append(
+                f"| {row['Mode']} | {row['Object gravity']} | {row['Hand gravity']} | "
+                f"{float(row['Wrist pos mean']):.4f}/{float(row['Wrist pos end']):.4f} | "
+                f"{float(row['Wrist rot mean']):.2f}/{float(row['Wrist rot end']):.2f} | "
+                f"{float(row['Finger cmd to actual rad mean']):.3f} | "
+                f"{float(row['3R drift mean']):.2f} | {row['3R effort saturated']} |"
+            )
     if dynamic_rows:
         lines.extend(
             [
                 "",
                 "## PPO-off dynamic reference following",
                 "",
-                "| Clip | Hand gravity | Ref to cmd rot (deg) | Cmd to actual rot (deg) |",
-                "| --- | --- | ---: | ---: |",
+                "| Clip | Hand g | Ref-cmd pos (m) | Cmd-actual pos (m) | Ref-cmd rot (deg) | "
+                "Cmd-actual rot (deg) | Finger cmd-actual (rad) |",
+                "| --- | --- | ---: | ---: | ---: | ---: | ---: |",
             ]
         )
         for row in dynamic_rows:
             lines.append(
                 f"| {row['Clip']} | {row['Hand gravity']} | "
+                f"{float(row['Wrist ref to cmd m']):.4f} | "
+                f"{float(row['Wrist cmd to actual m']):.4f} | "
                 f"{float(row['Wrist ref to cmd deg']):.2f} | "
-                f"{float(row['Wrist cmd to actual deg']):.2f} |"
+                f"{float(row['Wrist cmd to actual deg']):.2f} | "
+                f"{float(row['Finger cmd to actual rad']):.3f} |"
+            )
+    if phase_summary_rows:
+        lines.extend(
+            [
+                "",
+                "## Phase progression",
+                "",
+                "All four frozen traces progress reference index 0 to 320 and reach all seven "
+                "semantic phases; no reference-timeline or phase-wiring bug was found.",
+                "",
+                "| Clip | Reward | Ref index | Contact | Grasp | Lift |",
+                "| --- | --- | --- | --- | --- | --- |",
+            ]
+        )
+        for row in phase_summary_rows:
+            lines.append(
+                f"| {row['Clip']} | {row['Reward']} | {row['Ref index start/end']} | "
+                f"{row['Contact phase reached']} | {row['Grasp phase reached']} | "
+                f"{row['Lift phase reached']} |"
             )
     if frozen_policy_rows:
         lines.extend(

@@ -257,6 +257,9 @@ def main() -> int:
                 actual = state["wrist_quaternion_wxyz"][0]
                 target_joint = env._explicit_wrist_joint_target[0]
                 actual_joint = env._robot.data.joint_pos[0, env._virtual_wrist_joint_ids]
+                finger_target = env._post_safety_finger_target_canonical[0]
+                finger_actual = state["finger_q"][0]
+                virtual_effort = env._robot.data.applied_torque[0, env._virtual_wrist_joint_ids]
                 records.append(
                     {
                         "time_s": (step + 1) * env.step_dt,
@@ -272,6 +275,32 @@ def main() -> int:
                         "virtual_3r_error_deg": float(
                             torch.rad2deg(
                                 torch.mean(torch.abs(target_joint[3:] - actual_joint[3:]))
+                            ).item()
+                        ),
+                        "virtual_3p_speed_mps": float(
+                            torch.mean(
+                                torch.abs(
+                                    env._robot.data.joint_vel[0, env._virtual_wrist_joint_ids[:3]]
+                                )
+                            ).item()
+                        ),
+                        "virtual_3r_speed_radps": float(
+                            torch.mean(
+                                torch.abs(
+                                    env._robot.data.joint_vel[0, env._virtual_wrist_joint_ids[3:]]
+                                )
+                            ).item()
+                        ),
+                        "finger_cmd_actual_rad": float(
+                            torch.mean(torch.abs(finger_target - finger_actual)).item()
+                        ),
+                        "virtual_3r_effort_abs_max_nm": float(
+                            torch.max(torch.abs(virtual_effort[3:])).item()
+                        ),
+                        "virtual_3r_effort_saturated": bool(
+                            torch.any(
+                                torch.abs(virtual_effort[3:])
+                                >= profile.rotation_effort_limit_nm - 1.0e-6
                             ).item()
                         ),
                     }
@@ -293,10 +322,24 @@ def main() -> int:
                         / len(records)
                     ),
                     "wrist_rotation_error_deg_end": records[-1]["wrist_orientation_error_deg"],
+                    "wrist_position_error_m_mean": float(
+                        sum(float(row["wrist_position_error_m"]) for row in records) / len(records)
+                    ),
+                    "wrist_position_error_m_end": records[-1]["wrist_position_error_m"],
+                    "finger_cmd_actual_rad_mean": float(
+                        sum(float(row["finger_cmd_actual_rad"]) for row in records) / len(records)
+                    ),
+                    "finger_cmd_actual_rad_end": records[-1]["finger_cmd_actual_rad"],
                     "virtual_3r_error_deg_mean": float(
                         sum(float(row["virtual_3r_error_deg"]) for row in records) / len(records)
                     ),
                     "virtual_3r_error_deg_end": records[-1]["virtual_3r_error_deg"],
+                    "virtual_3r_effort_abs_max_nm": float(
+                        max(float(row["virtual_3r_effort_abs_max_nm"]) for row in records)
+                    ),
+                    "virtual_3r_effort_saturated": any(
+                        bool(row["virtual_3r_effort_saturated"]) for row in records
+                    ),
                 },
             )
         if args.dynamic_reference:
