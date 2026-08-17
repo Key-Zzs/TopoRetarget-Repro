@@ -123,7 +123,7 @@ def audit_c0_reuse(*, report_root: Path) -> dict[str, bool]:
     decisions: dict[str, bool] = {}
     controller_hash = _sha256(CONTROLLER_SOURCE)
     for lineage in QUEUE_LINEAGES:
-        root, result, config = _historical_c0(lineage)
+        root, result, _config = _historical_c0(lineage)
         checkpoint = Path(str(result["checkpoint"])).resolve()
         if not checkpoint.is_file():
             raise FileNotFoundError(f"FIXED_WRIST_C0_CHECKPOINT_MISSING:{checkpoint}")
@@ -173,7 +173,7 @@ def audit_c0_reuse(*, report_root: Path) -> dict[str, bool]:
                     "finger_q_mean_rad": 0.02,
                 },
             },
-            "C0_REUSABLE": reusable,
+            "C0_REUSABLE": "YES" if reusable else "NO",
             "reason": reason,
             "old_c1_reused": False,
             "old_c2_reused": False,
@@ -181,7 +181,8 @@ def audit_c0_reuse(*, report_root: Path) -> dict[str, bool]:
             "old_c4_reused": False,
             "created_at": _now(),
         }
-        _write_receipt(report_root / "c0_reuse" / f"{lineage['id']}.json", receipt)
+        receipt_name = f"{lineage['directory']}_{lineage['clip'].removeprefix('hocap_')}.json"
+        _write_receipt(report_root / "c0_reuse" / receipt_name, receipt)
         decisions[lineage["id"]] = reusable
     return decisions
 
