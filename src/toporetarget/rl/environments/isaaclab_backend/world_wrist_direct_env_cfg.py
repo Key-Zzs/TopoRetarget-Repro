@@ -252,6 +252,12 @@ def configure_explicit_virtual_wrist(
     cfg.finite_virtual_wrist_profile = profile.identifier
     cfg.finite_virtual_wrist_authority_enabled = authority_enabled
     cfg.robot.spawn.usd_path = str(_EXPLICIT_VIRTUAL_WRIST_USD)
+    # The composed USD already carries per-body disableGravity opinions, but
+    # PhysX articulation import does not reliably honor those opinions as an
+    # effective reduced-coordinate gravity exclusion.  Apply the equivalent
+    # Isaac Lab runtime override to every rigid link in this robot articulation;
+    # task objects retain their separately configured production gravity.
+    cfg.robot.spawn.rigid_props = sim_utils.RigidBodyPropertiesCfg(disable_gravity=True)
     cfg.robot.spawn.articulation_props.fix_root_link = True
     gain_scale = 1.0 if authority_enabled else 0.0
     cfg.robot.actuators = {

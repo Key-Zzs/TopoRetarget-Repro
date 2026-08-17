@@ -60,6 +60,24 @@ REFERENCE_HASHES = {
 }
 
 
+def test_explicit_wrist_runtime_gravity_override_is_part_of_spawn_contract() -> None:
+    """Keep the effective PhysX articulation gravity contract CPU-testable.
+
+    The optional Isaac Lab configuration may only be imported after AppLauncher,
+    so this source-level contract guards the exact spawn setting without
+    starting Kit in the ordinary unit suite.
+    """
+
+    source = (
+        Path(__file__).resolve().parents[3]
+        / "src/toporetarget/rl/environments/isaaclab_backend/world_wrist_direct_env_cfg.py"
+    ).read_text(encoding="utf-8")
+    assert (
+        "cfg.robot.spawn.rigid_props = sim_utils.RigidBodyPropertiesCfg(disable_gravity=True)"
+        in source
+    )
+
+
 def adapter() -> Stage16ActionAdapter:
     return Stage16ActionAdapter(
         canonical_joint_names=JOINTS,
