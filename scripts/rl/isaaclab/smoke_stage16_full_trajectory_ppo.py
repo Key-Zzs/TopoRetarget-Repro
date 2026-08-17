@@ -72,6 +72,7 @@ def _make_table_env(
     start_index: int,
     mode: Any = None,
     stage: str = "C0",
+    robot_usd_path: Path | None = None,
 ) -> Any:
     """Construct the production PPO environment with fixed finite supports."""
 
@@ -245,6 +246,11 @@ def _make_table_env(
         ),
         stage=stage,
     )
+    if robot_usd_path is not None:
+        resolved_robot_asset = robot_usd_path.resolve()
+        if not resolved_robot_asset.is_file():
+            raise FileNotFoundError(f"FULL_TRAJECTORY_ROBOT_ASSET_MISSING:{resolved_robot_asset}")
+        cfg.robot.spawn.usd_path = str(resolved_robot_asset)
     cfg.scene = TableSceneCfg(
         num_envs=num_envs,
         env_spacing=0.75,

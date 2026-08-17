@@ -236,26 +236,55 @@ def main() -> int:
     _write_json(output / "offline_c4_summary.json", summary)
     runtime_path = output / "runtime_gravity" / "object_gravity.json"
     static_path = output / "static_hold" / "hand_gravity_off" / "static_hold_summary.json"
+    static_on_path = output / "static_hold" / "gravity_on" / "static_hold_summary.json"
     runtime = (
         json.loads(runtime_path.read_text(encoding="utf-8")) if runtime_path.is_file() else None
     )
     static = json.loads(static_path.read_text(encoding="utf-8")) if static_path.is_file() else None
-    if isinstance(static, dict):
+    static_on = (
+        json.loads(static_on_path.read_text(encoding="utf-8")) if static_on_path.is_file() else None
+    )
+    static_rows = []
+    for item, hand_gravity in ((static, "OFF"), (static_on, "ON")):
+        if not isinstance(item, dict):
+            continue
+        static_rows.append(
+            {
+                "Mode": item["mode"],
+                "Object gravity": "ON",
+                "Hand gravity": hand_gravity,
+                "Wrist rot mean": item["wrist_rotation_error_deg_mean"],
+                "Wrist rot end": item["wrist_rotation_error_deg_end"],
+                "3R drift mean": item["virtual_3r_error_deg_mean"],
+                "3R drift end": item["virtual_3r_error_deg_end"],
+                "PPO optimizer steps": item["ppo_optimizer_steps"],
+            }
+        )
+    if static_rows:
         _write_csv(
             output / "static_hold" / "comparison.csv",
-            [
-                {
-                    "Mode": static["mode"],
-                    "Object gravity": "ON",
-                    "Hand gravity": "OFF",
-                    "Wrist rot mean": static["wrist_rotation_error_deg_mean"],
-                    "Wrist rot end": static["wrist_rotation_error_deg_end"],
-                    "3R drift mean": static["virtual_3r_error_deg_mean"],
-                    "3R drift end": static["virtual_3r_error_deg_end"],
-                    "PPO optimizer steps": static["ppo_optimizer_steps"],
-                }
-            ],
+            static_rows,
         )
+    dynamic_rows = []
+    for clip in ("hocap_170105", "hocap_170650"):
+        for mode, label in (("hand_gravity_off", "OFF"), ("hand_gravity_on", "ON")):
+            path = output / "dynamic_reference" / clip / mode / "dynamic_reference_summary.json"
+            if not path.is_file():
+                continue
+            item = json.loads(path.read_text(encoding="utf-8"))
+            dynamic_rows.append(
+                {
+                    "Clip": clip,
+                    "Hand gravity": label,
+                    "Wrist ref to cmd deg": item["wrist_ref_cmd_orientation_deg_mean"],
+                    "Wrist cmd to actual deg": item["wrist_cmd_actual_orientation_deg_mean"],
+                    "Finger cmd to actual rad": item["finger_cmd_actual_rad_mean"],
+                    "Frames": item["frames"],
+                    "PPO optimizer steps": item["ppo_optimizer_steps"],
+                }
+            )
+    if dynamic_rows:
+        _write_csv(output / "dynamic_reference" / "comparison.csv", dynamic_rows)
     final_summary = {
         "schema_version": "Stage16HandGravityRootCauseHandoffV1",
         "branch": "feature/ppo-physical",
@@ -264,6 +293,8 @@ def main() -> int:
         "optimizer_steps": 0,
         "runtime_gravity": runtime,
         "static_hold": static,
+        "static_hold_gravity_on_ablation": static_on,
+        "dynamic_reference": dynamic_rows,
         "reference_index_progressing": True,
         "semantic_phase_progressing": True,
         "actual_tracking_primary": True,
@@ -316,6 +347,22 @@ def main() -> int:
                 f"{float(static['virtual_3r_error_deg_mean']):.2f} deg mean.",
             ]
         )
+    if dynamic_rows:
+        lines.extend(
+            [
+                "",
+                "## PPO-off dynamic reference following",
+                "",
+                "| Clip | Hand gravity | Ref to cmd rot (deg) | Cmd to actual rot (deg) |",
+                "| --- | --- | ---: | ---: |",
+            ]
+        )
+        for row in dynamic_rows:
+            lines.append(
+                f"| {row['Clip']} | {row['Hand gravity']} | "
+                f"{float(row['Wrist ref to cmd deg']):.2f} | "
+                f"{float(row['Wrist cmd to actual deg']):.2f} |"
+            )
     lines.extend(
         [
             "",
