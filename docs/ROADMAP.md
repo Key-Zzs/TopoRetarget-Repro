@@ -64,6 +64,13 @@ curriculum. P1 uses bounded full-gravity true-PhysX diagnostics to construct
 named safe reset banks without guidance, support injection, or rollout writes.
 P2 never substitutes a generic plane/table when source support is unavailable.
 
+The explicit virtual wrist's C4 rotational controller repair is complete:
+PhysX ignored the generated USD's per-body hand-gravity opinions after
+reduced-coordinate articulation import, so the production spawn now applies
+the equivalent runtime articulation override. This preserves gravity-on task
+objects and does not authorize PPO, reward, action, or physical-qualification
+changes. See [wrist controller root cause](rl/WRIST_ROTATIONAL_CONTROLLER_ROOT_CAUSE.md).
+
 The current execution route runs four independent frozen lineages (V3/V4 ×
 both clips) continuously from zero-g through C0--C4. Completion of each fixed
 sample budget promotes the next stage. Saturation, optimization health,
@@ -129,6 +136,8 @@ physics route; it is not a replacement for it.
 - [Stage16-D causal zero-g milestone](stages/STAGE16D_CAUSAL_ZERO_G_MILESTONE.md)
 - [Stage 16 Physical Bootstrap](stages/STAGE16_PHYSICAL_BOOTSTRAP.md)
 - [Physics curriculum](rl/PHYSICS_CURRICULUM.md)
+- [Hand gravity control abstraction](rl/HAND_GRAVITY_CONTROL_ABSTRACTION.md)
+- [Wrist rotational controller root cause](rl/WRIST_ROTATIONAL_CONTROLLER_ROOT_CAUSE.md)
 - [Stage16 full-gravity causal status](stages/STAGE16_FULL_GRAVITY_CAUSAL.md)
 - [Stage 16-D physics contract](stages/STAGE16D_PHYSICS_CONSISTENT_RETARGETING.md)
 - [Reference Kinematics V2 contract](rl/REFERENCE_KINEMATICS_CONTRACT.md)

@@ -57,6 +57,12 @@ source-support feasibility evidence 与 staged gravity/friction curriculum。P1 
 full-gravity true-PhysX diagnostic 构造具名 safe reset bank，不引入 guidance、support injection
 或 rollout write。P2 在 source support 不可用时绝不用 generic plane/table 替代。
 
+explicit virtual wrist 的 C4 rotational controller repair 已完成：PhysX 在
+reduced-coordinate articulation import 后没有让生成 USD 的 per-body hand-gravity opinion 生效，
+所以 production spawn 现在应用等价的 runtime articulation override。task object 的 gravity 仍为 ON，
+也不授权修改 PPO、reward、action 或 physical qualification。见
+[wrist controller root cause](rl/WRIST_ROTATIONAL_CONTROLLER_ROOT_CAUSE.md)。
+
 当前执行路线将 V3/V4 × 两个 clip 的四条冻结 lineage 从 zero-g 连续运行至 C0--C4。每个固定 sample
 budget 完成即进入下一 stage。saturation、optimization health、interaction、twist、penetration、reference
 geometry 与 Evaluation Suite V2 都是最终诊断，绝不再作为 PPO curriculum stop gate。见
@@ -110,6 +116,8 @@ external guidance 或 data-H2R 仍是该 causal physics 路线之后的 assisted
 - [Stage16-D causal zero-g milestone](stages/STAGE16D_CAUSAL_ZERO_G_MILESTONE.zh-CN.md)
 - [Stage 16 Physical Bootstrap](stages/STAGE16_PHYSICAL_BOOTSTRAP.zh-CN.md)
 - [Physics curriculum](rl/PHYSICS_CURRICULUM.md)
+- [Hand gravity control abstraction](rl/HAND_GRAVITY_CONTROL_ABSTRACTION.md)
+- [Wrist rotational controller root cause](rl/WRIST_ROTATIONAL_CONTROLLER_ROOT_CAUSE.md)
 - [Stage16 full-gravity causal status](stages/STAGE16_FULL_GRAVITY_CAUSAL.md)
 - [Stage 16-D physics contract](stages/STAGE16D_PHYSICS_CONSISTENT_RETARGETING.md)
 - [Reference Kinematics V2 contract](rl/REFERENCE_KINEMATICS_CONTRACT.md)
