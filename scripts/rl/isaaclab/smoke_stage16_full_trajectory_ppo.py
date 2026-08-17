@@ -73,6 +73,7 @@ def _make_table_env(
     mode: Any = None,
     stage: str = "C0",
     robot_usd_path: Path | None = None,
+    self_collision_override: bool | None = None,
 ) -> Any:
     """Construct the production PPO environment with fixed finite supports."""
 
@@ -251,6 +252,10 @@ def _make_table_env(
         if not resolved_robot_asset.is_file():
             raise FileNotFoundError(f"FULL_TRAJECTORY_ROBOT_ASSET_MISSING:{resolved_robot_asset}")
         cfg.robot.spawn.usd_path = str(resolved_robot_asset)
+    if self_collision_override is not None:
+        # Diagnostic-only switch.  It is set before scene construction and
+        # never changes the generated asset or rollout action/state path.
+        cfg.robot.spawn.articulation_props.enabled_self_collisions = self_collision_override
     cfg.scene = TableSceneCfg(
         num_envs=num_envs,
         env_spacing=0.75,

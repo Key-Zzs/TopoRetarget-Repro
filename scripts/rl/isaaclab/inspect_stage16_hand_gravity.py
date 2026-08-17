@@ -30,6 +30,11 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--accept-eula", action="store_true")
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run without an Isaac Sim window; GUI is the default for interactive replay.",
+    )
     parser.add_argument("--clip", choices=("hocap_170105", "hocap_170650"), default="hocap_170105")
     parser.add_argument(
         "--hand-gravity-mode",
@@ -47,6 +52,23 @@ def _parser() -> argparse.ArgumentParser:
         "--dynamic-reference",
         action="store_true",
         help="Run a PPO-off, zero-residual production reference-following rollout.",
+    )
+    parser.add_argument(
+        "--self-collision-mode",
+        choices=("production", "diagnostic_off"),
+        default="production",
+        help="Diagnostic A/B only; production retains the C4 self-collision contract.",
+    )
+    parser.add_argument(
+        "--isolate-objects-at-reset",
+        action="store_true",
+        help="Move both task objects to the existing inactive offset once during reset setup.",
+    )
+    parser.add_argument(
+        "--scene-variant",
+        choices=("production_table", "diagnostic_base_no_table"),
+        default="production_table",
+        help="The base scene excludes only C4's table actors for free-space attribution.",
     )
     parser.add_argument(
         "--output-dir",
@@ -119,7 +141,7 @@ def main() -> int:
     os.environ["OMNI_KIT_ACCEPT_EULA"] = "YES"
     from isaaclab.app import AppLauncher
 
-    app_launcher = AppLauncher(headless=True)
+    app_launcher = AppLauncher(headless=args.headless)
     app = app_launcher.app
     env = None
     try:
@@ -138,16 +160,78 @@ def main() -> int:
         robot_usd_path = (
             None if args.hand_gravity_mode == "current_off" else _materialize_gravity_on_ablation()
         )
-        env = _make_table_env(
-            clip=clip,
-            num_envs=1,
-            start_index=int(start["start_index"]),
-            mode=ContactRewardMode.AGGREGATE_V3,
-            stage="C4",
-            robot_usd_path=robot_usd_path,
-        )
+        self_collision_override = None if args.self_collision_mode == "production" else False
+        if args.scene_variant == "production_table":
+            env = _make_table_env(
+                clip=clip,
+                num_envs=1,
+                start_index=int(start["start_index"]),
+                mode=ContactRewardMode.AGGREGATE_V3,
+                stage="C4",
+                robot_usd_path=robot_usd_path,
+                self_collision_override=self_collision_override,
+            )
+        else:
+            from toporetarget.rl.environments.isaaclab_backend import (
+                ppo26d_reference_tracking_env,
+            )
+            from toporetarget.rl.environments.isaaclab_backend import (
+                ppo26d_reference_tracking_env_cfg as ppo_cfg,
+            )
+
+            cfg = ppo_cfg.IsaacPPO26DReferenceTrackingEnvCfg()
+            ppo_cfg.configure_stage16d_ppo26d(
+                cfg, num_envs=1, clip=clip, rsi=False, critical_dr=False
+            )
+            ppo_cfg.configure_stage16d_contact_reward(
+                cfg,
+                mode=ContactRewardMode.AGGREGATE_V3,
+                reference_root=(
+                    REPO_ROOT / ".local/reports/stage16d_reference_kinematics_v2/references"
+                ),
+                contact_reward_contract=(
+                    REPO_ROOT
+                    / ".local/reports/stage16d_reward_v3_pairforce_unblock"
+                    / "contact_reward_contract.json"
+                ),
+                contact_mask_root=REPO_ROOT / ".local/reports/stage16d_reward_v3_contact",
+            )
+            ppo_cfg.configure_stage16_p3_p4_curriculum(
+                cfg,
+                curriculum_contract_path=(
+                    REPO_ROOT / "configs/rl/stage16/stage16_gravity_friction_curriculum_v1.yaml"
+                ),
+                stage="C4",
+            )
+            cfg.stage16d_fixed_clip = clip
+            cfg.evaluation_reset_reference_indices = (int(start["start_index"]),)
+            if robot_usd_path is not None:
+                cfg.robot.spawn.usd_path = str(robot_usd_path)
+            if self_collision_override is not None:
+                cfg.robot.spawn.articulation_props.enabled_self_collisions = self_collision_override
+            env = ppo26d_reference_tracking_env.IsaacPPO26DReferenceTrackingEnv(cfg)
         env.cfg.ppo26d_full_horizon_evaluation = True
         env.reset(seed=20260817)
+        if args.isolate_objects_at_reset:
+            inactive_position = env.scene.env_origins + torch.tensor(
+                env.cfg.inactive_object_scene_offset, dtype=torch.float32, device=env.device
+            )
+            inactive_state = torch.cat(
+                (
+                    inactive_position,
+                    torch.tensor([1.0, 0.0, 0.0, 0.0], device=env.device).expand(env.num_envs, -1),
+                    torch.zeros((env.num_envs, 6), device=env.device),
+                ),
+                dim=-1,
+            )
+            # Setup-only physical isolation.  The ordinary production action
+            # path remains the sole writer during the subsequent static/dynamic
+            # diagnostic interval.
+            env._object_170105.write_root_state_to_sim(inactive_state)
+            env._object_170650.write_root_state_to_sim(inactive_state)
+            env.scene.write_data_to_sim()
+            env.sim.forward()
+            env.scene.update(env.physics_dt)
         stage = omni.usd.get_context().get_stage()
         if stage is None:
             raise RuntimeError("HAND_GRAVITY_RUNTIME_STAGE_UNAVAILABLE")
@@ -201,11 +285,15 @@ def main() -> int:
                 "object_170650_gravity_enabled": not bool(
                     env.cfg.object_170650.spawn.rigid_props.disable_gravity
                 ),
-                "table_static": True,
+                "table_static": args.scene_variant == "production_table",
+                "table_present": args.scene_variant == "production_table",
                 "table_kinematic": True,
                 "hand_gravity_enabled": hand_gravity_enabled,
                 "virtual_wrist_gravity_enabled": virtual_wrist_gravity_enabled,
                 "requested_hand_gravity_mode": args.hand_gravity_mode,
+                "self_collision_mode": args.self_collision_mode,
+                "objects_isolated_at_reset": args.isolate_objects_at_reset,
+                "scene_variant": args.scene_variant,
                 "inspection": "live_composed_production_stage_per_rigid_body",
             },
         )
@@ -238,6 +326,9 @@ def main() -> int:
                 "rotation_velocity_limit_radps": profile.rotation_velocity_limit_radps,
                 "hand_gravity_enabled": hand_gravity_enabled,
                 "virtual_wrist_gravity_enabled": virtual_wrist_gravity_enabled,
+                "self_collision_mode": args.self_collision_mode,
+                "objects_isolated_at_reset": args.isolate_objects_at_reset,
+                "scene_variant": args.scene_variant,
             },
         )
         if args.static_hold_steps < 0:
