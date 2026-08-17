@@ -252,12 +252,13 @@ def _frozen_policy_ab_rows(output: Path) -> list[dict[str, object]]:
                     "Tip contact recall": (
                         float(true_positive / reference_positive) if reference_positive else None
                     ),
-                    "Object z delta m": float(object_pose[-1, 2] - object_pose[0, 2]),
+                    "Object lift delta z m": float(object_pose[-1, 2] - object_pose[0, 2]),
                     "Final object position error m": float(
                         frame_zero["object_tracking_error_m"]["final"]
                     ),
                     "Contact steps": int(frame_zero["contact_step_count"]),
                     "Termination reason": int(frame_zero["termination_reason"]),
+                    "Penetration": evaluation["inter_finger_penetration"],
                     "Frames": int(wrist_target.shape[0]),
                 }
             )
@@ -469,8 +470,8 @@ def main() -> int:
                         if on["Tip contact recall"] is None or off["Tip contact recall"] is None
                         else float(on["Tip contact recall"]) - float(off["Tip contact recall"])
                     ),
-                    "Delta object z m (ON-OFF)": float(on["Object z delta m"])
-                    - float(off["Object z delta m"]),
+                    "Delta object lift z m (ON-OFF)": float(on["Object lift delta z m"])
+                    - float(off["Object lift delta z m"]),
                 }
             )
         if frozen_policy_deltas:
@@ -724,9 +725,9 @@ def main() -> int:
                 "Each pair uses the same immutable C4 checkpoint, reference, clip, and frame-zero "
                 "seed. These are diagnostic physical traces, not qualification passes.",
                 "",
-                "| Reward | Clip | Hand gravity | Cmd to actual rot (deg) | "
-                "No hand pair fraction | Tip recall |",
-                "| --- | --- | --- | ---: | ---: | ---: |",
+                "| Reward | Clip | Hand g | Wrist rot (deg) | Finger err (rad) | Tip recall | "
+                "No-hand frac | Lift dz (m) | Final obj err (m) | Penetration |",
+                "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
             ]
         )
         for row in frozen_policy_rows:
@@ -735,7 +736,10 @@ def main() -> int:
             lines.append(
                 f"| {row['Reward']} | {row['Clip']} | {row['Hand gravity']} | "
                 f"{float(row['Wrist cmd to actual deg']):.2f} | "
-                f"{float(row['No hand-object pair fraction']):.3f} | {recall_text} |"
+                f"{float(row['Finger cmd to actual rad']):.3f} | {recall_text} | "
+                f"{float(row['No hand-object pair fraction']):.3f} | "
+                f"{float(row['Object lift delta z m']):.4f} | "
+                f"{float(row['Final object position error m']):.4f} | {row['Penetration']} |"
             )
     if replay_receipts:
         lines.extend(
