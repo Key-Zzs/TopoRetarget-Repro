@@ -91,6 +91,15 @@ optimization attribution](rl/C1_PPO_OPTIMIZATION_ATTRIBUTION.md); an
 `INCONCLUSIVE` result due to missing exact PPO-batch evidence remains fail-closed
 and does not authorize formal P3 continuation.
 
+The C0 contact-skill-collapse audit localizes the first transient loss to PPO
+update 3 / 122,880 samples and identifies the frame0-only training reset as the
+primary cause. A frozen uniform-RSI `[0,320]` counterfactual retains 10/10
+deterministic frame-0 contact and lift through update 6, while reward,
+controller, reference, action, and runtime-write contracts remain unchanged.
+C0 physical training therefore defaults to uniform RSI; formal evaluation
+remains frame0, and verification stops before C1. See [contact-skill collapse
+localization](rl/CONTACT_SKILL_COLLAPSE.md).
+
 ### Support resolution reconstruction (implemented, not promoted)
 
 The source-first resolver, stable-pre-contact planar inference, finite runtime

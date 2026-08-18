@@ -78,6 +78,13 @@ instrumentation](rl/C1_SATURATION_INSTRUMENTATION.md)。
 attribution](rl/C1_PPO_OPTIMIZATION_ATTRIBUTION.md)。若缺少 exact PPO batch
 证据而得到 `INCONCLUSIVE`，仍保持 fail-closed，不授权 formal P3 继续。
 
+C0 contact-skill-collapse 审计将第一次瞬时 contact 丢失定位到 PPO update 3 / 122,880
+samples，并确认 frame0-only training reset 是主要原因。冻结的 uniform-RSI `[0,320]`
+反事实在 update 6 之前始终保留 10/10 deterministic frame-0 contact 与 lift，且 reward、
+controller、reference、action 和 runtime-write contract 均未改变。因此 C0 physical
+training 默认恢复 uniform RSI；formal evaluation 仍固定 frame0，验证在 C1 前停止。见
+[contact-skill collapse localization](rl/CONTACT_SKILL_COLLAPSE.md)。
+
 ### Support resolution reconstruction（已实现，不提升）
 
 source-first resolver、stable-pre-contact 平面推断、有限运行时 proxy、几何 audit 以及 object-only 全重力 PhysX A/B
