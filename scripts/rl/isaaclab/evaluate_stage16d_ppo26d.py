@@ -365,6 +365,9 @@ def _initial_trace_snapshot(
             "tracked_link_positions_world_ref", clips, indices
         ),
         "reference_index": indices,
+        "phase_code": torch.clamp(
+            (indices * 7) // max(env.reference_bank.frame_count, 1), min=0, max=6
+        ),
     }
     if env.cfg.ppo26d_reward_contract in {
         "TopoRetargetReferenceTrackingReward26DV2",

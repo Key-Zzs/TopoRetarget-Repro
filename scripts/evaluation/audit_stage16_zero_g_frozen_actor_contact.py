@@ -327,7 +327,15 @@ def _run_episode(
     trace = _prepend_initial_trace(
         _device_trace_to_numpy(env.finish_trace_capture()), initial, all_replicas=False
     )
-    trace["phase"] = _reference_phase(clip, np.asarray(trace["reference_index"], dtype=np.int64))
+    if "phase_code" in trace:
+        phase_names = np.asarray(
+            ("PRE_CONTACT", "APPROACH", "CONTACT", "GRASP", "LIFT", "MANIPULATION", "TERMINAL")
+        )
+        trace["phase"] = phase_names[np.asarray(trace["phase_code"], dtype=np.int64)]
+    else:
+        trace["phase"] = _reference_phase(
+            clip, np.asarray(trace["reference_index"], dtype=np.int64)
+        )
     return {
         "seed": seed,
         "reset_index": reset_index,

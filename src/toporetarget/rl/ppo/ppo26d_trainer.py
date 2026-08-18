@@ -7,7 +7,7 @@ import time
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import torch
 
@@ -165,6 +165,7 @@ class PPO26DTrainer:
         saturation_recorder: SaturationRecorder | None = None,
         pre_gate_failure_callback: Callable[[dict[str, Any], Path], None] | None = None,
         update_policy: bool = True,
+        exact_batch_path: Path | None = None,
     ) -> dict[str, Any]:
         """Collect one PPO update, optionally ending a fixed-budget run exactly.
 
@@ -193,11 +194,14 @@ class PPO26DTrainer:
             "values": [],
         }
         reward_terms: dict[str, list[float]] = {}
+        reward_term_tensors: dict[str, list[torch.Tensor]] = {}
+        reference_indices: list[torch.Tensor] = []
         started = time.perf_counter()
         reference_index_sum = 0.0
         reference_index_count = 0
         for _ in range(steps):
             policy_observation = _policy_observation(observation)
+            reference_indices.append(env._reference_index.detach().clone())
             # This is intentionally the same distribution/sample path as
             # PPOTrainer.act.  The recorder consumes detached copies only.
             with torch.no_grad():
@@ -242,6 +246,7 @@ class PPO26DTrainer:
                     reward_terms.setdefault(name, []).append(
                         float(metric_term.mean().detach().cpu())
                     )
+                    reward_term_tensors.setdefault(name, []).append(term.detach().clone())
             reference_index_sum += float(env._reference_index.float().mean().detach().cpu())
             reference_index_count += 1
             observation = next_observation
@@ -277,6 +282,52 @@ class PPO26DTrainer:
         }
         if not all(finite.values()):
             raise FloatingPointError("PPO26D rollout or GAE contains NaN/Inf")
+        advantage_diagnostic = {
+            "mean": float(advantages.mean().detach().cpu()),
+            "std": float(advantages.std(unbiased=False).detach().cpu()),
+            "p01": float(torch.quantile(advantages.float(), 0.01).detach().cpu()),
+            "p99": float(torch.quantile(advantages.float(), 0.99).detach().cpu()),
+        }
+        return_diagnostic = {
+            "mean": float(returns.mean().detach().cpu()),
+            "std": float(returns.std(unbiased=False).detach().cpu()),
+            "p01": float(torch.quantile(returns.float(), 0.01).detach().cpu()),
+            "p99": float(torch.quantile(returns.float(), 0.99).detach().cpu()),
+        }
+        value_error = returns - storage.values
+        value_diagnostic = {
+            "initial_value_mean": float(storage.values.mean().detach().cpu()),
+            "error_mean": float(value_error.mean().detach().cpu()),
+            "error_rmse": float(value_error.square().mean().sqrt().detach().cpu()),
+        }
+        if exact_batch_path is not None:
+            save_checkpoint(
+                exact_batch_path,
+                {
+                    "schema_version": "Stage16ContactCollapseExactPPOBatchV1",
+                    "cumulative_samples_before": self.cumulative_samples,
+                    "rollout_steps": storage.rollout_steps,
+                    "num_envs": storage.num_envs,
+                    "observations": storage.observations.detach().cpu(),
+                    "actions": storage.actions.detach().cpu(),
+                    "old_log_probs": storage.log_probs.detach().cpu(),
+                    "rewards": storage.rewards.detach().cpu(),
+                    "dones": storage.dones.detach().cpu(),
+                    "values": storage.values.detach().cpu(),
+                    "returns": returns.detach().cpu(),
+                    "advantages": advantages.detach().cpu(),
+                    "last_value": last_value.detach().cpu(),
+                    "reference_indices": torch.stack(reference_indices).detach().cpu(),
+                    "reward_terms": {
+                        name: torch.stack(values).detach().cpu()
+                        for name, values in reward_term_tensors.items()
+                    },
+                    "rng_before_optimizer_update": rng_state(),
+                    "advantage_diagnostic": advantage_diagnostic,
+                    "return_diagnostic": return_diagnostic,
+                    "value_diagnostic": value_diagnostic,
+                },
+            )
         safety_before_update = self._policy_safety_metrics(
             storage.observations,
             sampled_actions=storage.actions,
@@ -341,6 +392,9 @@ class PPO26DTrainer:
                     "normalizer_frozen_during_rollout_and_update": True,
                 },
                 "ppo": {"updates": 0.0, "optimizer_steps": 0.0},
+                "advantage_diagnostic": advantage_diagnostic,
+                "return_diagnostic": return_diagnostic,
+                "value_diagnostic": value_diagnostic,
                 "actor_parameter_hash_before": actor_hash,
                 "actor_parameter_hash_after": actor_hash,
                 "critic_parameter_hash_before": critic_hash,
@@ -360,6 +414,16 @@ class PPO26DTrainer:
             policy_std_before = distribution_before.std.detach().clone()
         actor_before = parameter_hash(self.model, "actor")
         critic_before = parameter_hash(self.model, "critic")
+        actor_parameters_before = {
+            name: value.detach().clone()
+            for name, value in self.model.state_dict().items()
+            if name.startswith("actor") or name == "log_std_parameter"
+        }
+        critic_parameters_before = {
+            name: value.detach().clone()
+            for name, value in self.model.state_dict().items()
+            if name.startswith("critic")
+        }
         update_started = time.perf_counter()
         update = self.trainer.update(storage, last_value)
         ppo_update_s = time.perf_counter() - update_started
@@ -406,6 +470,17 @@ class PPO26DTrainer:
         normalizer_count_after_refresh = float(self.trainer.normalizer.count)
         actor_after = parameter_hash(self.model, "actor")
         critic_after = parameter_hash(self.model, "critic")
+
+        def parameter_delta_norm(before: dict[str, torch.Tensor]) -> float:
+            current = self.model.state_dict()
+            squared = sum(
+                (current[name] - value).double().square().sum() for name, value in before.items()
+            )
+            return float(torch.sqrt(squared).detach().cpu())
+
+        actor_parameter_update_norm = parameter_delta_norm(actor_parameters_before)
+        critic_parameter_update_norm = parameter_delta_norm(critic_parameters_before)
+        log_std_parameter = cast(torch.Tensor, self.model.log_std_parameter)
         self.cumulative_samples += storage.sample_count
         elapsed = time.perf_counter() - started
         if not all(bool(torch.isfinite(torch.as_tensor(value)).all()) for value in update.values()):
@@ -433,6 +508,14 @@ class PPO26DTrainer:
                 "normalizer_frozen_during_rollout_and_update": True,
             },
             "ppo": update,
+            "advantage_diagnostic": advantage_diagnostic,
+            "return_diagnostic": return_diagnostic,
+            "value_diagnostic": value_diagnostic,
+            "actor_parameter_update_norm": actor_parameter_update_norm,
+            "critic_parameter_update_norm": critic_parameter_update_norm,
+            "policy_log_std_mean": float(torch.mean(log_std_parameter).detach().cpu()),
+            "policy_log_std_min": float(torch.amin(log_std_parameter).detach().cpu()),
+            "policy_log_std_max": float(torch.amax(log_std_parameter).detach().cpu()),
             "action_group_diagnostics": action_group_diagnostics,
             "actor_parameter_hash_before": actor_before,
             "actor_parameter_hash_after": actor_after,

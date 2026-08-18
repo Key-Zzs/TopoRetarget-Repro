@@ -73,6 +73,30 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Collect one bounded instrumented rollout and assert zero PPO optimizer updates.",
     )
+    parser.add_argument(
+        "--training-reset",
+        choices=("frame0", "uniform_rsi"),
+        default=None,
+        help=(
+            "Training reset override. C0 defaults to the contact-preserving historical "
+            "uniform RSI contract; later physical stages default to frame 0."
+        ),
+    )
+    parser.add_argument(
+        "--per-update-snapshot-root",
+        type=Path,
+        help="Atomically persist a full actor/critic/optimizer/normalizer/RNG snapshot per update.",
+    )
+    parser.add_argument(
+        "--exact-batch-root",
+        type=Path,
+        help="Persist the exact observations/actions/log-probs/rewards/GAE payload per update.",
+    )
+    parser.add_argument(
+        "--max-stage-samples",
+        type=int,
+        help="Bound a preregistered C0 ablation below the formal full-stage budget.",
+    )
     return parser
 
 
@@ -94,7 +118,13 @@ def _output_dir(root: Path, mode: ContactRewardMode, clip: str, stage: str) -> P
     return root / directory / clip / stage.lower()
 
 
-def _validate_environment(contract: dict[str, Any], *, clip: str, stage: str) -> None:
+def _resolve_training_reset(stage: str, override: str | None) -> str:
+    return override or ("uniform_rsi" if stage == "C0" else "frame0")
+
+
+def _validate_environment(
+    contract: dict[str, Any], *, clip: str, stage: str, training_reset: str
+) -> None:
     active = contract.get("ppo26d")
     physics = contract.get("gravity_friction_curriculum")
     if not isinstance(active, dict) or not isinstance(physics, dict):
@@ -105,7 +135,8 @@ def _validate_environment(contract: dict[str, Any], *, clip: str, stage: str) ->
         or physics.get("stage") != stage
         or physics.get("support") != "finite_inferred_table_proxy_v1"
         or physics.get("table_actor_active") is not True
-        or physics.get("mid_trajectory_rsi") != "disabled"
+        or physics.get("mid_trajectory_rsi")
+        != ("uniform[0,320]" if training_reset == "uniform_rsi" else "disabled")
         or active.get("object_rollout_state_writes") != 0
         or active.get("wrist_root_state_writes_during_step") != 0
     ):
@@ -163,15 +194,29 @@ def main() -> int:
     if args.num_envs <= 0:
         raise ValueError("FULL_TRAJECTORY_P3_NUM_ENVS_INVALID")
     mode = ContactRewardMode.parse(args.contact_mode)
+    training_reset = _resolve_training_reset(args.stage, args.training_reset)
     if args.stage == "C0" and args.resume_checkpoint is not None:
         raise ValueError("FULL_TRAJECTORY_P3_C0_RESUME_FORBIDDEN")
     if args.stage != "C0" and args.resume_checkpoint is None:
         raise ValueError("FULL_TRAJECTORY_P3_PREDECESSOR_REQUIRED")
     if args.no_update_smoke and args.saturation_instrumentation_root is None:
         raise ValueError("SATURATION_INSTRUMENTATION_SMOKE_ROOT_REQUIRED")
+    if training_reset == "uniform_rsi" and args.stage != "C0":
+        raise ValueError("CONTACT_COLLAPSE_UNIFORM_RSI_ABLATION_IS_C0_ONLY")
+    if (args.per_update_snapshot_root is None) != (args.exact_batch_root is None):
+        raise ValueError("CONTACT_COLLAPSE_SNAPSHOT_AND_BATCH_ROOTS_MUST_BE_PAIRED")
     budget = physical_stage_budget(args.stage)
     if budget.additional_samples % args.num_envs:
         raise ValueError("FULL_TRAJECTORY_P3_BUDGET_ALIGNMENT_INVALID")
+    target_stage_samples = (
+        budget.additional_samples if args.max_stage_samples is None else int(args.max_stage_samples)
+    )
+    if (
+        target_stage_samples <= 0
+        or target_stage_samples > budget.additional_samples
+        or target_stage_samples % args.num_envs
+    ):
+        raise ValueError("CONTACT_COLLAPSE_ABLATION_BUDGET_INVALID")
     start, support_hash, reference_hash = _start_and_hashes(args.clip)
     output = _output_dir(args.output_root.resolve(), mode, args.clip, args.stage)
     output.mkdir(parents=True, exist_ok=True)
@@ -188,10 +233,16 @@ def main() -> int:
             start_index=int(start["start_index"]),
             mode=mode,
             stage=args.stage,
+            training_rsi=training_reset == "uniform_rsi",
         )
         env.reset(seed=20260814)
         environment = env.contract_report()
-        _validate_environment(environment, clip=args.clip, stage=args.stage)
+        _validate_environment(
+            environment,
+            clip=args.clip,
+            stage=args.stage,
+            training_reset=training_reset,
+        )
         trainer = PPO26DTrainer(observation_dim=764, device=str(env.device))
         if args.stage == "C0":
             selected = _selected_zero_g_checkpoint(mode, args.clip)
@@ -223,6 +274,7 @@ def main() -> int:
             "contact_mode": mode.value,
             "curriculum_stage": args.stage,
             "stage_budget_samples": budget.additional_samples,
+            "target_stage_samples": target_stage_samples,
             "selected_num_envs": args.num_envs,
             "episode_start": start,
             "support_contract_hash": support_hash,
@@ -230,6 +282,15 @@ def main() -> int:
             "environment": environment,
             "initialization": initialization,
             "old_c2_checkpoint_resumed": False,
+            "training_reset": training_reset,
+            "per_update_snapshot_root": (
+                None
+                if args.per_update_snapshot_root is None
+                else str(args.per_update_snapshot_root.resolve())
+            ),
+            "exact_batch_root": (
+                None if args.exact_batch_root is None else str(args.exact_batch_root.resolve())
+            ),
         }
         _write(output / "training_config.json", config)
         metrics_path = output / "training_metrics.jsonl"
@@ -289,11 +350,14 @@ def main() -> int:
             )
 
         stage_samples = 0
+        update_index = 0
+        update_snapshots: list[dict[str, Any]] = []
         checkpoint: Path | None = None
         finite = True
         with metrics_path.open("w", encoding="utf-8") as stream:
-            while stage_samples < budget.additional_samples:
-                remaining = budget.additional_samples - stage_samples
+            while stage_samples < target_stage_samples:
+                update_index += 1
+                remaining = target_stage_samples - stage_samples
                 rollout_length = min(
                     Stage16DPPO26DTrainingConfigV1().rollout_length,
                     remaining // args.num_envs,
@@ -304,6 +368,11 @@ def main() -> int:
                     saturation_recorder=saturation_recorder,
                     pre_gate_failure_callback=persist_saturation_warning_snapshot,
                     update_policy=not args.no_update_smoke,
+                    exact_batch_path=(
+                        None
+                        if args.exact_batch_root is None
+                        else args.exact_batch_root.resolve() / f"update_{update_index:04d}.pt"
+                    ),
                 )
                 metric.pop("last_policy_observation")
                 stage_samples += int(metric["samples"])
@@ -311,6 +380,7 @@ def main() -> int:
                 finite &= bool(metric["finite"])
                 metric.update(
                     {
+                        "update_index": update_index,
                         "curriculum_stage": args.stage,
                         "stage_samples": stage_samples,
                         "cumulative_samples": cumulative_samples,
@@ -319,6 +389,37 @@ def main() -> int:
                 )
                 stream.write(json.dumps(metric, sort_keys=True) + "\n")
                 stream.flush()
+                if args.per_update_snapshot_root is not None:
+                    update_checkpoint = (
+                        args.per_update_snapshot_root.resolve()
+                        / f"update_{update_index:04d}_samples_{stage_samples:07d}.pt"
+                    )
+                    update_payload = trainer.checkpoint_payload(
+                        environment_contract=env.contract_report(),
+                        selected_num_envs=args.num_envs,
+                        extra_payload={
+                            "contact_collapse_update_index": update_index,
+                            "contact_collapse_stage_samples": stage_samples,
+                            "contact_collapse_cumulative_samples": cumulative_samples,
+                            "contact_collapse_training_reset": training_reset,
+                            "source_zero_g_checkpoint": initialization["checkpoint"],
+                            "source_zero_g_checkpoint_sha256": initialization["checkpoint_sha256"],
+                        },
+                    )
+                    save_checkpoint(update_checkpoint, update_payload)
+                    update_snapshots.append(
+                        {
+                            "update": update_index,
+                            "stage_samples": stage_samples,
+                            "policy_training_samples": trainer.cumulative_samples,
+                            "checkpoint": str(update_checkpoint),
+                            "checkpoint_sha256": _sha256(update_checkpoint),
+                            "exact_batch": str(
+                                args.exact_batch_root.resolve() / f"update_{update_index:04d}.pt"
+                            ),
+                        }
+                    )
+                    _write(output / "per_update_snapshots.json", {"updates": update_snapshots})
                 if args.no_update_smoke:
                     _write(
                         output / "instrumentation_smoke.json",
@@ -345,6 +446,9 @@ def main() -> int:
         )
         payload.pop("cumulative_samples", None)
         payload.update(metadata)
+        payload["mid_trajectory_rsi"] = (
+            "uniform[0,320]" if training_reset == "uniform_rsi" else "disabled"
+        )
         payload["clip"] = args.clip
         payload["selected_num_envs"] = args.num_envs
         checkpoint = (
@@ -354,13 +458,21 @@ def main() -> int:
         writes = env.rollout_state_write_report()
         passed = (
             finite
-            and stage_samples == budget.additional_samples
+            and stage_samples == target_stage_samples
             and int(writes["object_rollout_state_writes"]) == 0
             and int(writes["wrist_root_state_writes_during_step"]) == 0
         )
         result = {
             "schema_version": FULL_TRAJECTORY_P3_RESULT_SCHEMA,
-            "status": "P3_FULL_TRAJECTORY_STAGE_COMPLETE" if passed else "FAIL",
+            "status": (
+                (
+                    "P3_FULL_TRAJECTORY_STAGE_COMPLETE"
+                    if target_stage_samples == budget.additional_samples
+                    else "CONTACT_COLLAPSE_ABLATION_HORIZON_COMPLETE"
+                )
+                if passed
+                else "FAIL"
+            ),
             "clip": args.clip,
             "contact_mode": mode.value,
             "curriculum_stage": args.stage,

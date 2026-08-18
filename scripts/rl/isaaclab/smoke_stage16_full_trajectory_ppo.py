@@ -74,6 +74,7 @@ def _make_table_env(
     stage: str = "C0",
     robot_usd_path: Path | None = None,
     self_collision_override: bool | None = None,
+    training_rsi: bool = False,
 ) -> Any:
     """Construct the production PPO environment with fixed finite supports."""
 
@@ -176,7 +177,7 @@ def _make_table_env(
             assert isinstance(physical, dict)
             physical["support"] = "finite_inferred_table_proxy_v1"
             physical["table_actor_active"] = True
-            physical["mid_trajectory_rsi"] = "disabled"
+            physical["mid_trajectory_rsi"] = "uniform[0,320]" if training_rsi else "disabled"
             physical["table_resting_reset_semantics"] = "TABLE_RESTING_RESET_SEMANTICS_V1"
             return report
 
@@ -218,7 +219,7 @@ def _make_table_env(
 
     cfg = ppo_cfg.IsaacPPO26DReferenceTrackingEnvCfg()
     ppo_cfg.configure_stage16d_ppo26d(
-        cfg, num_envs=num_envs, clip=clip, rsi=False, critical_dr=False
+        cfg, num_envs=num_envs, clip=clip, rsi=training_rsi, critical_dr=False
     )
     selected_mode = ContactRewardMode.AGGREGATE_V3 if mode is None else mode
     if selected_mode is ContactRewardMode.AGGREGATE_V3:
@@ -268,7 +269,7 @@ def _make_table_env(
         object_170650_support_contact=support_sensor("Object170650", "Support170650"),
     )
     cfg.stage16d_fixed_clip = clip
-    cfg.evaluation_reset_reference_indices = (start_index,) * num_envs
+    cfg.evaluation_reset_reference_indices = None if training_rsi else (start_index,) * num_envs
     cfg.stage16_support_mode = "finite_inferred_table_proxy_v1"
     cfg.stage16_external_guidance = False
     return TableSupportedEnv(cfg)

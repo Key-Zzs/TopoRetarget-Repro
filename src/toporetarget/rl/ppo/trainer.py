@@ -98,6 +98,9 @@ class PPOTrainer:
             "kl": 0.0,
             "clip_fraction": 0.0,
             "grad_norm": 0.0,
+            "actor_grad_norm": 0.0,
+            "critic_grad_norm": 0.0,
+            "log_std_grad_norm": 0.0,
             "ratio": 0.0,
             "action_std": 0.0,
         }
@@ -139,6 +142,28 @@ class PPOTrainer:
                 )
                 self.optimizer.zero_grad(set_to_none=True)
                 loss.backward()
+                actor_grad_norm = torch.linalg.vector_norm(
+                    torch.stack(
+                        [
+                            parameter.grad.detach().norm()
+                            for parameter in self.model.actor.parameters()
+                            if parameter.grad is not None
+                        ]
+                    )
+                )
+                critic_grad_norm = torch.linalg.vector_norm(
+                    torch.stack(
+                        [
+                            parameter.grad.detach().norm()
+                            for parameter in self.model.critic.parameters()
+                            if parameter.grad is not None
+                        ]
+                    )
+                )
+                log_std_grad = self.model.log_std_parameter.grad
+                if log_std_grad is None:
+                    raise RuntimeError("PPO log-std parameter gradient is missing")
+                log_std_grad_norm = log_std_grad.detach().norm()
                 grad_norm = torch.nn.utils.clip_grad_norm_(
                     self.model.parameters(), self.config.max_grad_norm
                 )
@@ -158,6 +183,9 @@ class PPOTrainer:
                     ((ratio - 1.0).abs() > self.config.clip_epsilon).float().mean().detach()
                 )
                 accumulators["grad_norm"] += float(grad_norm.detach())
+                accumulators["actor_grad_norm"] += float(actor_grad_norm.detach())
+                accumulators["critic_grad_norm"] += float(critic_grad_norm.detach())
+                accumulators["log_std_grad_norm"] += float(log_std_grad_norm.detach())
                 accumulators["ratio"] += float(ratio.mean().detach())
                 accumulators["action_std"] += float(distribution.std.mean().detach())
                 updates += 1

@@ -843,6 +843,13 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
                 "tracked_link_positions_world_ref", self._clip_index, self._reference_index
             ),
             "reference_index": self._reference_index,
+            # Existing Stage16 timeline semantic used by saturation diagnostics.
+            # It is reference-index-only and cannot affect the control path.
+            "phase_code": torch.clamp(
+                (self._reference_index * 7) // max(self.reference_bank.frame_count, 1),
+                min=0,
+                max=6,
+            ),
         }
         if isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV2):
             values.update(
