@@ -131,7 +131,9 @@ def _mean(values: list[float | int | None]) -> float | None:
     return None if not finite else float(np.mean(finite))
 
 
-def _snapshot_specs(snapshot_root: Path | None, *, source_only: bool) -> list[dict[str, object]]:
+def _snapshot_specs(
+    snapshot_root: Path | None, *, source_only: bool, stage: str
+) -> list[dict[str, object]]:
     selection = _selection("aggregate_v3", "hocap_170105")
     specs: list[dict[str, object]] = [
         {
@@ -153,11 +155,15 @@ def _snapshot_specs(snapshot_root: Path | None, *, source_only: bool) -> list[di
 
     for path in paths:
         payload = torch.load(path, map_location="cpu", weights_only=False)
-        update = int(payload["contact_collapse_update_index"])
-        samples = int(payload["contact_collapse_stage_samples"])
+        raw_update = payload.get("contact_preservation_update_index")
+        raw_samples = payload.get("contact_preservation_stage_samples")
+        update = int(payload["contact_collapse_update_index"] if raw_update is None else raw_update)
+        samples = int(
+            payload["contact_collapse_stage_samples"] if raw_samples is None else raw_samples
+        )
         specs.append(
             {
-                "label": f"U{update}",
+                "label": f"{stage}_U{update}",
                 "update": update,
                 "samples": samples,
                 "checkpoint": str(path),
@@ -173,6 +179,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--snapshot-root", type=Path)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--episodes", type=int, default=10)
+    parser.add_argument("--stage", choices=("C0", "C1"), default="C0")
     parser.add_argument("--source-only", action="store_true")
     return parser
 
@@ -185,7 +192,7 @@ def main() -> int:
         raise ValueError("CONTACT_COLLAPSE_EVALUATION_FROZEN_AT_10_EPISODES")
     output = args.output_root.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    specs = _snapshot_specs(args.snapshot_root, source_only=args.source_only)
+    specs = _snapshot_specs(args.snapshot_root, source_only=args.source_only, stage=args.stage)
     pairs = _load_pairs("hocap_170105", args.episodes)
     seeds = [int(pair["seed"]) for pair in pairs]
     start_index = _full_start("hocap_170105")
@@ -222,7 +229,7 @@ def main() -> int:
             num_envs=1,
             start_index=start_index,
             mode=ContactRewardMode.AGGREGATE_V3,
-            stage="C0",
+            stage=args.stage,
         )
         snapshot_rows: list[dict[str, object]] = []
         per_finger_rows: list[dict[str, object]] = []

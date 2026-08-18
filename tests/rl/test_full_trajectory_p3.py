@@ -43,6 +43,23 @@ def test_resume_accepts_direct_predecessor_with_identical_contract() -> None:
     assert resumed["source_stage"] == "C0"
 
 
+def test_uniform_rsi_checkpoint_metadata_continues_to_c1() -> None:
+    payload = _checkpoint()
+    payload["mid_trajectory_rsi"] = "uniform[0,320]"
+    resumed = validate_resume_metadata(
+        payload,
+        clip="hocap_170105",
+        mode="aggregate_v3",
+        stage="C1",
+        num_envs=1024,
+        episode_start=_start(),
+        support_contract_hash="a" * 64,
+        reference_hash="b" * 64,
+        training_reset="uniform_rsi",
+    )
+    assert resumed["source_stage"] == "C0"
+
+
 def test_resume_rejects_episode_start_drift() -> None:
     with pytest.raises(ValueError, match="EPISODE_START_DRIFT"):
         validate_resume_metadata(

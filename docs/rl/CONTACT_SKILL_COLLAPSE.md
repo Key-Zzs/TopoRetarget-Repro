@@ -67,14 +67,19 @@ an emergent explanation for this collapse.
 
 ## Production contract
 
-C0 physical PPO training defaults to uniform RSI over every reference frame
-`[0,320]`. Deterministic formal evaluation remains frame-0 full-start. An
-explicit `--training-reset frame0` remains available only for reproduction and
-ablation. Later physical stages retain their existing frame-0 default.
+C0 and the immediately continuous C1 verification use uniform RSI over every
+reference frame `[0,320]` for training only. Deterministic formal evaluation
+remains frame-0 full-start. An explicit `--training-reset frame0` remains
+available only for reproduction and ablation.
 
-The bounded fixed-C0 verification stops at U6 / 245,760 samples, before C1. It
-preserves 10/10 frame-0 contact and lift at every saved update. This result does
-not qualify C1--C4, full gravity, or real-world manipulation.
+The contact-stable continuation resumed the exact durable B/U6 state through
+the complete C0 and C1 budgets. Contact remains 10/10 at both endpoints, but
+the C0 endpoint has only grazing contact (0.0094 contact fraction) and 0/10
+lift; C1 at 0.25g / 1.75x friction also remains 10/10 contact but 0/10 lift.
+Wrist command-to-actual tracking remains small, so this is not a controller
+regression. The continuation is therefore not authorization for C2--C4,
+four-lineage reruns, full gravity, or real-world manipulation. The local
+receipt root is `.local/reports/stage16_contact_stable_physical_continuation/`.
 
 Run-specific checkpoints, exact PPO batches, traces, formulas, command tables,
 and replay commands remain under the ignored local report root:

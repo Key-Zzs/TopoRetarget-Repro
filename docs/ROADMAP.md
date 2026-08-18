@@ -97,8 +97,11 @@ primary cause. A frozen uniform-RSI `[0,320]` counterfactual retains 10/10
 deterministic frame-0 contact and lift through update 6, while reward,
 controller, reference, action, and runtime-write contracts remain unchanged.
 C0 physical training therefore defaults to uniform RSI; formal evaluation
-remains frame0, and verification stops before C1. See [contact-skill collapse
-localization](rl/CONTACT_SKILL_COLLAPSE.md).
+remains frame0. The bounded V3/hocap_170105 continuation completed C0 and C1
+from the exact U6 state: both endpoints retain 10/10 frame0 contact, but C0
+and C1 endpoint lift is 0/10, with C1 run at 0.25g / 1.75x friction. This is
+not authorization for C2--C4 or four-lineage reruns. See [contact-skill
+collapse localization](rl/CONTACT_SKILL_COLLAPSE.md).
 
 ### Support resolution reconstruction (implemented, not promoted)
 

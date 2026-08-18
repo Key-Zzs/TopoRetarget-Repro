@@ -22,6 +22,7 @@ def checkpoint_metadata(
     episode_start: Mapping[str, Any],
     support_contract_hash: str,
     reference_hash: str,
+    training_reset: str = "frame0",
 ) -> dict[str, object]:
     """Build immutable lineage metadata for a formal C0--C4 checkpoint."""
 
@@ -31,6 +32,8 @@ def checkpoint_metadata(
         raise ValueError("FULL_TRAJECTORY_P3_STAGE_FORBIDDEN")
     if not 0 <= stage_samples <= budget.additional_samples:
         raise ValueError("FULL_TRAJECTORY_P3_STAGE_SAMPLES_INVALID")
+    if training_reset not in {"frame0", "uniform_rsi"}:
+        raise ValueError("FULL_TRAJECTORY_P3_TRAINING_RESET_INVALID")
     if cumulative_samples < stage_samples or policy_training_samples < 0:
         raise ValueError("FULL_TRAJECTORY_P3_CUMULATIVE_SAMPLES_INVALID")
     start_index = episode_start.get("start_index")
@@ -51,7 +54,7 @@ def checkpoint_metadata(
         "support_contract_hash": support_contract_hash,
         "reference_hash": reference_hash,
         "table_support": "finite_inferred_table_proxy_v1",
-        "mid_trajectory_rsi": "disabled",
+        "mid_trajectory_rsi": "uniform[0,320]" if training_reset == "uniform_rsi" else "disabled",
     }
 
 
@@ -65,12 +68,15 @@ def validate_resume_metadata(
     episode_start: Mapping[str, Any],
     support_contract_hash: str,
     reference_hash: str,
+    training_reset: str = "frame0",
 ) -> dict[str, int | str]:
     """Accept only the direct predecessor with the identical start contract."""
 
     selected_mode = ContactRewardMode.parse(mode)
     if stage not in {"C1", "C2", "C3", "C4"}:
         raise ValueError("FULL_TRAJECTORY_P3_RESUME_TARGET_INVALID")
+    if training_reset not in {"frame0", "uniform_rsi"}:
+        raise ValueError("FULL_TRAJECTORY_P3_TRAINING_RESET_INVALID")
     if payload.get("schema_version") != FULL_TRAJECTORY_P3_CHECKPOINT_SCHEMA:
         raise ValueError("FULL_TRAJECTORY_P3_RESUME_SCHEMA_INVALID")
     if payload.get("clip") != clip or int(payload.get("selected_num_envs", -1)) != num_envs:
@@ -87,7 +93,8 @@ def validate_resume_metadata(
         raise ValueError("FULL_TRAJECTORY_P3_RESUME_REFERENCE_DRIFT")
     if payload.get("table_support") != "finite_inferred_table_proxy_v1":
         raise ValueError("FULL_TRAJECTORY_P3_RESUME_TABLE_SUPPORT_INVALID")
-    if payload.get("mid_trajectory_rsi") != "disabled":
+    expected_rsi = "uniform[0,320]" if training_reset == "uniform_rsi" else "disabled"
+    if payload.get("mid_trajectory_rsi") != expected_rsi:
         raise ValueError("FULL_TRAJECTORY_P3_RESUME_RSI_INVALID")
     cumulative = int(payload.get("cumulative_samples", -1))
     policy_samples = int(payload.get("policy_training_samples", -1))

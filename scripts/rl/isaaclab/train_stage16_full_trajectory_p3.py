@@ -154,6 +154,7 @@ def _restore_resume(
     start: dict[str, Any],
     support_hash: str,
     reference_hash: str,
+    training_reset: str,
 ) -> tuple[dict[str, Any], int]:
     payload = load_checkpoint(checkpoint, map_location=trainer.trainer.device)
     metadata = validate_resume_metadata(
@@ -165,6 +166,7 @@ def _restore_resume(
         episode_start=start,
         support_contract_hash=support_hash,
         reference_hash=reference_hash,
+        training_reset=training_reset,
     )
     trainer.model.load_state_dict(payload["actor_critic"])
     trainer.trainer.optimizer.load_state_dict(payload["optimizer"])
@@ -195,14 +197,10 @@ def main() -> int:
         raise ValueError("FULL_TRAJECTORY_P3_NUM_ENVS_INVALID")
     mode = ContactRewardMode.parse(args.contact_mode)
     training_reset = _resolve_training_reset(args.stage, args.training_reset)
-    if args.stage == "C0" and args.resume_checkpoint is not None:
-        raise ValueError("FULL_TRAJECTORY_P3_C0_RESUME_FORBIDDEN")
     if args.stage != "C0" and args.resume_checkpoint is None:
         raise ValueError("FULL_TRAJECTORY_P3_PREDECESSOR_REQUIRED")
     if args.no_update_smoke and args.saturation_instrumentation_root is None:
         raise ValueError("SATURATION_INSTRUMENTATION_SMOKE_ROOT_REQUIRED")
-    if training_reset == "uniform_rsi" and args.stage != "C0":
-        raise ValueError("CONTACT_COLLAPSE_UNIFORM_RSI_ABLATION_IS_C0_ONLY")
     if (args.per_update_snapshot_root is None) != (args.exact_batch_root is None):
         raise ValueError("CONTACT_COLLAPSE_SNAPSHOT_AND_BATCH_ROOTS_MUST_BE_PAIRED")
     budget = physical_stage_budget(args.stage)
@@ -244,7 +242,7 @@ def main() -> int:
             training_reset=training_reset,
         )
         trainer = PPO26DTrainer(observation_dim=764, device=str(env.device))
-        if args.stage == "C0":
+        if args.stage == "C0" and args.resume_checkpoint is None:
             selected = _selected_zero_g_checkpoint(mode, args.clip)
             initialization = _restore_zero_g_checkpoint(
                 trainer,
@@ -255,6 +253,49 @@ def main() -> int:
             initialization["selection"] = selected
             initialization["fresh_physical_restart"] = True
             cumulative_samples = 0
+            initial_stage_samples = 0
+            initial_update_index = 0
+        elif args.stage == "C0":
+            # This deliberately narrow path continues only the durable U6
+            # uniform-RSI ablation state; it does not admit arbitrary C0 resumes.
+            assert args.resume_checkpoint is not None
+            source = load_checkpoint(args.resume_checkpoint.resolve(), map_location="cpu")
+            if (
+                source.get("schema_version") != "Stage16DPPO26DCheckpointV1"
+                or source.get("clip") != args.clip
+                or int(source.get("selected_num_envs", -1)) != args.num_envs
+                or source.get("contact_collapse_training_reset") != "uniform_rsi"
+                or int(source.get("contact_collapse_update_index", -1)) != 6
+                or int(source.get("contact_collapse_stage_samples", -1)) != 245_760
+                or any(
+                    key not in source
+                    for key in ("actor_critic", "optimizer", "observation_normalization", "rng")
+                )
+            ):
+                raise ValueError("CONTACT_STABLE_C0_U6_RESUME_CONTRACT_INVALID")
+            trainer.model.load_state_dict(source["actor_critic"])
+            trainer.trainer.optimizer.load_state_dict(source["optimizer"])
+            trainer.trainer.normalizer.load_state_dict(source["observation_normalization"])
+            trainer.trainer.normalizer.training = True
+            trainer.cumulative_samples = int(source["cumulative_samples"])
+            restore_rng_state(source["rng"])
+            initial_stage_samples = int(source["contact_collapse_stage_samples"])
+            initial_update_index = int(source["contact_collapse_update_index"])
+            cumulative_samples = initial_stage_samples
+            initialization = {
+                "kind": "CONTACT_STABLE_C0_U6_EXACT_RESUME",
+                "checkpoint": str(args.resume_checkpoint.resolve()),
+                "checkpoint_sha256": _sha256(args.resume_checkpoint.resolve()),
+                "source_stage": "C0",
+                "source_update": initial_update_index,
+                "actor_restored": True,
+                "critic_restored": True,
+                "optimizer_restored": True,
+                "normalizer_restored": True,
+                "rng_restored": True,
+                "sample_counter_restored": True,
+                "fresh_physical_restart": False,
+            }
         else:
             assert args.resume_checkpoint is not None
             initialization, cumulative_samples = _restore_resume(
@@ -267,7 +308,10 @@ def main() -> int:
                 start=start,
                 support_hash=support_hash,
                 reference_hash=reference_hash,
+                training_reset=training_reset,
             )
+            initial_stage_samples = 0
+            initial_update_index = 0
         config = {
             "schema_version": "Stage16FullTrajectoryP3TrainingConfigV1",
             "clip": args.clip,
@@ -349,8 +393,8 @@ def main() -> int:
                 },
             )
 
-        stage_samples = 0
-        update_index = 0
+        stage_samples = initial_stage_samples
+        update_index = initial_update_index
         update_snapshots: list[dict[str, Any]] = []
         checkpoint: Path | None = None
         finite = True
@@ -404,6 +448,10 @@ def main() -> int:
                             "contact_collapse_training_reset": training_reset,
                             "source_zero_g_checkpoint": initialization["checkpoint"],
                             "source_zero_g_checkpoint_sha256": initialization["checkpoint_sha256"],
+                            "contact_preservation_stage": args.stage,
+                            "contact_preservation_update_index": update_index,
+                            "contact_preservation_stage_samples": stage_samples,
+                            "contact_preservation_cumulative_samples": cumulative_samples,
                         },
                     )
                     save_checkpoint(update_checkpoint, update_payload)
@@ -440,6 +488,7 @@ def main() -> int:
             episode_start=start,
             support_contract_hash=support_hash,
             reference_hash=reference_hash,
+            training_reset=training_reset,
         )
         payload = trainer.checkpoint_payload(
             environment_contract=env.contract_report(), selected_num_envs=args.num_envs

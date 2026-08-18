@@ -82,7 +82,10 @@ C0 contact-skill-collapse 审计将第一次瞬时 contact 丢失定位到 PPO u
 samples，并确认 frame0-only training reset 是主要原因。冻结的 uniform-RSI `[0,320]`
 反事实在 update 6 之前始终保留 10/10 deterministic frame-0 contact 与 lift，且 reward、
 controller、reference、action 和 runtime-write contract 均未改变。因此 C0 physical
-training 默认恢复 uniform RSI；formal evaluation 仍固定 frame0，验证在 C1 前停止。见
+training 默认恢复 uniform RSI；formal evaluation 仍固定 frame0。受限的
+V3/hocap_170105 continuation 已从精确 U6 state 完成 C0 和 C1：两个 endpoint 均保留
+10/10 frame0 contact，但 C0/C1 endpoint 的 lift 均为 0/10，C1 physics 为
+0.25g / 1.75x friction。这不授权 C2--C4 或 four-lineage rerun。见
 [contact-skill collapse localization](rl/CONTACT_SKILL_COLLAPSE.md)。
 
 ### Support resolution reconstruction（已实现，不提升）
