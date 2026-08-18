@@ -391,6 +391,10 @@ def main() -> int:
     pid_path.write_text(f"{os.getpid()}\n", encoding="utf-8")
     atomic_write_json(run_dir / "queue_contract.json", _queue_contract(decisions=decisions))
     state = _load_or_initialize_state(run_dir, decisions)
+    # A recovered queue can have ended in INCOMPLETE/TECHNICAL_CRASH.  It must
+    # publish its live status before launching the first remaining stage so
+    # the read-only monitor never reports a stopped queue with an active PID.
+    state["status"] = "RUNNING"
     state["process_alive"] = True
     _persist_state(run_dir, state)
     try:

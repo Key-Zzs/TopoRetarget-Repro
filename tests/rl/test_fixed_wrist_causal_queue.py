@@ -76,3 +76,14 @@ def test_monitor_is_read_only(tmp_path) -> None:
     assert "QUEUE_STATUS=RUNNING" in completed.stdout
     assert "ALL_FOUR_C4_COMPLETE=NO" in completed.stdout
     assert state_path.read_bytes() == before
+
+
+def test_recovered_queue_publishes_running_before_resuming() -> None:
+    runner = (
+        Path(__file__).resolve().parents[2] / "scripts/rl/run_stage16_fixed_wrist_causal_queue.py"
+    )
+    source = runner.read_text(encoding="utf-8")
+    resume = source[source.index("state = _load_or_initialize_state") :]
+    resume = resume[: resume.index("try:")]
+    assert 'state["status"] = "RUNNING"' in resume
+    assert 'state["process_alive"] = True' in resume
