@@ -432,6 +432,19 @@ def test_ppo26d_normalizer_uses_full_rollout_after_frozen_update(monkeypatch) ->
         trainer.collect_and_update(FakeEnv(), rollout_length=41)
 
 
+def test_ppo26d_finite_normalized_observation_limit_is_a_warning() -> None:
+    trainer = PPO26DTrainer(observation_dim=764, device="cpu")
+    large_finite = torch.full((1, 764), 101.0)
+
+    metrics = trainer._policy_safety_metrics(large_finite, phase="test")
+
+    assert metrics["normalized_observation_finite"]
+    assert metrics["normalized_observation_warning"]
+    assert metrics["normalized_observation_abs_max"] == pytest.approx(101.0)
+    with pytest.raises(FloatingPointError, match="PPO26D_NORMALIZED_OBSERVATION_FAIL_FAST"):
+        trainer._policy_safety_metrics(torch.full((1, 764), float("inf")), phase="test")
+
+
 def test_ppo26d_reuses_the_live_environment_observation_between_updates(monkeypatch) -> None:
     class ReferenceBank:
         frame_count = 321

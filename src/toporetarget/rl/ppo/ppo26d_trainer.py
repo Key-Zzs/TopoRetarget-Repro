@@ -95,6 +95,14 @@ class PPO26DTrainer:
             normalized_abs_max = max(normalized_abs_max, float(normalized_abs.max().detach().cpu()))
             normalized_abs_sum += float(normalized_abs.sum().detach().cpu())
             normalized_count += normalized.numel()
+            # Do not pass a non-finite feature through the actor merely to
+            # construct diagnostics: torch.distributions would otherwise
+            # raise a less-specific parameter-validation error first.
+            if not finite:
+                raise FloatingPointError(
+                    "PPO26D_NORMALIZED_OBSERVATION_FAIL_FAST: "
+                    f"phase={phase} finite={finite} abs_max={normalized_abs_max:.6g}"
+                )
             deterministic_action = self.trainer.distribution(observation).mean
             deterministic_saturated += int(
                 (
@@ -136,14 +144,14 @@ class PPO26DTrainer:
                 self.training_contract.action_saturation_fraction_limit
             ),
         }
-        if (
-            not finite
-            or normalized_abs_max > self.training_contract.normalized_observation_abs_limit
-        ):
-            raise FloatingPointError(
-                "PPO26D_NORMALIZED_OBSERVATION_FAIL_FAST: "
-                f"phase={phase} finite={finite} abs_max={normalized_abs_max:.6g}"
-            )
+        # A large but finite normalized feature is a diagnostic warning, not a
+        # numerical-corruption condition.  The fixed-wrist C0--C4 curriculum
+        # must retain its frozen PPO/reference/action contract and continue
+        # through finite performance pathologies; only NaN/Inf makes a PPO
+        # update technically impossible.
+        metrics["normalized_observation_warning"] = bool(
+            normalized_abs_max > self.training_contract.normalized_observation_abs_limit
+        )
         metrics["saturation_warning"] = bool(
             deterministic_fraction > self.training_contract.action_saturation_fraction_limit
         )
