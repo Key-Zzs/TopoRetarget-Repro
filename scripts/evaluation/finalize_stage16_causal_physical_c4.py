@@ -421,8 +421,8 @@ def _write_conclusions_markdown(path: Path, conclusion: dict[str, dict[str, obje
     path.write_text("".join(lines), encoding="utf-8")
 
 
-def _stage_summary(root: Path, directory: str, clip: str, stage: str) -> dict[str, object]:
-    path = root / "training" / directory / clip / stage.lower() / "training_result.json"
+def _stage_summary(training_root: Path, directory: str, clip: str, stage: str) -> dict[str, object]:
+    path = training_root / directory / clip / stage.lower() / "training_result.json"
     value = _read(path)
     warning_root = path.parent / "saturation" / "warnings"
     return {
@@ -437,9 +437,9 @@ def _stage_summary(root: Path, directory: str, clip: str, stage: str) -> dict[st
 
 
 def _simulation_summary(
-    root: Path, directory: str, clip: str, result: dict[str, Any]
+    simulation_root: Path, directory: str, clip: str, result: dict[str, Any]
 ) -> dict[str, object]:
-    trace_root = REPO_ROOT / ".local/sim_data/stage16_causal_physical_c4" / directory / clip
+    trace_root = simulation_root / directory / clip
     episodes = result["episodes"]
     assert isinstance(episodes, list)
     success_count = sum(bool(row["qualified_success"]) for row in episodes if isinstance(row, dict))
@@ -456,6 +456,9 @@ def _write_handoff(
     path: Path,
     *,
     root: Path,
+    training_root: Path,
+    simulation_root: Path,
+    fixed_wrist_runtime_repair: bool,
     results: dict[tuple[str, str], dict[str, Any]],
     latest: list[dict[str, object]],
     conclusions: dict[str, dict[str, dict[str, object]]],
@@ -474,7 +477,7 @@ def _write_handoff(
         "- `PERFORMANCE_PROMOTION_GATE=NO`; promotion is planned-sample completion only.\n",
         "- `REFERENCE_MODIFIED=NO`; `INFERRED_TABLE_ACTIVE=YES`.\n",
         "- `GUIDANCE_ADDED=NO`; `OBJECT_ROLLOUT_WRITE_ADDED=NO`; "
-        "`WRIST_ROOT_ROLLOUT_WRITE_ADDED=NO`.\n\n",
+        "`WRIST_ROOT_ROLLOUT_WRITE_ADDED=NO`.\n",
         "## Curriculum and timeline\n\n",
         "| Stage | Gravity scale | Friction scale | Cumulative samples |\n",
         "| --- | ---: | ---: | ---: |\n",
@@ -488,10 +491,16 @@ def _write_handoff(
         "## Four PPO lineages\n\n",
         "| Reward / clip | C0 | C1 | C2 | C3 | C4 |\n| --- | --- | --- | --- | --- | --- |\n",
     ]
+    if fixed_wrist_runtime_repair:
+        lines.append(
+            "- `FIXED_WRIST_RUNTIME_REPAIR=YES`; "
+            "`PHYSX_ARTICULATION_GRAVITY_OVERRIDE=YES`; `OBJECT_GRAVITY=ON`.\n"
+        )
+    lines.append("\n")
     for directory, _mode, label in MODES:
         for clip in CLIPS:
             stages = [
-                _stage_summary(root, directory, clip, stage)
+                _stage_summary(training_root, directory, clip, stage)
                 for stage in ("C0", "C1", "C2", "C3", "C4")
             ]
             cells = [
@@ -524,7 +533,9 @@ def _write_handoff(
     lines.append("| --- | --- | ---: | ---: | ---: | ---: |\n")
     for directory, _mode, label in MODES:
         for clip in CLIPS:
-            summary = _simulation_summary(root, directory, clip, results[(directory, clip)])
+            summary = _simulation_summary(
+                simulation_root, directory, clip, results[(directory, clip)]
+            )
             lines.append(
                 f"| {label} / {clip} | `{summary['directory']}` | {summary['episode_count']} | "
                 f"{summary['success_count']} | {summary['failure_count']} | "
@@ -551,7 +562,8 @@ def _write_handoff(
             "`EVALUATION_SUITE_HARD_STOP=NO`; `REFERENCE_GEOMETRY_HARD_STOP=NO`.\n\n",
             "`REWARD_V3_CHANGED=NO`; `REWARD_V4_CHANGED=NO`; "
             "`ACTION_BOUND_CHANGED=NO`; `ACTION_MAPPING_CHANGED=NO`; "
-            "`CONTROLLER_CHANGED=NO`; `REFERENCE_CHANGED=NO`; "
+            f"`FIXED_WRIST_RUNTIME_REPAIR={'YES' if fixed_wrist_runtime_repair else 'NO'}`; "
+            "`REFERENCE_CHANGED=NO`; "
             "`INFERRED_TABLE_ACTIVE=YES`; `GUIDANCE_ADDED=NO`; "
             "`HIDDEN_SUPPORT_ADDED=NO`; `OBJECT_ROLLOUT_WRITE_ADDED=NO`; "
             "`WRIST_ROOT_ROLLOUT_WRITE_ADDED=NO`.\n",
@@ -587,9 +599,29 @@ def main() -> int:
     parser.add_argument(
         "--root", type=Path, default=REPO_ROOT / ".local/reports/stage16_causal_physical_c0_c4"
     )
+    parser.add_argument(
+        "--training-root",
+        type=Path,
+        help="Optional separate training root; defaults to <root>/training.",
+    )
+    parser.add_argument(
+        "--simulation-root",
+        type=Path,
+        help="Optional simulation-data root; defaults to the historical C4 export location.",
+    )
+    parser.add_argument(
+        "--fixed-wrist-runtime-repair",
+        action="store_true",
+        help="Record the production PhysX articulation gravity override in the handoff.",
+    )
     parser.add_argument("--start-head", required=True)
     args = parser.parse_args()
     root = args.root.resolve()
+    training_root = (args.training_root or root / "training").resolve()
+    simulation_root = (
+        args.simulation_root
+        or REPO_ROOT / ".local/sim_data/stage16_causal_physical_c4"
+    ).resolve()
     git_receipt = _git_receipt(args.start_head)
     results: dict[tuple[str, str], dict[str, Any]] = {}
     selections: dict[str, dict[str, int]] = {}
@@ -623,7 +655,7 @@ def main() -> int:
             _write_json(suite_root / f"{directory}_{clip}.json", value["evaluation_suite_v2"])
             aggregate = value["evaluation_suite_v2"]["aggregate"]
             checkpoint = value["provenance"]["checkpoint"]
-            training = _read(root / "training" / directory / clip / "c4" / "training_result.json")
+            training = _read(training_root / directory / clip / "c4" / "training_result.json")
             latest.append(
                 {
                     "Clip": clip,
@@ -656,23 +688,32 @@ def main() -> int:
     for directory, _mode, label in MODES:
         for clip in CLIPS:
             selection = selections[f"{directory}/{clip}"]
-            sim = REPO_ROOT / ".local/sim_data/stage16_causal_physical_c4" / directory / clip
-            main = (
-                "conda run -n toporetarget-isaaclab python "
+            sim = simulation_root / directory / clip
+            validation = (
+                "OMNI_KIT_ACCEPT_EULA=YES PYTHONPATH=src conda run -n toporetarget-isaaclab python "
                 "scripts/rl/isaaclab/replay_stage16d_simulation_trace.py "
                 "--accept-eula --headless --max-loops 1 "
                 f"--trace {sim}/episode_{selection['representative_best']:03d}.npz "
-                f"--object {clip} --validation-output {root}/replay/{directory}_{clip}_main.json"
+                f"--object {clip} --qualification {root}/formal/{directory}/{clip}/qualification.json "
+                f"--validation-output {root}/replay/{directory}_{clip}_main.json"
             )
-            failure = (
-                "conda run -n toporetarget-isaaclab python "
-                "scripts/rl/isaaclab/replay_stage16d_simulation_trace.py "
-                "--accept-eula --headless --max-loops 1 "
-                f"--trace {sim}/episode_{selection['representative_failure_or_worst']:03d}.npz "
-                f"--object {clip}"
-            )
+            def gui(episode: int) -> str:
+                return (
+                    "OMNI_KIT_ACCEPT_EULA=YES PYTHONPATH=src conda run -n toporetarget-isaaclab python "
+                    "scripts/rl/isaaclab/replay_stage16d_simulation_trace.py "
+                    "--accept-eula --loop "
+                    f"--trace {sim}/episode_{episode:03d}.npz --object {clip} "
+                    f"--qualification {root}/formal/{directory}/{clip}/qualification.json"
+                )
+            best = gui(selection["representative_best"])
+            median = gui(selection["median_typical"])
+            failure = gui(selection["representative_failure_or_worst"])
             commands.append(
-                f"### {label} / {clip} / C4\n\n`{main}`\n\nFailure/worst replay: `{failure}`\n"
+                f"### {label} / {clip} / C4\n\n"
+                f"Headless validation: `{validation}`\n\n"
+                f"GUI best: `{best}`\n\n"
+                f"GUI median: `{median}`\n\n"
+                f"GUI representative failure: `{failure}`\n"
             )
     (root / "replay").mkdir(parents=True, exist_ok=True)
     (root / "replay" / "visualization_commands.md").write_text(
@@ -680,6 +721,7 @@ def main() -> int:
     )
     summary = {
         "schema_version": "Stage16CausalPhysicalC4SummaryV1",
+        "fixed_wrist_runtime_repair": bool(args.fixed_wrist_runtime_repair),
         "latest_four": latest,
         "replay_selection": selections,
         "legacy_zero_g_sources": str((comparison / "legacy_zero_g_sources.json").resolve()),
@@ -745,7 +787,7 @@ def main() -> int:
     gpu_receipts = {}
     for directory, _mode, _label in MODES:
         for clip in CLIPS:
-            path = root / "training" / directory / clip / "c0" / "gpu_preflight.json"
+            path = training_root / directory / clip / "c0" / "gpu_preflight.json"
             if path.is_file():
                 gpu_receipts[f"{directory}/{clip}"] = _read(path)
     _write_json(root / "resource_usage.json", {"gpu_preflight": gpu_receipts})
@@ -758,6 +800,9 @@ def main() -> int:
     _write_handoff(
         root / "handoff.md",
         root=root,
+        training_root=training_root,
+        simulation_root=simulation_root,
+        fixed_wrist_runtime_repair=bool(args.fixed_wrist_runtime_repair),
         results=results,
         latest=latest,
         conclusions=conclusions,
