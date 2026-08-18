@@ -52,16 +52,15 @@ def _git(*args: str) -> str:
 
 def _read_rows() -> list[dict[str, object]]:
     path = ROOT / "frozen_actor/comparison.csv"
-    if not path.is_file():
-        source_rows = sorted(
-            item
-            for item in (ROOT / "frozen_actor").rglob("episode_*.json")
-            if item.parent.name in {"contact_ready", "full_start"}
-        )
-        if len(source_rows) != 80:
-            raise ValueError(f"ZERO_G_HANDOFF_EXPECTED_80_EPISODE_RECORDS:{len(source_rows)}")
-        raw = [json.loads(item.read_text(encoding="utf-8")) for item in source_rows]
-        _write_csv(path, raw)
+    source_rows = sorted(
+        item
+        for item in (ROOT / "frozen_actor").rglob("episode_*.json")
+        if item.parent.name in {"contact_ready", "full_start"}
+    )
+    if len(source_rows) != 80:
+        raise ValueError(f"ZERO_G_HANDOFF_EXPECTED_80_EPISODE_RECORDS:{len(source_rows)}")
+    raw = [json.loads(item.read_text(encoding="utf-8")) for item in source_rows]
+    _write_csv(path, raw)
     with path.open(newline="", encoding="utf-8") as stream:
         rows: list[dict[str, object]] = []
         for source in csv.DictReader(stream):
@@ -78,7 +77,9 @@ def _read_rows() -> list[dict[str, object]]:
                 "longest_no_contact_gap",
                 "grasp_persistence_steps",
             ):
-                if row.get(key) not in {None, ""}:
+                if row.get(key) == "":
+                    row[key] = None
+                elif row.get(key) is not None:
                     row[key] = int(str(row[key]))
             for key in (
                 "hand_object_contact_fraction",
@@ -93,7 +94,9 @@ def _read_rows() -> list[dict[str, object]]:
                 "object_displacement_m",
                 "object_lift_dz_m",
             ):
-                if row.get(key) not in {None, ""}:
+                if row.get(key) == "":
+                    row[key] = None
+                elif row.get(key) is not None:
                     row[key] = float(str(row[key]))
             for key in (
                 "any_hand_object_contact",
