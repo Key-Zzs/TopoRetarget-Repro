@@ -1,0 +1,13 @@
+schema_version: Stage16ContactSkillPolicyPreservationV1
+# Opt-in only. The frozen default PPO contract remains unchanged until a
+# continuous C0 verification has passed.
+enabled: false
+policy_preservation:
+  mode: actor_lr_scale
+  actor_lr_scale: 0.5
+  critic_update: baseline_exact_batch_shadow
+  scope: stage16_physical_only
+  stage_start_anchor: disabled
+provenance:
+  evidence: U25_to_U26_exact_batch_shadow_ablation
+  requires_continuous_c0_verification: true

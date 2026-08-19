@@ -115,6 +115,13 @@ regression. The only permitted next step is
 endpoint or start C2--C4. See [contact-skill collapse
 localization](rl/CONTACT_SKILL_COLLAPSE.md).
 
+The exact-batch policy-preservation ablation selected an opt-in 0.50x actor-LR
+candidate after a paired actor-only/critic-baseline shadow replay. It preserves
+10/10 frame-0 grasp and lift, as well as the U25 GRASP reset; its U25 CONTACT
+reset remains a documented limitation. The next bounded action is
+`NEXT_CONTACT_PRESERVING_FULL_C0_VERIFICATION`; it does not switch any
+production default. See [policy preservation](rl/CONTACT_SKILL_POLICY_PRESERVATION.md).
+
 ### Support resolution reconstruction (implemented, not promoted)
 
 The source-first resolver, stable-pre-contact planar inference, finite runtime

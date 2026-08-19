@@ -99,6 +99,12 @@ regression。唯一允许的下一步是
 不得启动 C2--C4。见 [contact-skill collapse
 localization](rl/CONTACT_SKILL_COLLAPSE.md)。
 
+exact-batch policy-preservation ablation 在 paired actor-only/critic-baseline
+shadow replay 后选择了 opt-in 的 0.50x actor-LR candidate。它保留 10/10 frame0
+grasp/lift 与 U25 GRASP reset，但 U25 CONTACT reset 仍是已记录的限制。下一项
+受限动作是 `NEXT_CONTACT_PRESERVING_FULL_C0_VERIFICATION`；不得切换 production
+default。见 [policy preservation](rl/CONTACT_SKILL_POLICY_PRESERVATION.md)。
+
 ### Support resolution reconstruction（已实现，不提升）
 
 source-first resolver、stable-pre-contact 平面推断、有限运行时 proxy、几何 audit 以及 object-only 全重力 PhysX A/B

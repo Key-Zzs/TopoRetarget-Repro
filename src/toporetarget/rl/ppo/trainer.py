@@ -71,7 +71,15 @@ class PPOTrainer:
         action = distribution.mean if deterministic else distribution.sample()
         return action, distribution.log_prob(action), values
 
-    def update(self, storage: RolloutStorage, last_value: torch.Tensor) -> dict[str, Any]:
+    def update(
+        self,
+        storage: RolloutStorage,
+        last_value: torch.Tensor,
+        *,
+        anchor_model: ActorCritic | None = None,
+        anchor_normalizer: RunningObservationNormalizer | None = None,
+        anchor_kl_coefficient: float = 0.0,
+    ) -> dict[str, Any]:
         advantages, returns = generalized_advantage_estimate(
             storage.rewards,
             storage.values,
@@ -103,6 +111,7 @@ class PPOTrainer:
             "log_std_grad_norm": 0.0,
             "ratio": 0.0,
             "action_std": 0.0,
+            "anchor_kl": 0.0,
         }
         updates = 0
         kl_early_stop = False
@@ -135,10 +144,35 @@ class PPOTrainer:
                 value_prediction = self.model.value(self.normalizer.normalize(observations))
                 value_loss = torch.nn.functional.mse_loss(value_prediction, returns_batch)
                 entropy = distribution.entropy().mean()
+                anchor_kl = torch.zeros((), device=self.device)
+                if anchor_model is not None:
+                    if anchor_normalizer is None or anchor_kl_coefficient <= 0.0:
+                        raise ValueError("PPO_ANCHOR_KL_CONTRACT_INVALID")
+                    with torch.no_grad():
+                        anchor_distribution = SoftplusGaussian(
+                            anchor_model.action_location(anchor_normalizer.normalize(observations)),
+                            anchor_model.log_std_parameter,
+                        )
+                    # Tanh is bijective in the supported action domain, so its
+                    # Jacobian cancels and the latent Gaussian KL is exact.
+                    anchor_kl = (
+                        (
+                            torch.log(anchor_distribution.std / distribution.std)
+                            + (
+                                distribution.std.square()
+                                + (distribution.location - anchor_distribution.location).square()
+                            )
+                            / (2.0 * anchor_distribution.std.square())
+                            - 0.5
+                        )
+                        .sum(dim=-1)
+                        .mean()
+                    )
                 loss = (
                     actor_loss
                     + self.config.value_loss_coefficient * value_loss
                     - self.config.entropy_coefficient * entropy
+                    + anchor_kl_coefficient * anchor_kl
                 )
                 self.optimizer.zero_grad(set_to_none=True)
                 loss.backward()
@@ -188,6 +222,7 @@ class PPOTrainer:
                 accumulators["log_std_grad_norm"] += float(log_std_grad_norm.detach())
                 accumulators["ratio"] += float(ratio.mean().detach())
                 accumulators["action_std"] += float(distribution.std.mean().detach())
+                accumulators["anchor_kl"] += float(anchor_kl.detach())
                 updates += 1
                 epoch_updates += 1
                 kl_value = float(approximate_kl.detach())
