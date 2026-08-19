@@ -128,6 +128,15 @@ start C1; the only next action is
 `NEXT_UPDATE_DEPTH_POLICY_PRESERVATION_ABLATION`. See [full C0 longitudinal
 validation](rl/CONTACT_PRESERVING_FULL_C0_VALIDATION.md).
 
+This remains a historical C0 optimization-preservation result, not the current
+physical-program main action. The frozen-source C0--C4 gravity/friction sweep
+has observed one full-gravity-capable source (V4/170650) and one partially
+functional one (V3/170105), while six conditions are technical timeouts or an
+invalid terminal-phase trace. Its global state is therefore
+`TECHNICALLY_INCONCLUSIVE`; do not start PPO. The single current action is
+`NEXT_REMEDIATE_TECHNICAL_ROLLOUT_TIMEOUTS_THEN_REEVALUATE_INCONCLUSIVE_LINEAGES`.
+See [frozen source policy gravity sweep](rl/FROZEN_SOURCE_POLICY_GRAVITY_SWEEP.md).
+
 ### Support resolution reconstruction (implemented, not promoted)
 
 The source-first resolver, stable-pre-contact planar inference, finite runtime
@@ -181,6 +190,7 @@ physics route; it is not a replacement for it.
 - [PPO-26D contract](rl/REFERENCE_TRACKING_PPO_26D.md)
 - [C1 PPO optimization attribution](rl/C1_PPO_OPTIMIZATION_ATTRIBUTION.md)
 - [Contact-preserving full C0 validation](rl/CONTACT_PRESERVING_FULL_C0_VALIDATION.md)
+- [Frozen source policy gravity sweep](rl/FROZEN_SOURCE_POLICY_GRAVITY_SWEEP.md)
 - [Reference-gated contact reward V3](rl/REFERENCE_GATED_CONTACT_REWARD.md)
 - [Strict per-finger contact reward V4](rl/STRICT_PER_FINGER_CONTACT_REWARD.md)
 - [Source contact semantics](rl/SOURCE_CONTACT_SEMANTICS.md)

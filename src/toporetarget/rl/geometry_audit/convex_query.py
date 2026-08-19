@@ -82,6 +82,8 @@ class PythonFCLConvexQueryBackend:
         first_pose: np.ndarray,
         second_shape: Any,
         second_pose: np.ndarray,
+        *,
+        collision_mtd_only: bool = False,
     ) -> ConvexQueryResult:
         first_object = self.fcl.CollisionObject(first_shape, self.transform(first_pose))
         second_object = self.fcl.CollisionObject(second_shape, self.transform(second_pose))
@@ -92,6 +94,28 @@ class PythonFCLConvexQueryBackend:
         )
         collision_result = self.fcl.CollisionResult()
         self.fcl.collide(first_object, second_object, collision_request, collision_result)
+        if collision_result.is_collision and collision_mtd_only:
+            if not collision_result.contacts:
+                raise RuntimeError("STAGE16D_CONVEX_QUERY_MISSING_CONTACT_MTD")
+            contact = collision_result.contacts[0]
+            depth = max(0.0, float(contact.penetration_depth))
+            direction = np.asarray(contact.normal, dtype=np.float64)
+            if not np.isfinite(depth) or not np.isfinite(direction).all():
+                raise RuntimeError("STAGE16D_CONVEX_QUERY_NONFINITE_OVERLAP")
+            norm = float(np.linalg.norm(direction))
+            if depth > self.contract.numerical_tolerance_m and norm <= 0.0:
+                raise RuntimeError("STAGE16D_CONVEX_QUERY_INVALID_MTD_DIRECTION")
+            if norm > 0.0:
+                direction /= norm
+            return ConvexQueryResult(
+                signed_separation_m=-depth,
+                penetration_depth_m=depth,
+                depenetration_direction_for_second=_tuple3(direction, label="overlap_normal"),
+                nearest_point_first=None,
+                nearest_point_second=None,
+                converged=True,
+                colliding=depth > self.contract.numerical_tolerance_m,
+            )
         distance_request = self.fcl.DistanceRequest(
             enable_nearest_points=True,
             enable_signed_distance=True,

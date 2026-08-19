@@ -111,6 +111,13 @@ default，不得启动 C1；唯一允许的后续动作是
 `NEXT_UPDATE_DEPTH_POLICY_PRESERVATION_ABLATION`。见 [full C0 longitudinal
 validation](rl/CONTACT_PRESERVING_FULL_C0_VALIDATION.md)。
 
+这仍是历史 C0 optimization-preservation 结论，不再是当前 physical program 的主动作。
+冻结 source 的 C0--C4 gravity/friction sweep 已经观察到 V4/170650 在 full gravity
+下可用、V3/170105 为部分可用；但另有六个条件为 technical timeout 或无效的 terminal-phase
+trace。因此全局状态为 `TECHNICALLY_INCONCLUSIVE`，不得启动 PPO。唯一当前动作是
+`NEXT_REMEDIATE_TECHNICAL_ROLLOUT_TIMEOUTS_THEN_REEVALUATE_INCONCLUSIVE_LINEAGES`。
+见 [frozen source policy gravity sweep](rl/FROZEN_SOURCE_POLICY_GRAVITY_SWEEP.md)。
+
 ### Support resolution reconstruction（已实现，不提升）
 
 source-first resolver、stable-pre-contact 平面推断、有限运行时 proxy、几何 audit 以及 object-only 全重力 PhysX A/B
@@ -157,6 +164,7 @@ external guidance 或 data-H2R 仍是该 causal physics 路线之后的 assisted
 - [PPO-26D contract](rl/REFERENCE_TRACKING_PPO_26D.md)
 - [C1 PPO optimization attribution](rl/C1_PPO_OPTIMIZATION_ATTRIBUTION.md)
 - [Contact-preserving full C0 validation](rl/CONTACT_PRESERVING_FULL_C0_VALIDATION.md)
+- [Frozen source policy gravity sweep](rl/FROZEN_SOURCE_POLICY_GRAVITY_SWEEP.md)
 - [Reference-gated contact reward V3](rl/REFERENCE_GATED_CONTACT_REWARD.zh-CN.md)
 - [Strict per-finger contact reward V4](rl/STRICT_PER_FINGER_CONTACT_REWARD.zh-CN.md)
 - [Source contact semantics](rl/SOURCE_CONTACT_SEMANTICS.zh-CN.md)
