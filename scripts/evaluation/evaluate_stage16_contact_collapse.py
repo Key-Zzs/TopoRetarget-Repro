@@ -181,6 +181,21 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--episodes", type=int, default=10)
     parser.add_argument("--stage", choices=("C0", "C1"), default="C0")
     parser.add_argument("--source-only", action="store_true")
+    parser.add_argument(
+        "--reset-index",
+        type=int,
+        help="Frozen deterministic reference index; defaults to the full frame-zero start.",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        help="Evaluate exactly this one frozen actor instead of a snapshot directory.",
+    )
+    parser.add_argument("--label", help="Required label when --checkpoint is used.")
+    parser.add_argument("--update", type=int, help="Required update authority with --checkpoint.")
+    parser.add_argument(
+        "--samples", type=int, help="Required stage sample count with --checkpoint."
+    )
     return parser
 
 
@@ -192,10 +207,31 @@ def main() -> int:
         raise ValueError("CONTACT_COLLAPSE_EVALUATION_FROZEN_AT_10_EPISODES")
     output = args.output_root.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    specs = _snapshot_specs(args.snapshot_root, source_only=args.source_only, stage=args.stage)
+    if args.checkpoint is not None:
+        if args.source_only or args.snapshot_root is not None:
+            raise ValueError("CONTACT_COLLAPSE_SINGLE_CHECKPOINT_INPUT_CONFLICT")
+        if args.label is None or args.update is None or args.samples is None:
+            raise ValueError("CONTACT_COLLAPSE_SINGLE_CHECKPOINT_AUTHORITY_REQUIRED")
+        checkpoint = args.checkpoint.resolve()
+        if not checkpoint.is_file():
+            raise FileNotFoundError("CONTACT_COLLAPSE_SINGLE_CHECKPOINT_MISSING")
+        specs = [
+            {
+                "label": args.label,
+                "update": args.update,
+                "samples": args.samples,
+                "checkpoint": str(checkpoint),
+                "checkpoint_sha256": _sha256(checkpoint),
+            }
+        ]
+    else:
+        specs = _snapshot_specs(args.snapshot_root, source_only=args.source_only, stage=args.stage)
     pairs = _load_pairs("hocap_170105", args.episodes)
     seeds = [int(pair["seed"]) for pair in pairs]
-    start_index = _full_start("hocap_170105")
+    frame0_start = _full_start("hocap_170105")
+    start_index = frame0_start if args.reset_index is None else args.reset_index
+    if start_index < 0 or start_index >= 321:
+        raise ValueError("CONTACT_COLLAPSE_RESET_INDEX_OUT_OF_RANGE")
     _write_json(
         output / "evaluation_contract.json",
         {
@@ -204,8 +240,11 @@ def main() -> int:
             "reward": "aggregate_v3",
             "episodes_per_snapshot": args.episodes,
             "seeds": seeds,
-            "evaluation_reset": "frame0_full_start",
+            "evaluation_reset": (
+                "frame0_full_start" if args.reset_index is None else "fixed_reference_index"
+            ),
             "start_index": start_index,
+            "frame0_start_index": frame0_start,
             "optimizer_steps": 0,
             "deterministic_actor": True,
             "persistent_contact_frames": 3,
@@ -448,7 +487,7 @@ def main() -> int:
                 output / "progress.json", {"completed": [row["label"] for row in snapshot_rows]}
             )
         source = snapshot_rows[0]
-        if int(source["contact_episodes"]) != args.episodes:
+        if source["label"] == "SOURCE" and int(source["contact_episodes"]) != args.episodes:
             raise RuntimeError("SOURCE_POLICY_CONTACT_REGRESSION")
         update_rows = [row for row in snapshot_rows if int(row["update"]) > 0]
         milestones = (

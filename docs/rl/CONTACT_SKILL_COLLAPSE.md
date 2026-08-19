@@ -81,6 +81,36 @@ regression. The continuation is therefore not authorization for C2--C4,
 four-lineage reruns, full gravity, or real-world manipulation. The local
 receipt root is `.local/reports/stage16_contact_stable_physical_continuation/`.
 
+## Grasp/lift follow-up localization
+
+The complete saved C0 series resolves the remaining ambiguity: `U25` still
+achieves 10/10 persistent multi-finger grasp and lift, while `U26` at
+1,048,576 C0 samples is 0/10 grasp and lift.  Thus
+`U_LAST_LIFT_STABLE=U25`, and `U_FIRST_LIFT_DEGRADATION`,
+`U_MAJOR_LIFT_DEGRADATION`, and `U_ZERO_LIFT` are all `U26`.
+`U_PERSISTENT_ZERO_LIFT` is not identifiable inside C0 because U26 is the only
+post-collapse C0 snapshot; C1 is a distinct physical stage.
+
+The endpoint's 10/10 any-contact label is grazing only: first contact moves
+from frame 211 at U25 to 225 at U26, persistent multi-finger fraction falls
+from 0.322 to zero, and active-force p95 falls from 1.365 N to 0.00082 N.
+At semantic `LIFT` onset (frame 184), U26 has no persistent grasp.
+
+Frozen, optimizer-free U26 restarts at APPROACH, reference-contact, and GRASP
+all remain 0/10 lift; the U25 GRASP control remains 10/10.  This rejects a
+frame0-only sequence explanation and supports
+`PPO_OPTIMIZATION_FORGETTING_PRIMARY`, with late contact and finger
+force/closure drift as secondary causes.  The U25-to-U26 exact batch has a
+0.1978 actor-parameter delta; its fixed GRASP-state probe changes finger action
+magnitude while wrist command-to-actual tracking remains small.  Training
+return evidence is mixed, so a reward-objective shortcut is not established.
+
+The only next action is
+`NEXT_CONTACT_SKILL_POLICY_PRESERVATION_ABLATION`; it does not authorize
+retraining, reward/reset/controller changes, C2--C4, or endpoint promotion.
+The ignored local receipt root is
+`.local/reports/stage16_grasp_lift_skill_collapse/`.
+
 Run-specific checkpoints, exact PPO batches, traces, formulas, command tables,
 and replay commands remain under the ignored local report root:
 

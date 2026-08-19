@@ -88,6 +88,17 @@ V3/hocap_170105 continuation 已从精确 U6 state 完成 C0 和 C1：两个 end
 0.25g / 1.75x friction。这不授权 C2--C4 或 four-lineage rerun。见
 [contact-skill collapse localization](rl/CONTACT_SKILL_COLLAPSE.md)。
 
+后续的离线 grasp/lift localization 使用已保存的 46 个新 checkpoint/exact batch
+以及 480 条 frame0 trace，未重新训练。它将 C0 grasp/lift 转折精确定位为
+U25 -> U26：U25 为 10/10 persistent grasp 与 lift，U26 则为 0/10，只剩晚到的
+grazing contact。冻结的 U26 APPROACH/reference-contact/GRASP restart 均仍为
+0/10 lift，而 U25 GRASP 对照为 10/10。因此保持 fail-closed 结论
+`PPO_OPTIMIZATION_FORGETTING_PRIMARY`，而不是 reward shortcut 或 controller
+regression。唯一允许的下一步是
+`NEXT_CONTACT_SKILL_POLICY_PRESERVATION_ABLATION`；不得提升 C0 endpoint，
+不得启动 C2--C4。见 [contact-skill collapse
+localization](rl/CONTACT_SKILL_COLLAPSE.md)。
+
 ### Support resolution reconstruction（已实现，不提升）
 
 source-first resolver、stable-pre-contact 平面推断、有限运行时 proxy、几何 audit 以及 object-only 全重力 PhysX A/B

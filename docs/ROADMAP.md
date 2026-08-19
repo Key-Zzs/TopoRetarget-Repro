@@ -103,6 +103,18 @@ and C1 endpoint lift is 0/10, with C1 run at 0.25g / 1.75x friction. This is
 not authorization for C2--C4 or four-lineage reruns. See [contact-skill
 collapse localization](rl/CONTACT_SKILL_COLLAPSE.md).
 
+The follow-up offline grasp/lift localization consumes the 46 new saved
+checkpoints/exact batches and 480 frame0 traces without retraining. It fixes
+the C0 grasp/lift transition to U25 -> U26: U25 is 10/10 persistent grasp and
+lift, while U26 is 0/10 with only late grazing contact. Frozen U26
+APPROACH/contact/GRASP restarts also remain 0/10 lift, whereas the U25 GRASP
+control remains 10/10. The fail-closed conclusion is
+`PPO_OPTIMIZATION_FORGETTING_PRIMARY`, not a reward shortcut or controller
+regression. The only permitted next step is
+`NEXT_CONTACT_SKILL_POLICY_PRESERVATION_ABLATION`; do not promote the C0
+endpoint or start C2--C4. See [contact-skill collapse
+localization](rl/CONTACT_SKILL_COLLAPSE.md).
+
 ### Support resolution reconstruction (implemented, not promoted)
 
 The source-first resolver, stable-pre-contact planar inference, finite runtime
