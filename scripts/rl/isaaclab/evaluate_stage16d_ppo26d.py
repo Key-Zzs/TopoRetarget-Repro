@@ -231,7 +231,11 @@ def model_from_checkpoint(
         )
     trainer = PPO26DTrainer(observation_dim=764, device=device)
     trainer.model.load_state_dict(payload["actor_critic"])
-    trainer.trainer.optimizer.load_state_dict(payload["optimizer"])
+    # Evaluation is inference-only.  A policy-preservation checkpoint may split
+    # the canonical optimizer into actor/critic groups, while a fresh evaluator
+    # intentionally constructs the canonical one-group optimizer.  Restoring
+    # that training-only state is neither needed for deterministic inference nor
+    # valid across the two group layouts.
     trainer.trainer.normalizer.load_state_dict(payload["observation_normalization"])
     trainer.cumulative_samples = int(
         payload["reward_v2_samples"]

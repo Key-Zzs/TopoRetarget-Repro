@@ -39,6 +39,7 @@ from toporetarget.rl.geometry_audit.hand_collision_reconstruction import (
     HAND_COLLISION_BODY_NAMES,
     reconstruct_hand_collision_body_pose,
 )
+from toporetarget.rl.grasp_lift_skill_collapse import grasp_lift_episode_metrics, persistent_mask
 
 DEFAULT_OUTPUT = REPO_ROOT / ".local/reports/stage16_contact_skill_collapse"
 OBJECT_MESH = REPO_ROOT / ".local/stage16_reference_tracking_ppo/world_wrist_objects"
@@ -86,6 +87,28 @@ def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
         writer.writerows(rows)
 
 
+def _evaluation_milestones(
+    snapshot_rows: list[dict[str, object]], *, source_only: bool
+) -> dict[str, dict[str, int] | None]:
+    """Return cross-checkpoint milestones only when a source baseline is present.
+
+    A per-update Frame0 invocation evaluates exactly one candidate checkpoint.
+    That snapshot is not a baseline, particularly when the candidate has zero
+    contacts.  Treating it as one made a legitimate scientific result fail
+    after every episode and obscured the already-persisted trace evidence.
+    """
+
+    update_rows = [row for row in snapshot_rows if int(row["update"]) > 0]
+    if source_only or len(snapshot_rows) < 2 or not update_rows:
+        return {}
+    source = snapshot_rows[0]
+    if source["label"] != "SOURCE":
+        raise ValueError("CONTACT_COLLAPSE_MILESTONE_SOURCE_BASELINE_MISSING")
+    return detect_contact_milestones(
+        update_rows, baseline_contact_episodes=int(source["contact_episodes"])
+    )
+
+
 def _quaternion_matrix_wxyz(quaternion: np.ndarray) -> np.ndarray:
     value = np.asarray(quaternion, dtype=np.float64)
     value = value / np.linalg.norm(value, axis=-1, keepdims=True).clip(min=1.0e-12)
@@ -129,6 +152,55 @@ def _tip_object_distance(trace: dict[str, np.ndarray], *, clip: str) -> np.ndarr
 def _mean(values: list[float | int | None]) -> float | None:
     finite = [float(value) for value in values if value is not None]
     return None if not finite else float(np.mean(finite))
+
+
+def _json_value(value: object) -> object:
+    """Convert NumPy diagnostics into receipt-safe scalar/list values."""
+
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+def _per_finger_contact_metrics(trace: dict[str, np.ndarray]) -> list[dict[str, object]]:
+    """Return raw per-finger actual-contact metrics for one deterministic trace."""
+
+    valid = np.asarray(trace["hand_object_pair_force_valid"], dtype=bool)
+    actual = np.asarray(trace["actual_contact_mask"], dtype=bool)
+    expected = np.asarray(trace["reference_contact_mask"], dtype=bool)
+    force = np.linalg.norm(
+        np.asarray(trace["fingertip_object_pair_force_world"], dtype=np.float64), axis=-1
+    )
+    if actual.shape != expected.shape or actual.shape[0] != valid.size:
+        raise ValueError("CONTACT_COLLAPSE_PER_FINGER_SHAPE_INVALID")
+    rows: list[dict[str, object]] = []
+    for finger, name in enumerate(FINGER_NAMES):
+        expected_active = expected[:, finger] & valid
+        actual_active = actual[:, finger] & valid
+        persistent_active = persistent_mask(actual_active, 3)
+        expected_count = int(expected_active.sum())
+        active_force = force[:, finger][actual_active]
+        rows.append(
+            {
+                "finger": name,
+                "source_tip_recall": (
+                    None
+                    if expected_count == 0
+                    else float((expected_active & actual_active).sum() / expected_count)
+                ),
+                "contact_fraction": float(actual_active.sum() / valid.sum()),
+                "persistent_contact_fraction": float(persistent_active.sum() / valid.sum()),
+                "mean_active_force_n": (
+                    None if not active_force.size else float(active_force.mean())
+                ),
+                "p95_active_force_n": (
+                    None if not active_force.size else float(np.quantile(active_force, 0.95))
+                ),
+            }
+        )
+    return rows
 
 
 def _snapshot_specs(
@@ -203,8 +275,8 @@ def main() -> int:
     args = _parser().parse_args()
     if not args.accept_eula:
         raise ValueError("--accept-eula is required")
-    if args.episodes != 10:
-        raise ValueError("CONTACT_COLLAPSE_EVALUATION_FROZEN_AT_10_EPISODES")
+    if args.episodes not in {10, 20}:
+        raise ValueError("CONTACT_COLLAPSE_EVALUATION_EPISODES_MUST_BE_10_OR_20")
     output = args.output_root.resolve()
     output.mkdir(parents=True, exist_ok=True)
     if args.checkpoint is not None:
@@ -272,6 +344,8 @@ def main() -> int:
         )
         snapshot_rows: list[dict[str, object]] = []
         per_finger_rows: list[dict[str, object]] = []
+        per_finger_contact_rows: list[dict[str, object]] = []
+        per_finger_eval_rows: list[dict[str, object]] = []
         per_joint_rows: list[dict[str, object]] = []
         action_rows: list[dict[str, object]] = []
         timing_rows: list[dict[str, object]] = []
@@ -298,6 +372,10 @@ def main() -> int:
                     trace["wrist_pose"], trace["finger_q"], repo_root=REPO_ROOT
                 ).astype(np.float32)
                 metric = _trace_metrics(trace, mode="aggregate_v3")
+                grasp_metric = {
+                    key: _json_value(value)
+                    for key, value in grasp_lift_episode_metrics(trace).items()
+                }
                 command = command_tracking_metrics(trace)
                 timing = lift_timing(trace)
                 phase = np.asarray(trace["phase"])
@@ -314,6 +392,7 @@ def main() -> int:
                     "trace": str(trace_path),
                     **rollout,
                     **metric,
+                    **grasp_metric,
                     **timing,
                     "tip_object_distance_min_m": float(distance.min()),
                     "tip_object_distance_grasp_mean_m": (
@@ -323,6 +402,15 @@ def main() -> int:
                 _write_json(trace_path.with_suffix(".json"), record)
                 episode_metrics.append(record)
                 command_metrics.append(command)
+                for finger_metric in _per_finger_contact_metrics(trace):
+                    per_finger_contact_rows.append(
+                        {
+                            "snapshot": spec["label"],
+                            "update": spec["update"],
+                            "episode": episode,
+                            **finger_metric,
+                        }
+                    )
                 timing_rows.append(
                     {
                         "snapshot": spec["label"],
@@ -366,9 +454,23 @@ def main() -> int:
                     "episodes": args.episodes,
                     "contact_episodes": int(sum(contacts)),
                     "contact_episode_rate": float(np.mean(contacts)),
+                    "any_contact_episode_rate": float(np.mean(contacts)),
+                    "persistent_grasp_episodes": int(
+                        sum(bool(row["persistent_grasp"]) for row in episode_metrics)
+                    ),
+                    "persistent_grasp_episode_rate": float(
+                        np.mean([bool(row["persistent_grasp"]) for row in episode_metrics])
+                    ),
+                    "lift_episodes": int(
+                        sum(bool(row["grasp_and_lift"]) for row in episode_metrics)
+                    ),
+                    "lift_episode_rate": float(
+                        np.mean([bool(row["grasp_and_lift"]) for row in episode_metrics])
+                    ),
                     "any_hand_object_contact_fraction": _mean(
                         [row["hand_object_contact_fraction"] for row in episode_metrics]
                     ),
+                    "contact_fraction": _mean([row["contact_fraction"] for row in episode_metrics]),
                     "tip_contact_fraction": _mean(
                         [row["tip_contact_fraction"] for row in episode_metrics]
                     ),
@@ -384,6 +486,15 @@ def main() -> int:
                     "max_contact_force_n": max(
                         float(row["max_contact_force_n"]) for row in episode_metrics
                     ),
+                    "active_contact_force_mean_n": _mean(
+                        [row["mean_active_force_n"] for row in episode_metrics]
+                    ),
+                    "active_contact_force_p95_n": _mean(
+                        [row["p95_active_force_n"] for row in episode_metrics]
+                    ),
+                    "persistent_multi_finger_fraction": _mean(
+                        [row["persistent_multi_finger_fraction"] for row in episode_metrics]
+                    ),
                     "contact_reward_activation_fraction": float(
                         np.mean(
                             [
@@ -393,6 +504,35 @@ def main() -> int:
                         )
                     ),
                     "object_lift_dz_m": _mean([row["object_lift_dz_m"] for row in episode_metrics]),
+                    "object_lift_dz_mean": _mean([row["lift_dz_m"] for row in episode_metrics]),
+                    "object_lift_dz_min": float(
+                        min(float(row["lift_dz_m"]) for row in episode_metrics)
+                    ),
+                    "object_lift_dz_max": float(
+                        max(float(row["lift_dz_m"]) for row in episode_metrics)
+                    ),
+                    "object_drop_fraction": float(
+                        np.mean([bool(row["object_drop"]) for row in episode_metrics])
+                    ),
+                    "r_contact_mean": _mean(
+                        [row["contact_reward_mean"] for row in episode_metrics]
+                    ),
+                    "r_contact_max": float(
+                        max(float(row["contact_reward_max"]) for row in episode_metrics)
+                    ),
+                    "r_contact_active_fraction": _mean(
+                        [row["contact_reward_positive_fraction"] for row in episode_metrics]
+                    ),
+                    "grasp_state_counts": {
+                        category: int(sum(row["category"] == category for row in episode_metrics))
+                        for category in (
+                            "NO_CONTACT",
+                            "GRAZING_CONTACT",
+                            "PERSISTENT_CONTACT",
+                            "GRASP_NO_LIFT",
+                            "GRASP_AND_LIFT",
+                        )
+                    },
                     "lift_success_rate": float(
                         np.mean(
                             [
@@ -463,6 +603,28 @@ def main() -> int:
                         ),
                     }
                 )
+            for name in FINGER_NAMES:
+                rows = [
+                    row
+                    for row in per_finger_contact_rows
+                    if row["snapshot"] == spec["label"] and row["finger"] == name
+                ]
+                per_finger_eval_rows.append(
+                    {
+                        "snapshot": spec["label"],
+                        "update": spec["update"],
+                        "finger": name,
+                        "contact_fraction": _mean([item["contact_fraction"] for item in rows]),
+                        "source_tip_recall": _mean([item["source_tip_recall"] for item in rows]),
+                        "persistent_contact_fraction": _mean(
+                            [item["persistent_contact_fraction"] for item in rows]
+                        ),
+                        "mean_active_force_n": _mean(
+                            [item["mean_active_force_n"] for item in rows]
+                        ),
+                        "p95_active_force_n": _mean([item["p95_active_force_n"] for item in rows]),
+                    }
+                )
             for joint, name in enumerate(JOINT_NAMES):
                 per_joint_rows.append(
                     {
@@ -489,20 +651,14 @@ def main() -> int:
         source = snapshot_rows[0]
         if source["label"] == "SOURCE" and int(source["contact_episodes"]) != args.episodes:
             raise RuntimeError("SOURCE_POLICY_CONTACT_REGRESSION")
-        update_rows = [row for row in snapshot_rows if int(row["update"]) > 0]
-        milestones = (
-            {}
-            if args.source_only
-            else detect_contact_milestones(
-                update_rows, baseline_contact_episodes=int(source["contact_episodes"])
-            )
-        )
+        milestones = _evaluation_milestones(snapshot_rows, source_only=args.source_only)
         _write_csv(output / "contact_vs_update.csv", snapshot_rows)
         _write_csv(
             output / "contact_vs_samples.csv",
             sorted(snapshot_rows, key=lambda row: int(row["samples"])),
         )
         _write_csv(output / "command_drift" / "per_finger.csv", per_finger_rows)
+        _write_csv(output / "per_finger_metrics.csv", per_finger_eval_rows)
         _write_csv(output / "command_drift" / "finger.csv", per_joint_rows)
         _write_csv(output / "command_drift" / "top_action_dims_source.csv", action_rows)
         _write_csv(output / "lift_timing" / "timing.csv", timing_rows)

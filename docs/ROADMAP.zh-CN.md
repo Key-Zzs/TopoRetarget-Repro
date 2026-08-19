@@ -100,10 +100,16 @@ regression。唯一允许的下一步是
 localization](rl/CONTACT_SKILL_COLLAPSE.md)。
 
 exact-batch policy-preservation ablation 在 paired actor-only/critic-baseline
-shadow replay 后选择了 opt-in 的 0.50x actor-LR candidate。它保留 10/10 frame0
-grasp/lift 与 U25 GRASP reset，但 U25 CONTACT reset 仍是已记录的限制。下一项
-受限动作是 `NEXT_CONTACT_PRESERVING_FULL_C0_VERIFICATION`；不得切换 production
-default。见 [policy preservation](rl/CONTACT_SKILL_POLICY_PRESERVATION.md)。
+shadow replay 后选择了 opt-in 的 0.50x actor-LR candidate。该 single-update 结果
+保留 10/10 frame0 grasp/lift 与 U25 GRASP reset，但并不能证明 live training 中的
+长期保留。已完成的 V3/`hocap_170105` full-C0 validation 覆盖 26 个 update、
+1,048,576 samples；候选在 U17 / 696,320 samples 即同时失去 grasp 与 lift，之后
+均为 0/10，endpoint Eval20 为 0/20。相比之下，冻结的 1.0x C0 lineage 在 U25
+仍为 10/10，首次 collapse 在 U26。实际 classification 为
+`CANDIDATE_REGRESSION`、`STATUS=SHADOW_ONLY_NOT_SUFFICIENT`。不得切换 production
+default，不得启动 C1；唯一允许的后续动作是
+`NEXT_UPDATE_DEPTH_POLICY_PRESERVATION_ABLATION`。见 [full C0 longitudinal
+validation](rl/CONTACT_PRESERVING_FULL_C0_VALIDATION.md)。
 
 ### Support resolution reconstruction（已实现，不提升）
 
@@ -150,6 +156,7 @@ external guidance 或 data-H2R 仍是该 causal physics 路线之后的 assisted
 - [Reference Kinematics V2 contract](rl/REFERENCE_KINEMATICS_CONTRACT.md)
 - [PPO-26D contract](rl/REFERENCE_TRACKING_PPO_26D.md)
 - [C1 PPO optimization attribution](rl/C1_PPO_OPTIMIZATION_ATTRIBUTION.md)
+- [Contact-preserving full C0 validation](rl/CONTACT_PRESERVING_FULL_C0_VALIDATION.md)
 - [Reference-gated contact reward V3](rl/REFERENCE_GATED_CONTACT_REWARD.zh-CN.md)
 - [Strict per-finger contact reward V4](rl/STRICT_PER_FINGER_CONTACT_REWARD.zh-CN.md)
 - [Source contact semantics](rl/SOURCE_CONTACT_SEMANTICS.zh-CN.md)

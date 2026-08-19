@@ -116,11 +116,17 @@ endpoint or start C2--C4. See [contact-skill collapse
 localization](rl/CONTACT_SKILL_COLLAPSE.md).
 
 The exact-batch policy-preservation ablation selected an opt-in 0.50x actor-LR
-candidate after a paired actor-only/critic-baseline shadow replay. It preserves
-10/10 frame-0 grasp and lift, as well as the U25 GRASP reset; its U25 CONTACT
-reset remains a documented limitation. The next bounded action is
-`NEXT_CONTACT_PRESERVING_FULL_C0_VERIFICATION`; it does not switch any
-production default. See [policy preservation](rl/CONTACT_SKILL_POLICY_PRESERVATION.md).
+candidate after a paired actor-only/critic-baseline shadow replay. That
+single-update result retained 10/10 frame-0 grasp/lift and the U25 GRASP reset,
+but did not establish live training preservation. The completed 26-update,
+1,048,576-sample V3/`hocap_170105` full-C0 validation instead loses both grasp
+and lift at U17 / 696,320 samples (0/10 thereafter and 0/20 at endpoint), while
+the frozen 1.0x lineage remains 10/10 at U25 and first collapses at U26. The
+actual classification is `CANDIDATE_REGRESSION` and
+`STATUS=SHADOW_ONLY_NOT_SUFFICIENT`. Do not switch the production default or
+start C1; the only next action is
+`NEXT_UPDATE_DEPTH_POLICY_PRESERVATION_ABLATION`. See [full C0 longitudinal
+validation](rl/CONTACT_PRESERVING_FULL_C0_VALIDATION.md).
 
 ### Support resolution reconstruction (implemented, not promoted)
 
@@ -174,6 +180,7 @@ physics route; it is not a replacement for it.
 - [Reference Kinematics V2 contract](rl/REFERENCE_KINEMATICS_CONTRACT.md)
 - [PPO-26D contract](rl/REFERENCE_TRACKING_PPO_26D.md)
 - [C1 PPO optimization attribution](rl/C1_PPO_OPTIMIZATION_ATTRIBUTION.md)
+- [Contact-preserving full C0 validation](rl/CONTACT_PRESERVING_FULL_C0_VALIDATION.md)
 - [Reference-gated contact reward V3](rl/REFERENCE_GATED_CONTACT_REWARD.md)
 - [Strict per-finger contact reward V4](rl/STRICT_PER_FINGER_CONTACT_REWARD.md)
 - [Source contact semantics](rl/SOURCE_CONTACT_SEMANTICS.md)
