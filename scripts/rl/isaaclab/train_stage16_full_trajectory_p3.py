@@ -26,12 +26,13 @@ from scripts.rl.isaaclab.train_stage16_p3_physical_curriculum import (
 )
 from toporetarget.rl.full_trajectory_episode_start import validate_full_trajectory_start
 from toporetarget.rl.full_trajectory_p3 import (
+    FULL_TRAJECTORY_P3_CHECKPOINT_SCHEMA,
     FULL_TRAJECTORY_P3_RESULT_SCHEMA,
     checkpoint_metadata,
     validate_resume_metadata,
 )
 from toporetarget.rl.instrumentation.saturation import SaturationRecorder
-from toporetarget.rl.physical_p3 import physical_stage_budget
+from toporetarget.rl.physical_p3 import physical_stage_budget, preceding_stage
 from toporetarget.rl.ppo.checkpoint import load_checkpoint, restore_rng_state, save_checkpoint
 from toporetarget.rl.ppo.ppo26d_contract import Stage16DPPO26DTrainingConfigV1
 from toporetarget.rl.ppo.ppo26d_trainer import PPO26DTrainer
@@ -62,6 +63,23 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--stage", choices=("C0", "C1", "C2", "C3", "C4"), required=True)
     parser.add_argument("--num-envs", type=int, default=1024)
     parser.add_argument("--resume-checkpoint", type=Path)
+    parser.add_argument(
+        "--frozen-source-receipt",
+        type=Path,
+        help=(
+            "Frozen sweep source receipt. With --frozen-source-id, starts a bounded "
+            "adaptation directly at the proven failing physics stage."
+        ),
+    )
+    parser.add_argument("--frozen-source-id")
+    parser.add_argument(
+        "--adaptation-parent-checkpoint",
+        type=Path,
+        help=(
+            "Confirmed functional predecessor used exactly once to begin a bounded "
+            "adaptation at the next failing physics stage. Requires a frozen source."
+        ),
+    )
     parser.add_argument("--output-root", type=Path, default=OUTPUT_ROOT)
     parser.add_argument(
         "--saturation-instrumentation-root",
@@ -98,6 +116,174 @@ def _parser() -> argparse.ArgumentParser:
         help="Bound a preregistered C0 ablation below the formal full-stage budget.",
     )
     return parser
+
+
+def _frozen_source_start(
+    *, receipt_path: Path | None, source_id: str | None, clip: str, mode: ContactRewardMode
+) -> dict[str, Any] | None:
+    """Validate a source selected by the frozen sweep before local adaptation."""
+
+    if (receipt_path is None) != (source_id is None):
+        raise ValueError("FULL_TRAJECTORY_P3_FROZEN_SOURCE_ARGS_MUST_BE_PAIRED")
+    if receipt_path is None:
+        return None
+    resolved = receipt_path.resolve()
+    payload = json.loads(resolved.read_text(encoding="utf-8"))
+    sources = payload.get("sources")
+    if not isinstance(sources, dict) or not isinstance(sources.get(source_id), dict):
+        raise ValueError("FULL_TRAJECTORY_P3_FROZEN_SOURCE_UNKNOWN")
+    source = dict(sources[source_id])
+    checkpoint = Path(str(source.get("checkpoint"))).resolve()
+    if (
+        source.get("id") != source_id
+        or source.get("clip") != clip
+        or source.get("contact_mode") != mode.value
+        or not checkpoint.is_file()
+        or _sha256(checkpoint) != source.get("checkpoint_sha256")
+    ):
+        raise ValueError("FULL_TRAJECTORY_P3_FROZEN_SOURCE_CONTRACT_DRIFT")
+    selection = source.get("selection_receipt")
+    if not isinstance(selection, dict):
+        raise ValueError("FULL_TRAJECTORY_P3_FROZEN_SOURCE_SELECTION_MISSING")
+    selection_path = Path(str(selection.get("path"))).resolve()
+    if not selection_path.is_file() or _sha256(selection_path) != selection.get("sha256"):
+        raise ValueError("FULL_TRAJECTORY_P3_FROZEN_SOURCE_SELECTION_DRIFT")
+    return {
+        "source_id": source_id,
+        "source_receipt": {"path": str(resolved), "sha256": _sha256(resolved)},
+        "checkpoint": str(checkpoint),
+        "checkpoint_sha256": _sha256(checkpoint),
+        "actor_hash": source.get("actor_hash"),
+        "normalizer_hash": source.get("normalizer_hash"),
+        "selection_receipt": {"path": str(selection_path), "sha256": _sha256(selection_path)},
+    }
+
+
+def _restore_frozen_source_adaptation_resume(
+    trainer: PPO26DTrainer,
+    *,
+    checkpoint: Path,
+    source: dict[str, Any],
+    clip: str,
+    mode: ContactRewardMode,
+    stage: str,
+    num_envs: int,
+    start: dict[str, Any],
+    support_hash: str,
+    reference_hash: str,
+    training_reset: str,
+) -> tuple[dict[str, Any], int, int, int]:
+    """Resume only the same bounded source-start adaptation stage."""
+
+    payload = load_checkpoint(checkpoint.resolve(), map_location=trainer.trainer.device)
+    provenance = payload.get("frozen_source_adaptation")
+    expected_rsi = "uniform[0,320]" if training_reset == "uniform_rsi" else "disabled"
+    if (
+        payload.get("schema_version") != FULL_TRAJECTORY_P3_CHECKPOINT_SCHEMA
+        or payload.get("clip") != clip
+        or int(payload.get("selected_num_envs", -1)) != num_envs
+        or payload.get("contact_mode") != mode.value
+        or payload.get("curriculum_stage") != stage
+        or payload.get("episode_start") != start
+        or payload.get("support_contract_hash") != support_hash
+        or payload.get("reference_hash") != reference_hash
+        or payload.get("mid_trajectory_rsi") != expected_rsi
+        or not isinstance(provenance, dict)
+        or provenance.get("source_id") != source["source_id"]
+        or provenance.get("checkpoint_sha256") != source["checkpoint_sha256"]
+    ):
+        raise ValueError("FULL_TRAJECTORY_P3_FROZEN_SOURCE_RESUME_CONTRACT_INVALID")
+    stage_samples = int(payload.get("stage_samples", -1))
+    cumulative_samples = int(payload.get("cumulative_samples", -1))
+    policy_samples = int(payload.get("policy_training_samples", -1))
+    if (
+        stage_samples < 0
+        or stage_samples > physical_stage_budget(stage).additional_samples
+        or cumulative_samples < stage_samples
+        or policy_samples < 0
+    ):
+        raise ValueError("FULL_TRAJECTORY_P3_FROZEN_SOURCE_RESUME_COUNTER_INVALID")
+    trainer.model.load_state_dict(payload["actor_critic"])
+    trainer.trainer.optimizer.load_state_dict(payload["optimizer"])
+    trainer.trainer.normalizer.load_state_dict(payload["observation_normalization"])
+    trainer.trainer.normalizer.training = True
+    trainer.cumulative_samples = policy_samples
+    restore_rng_state(payload["rng"])
+    return (
+        {
+            "kind": "FROZEN_SOURCE_SAME_STAGE_ADAPTATION_RESUME",
+            "checkpoint": str(checkpoint.resolve()),
+            "checkpoint_sha256": _sha256(checkpoint.resolve()),
+            "source": source,
+        },
+        stage_samples,
+        cumulative_samples,
+        policy_samples,
+    )
+
+
+def _restore_frozen_source_functional_predecessor(
+    trainer: PPO26DTrainer,
+    *,
+    checkpoint: Path,
+    source: dict[str, Any],
+    clip: str,
+    mode: ContactRewardMode,
+    stage: str,
+    num_envs: int,
+    start: dict[str, Any],
+    support_hash: str,
+    reference_hash: str,
+    training_reset: str,
+) -> tuple[dict[str, Any], int, int]:
+    """Restore one confirmed predecessor while resetting only the new-stage counter."""
+
+    payload = load_checkpoint(checkpoint.resolve(), map_location=trainer.trainer.device)
+    provenance = payload.get("frozen_source_adaptation")
+    expected_rsi = "uniform[0,320]" if training_reset == "uniform_rsi" else "disabled"
+    if (
+        payload.get("schema_version") != FULL_TRAJECTORY_P3_CHECKPOINT_SCHEMA
+        or payload.get("clip") != clip
+        or int(payload.get("selected_num_envs", -1)) != num_envs
+        or payload.get("contact_mode") != mode.value
+        or payload.get("curriculum_stage") != preceding_stage(stage)
+        or payload.get("episode_start") != start
+        or payload.get("support_contract_hash") != support_hash
+        or payload.get("reference_hash") != reference_hash
+        or payload.get("mid_trajectory_rsi") != expected_rsi
+        or not isinstance(provenance, dict)
+        or provenance.get("source_id") != source["source_id"]
+        or provenance.get("checkpoint_sha256") != source["checkpoint_sha256"]
+    ):
+        raise ValueError("FULL_TRAJECTORY_P3_FUNCTIONAL_PREDECESSOR_CONTRACT_INVALID")
+    parent_stage_samples = int(payload.get("stage_samples", -1))
+    cumulative_samples = int(payload.get("cumulative_samples", -1))
+    policy_samples = int(payload.get("policy_training_samples", -1))
+    if (
+        parent_stage_samples <= 0
+        or parent_stage_samples > physical_stage_budget(preceding_stage(stage)).additional_samples
+        or cumulative_samples < parent_stage_samples
+        or policy_samples < 0
+    ):
+        raise ValueError("FULL_TRAJECTORY_P3_FUNCTIONAL_PREDECESSOR_COUNTER_INVALID")
+    trainer.model.load_state_dict(payload["actor_critic"])
+    trainer.trainer.optimizer.load_state_dict(payload["optimizer"])
+    trainer.trainer.normalizer.load_state_dict(payload["observation_normalization"])
+    trainer.trainer.normalizer.training = True
+    trainer.cumulative_samples = policy_samples
+    restore_rng_state(payload["rng"])
+    return (
+        {
+            "kind": "FROZEN_SOURCE_CONFIRMED_FUNCTIONAL_PREDECESSOR_ADAPTATION",
+            "checkpoint": str(checkpoint.resolve()),
+            "checkpoint_sha256": _sha256(checkpoint.resolve()),
+            "source_stage": preceding_stage(stage),
+            "target_stage": stage,
+            "source": source,
+        },
+        cumulative_samples,
+        policy_samples,
+    )
 
 
 def _start_and_hashes(clip: str) -> tuple[dict[str, Any], str, str]:
@@ -197,8 +383,20 @@ def main() -> int:
         raise ValueError("FULL_TRAJECTORY_P3_NUM_ENVS_INVALID")
     mode = ContactRewardMode.parse(args.contact_mode)
     training_reset = _resolve_training_reset(args.stage, args.training_reset)
-    if args.stage != "C0" and args.resume_checkpoint is None:
+    frozen_source = _frozen_source_start(
+        receipt_path=args.frozen_source_receipt,
+        source_id=args.frozen_source_id,
+        clip=args.clip,
+        mode=mode,
+    )
+    if args.stage != "C0" and args.resume_checkpoint is None and frozen_source is None:
         raise ValueError("FULL_TRAJECTORY_P3_PREDECESSOR_REQUIRED")
+    if frozen_source is not None and args.stage == "C0":
+        raise ValueError("FULL_TRAJECTORY_P3_FROZEN_SOURCE_REQUIRES_PROVEN_FAILURE_STAGE")
+    if args.adaptation_parent_checkpoint is not None and (
+        args.resume_checkpoint is not None or frozen_source is None or args.stage == "C0"
+    ):
+        raise ValueError("FULL_TRAJECTORY_P3_FUNCTIONAL_PREDECESSOR_ARGS_INVALID")
     if args.no_update_smoke and args.saturation_instrumentation_root is None:
         raise ValueError("SATURATION_INSTRUMENTATION_SMOKE_ROOT_REQUIRED")
     if (args.per_update_snapshot_root is None) != (args.exact_batch_root is None):
@@ -242,7 +440,71 @@ def main() -> int:
             training_reset=training_reset,
         )
         trainer = PPO26DTrainer(observation_dim=764, device=str(env.device))
-        if args.stage == "C0" and args.resume_checkpoint is None:
+        if args.adaptation_parent_checkpoint is not None:
+            assert frozen_source is not None
+            (
+                initialization,
+                cumulative_samples,
+                _policy_samples,
+            ) = _restore_frozen_source_functional_predecessor(
+                trainer,
+                checkpoint=args.adaptation_parent_checkpoint,
+                source=frozen_source,
+                clip=args.clip,
+                mode=mode,
+                stage=args.stage,
+                num_envs=args.num_envs,
+                start=start,
+                support_hash=support_hash,
+                reference_hash=reference_hash,
+                training_reset=training_reset,
+            )
+            initial_stage_samples = 0
+            initial_update_index = 0
+        elif frozen_source is not None and args.resume_checkpoint is None:
+            initialization = _restore_zero_g_checkpoint(
+                trainer,
+                checkpoint=Path(str(frozen_source["checkpoint"])),
+                clip=args.clip,
+                mode=mode,
+            )
+            if (
+                initialization["checkpoint_sha256"] != frozen_source["checkpoint_sha256"]
+                or initialization.get("selected_contact_mode") != mode.value
+            ):
+                raise RuntimeError("FULL_TRAJECTORY_P3_FROZEN_SOURCE_RESTORE_DRIFT")
+            initialization.update(
+                {
+                    "kind": "FROZEN_SOURCE_DIRECT_PHYSICAL_ADAPTATION",
+                    "source": frozen_source,
+                    "fresh_physical_restart": True,
+                }
+            )
+            cumulative_samples = 0
+            initial_stage_samples = 0
+            initial_update_index = 0
+        elif frozen_source is not None:
+            assert args.resume_checkpoint is not None
+            (
+                initialization,
+                initial_stage_samples,
+                cumulative_samples,
+                _policy_samples,
+            ) = _restore_frozen_source_adaptation_resume(
+                trainer,
+                checkpoint=args.resume_checkpoint,
+                source=frozen_source,
+                clip=args.clip,
+                mode=mode,
+                stage=args.stage,
+                num_envs=args.num_envs,
+                start=start,
+                support_hash=support_hash,
+                reference_hash=reference_hash,
+                training_reset=training_reset,
+            )
+            initial_update_index = int(initial_stage_samples // args.num_envs // 40)
+        elif args.stage == "C0" and args.resume_checkpoint is None:
             selected = _selected_zero_g_checkpoint(mode, args.clip)
             initialization = _restore_zero_g_checkpoint(
                 trainer,
@@ -325,6 +587,17 @@ def main() -> int:
             "reference_hash": reference_hash,
             "environment": environment,
             "initialization": initialization,
+            "frozen_source_adaptation": frozen_source,
+            "bounded_adaptation_parent": (
+                None
+                if args.adaptation_parent_checkpoint is None
+                else {
+                    "checkpoint": str(args.adaptation_parent_checkpoint.resolve()),
+                    "checkpoint_sha256": _sha256(args.adaptation_parent_checkpoint.resolve()),
+                    "source_stage": preceding_stage(args.stage),
+                    "target_stage": args.stage,
+                }
+            ),
             "old_c2_checkpoint_resumed": False,
             "training_reset": training_reset,
             "per_update_snapshot_root": (
@@ -500,6 +773,15 @@ def main() -> int:
         )
         payload["clip"] = args.clip
         payload["selected_num_envs"] = args.num_envs
+        if frozen_source is not None:
+            payload["frozen_source_adaptation"] = frozen_source
+        if args.adaptation_parent_checkpoint is not None:
+            payload["bounded_adaptation_parent"] = {
+                "checkpoint": str(args.adaptation_parent_checkpoint.resolve()),
+                "checkpoint_sha256": _sha256(args.adaptation_parent_checkpoint.resolve()),
+                "source_stage": preceding_stage(args.stage),
+                "target_stage": args.stage,
+            }
         checkpoint = (
             output / "checkpoints" / f"stage16_full_trajectory_{mode.value}_{args.stage.lower()}.pt"
         )
