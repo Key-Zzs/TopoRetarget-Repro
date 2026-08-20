@@ -16,6 +16,7 @@ import csv
 import hashlib
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -64,9 +65,14 @@ from toporetarget.rl.gravity_friction_curriculum import load_gravity_friction_cu
 from toporetarget.rl.physical_evaluation import contact_metrics, flight_metrics, twist_metrics
 from toporetarget.rl.reference_tracking.contact_reward_mode import ContactRewardMode
 
-RUN_ROOT = REPO_ROOT / ".local/runs/stage16_frozen_source_policy_gravity_sweep"
-REPORT_ROOT = REPO_ROOT / ".local/reports/stage16_frozen_source_policy_gravity_sweep"
-TRACE_ROOT = REPO_ROOT / ".local/sim_data/stage16_frozen_source_policy_gravity_sweep"
+DEFAULT_RUN_ROOT = REPO_ROOT / ".local/runs/stage16_frozen_source_policy_gravity_sweep"
+DEFAULT_REPORT_ROOT = REPO_ROOT / ".local/reports/stage16_frozen_source_policy_gravity_sweep"
+DEFAULT_TRACE_ROOT = REPO_ROOT / ".local/sim_data/stage16_frozen_source_policy_gravity_sweep"
+# These roots are configured once by ``main``. Keeping the default preserves
+# the historical sweep command, while closure work writes separate evidence.
+RUN_ROOT = DEFAULT_RUN_ROOT
+REPORT_ROOT = DEFAULT_REPORT_ROOT
+TRACE_ROOT = DEFAULT_TRACE_ROOT
 CURRICULUM = REPO_ROOT / "configs/rl/stage16/stage16_gravity_friction_curriculum_v1.yaml"
 GEOMETRY = (
     REPO_ROOT
@@ -164,6 +170,15 @@ def _append_failure(payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as stream:
         stream.write(json.dumps(payload, sort_keys=True) + "\n")
+
+
+def _configure_output_roots(*, run_root: Path, report_root: Path, trace_root: Path) -> None:
+    """Set one explicit evidence namespace before any run-side effects."""
+
+    global RUN_ROOT, REPORT_ROOT, TRACE_ROOT
+    RUN_ROOT = run_root.resolve()
+    REPORT_ROOT = report_root.resolve()
+    TRACE_ROOT = trace_root.resolve()
 
 
 def _gpu_usage() -> dict[str, object]:
@@ -278,7 +293,41 @@ def _source_authority(mode: ContactRewardMode, clip: str) -> dict[str, object]:
     }
 
 
-def _load_sources() -> dict[str, dict[str, object]]:
+def _load_sources(source_manifest: Path | None = None) -> dict[str, dict[str, object]]:
+    """Load historical sources or one explicitly prepared adapted checkpoint."""
+
+    if source_manifest is not None:
+        payload = json.loads(source_manifest.resolve().read_text(encoding="utf-8"))
+        declared = payload.get("sources")
+        if not isinstance(declared, dict) or not declared:
+            raise ValueError("SOURCE_ACTOR_MANIFEST_INVALID")
+        sources: dict[str, dict[str, object]] = {}
+        required = {
+            "id",
+            "reward",
+            "contact_mode",
+            "clip",
+            "checkpoint",
+            "checkpoint_sha256",
+            "actor_hash",
+            "normalizer_hash",
+        }
+        for key, item in declared.items():
+            if not isinstance(item, dict) or not required.issubset(item):
+                raise ValueError("SOURCE_ACTOR_MANIFEST_ENTRY_INVALID")
+            source = dict(item)
+            checkpoint = Path(str(source["checkpoint"])).resolve()
+            mode = ContactRewardMode.parse(str(source["contact_mode"]))
+            if (
+                str(key) != source["id"]
+                or source["reward"] != _mode_label(mode)
+                or source["clip"] not in {"hocap_170105", "hocap_170650"}
+                or not checkpoint.is_file()
+                or _sha256(checkpoint) != source["checkpoint_sha256"]
+            ):
+                raise ValueError("SOURCE_ACTOR_MANIFEST_ENTRY_DRIFT")
+            sources[str(key)] = source
+        return sources
     sources = {
         f"{_mode_label(mode)}_{clip}": _source_authority(mode, clip)
         for mode, clip in _source_specs()
@@ -688,15 +737,35 @@ def _condition_paths(source: Mapping[str, object], stage: str) -> tuple[Path, Pa
 
 
 def _slice_parallel_trace(
-    trace: Mapping[str, np.ndarray], *, replica: int, replicas: int, clip: str
+    trace: Mapping[str, np.ndarray],
+    *,
+    replica: int,
+    replicas: int,
+    clip: str,
+    expected_frames: int,
 ) -> dict[str, np.ndarray]:
-    """Select one 321-frame replica from the evaluator's all-replica capture."""
+    """Select one replica through its authoritative terminal row only.
+
+    Isaac Lab resets vectorized environments immediately after a terminal
+    condition. The raw all-replica buffer can therefore contain rows from a
+    subsequent reset for a replica that ended early. Those rows are neither
+    part of the physical episode nor admissible terminal evidence.
+    """
+
+    indices = np.asarray(trace["reference_index"])
+    if indices.ndim < 2 or indices.shape[1] != replicas:
+        raise RuntimeError("FROZEN_SOURCE_SWEEP_PARALLEL_REFERENCE_INDEX_INVALID")
+    captured_frames = int(indices.shape[0])
+    if expected_frames <= 0 or expected_frames > captured_frames:
+        raise RuntimeError("FROZEN_SOURCE_SWEEP_CAPTURED_TRACE_SHORTER_THAN_EXECUTION")
 
     result: dict[str, np.ndarray] = {}
     for name, value in trace.items():
         array = np.asarray(value)
-        if array.ndim >= 2 and array.shape[1] == replicas:
-            result[name] = array[:, replica].copy()
+        if array.ndim >= 2 and array.shape[0] == captured_frames and array.shape[1] == replicas:
+            result[name] = array[:expected_frames, replica].copy()
+        elif array.ndim >= 1 and array.shape[0] == captured_frames:
+            result[name] = array[:expected_frames].copy()
         else:
             result[name] = array.copy()
     if "phase_code" in result:
@@ -709,6 +778,48 @@ def _slice_parallel_trace(
             clip, np.asarray(result["reference_index"], dtype=np.int64)
         )
     return result
+
+
+def _completion_layers(
+    *, trace: Mapping[str, np.ndarray], rollout: Mapping[str, object], start: int
+) -> dict[str, object]:
+    """Report simulation, trace, and qualification preconditions separately."""
+
+    reference_index = np.asarray(trace["reference_index"], dtype=np.int64)
+    expected_rows = int(rollout["steps"]) + 1
+    expected_index = np.arange(start, start + expected_rows, dtype=np.int64)
+    rows_match_execution = bool(
+        len(reference_index) == expected_rows and np.array_equal(reference_index, expected_index)
+    )
+    reached_terminal_reference = bool(
+        rollout["reached_reference_end"]
+        and expected_rows == 321
+        and len(reference_index) == 321
+        and int(reference_index[-1]) == 320
+    )
+    finite_fields = ("object_pose", "object_twist", "wrist_pose", "finger_q", "action")
+    required_fields_present = all(name in trace for name in finite_fields)
+    finite = bool(
+        required_fields_present
+        and all(np.isfinite(np.asarray(trace[name])).all() for name in finite_fields)
+    )
+    phase = set(np.asarray(trace.get("phase", ())).tolist())
+    terminal_semantic = bool(reached_terminal_reference and "TERMINAL" in phase)
+    simulation_completed = bool(reached_terminal_reference and rows_match_execution and finite)
+    trace_completed = bool(simulation_completed and required_fields_present)
+    return {
+        "SIMULATION_COMPLETED": simulation_completed,
+        "TRACE_COMPLETED": trace_completed,
+        "QUALIFICATION_COMPLETED": False,
+        "valid_physics_frames": int(len(reference_index)),
+        "expected_physics_frames": 321,
+        "reference_index_matches_execution": rows_match_execution,
+        "reference_reaches_terminal": reached_terminal_reference,
+        "terminal_semantic_recorded": terminal_semantic,
+        "finite_state": finite,
+        "required_trace_fields_present": required_fields_present,
+        "termination_reason": int(rollout["termination_reason"]),
+    }
 
 
 def _parallel_rollouts(
@@ -738,7 +849,13 @@ def _parallel_rollouts(
         output.append(
             (
                 rollout,
-                _slice_parallel_trace(all_trace, replica=replica, replicas=len(seeds), clip=clip),
+                _slice_parallel_trace(
+                    all_trace,
+                    replica=replica,
+                    replicas=len(seeds),
+                    clip=clip,
+                    expected_frames=int(rollout["steps"]) + 1,
+                ),
             )
         )
     return output
@@ -787,6 +904,7 @@ def _run_condition(
         )
         for episode, (rollout, trace) in enumerate(rollouts):
             seed = seeds[episode]
+            completion = _completion_layers(trace=trace, rollout=rollout, start=start)
             captured_path = trace_dir / "captured_pre_geometry" / f"episode_{episode:02d}.npz"
             captured_path.parent.mkdir(parents=True, exist_ok=True)
             np.savez_compressed(
@@ -802,14 +920,13 @@ def _run_condition(
                     "episode": episode,
                     "seed": seed,
                     "rollout": rollout,
+                    "completion": completion,
                     "trace": {
                         "path": str(captured_path.resolve()),
                         "sha256": _sha256(captured_path),
                     },
                 },
             )
-            if len(np.asarray(trace["reference_index"])) != 321:
-                raise RuntimeError("FROZEN_SOURCE_SWEEP_TRACE_LENGTH_INVALID")
             phase = set(np.asarray(trace["phase"]).tolist())
             required_phases = {
                 "PRE_CONTACT",
@@ -820,7 +937,12 @@ def _run_condition(
                 "MANIPULATION",
                 "TERMINAL",
             }
-            if not required_phases.issubset(phase):
+            # An early physical termination is an evaluated outcome, not a
+            # runner crash.  Preserve its trimmed trace and finish all ten
+            # replicas, but never manufacture the missing terminal phase.
+            # A missing non-terminal reference phase remains a trace defect.
+            missing_phases = required_phases.difference(phase)
+            if missing_phases.difference({"TERMINAL"}):
                 raise RuntimeError(f"FROZEN_SOURCE_SWEEP_REFERENCE_PHASE_MISSING:{phase}")
             frozen_contact = _trace_metrics(trace, mode=mode.value)
             grasp = _v4_safe_grasp_metrics(trace, mode)
@@ -974,6 +1096,9 @@ def _run_condition(
                     frozen_contact["contact_reward_formula_max_abs_error"]
                 ),
                 "finite": bool(diagnostic["finite"]),
+                "simulation_completed": bool(completion["SIMULATION_COMPLETED"]),
+                "trace_completed": bool(completion["TRACE_COMPLETED"]),
+                "terminal_phase_reached": bool(completion["terminal_semantic_recorded"]),
             }
             detail = {
                 "episode": episode,
@@ -1000,9 +1125,19 @@ def _run_condition(
         _write_csv(report_dir / "per_episode.csv", rows)
         _write_csv(report_dir / "per_finger.csv", per_finger_rows)
         suite_aggregate = aggregate_rollouts(rows)
+        all_simulation_completed = all(bool(row["simulation_completed"]) for row in rows)
+        all_trace_completed = all(bool(row["trace_completed"]) for row in rows)
+        all_terminal_phase_reached = all(bool(row["terminal_phase_reached"]) for row in rows)
+        qualification_completed = bool(
+            all_simulation_completed and all_trace_completed and all_terminal_phase_reached
+        )
         summary = {
             "schema_version": "Stage16FrozenSourcePolicyGravitySweepConditionV1",
-            "status": "COMPLETE_DIAGNOSTIC_SWEEP",
+            "status": (
+                "COMPLETE_DIAGNOSTIC_SWEEP"
+                if qualification_completed
+                else "COMPLETE_DIAGNOSTIC_SWEEP_WITH_PHYSICAL_FAILURE"
+            ),
             "source": source,
             "stage": stage,
             "physics": stage_row,
@@ -1087,6 +1222,12 @@ def _run_condition(
                 )
             },
             "full_321_frame_traces": all(int(row["steps"]) == 320 for row in rows),
+            "completion": {
+                "SIMULATION_COMPLETED": all_simulation_completed,
+                "TRACE_COMPLETED": all_trace_completed,
+                "QUALIFICATION_COMPLETED": qualification_completed,
+            },
+            "terminal_phase_reached": all_terminal_phase_reached,
             "runtime_s": time.monotonic() - started,
             "trace_root": str(trace_dir.resolve()),
         }
@@ -1114,8 +1255,14 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--source",
         action="append",
-        choices=("v3_hocap_170105", "v4_hocap_170105", "v3_hocap_170650", "v4_hocap_170650"),
-        help="Run only this independent frozen source lineage; repeat to select several.",
+        help=(
+            "Run only this independent frozen or prepared adapted source; repeat to select several."
+        ),
+    )
+    parser.add_argument(
+        "--source-manifest",
+        type=Path,
+        help="Prepared one-or-more adapted-source manifest; never changes checkpoint contents.",
     )
     parser.add_argument(
         "--stage",
@@ -1123,31 +1270,55 @@ def _parser() -> argparse.ArgumentParser:
         choices=STAGES,
         help="Run only this independent physics stage; repeat to select several.",
     )
+    parser.add_argument("--run-root", type=Path, default=DEFAULT_RUN_ROOT)
+    parser.add_argument("--report-root", type=Path, default=DEFAULT_REPORT_ROOT)
+    parser.add_argument("--trace-root", type=Path, default=DEFAULT_TRACE_ROOT)
+    isolation = parser.add_mutually_exclusive_group()
+    isolation.add_argument(
+        "--isolate-conditions",
+        action="store_true",
+        default=True,
+        help="Run every reward/clip/stage condition in its own bounded child process.",
+    )
+    isolation.add_argument(
+        "--no-isolate-conditions",
+        action="store_false",
+        dest="isolate_conditions",
+        help="Internal diagnostic mode only; do not use for formal evidence.",
+    )
+    parser.add_argument(
+        "--condition-timeout-s",
+        type=float,
+        default=360.0,
+        help="Bound for one isolated condition, including Kit startup and finalization.",
+    )
+    parser.add_argument("--child-condition", action="store_true", help=argparse.SUPPRESS)
     return parser
 
 
-def _completed_condition(source: Mapping[str, object], stage: str) -> bool:
+def _completed_condition(source: Mapping[str, object], stage: str, *, episodes: int) -> bool:
     report_dir, trace_dir = _condition_paths(source, stage)
     path = report_dir / "qualification.json"
     if not path.is_file():
         return False
     payload = json.loads(path.read_text(encoding="utf-8"))
     return bool(
-        payload.get("status") == "COMPLETE_DIAGNOSTIC_SWEEP"
-        and payload.get("episodes") == 10
+        payload.get("status")
+        in {
+            "COMPLETE_DIAGNOSTIC_SWEEP",
+            "COMPLETE_DIAGNOSTIC_SWEEP_WITH_PHYSICAL_FAILURE",
+        }
+        and payload.get("episodes") == episodes
         and payload.get("actor_hash_before") == source["actor_hash"]
         and payload.get("actor_hash_after") == source["actor_hash"]
         and payload.get("normalizer_hash_before") == source["normalizer_hash"]
         and payload.get("normalizer_hash_after") == source["normalizer_hash"]
-        and all((trace_dir / f"episode_{episode:02d}.npz").is_file() for episode in range(10))
+        and all((trace_dir / f"episode_{episode:02d}.npz").is_file() for episode in range(episodes))
     )
 
 
-def main() -> int:
-    args = _parser().parse_args()
-    if not args.accept_eula or args.episodes != 10:
-        raise ValueError("FROZEN_SOURCE_SWEEP_REQUIRES_EULA_AND_EXACTLY_10_EPISODES")
-    if not args.resume:
+def _prepare_namespace(*, resume: bool) -> None:
+    if not resume:
         if any(path.exists() for path in (RUN_ROOT, TRACE_ROOT)):
             raise FileExistsError("FROZEN_SOURCE_SWEEP_NAMESPACE_EXISTS")
         if REPORT_ROOT.exists() and (REPORT_ROOT / "sweep").exists():
@@ -1157,20 +1328,182 @@ def main() -> int:
         TRACE_ROOT.mkdir(parents=True)
     elif not (RUN_ROOT.is_dir() and REPORT_ROOT.is_dir() and TRACE_ROOT.is_dir()):
         raise FileNotFoundError("FROZEN_SOURCE_SWEEP_RESUME_NAMESPACE_MISSING")
+
+
+def _terminate_own_child(process: subprocess.Popen[str]) -> None:
+    """Gracefully terminate only the isolated condition's process group."""
+
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=30.0)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait(timeout=30.0)
+
+
+def _run_isolated_conditions(args: argparse.Namespace) -> int:
+    """Coordinate child Kit processes without allowing one condition to contaminate another."""
+
+    if args.condition_timeout_s <= 0.0:
+        raise ValueError("FROZEN_SOURCE_SWEEP_CONDITION_TIMEOUT_MUST_BE_POSITIVE")
+    source_filter = None if args.source is None else set(args.source)
+    stage_filter = None if args.stage is None else set(args.stage)
+    sources = _load_sources(args.source_manifest)
+    physics = _physics_contract()
+    completed: list[dict[str, object]] = []
+    failures: list[dict[str, object]] = []
+    started = time.monotonic()
+    script = Path(__file__).resolve()
+    environment = dict(os.environ)
+    environment["OMNI_KIT_ACCEPT_EULA"] = "YES"
+    environment["PYTHONUNBUFFERED"] = "1"
+    for source in sorted(sources.values(), key=lambda item: str(item["id"])):
+        if source_filter is not None and source["id"] not in source_filter:
+            continue
+        for stage_row in physics["stages"]:
+            stage = str(stage_row["stage"])
+            if stage_filter is not None and stage not in stage_filter:
+                continue
+            if _completed_condition(source, stage, episodes=args.episodes):
+                completed.append({"source": source["id"], "stage": stage, "reused": True})
+                continue
+            command = [
+                sys.executable,
+                str(script),
+                "--accept-eula",
+                "--episodes",
+                str(args.episodes),
+                "--resume",
+                "--child-condition",
+                "--source",
+                str(source["id"]),
+                "--stage",
+                stage,
+                "--run-root",
+                str(RUN_ROOT),
+                "--report-root",
+                str(REPORT_ROOT),
+                "--trace-root",
+                str(TRACE_ROOT),
+            ]
+            if args.source_manifest is not None:
+                command.extend(["--source-manifest", str(args.source_manifest.resolve())])
+            attempt_root = REPORT_ROOT / "condition_subprocess" / str(source["id"]) / stage.lower()
+            attempt_root.mkdir(parents=True, exist_ok=True)
+            attempt = len(list(attempt_root.glob("attempt_*.json"))) + 1
+            child_started = time.monotonic()
+            process = subprocess.Popen(
+                command,
+                cwd=REPO_ROOT,
+                env=environment,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+            )
+            timeout = False
+            try:
+                stdout, stderr = process.communicate(timeout=args.condition_timeout_s)
+            except subprocess.TimeoutExpired:
+                timeout = True
+                _terminate_own_child(process)
+                stdout, stderr = process.communicate()
+            elapsed = time.monotonic() - child_started
+            (attempt_root / f"attempt_{attempt:02d}.stdout.txt").write_text(
+                stdout, encoding="utf-8"
+            )
+            (attempt_root / f"attempt_{attempt:02d}.stderr.txt").write_text(
+                stderr, encoding="utf-8"
+            )
+            receipt = {
+                "source": source["id"],
+                "stage": stage,
+                "attempt": attempt,
+                "command": command,
+                "condition_timeout_s": args.condition_timeout_s,
+                "wall_clock_s": elapsed,
+                "returncode": process.returncode,
+                "timeout": timeout,
+                "timeout_attribution": (
+                    "WALL_CLOCK_BUDGET_TOO_SHORT_OR_REAL_SIMULATION_HANG" if timeout else None
+                ),
+                "stdout": str((attempt_root / f"attempt_{attempt:02d}.stdout.txt").resolve()),
+                "stderr": str((attempt_root / f"attempt_{attempt:02d}.stderr.txt").resolve()),
+            }
+            _write_json(attempt_root / f"attempt_{attempt:02d}.json", receipt)
+            if (
+                timeout
+                or process.returncode != 0
+                or not _completed_condition(source, stage, episodes=args.episodes)
+            ):
+                failures.append(receipt)
+                _append_failure({"scope": "isolated_condition", **receipt})
+            else:
+                completed.append({"source": source["id"], "stage": stage, "reused": False})
+            _write_json(
+                RUN_ROOT / "isolated_progress.json",
+                {
+                    "completed": completed,
+                    "failures": failures,
+                    "full_scope": source_filter is None and stage_filter is None,
+                },
+            )
+    payload = {
+        "status": "FROZEN_SOURCE_SWEEP_ISOLATED_COMPLETE"
+        if not failures
+        else "FROZEN_SOURCE_SWEEP_ISOLATED_INCOMPLETE",
+        "condition_timeout_s": args.condition_timeout_s,
+        "completed": completed,
+        "failures": failures,
+        "PPO_TRAINING_RUN": False,
+        "PPO_OPTIMIZER_STEP": 0,
+        "total_runtime_s": time.monotonic() - started,
+    }
+    _write_json(RUN_ROOT / "isolated_complete.json", payload)
+    print(
+        json.dumps(
+            {"status": payload["status"], "completed": len(completed), "failures": len(failures)}
+        )
+    )
+    return 0 if not failures else 1
+
+
+def main() -> int:
+    args = _parser().parse_args()
+    if not args.accept_eula or args.episodes not in {10, 20}:
+        raise ValueError("FROZEN_SOURCE_SWEEP_REQUIRES_EULA_AND_10_OR_20_EPISODES")
+    _configure_output_roots(
+        run_root=args.run_root, report_root=args.report_root, trace_root=args.trace_root
+    )
+    _prepare_namespace(resume=args.resume)
+    if args.isolate_conditions and not args.child_condition:
+        return _run_isolated_conditions(args)
+    if args.child_condition and (
+        args.source is None or len(args.source) != 1 or args.stage is None or len(args.stage) != 1
+    ):
+        raise ValueError("FROZEN_SOURCE_SWEEP_CHILD_REQUIRES_ONE_SOURCE_AND_ONE_STAGE")
     started = time.monotonic()
     source_filter = None if args.source is None else set(args.source)
     stage_filter = None if args.stage is None else set(args.stage)
     full_scope = source_filter is None and stage_filter is None
     app = None
     try:
-        sources = _load_sources()
+        sources = _load_sources(args.source_manifest)
         physics = _physics_contract()
         static_wrist = _require_static_wrist_receipt()
         seed_manifest = {
             "schema_version": "Stage16FrozenSourcePolicyGravitySweepSeedsV1",
             "protocol": "FRAME0_ONLY_DETERMINISTIC",
-            "episodes_per_condition": 10,
-            "by_clip": {clip: _seeds(clip, count=10) for clip in ("hocap_170105", "hocap_170650")},
+            "episodes_per_condition": args.episodes,
+            "by_clip": {
+                clip: _seeds(clip, count=args.episodes) for clip in ("hocap_170105", "hocap_170650")
+            },
         }
         _write_json(REPORT_ROOT / "frozen_inputs.json", {"sources": sources, "physics": physics})
         _write_json(REPORT_ROOT / "physics_contract.json", physics)
@@ -1209,8 +1542,9 @@ def main() -> int:
             clip: _load_gate(FROZEN_GATES, clip=clip) for clip in seed_manifest["by_clip"]
         }
         completed: list[dict[str, object]] = []
-        for mode, clip in _source_specs():
-            source = sources[f"{_mode_label(mode)}_{clip}"]
+        for source in sorted(sources.values(), key=lambda item: str(item["id"])):
+            mode = ContactRewardMode.parse(str(source["contact_mode"]))
+            clip = str(source["clip"])
             if source_filter is not None and source["id"] not in source_filter:
                 continue
             seeds = seed_manifest["by_clip"][clip]
@@ -1218,7 +1552,7 @@ def main() -> int:
                 stage = str(stage_row["stage"])
                 if stage_filter is not None and stage not in stage_filter:
                     continue
-                if not _completed_condition(source, stage):
+                if not _completed_condition(source, stage, episodes=args.episodes):
                     _run_condition(
                         source=source,
                         mode=mode,
@@ -1243,7 +1577,7 @@ def main() -> int:
                 _write_json(progress_path, {"completed": completed, "full_scope": full_scope})
         receipt = {
             "conditions": len(completed),
-            "episodes": len(completed) * 10,
+            "episodes": len(completed) * args.episodes,
             "PPO_TRAINING_RUN": False,
             "PPO_OPTIMIZER_STEP": 0,
             "sources": sorted(source_filter) if source_filter is not None else "ALL",
@@ -1267,7 +1601,7 @@ def main() -> int:
                 {
                     "status": "PASS" if full_scope else "PARTIAL_SCOPE_PASS",
                     "conditions": len(completed),
-                    "episodes": len(completed) * 10,
+                    "episodes": len(completed) * args.episodes,
                 }
             )
         )
