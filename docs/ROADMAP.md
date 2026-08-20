@@ -130,12 +130,14 @@ validation](rl/CONTACT_PRESERVING_FULL_C0_VALIDATION.md).
 
 This remains a historical C0 optimization-preservation result, not the current
 physical-program main action. The frozen-source C0--C4 gravity/friction sweep
-has observed one full-gravity-capable source (V4/170650) and one partially
-functional one (V3/170105), while six conditions are technical timeouts or an
-invalid terminal-phase trace. Its global state is therefore
-`TECHNICALLY_INCONCLUSIVE`; do not start PPO. The single current action is
-`NEXT_REMEDIATE_TECHNICAL_ROLLOUT_TIMEOUTS_THEN_REEVALUATE_INCONCLUSIVE_LINEAGES`.
-See [frozen source policy gravity sweep](rl/FROZEN_SOURCE_POLICY_GRAVITY_SWEEP.md).
+has now received isolated-process timeout/terminal-capture repair and the
+authorized minimal-adaptation decision tree. All four C4 receipts are
+technically complete. V4/170650 was frozen-C4 functional but failed Formal20
+(2/20 qualified; required 16/20); V3/170650 recovered through C2 but failed
+the full C3 budget, and V3/170105 C1 plus V4/170105 C4 exhausted their budgets
+without lift recovery. The current state is `NO_SUCCESS`, with no success
+export or further PPO/reward/LR sweep authorized. See [full-gravity capability
+closure](rl/FULL_GRAVITY_CAPABILITY_CLOSURE.md).
 
 ### Support resolution reconstruction (implemented, not promoted)
 

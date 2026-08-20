@@ -112,11 +112,12 @@ default，不得启动 C1；唯一允许的后续动作是
 validation](rl/CONTACT_PRESERVING_FULL_C0_VALIDATION.md)。
 
 这仍是历史 C0 optimization-preservation 结论，不再是当前 physical program 的主动作。
-冻结 source 的 C0--C4 gravity/friction sweep 已经观察到 V4/170650 在 full gravity
-下可用、V3/170105 为部分可用；但另有六个条件为 technical timeout 或无效的 terminal-phase
-trace。因此全局状态为 `TECHNICALLY_INCONCLUSIVE`，不得启动 PPO。唯一当前动作是
-`NEXT_REMEDIATE_TECHNICAL_ROLLOUT_TIMEOUTS_THEN_REEVALUATE_INCONCLUSIVE_LINEAGES`。
-见 [frozen source policy gravity sweep](rl/FROZEN_SOURCE_POLICY_GRAVITY_SWEEP.md)。
+冻结 source 的 C0--C4 gravity/friction sweep 已完成 isolated-process 的 timeout/terminal-capture
+修复和授权的最小 adaptation 决策树。四条 C4 receipt 均已技术完成。V4/170650 虽然 frozen-C4
+functional，但 Formal20 只通过 2/20（要求 16/20）；V3/170650 仅恢复到 C2，完整 C3 budget
+失败；V3/170105 的 C1 和 V4/170105 的 C4 均耗尽 budget，未恢复 lift。当前状态为
+`NO_SUCCESS`：不得 success export，也不得继续 PPO/reward/LR sweep。见
+[full-gravity capability closure](rl/FULL_GRAVITY_CAPABILITY_CLOSURE.md)。
 
 ### Support resolution reconstruction（已实现，不提升）
 

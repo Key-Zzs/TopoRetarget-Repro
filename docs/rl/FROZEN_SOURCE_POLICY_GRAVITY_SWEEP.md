@@ -2,8 +2,11 @@
 
 ## Status
 
-`TECHNICALLY_INCONCLUSIVE` — this is not a policy-wide physical failure and it
-does not authorize PPO training. The executable evidence is rooted at
+`SUPERSEDED_BY_FULL_GRAVITY_CAPABILITY_CLOSURE` — this document preserves the
+historical frozen-sweep result. The timeout/terminal-capture repair and all
+authorized minimal adaptations have now closed at `NO_SUCCESS`; see [the
+full-gravity capability closure](FULL_GRAVITY_CAPABILITY_CLOSURE.md). The
+historical executable evidence remains rooted at
 `.local/reports/stage16_frozen_source_policy_gravity_sweep/`.
 
 The evaluation freezes all four selected zero-gravity source actors and their
