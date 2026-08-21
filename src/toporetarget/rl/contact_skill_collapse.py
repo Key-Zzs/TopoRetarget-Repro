@@ -168,7 +168,10 @@ def lift_timing(
     """Apply the pre-registered deterministic lift/contact timing rules."""
 
     phase = np.asarray(trace["phase"])
-    contact = np.asarray(trace["hand_object_pair_presence"], dtype=bool).any(axis=-1)
+    contact = np.asarray(
+        np.asarray(trace["hand_object_pair_presence"], dtype=bool).any(axis=-1),
+        dtype=np.bool_,
+    )
     wrist_up = np.asarray(trace["wrist_twist_world"], dtype=np.float64)[:, 2]
     object_z = np.asarray(trace["object_pose"], dtype=np.float64)[:, 2]
     first_contact_values = np.flatnonzero(contact)
