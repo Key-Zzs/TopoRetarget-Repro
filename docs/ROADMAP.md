@@ -21,6 +21,26 @@ It supports object-local fingertip diagnostics but makes no PPO, reward,
 physics, controller, or reference change. See [raw-mocap replay
 overlay](rl/RAW_MOCAP_REPLAY_OVERLAY.md).
 
+## Stage16 dynamic physical qualification and grasp robustness (implemented)
+
+The mainline evidence order is now:
+
+```text
+raw-vs-actual visualization
+    -> dynamic physical qualification
+    -> object-agnostic grasp robustness diagnosis
+    -> only then a separately authorized physical refinement
+```
+
+The additive `SR_dynamic` receipt evaluates Reference Kinematics V2
+reference-relative terminal twist using the frozen V2 thresholds; it is not a
+hold criterion and leaves historical `SRphysics` untouched. The V4 frozen
+170105/170650 comparison preserves raw-MANO, retarget, and PhysX evidence as
+separate layers and does not make an unsupported friction claim when contact
+normals, points, or effective friction are missing. See [dynamic physical
+qualification](rl/DYNAMIC_PHYSICAL_QUALIFICATION.md) and [grasp robustness
+diagnostic](rl/GRASP_ROBUSTNESS_170105_VS_170650.md).
+
 ## Stage16-D causal zero-g milestone (CLOSED)
 
 `CAUSAL_ZERO_G_MILESTONE_COMPLETE`
