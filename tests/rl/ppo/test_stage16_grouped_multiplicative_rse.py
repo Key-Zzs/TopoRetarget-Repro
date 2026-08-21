@@ -13,6 +13,7 @@ from toporetarget.rl.reference_tracking.grouped_multiplicative_reward import (
 )
 from toporetarget.rl.reference_tracking.ppo26d_reward import (
     TopoRetargetReferenceTrackingReward26DV4,
+    ppo26d_reward_v4_strict_per_finger_contact_terms,
 )
 from toporetarget.rl.reference_tracking.reference_scoped_exploration import (
     AdaptiveScopeStateV1,
@@ -65,6 +66,23 @@ def test_group_rewards_are_bounded_perfect_near_one_and_soft_and() -> None:
     assert torch.allclose(terms["R_reg"], torch.ones(4))
     minimum = torch.stack([terms[name] for name in ("R_obj", "R_hand", "R_int", "R_reg")]).amin(0)
     assert torch.all(terms["total"] <= minimum + 1.0e-7)
+
+
+def test_legacy_additive_total_is_numerically_unchanged() -> None:
+    values = _inputs()
+    legacy = ppo26d_reward_v4_strict_per_finger_contact_terms(
+        **{
+            name: value
+            for name, value in values.items()
+            if name
+            not in {
+                "reference_fingertip_surface_distance_m",
+                "actual_fingertip_surface_distance_m",
+            }
+        }
+    )
+    grouped = grouped_multiplicative_reward_v1_terms(**values)
+    assert torch.equal(grouped["total_legacy_additive"], legacy["total"])
 
 
 def test_each_group_degradation_lowers_total_without_compensation() -> None:
