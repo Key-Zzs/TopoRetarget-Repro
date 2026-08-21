@@ -9,6 +9,7 @@ not create a simulator, collect a rollout, or update a checkpoint.
 import csv
 import hashlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,12 @@ def _sha256(path: Path) -> str:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _git(*args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=REPO_ROOT, check=True, capture_output=True, text=True
+    ).stdout.strip()
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -293,6 +300,28 @@ def main() -> int:
             ],
         },
     )
+    _write_text(
+        REPORT_ROOT / "pf_v2/causal_lift_semantics.md",
+        """# PF V2 causal-lift semantics
+
+`ActualLiftOnset` is the first persistent (three control-step) event where the
+object is support-free, has risen by the inherited 5 cm threshold, and has
+positive pose-derived vertical velocity. `reference LIFT` is retained solely as
+an interaction-timing diagnostic.
+
+`SupportTransferProxyV1` uses the recorded binary table ContactSensor signal,
+not the visual replay table. It is not an exact normal-wrench claim. Table
+sensor validity is independent of the hand-object pair-force validity: the
+recorded reset table-support sample is retained even though frame zero has no
+post-physics hand-pair force sample. A trace with no recorded support sample is
+`NOT_IDENTIFIABLE`, never silently promoted to a pass.
+
+`CausalLoadBearingInteractionV1` requires persistent observed hand contact and
+multi-finger contact at actual lift plus a three-step post-lift contact and
+finite pose-derived relative linear/angular motion. This rejects a flick that
+raises the object but loses contact before or immediately after actual lift.
+""",
+    )
     _write_replay_commands()
     final = {
         "schema_version": "Stage16Pfv2CausalLiftSymmetricPPOFinalV1",
@@ -342,6 +371,18 @@ def main() -> int:
         "next_action": "NEXT_DIAGNOSE_170650_CONTINUATION_INSTABILITY_WITHOUT_TUNING",
     }
     _write_json(REPORT_ROOT / "final_summary.json", final)
+    _write_json(
+        REPORT_ROOT / "git_commits.json",
+        {
+            "branch": _git("branch", "--show-current"),
+            "final_head": _git("rev-parse", "HEAD"),
+            "commits": _git("log", "--oneline", "--max-count=8").splitlines(),
+            "worktree_clean": _git("status", "--short", "--untracked-files=all") == "",
+            "pushed": False,
+            "pr_created": False,
+            "local_reports_tracked": False,
+        },
+    )
     _write_text(
         REPORT_ROOT / "handoff.md",
         f"""# Stage16 PF V2 Causal Lift + Symmetric PPO Handoff
