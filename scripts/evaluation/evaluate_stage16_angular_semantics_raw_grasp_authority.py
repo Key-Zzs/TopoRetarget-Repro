@@ -837,7 +837,6 @@ Do not infer friction or force closure from these views.
 
 
 def _markdown(summary: dict[str, object]) -> str:
-    a105 = summary["angular"]["hocap_170105"]["aggregate"]
     a650 = summary["angular"]["hocap_170650"]["aggregate"]
     r105 = summary["raw"]["hocap_170105"]["events"]
     r650 = summary["raw"]["hocap_170650"]["events"]
