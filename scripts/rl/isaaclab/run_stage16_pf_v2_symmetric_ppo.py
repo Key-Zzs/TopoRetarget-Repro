@@ -446,7 +446,9 @@ def _train(
     training_started = run_lineage / "training_started.json"
     if training_started.exists() or (report_lineage / "progression.csv").exists():
         raise FileExistsError("PF_V2_SYMMETRIC_TRAINING_NAMESPACE_EXISTS")
-    run_lineage.mkdir(parents=True)
+    # A passed runtime-sanity receipt already owns this clip's run root; only
+    # an earlier training sentinel/progression is a collision.
+    run_lineage.mkdir(parents=True, exist_ok=True)
     _write_json(
         training_started,
         {
