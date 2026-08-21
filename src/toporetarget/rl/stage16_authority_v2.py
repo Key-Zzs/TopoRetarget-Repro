@@ -354,7 +354,7 @@ def raw_human_grasp_profile(
         component >= frozen.minimum_component_vertices
     )
     any_surface_raw = distance.min(axis=1) <= frozen.nominal_contact_distance_m
-    any_robust_raw = robust_region.any(axis=1)
+    any_robust_raw = np.asarray(robust_region.any(axis=1), dtype=np.bool_)
     multi_region_raw = robust_region.sum(axis=1) >= frozen.multi_region_minimum
     thumb_non_thumb_raw = robust_region[:, 0] & robust_region[:, 1:5].any(axis=1)
     topology_raw = (
