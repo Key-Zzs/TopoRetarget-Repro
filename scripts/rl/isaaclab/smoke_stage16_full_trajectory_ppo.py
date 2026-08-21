@@ -30,6 +30,8 @@ from toporetarget.rl.full_trajectory_episode_start import validate_full_trajecto
 START_ROOT = REPO_ROOT / ".local/reports/stage16_p3_full_trajectory_restart/episode_start"
 SUPPORT_ROOT = REPO_ROOT / ".local/reports/stage16_support_reconstruction/inference"
 REFERENCE_ROOT = REPO_ROOT / ".local/reports/stage16d_reference_kinematics_v2/references"
+REFERENCE_DISTANCE_ROOT = REPO_ROOT / ".local/reports/stage16d_reward_v3_contact"
+OBJECT_VISUAL_MESH_ROOT = REPO_ROOT / ".local/stage16_reference_tracking_ppo/world_wrist_objects"
 
 
 def _sha256(path: Path) -> str:
@@ -75,6 +77,9 @@ def _make_table_env(
     robot_usd_path: Path | None = None,
     self_collision_override: bool | None = None,
     training_rsi: bool = False,
+    reward_aggregation_mode: str = "legacy_additive",
+    rse_enabled: bool = False,
+    full_horizon_evaluation: bool = False,
 ) -> Any:
     """Construct the production PPO environment with fixed finite supports."""
 
@@ -248,6 +253,17 @@ def _make_table_env(
         ),
         stage=stage,
     )
+    cfg.ppo26d_full_horizon_evaluation = bool(full_horizon_evaluation)
+    if reward_aggregation_mode != "legacy_additive" or rse_enabled:
+        ppo_cfg.configure_stage16d_grouped_multiplicative_rse(
+            cfg,
+            reward_mode=reward_aggregation_mode,
+            rse_enabled=rse_enabled,
+            distance_relaxation=rse_enabled,
+            adaptive_termination=rse_enabled,
+            reference_distance_root=REFERENCE_DISTANCE_ROOT,
+            object_mesh_root=OBJECT_VISUAL_MESH_ROOT,
+        )
     if robot_usd_path is not None:
         resolved_robot_asset = robot_usd_path.resolve()
         if not resolved_robot_asset.is_file():

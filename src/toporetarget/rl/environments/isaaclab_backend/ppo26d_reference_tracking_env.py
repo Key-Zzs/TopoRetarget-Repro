@@ -22,6 +22,15 @@ from toporetarget.rl.reference_tracking.contact_reward_mode import (
     resolve_contact_mode,
     validate_frozen_contact_contract,
 )
+from toporetarget.rl.reference_tracking.grouped_multiplicative_reward import (
+    GROUPED_MULTIPLICATIVE_V1,
+    LEGACY_ADDITIVE,
+    GroupedMultiplicativeRewardV1,
+    grouped_multiplicative_reward_v1_terms,
+    parse_obj_triangles,
+    point_to_triangle_surface_distance,
+    reference_scope_weight,
+)
 from toporetarget.rl.reference_tracking.ppo26d_reward import (
     TopoRetargetReferenceTrackingReward26DV1,
     TopoRetargetReferenceTrackingReward26DV2,
@@ -32,7 +41,13 @@ from toporetarget.rl.reference_tracking.ppo26d_reward import (
     ppo26d_reward_v4_strict_per_finger_contact_terms,
 )
 from toporetarget.rl.reference_tracking.reference_gated_contact import (
+    EVALUATION_FINGERTIP_LINKS,
     fingertip_force_indices,
+)
+from toporetarget.rl.reference_tracking.reference_scoped_exploration import (
+    AdaptiveScopeStateV1,
+    ReferenceScopedExplorationV1,
+    rse_deviation_termination,
 )
 
 from .ppo26d_reference_tracking_env_cfg import IsaacPPO26DReferenceTrackingEnvCfg
@@ -64,6 +79,19 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         self._fingertip_force_sensor_indices: torch.Tensor | None = None
         self._ppo26d_trace_capture_exact_pair_force = False
         self._contact_reward_receipt: dict[str, object] | None = None
+        self._grouped_reward_contract = GroupedMultiplicativeRewardV1()
+        self._rse_contract = ReferenceScopedExplorationV1(
+            enabled=cfg.ppo26d_rse_enabled,
+            distance_relaxation=cfg.ppo26d_rse_distance_relaxation,
+            adaptive_termination=cfg.ppo26d_rse_adaptive_termination,
+            distance_scope_m=cfg.ppo26d_rse_distance_scope_m,
+            kappa_min=cfg.ppo26d_rse_kappa_min,
+        )
+        self._rse_state = AdaptiveScopeStateV1(kappa_min=cfg.ppo26d_rse_kappa_min)
+        self._reference_surface_distance_by_clip: torch.Tensor | None = None
+        self._object_surface_triangles_by_clip: tuple[torch.Tensor, ...] | None = None
+        self._tracked_fingertip_indices: torch.Tensor | None = None
+        self._step_actual_surface_distance: torch.Tensor | None = None
         contact_mode = resolve_contact_mode(
             configured_mode=cfg.ppo26d_contact_reward_mode,
             reward_contract_identifier=cfg.ppo26d_reward_contract,
@@ -128,6 +156,46 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             dtype=torch.long,
             device=self.device,
         )
+        if cfg.ppo26d_reward_aggregation_mode not in {LEGACY_ADDITIVE, GROUPED_MULTIPLICATIVE_V1}:
+            raise RuntimeError("PPO26D_REWARD_AGGREGATION_MODE_INVALID")
+        needs_surface_authority = (
+            cfg.ppo26d_reward_aggregation_mode == GROUPED_MULTIPLICATIVE_V1
+            or cfg.ppo26d_rse_enabled
+        )
+        if needs_surface_authority:
+            distance_paths = cfg.ppo26d_reference_surface_distance_paths
+            mesh_paths = cfg.ppo26d_object_visual_mesh_paths
+            if distance_paths is None or mesh_paths is None:
+                raise RuntimeError("GROUPED_MULTIPLICATIVE_RSE_SURFACE_AUTHORITY_MISSING")
+            distances: list[np.ndarray] = []
+            triangles: list[torch.Tensor] = []
+            for clip in self.reference_bank.clip_ids:
+                with np.load(Path(distance_paths[clip]), allow_pickle=False) as archive:
+                    value = np.asarray(
+                        archive["reference_fingertip_to_object_distance_m"], dtype=np.float32
+                    )
+                if (
+                    value.shape != (self.reference_bank.frame_count, 5)
+                    or not np.isfinite(value).all()
+                ):
+                    raise RuntimeError("GROUPED_MULTIPLICATIVE_RSE_REFERENCE_DISTANCE_INVALID")
+                distances.append(value)
+                triangles.append(parse_obj_triangles(mesh_paths[clip]).to(self.device))
+            self._reference_surface_distance_by_clip = torch.as_tensor(
+                np.stack(distances), dtype=torch.float32, device=self.device
+            )
+            available = {
+                name: index for index, name in enumerate(self.reference_bank.tracked_link_names)
+            }
+            missing = [name for name in EVALUATION_FINGERTIP_LINKS if name not in available]
+            if missing:
+                raise RuntimeError(f"GROUPED_MULTIPLICATIVE_RSE_TRACKED_TIPS_MISSING:{missing}")
+            self._tracked_fingertip_indices = torch.as_tensor(
+                [available[name] for name in EVALUATION_FINGERTIP_LINKS],
+                dtype=torch.long,
+                device=self.device,
+            )
+            self._object_surface_triangles_by_clip = tuple(triangles)
         if isinstance(
             self._reward_contract,
             (TopoRetargetReferenceTrackingReward26DV3, TopoRetargetReferenceTrackingReward26DV4),
@@ -390,6 +458,44 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             raise RuntimeError("PPO26D_REWARD_V3_CONTACT_MASK_NOT_INITIALIZED")
         return masks[self._clip_index, index]
 
+    def _reference_surface_distance(self, index: torch.Tensor) -> torch.Tensor:
+        values = self._reference_surface_distance_by_clip
+        if values is None:
+            raise RuntimeError("GROUPED_MULTIPLICATIVE_RSE_REFERENCE_DISTANCE_NOT_INITIALIZED")
+        return values[self._clip_index, index]
+
+    def _actual_fingertip_surface_distance(
+        self, state: dict[str, torch.Tensor], index: torch.Tensor
+    ) -> torch.Tensor:
+        triangles = self._object_surface_triangles_by_clip
+        tip_indices = self._tracked_fingertip_indices
+        if triangles is None or tip_indices is None:
+            raise RuntimeError("GROUPED_MULTIPLICATIVE_RSE_SURFACE_GEOMETRY_NOT_INITIALIZED")
+        tip_world = state["tracked_links_scene"].index_select(1, tip_indices)
+        rotation = quaternion_to_matrix_wxyz(state["object_quaternion_wxyz"])
+        tip_local = torch.matmul(
+            rotation.transpose(-1, -2)[:, None],
+            (tip_world - state["object_position_scene"][:, None]).unsqueeze(-1),
+        ).squeeze(-1)
+        required = self._reference_expected_contact_mask(index)
+        result = torch.full_like(
+            required, self._grouped_reward_contract.proximity_tolerance_m, dtype=tip_local.dtype
+        )
+        for clip_index, mesh in enumerate(triangles):
+            active = (self._clip_index[:, None] == clip_index) & required
+            if bool(active.any()):
+                result[active] = point_to_triangle_surface_distance(tip_local[active], mesh)
+        return result
+
+    def _surface_reward_inputs(
+        self, state: dict[str, torch.Tensor], index: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        reference = self._reference_surface_distance(index)
+        actual = self._step_actual_surface_distance
+        if actual is None:
+            actual = self._actual_fingertip_surface_distance(state, index)
+        return reference, actual
+
     def _get_rewards(self) -> torch.Tensor:
         first_difference = self._actions - self._previous_actions
         second_difference = (
@@ -403,7 +509,7 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
                 raise RuntimeError("STRICT_V4_FINGERTIP_FORCE_MAPPING_NOT_INITIALIZED")
             pair_force = self._active_object_pair_force_matrix()
             tip_force = pair_force.index_select(1, force_indices)
-            terms = ppo26d_reward_v4_strict_per_finger_contact_terms(
+            reward_kwargs = dict(
                 object_axis_points=state["object_axis_points_scene"],
                 object_axis_points_ref=self.reference_bank.gather(
                     "object_axis_points_world_ref", self._clip_index, index
@@ -437,6 +543,38 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
                 > self._reward_contract.contact_numerical_floor_n,
                 profile=self._reward_contract,
             )
+            if self.cfg.ppo26d_reward_aggregation_mode == GROUPED_MULTIPLICATIVE_V1:
+                reference_distance, actual_distance = self._surface_reward_inputs(state, index)
+                if not self.cfg.ppo26d_rse_distance_relaxation:
+                    reference_distance = torch.full_like(
+                        reference_distance, self._grouped_reward_contract.distance_scope_m
+                    )
+                terms = grouped_multiplicative_reward_v1_terms(
+                    reference_fingertip_surface_distance_m=reference_distance,
+                    actual_fingertip_surface_distance_m=actual_distance,
+                    contract=self._grouped_reward_contract,
+                    **reward_kwargs,
+                )
+            else:
+                terms = ppo26d_reward_v4_strict_per_finger_contact_terms(**reward_kwargs)
+                if self.cfg.ppo26d_rse_distance_relaxation:
+                    reference_distance = self._reference_surface_distance(index)
+                    d_ref, w_scope = reference_scope_weight(
+                        reference_distance, self._rse_contract.distance_scope_m
+                    )
+                    hand_additive = (
+                        self._reward_contract.link_weight * terms["tracked_links"]
+                        + self._reward_contract.finger_weight * terms["finger_joints"]
+                        + self._reward_contract.wrist_position_weight * terms["wrist_position"]
+                        + self._reward_contract.wrist_rotation_weight * terms["wrist_rotation"]
+                    )
+                    terms = {
+                        **terms,
+                        "total_legacy_additive": terms["total"],
+                        "total": terms["total"] - (1.0 - w_scope) * hand_additive,
+                        "D_ref": d_ref,
+                        "w_scope": w_scope,
+                    }
             self._last_reward_terms = terms
             self._second_previous_actions.copy_(self._previous_actions)
             self._previous_actions.copy_(self._actions)
@@ -587,6 +725,7 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
                 }
             )
         self._capture_ppo26d_trace_row()
+        self._step_actual_surface_distance = None
         return reward
 
     def _get_dones(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -634,6 +773,58 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             | object_angular_failure
             | wrist_workspace
         )
+        rse_terms: dict[str, torch.Tensor] = {}
+        rse_failure = torch.zeros_like(diagnostic_terminated)
+        rse_kappa_used = self._rse_state.kappa
+        if self.cfg.ppo26d_rse_enabled and self.cfg.ppo26d_rse_adaptive_termination:
+            index = self._target_reference_index
+            actual_distance = self._actual_fingertip_surface_distance(state, index)
+            self._step_actual_surface_distance = actual_distance
+            object_reference_position = self.reference_bank.gather(
+                "object_pose_translation_world_ref", self._clip_index, index
+            )
+            object_reference_quaternion = self.reference_bank.gather(
+                "object_pose_quaternion_world_ref_wxyz", self._clip_index, index
+            )
+            object_reference_axis = self.reference_bank.gather(
+                "object_axis_points_world_ref", self._clip_index, index
+            )
+            object_orientation_error = 2.0 * torch.acos(
+                (state["object_quaternion_wxyz"] * object_reference_quaternion)
+                .sum(-1)
+                .abs()
+                .clamp(0.0, 1.0)
+            )
+            wrist_orientation_error = 2.0 * torch.acos(
+                (
+                    state["wrist_quaternion_wxyz"]
+                    * self.reference_bank.gather(
+                        "wrist_pose_quaternion_world_ref_wxyz", self._clip_index, index
+                    )
+                )
+                .sum(-1)
+                .abs()
+                .clamp(0.0, 1.0)
+            )
+            rse_terms = rse_deviation_termination(
+                object_position_error_m=torch.linalg.vector_norm(
+                    state["object_position_scene"] - object_reference_position, dim=-1
+                ),
+                object_axis_error_m=torch.linalg.vector_norm(
+                    state["object_axis_points_scene"] - object_reference_axis, dim=-1
+                ).mean(-1),
+                object_orientation_error_rad=object_orientation_error,
+                hand_position_error_m=torch.linalg.vector_norm(
+                    state["wrist_position_scene"] - wrist_reference, dim=-1
+                ),
+                hand_orientation_error_rad=wrist_orientation_error,
+                actual_fingertip_surface_distance_m=actual_distance,
+                source_contact_mask=self._reference_expected_contact_mask(index),
+                kappa=rse_kappa_used,
+                contract=self._rse_contract,
+            )
+            rse_failure = rse_terms["rse_deviation_failure"]
+        rse_primary_failure = rse_failure & ~diagnostic_terminated
         # C4 Formal20 must export the actual continuation of every finite
         # trajectory, including physically bad outcomes.  Do not reset merely
         # for diagnostic speed/joint/workspace failures; non-finite state or
@@ -641,12 +832,18 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         terminated = (
             numerical_failure | action_failure
             if self.cfg.ppo26d_full_horizon_evaluation
-            else diagnostic_terminated
+            else diagnostic_terminated | rse_failure
         )
         timeout = self._target_reference_index >= self.reference_bank.frame_count - 1
         timed_out = timeout & ~terminated
+        if self.cfg.ppo26d_rse_enabled and self.cfg.ppo26d_rse_adaptive_termination:
+            self._rse_state.record(
+                rse_failures=int(rse_primary_failure.sum().item()),
+                normal_completions=int(timed_out.sum().item()),
+            )
         reason = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         for mask, code in (
+            (rse_primary_failure, 8),
             (timed_out, 7),
             (wrist_workspace, 6),
             (object_angular_failure, 5),
@@ -665,6 +862,7 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             "FAILURE_OBJECT_ANGULAR_VELOCITY",
             "FAILURE_WRIST_WORKSPACE",
             "TIMEOUT_REFERENCE_END",
+            "FAILURE_RSE_DEVIATION",
         )
         self._ppo26d_safety_counts = {
             label: int((reason == code).sum().item())
@@ -681,6 +879,11 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             "action_valid": action_valid.clone(),
             "finite": finite.clone(),
             "diagnostic_terminated": diagnostic_terminated.clone(),
+            "rse_deviation_failure": rse_failure.clone(),
+            "rse_primary_failure": rse_primary_failure.clone(),
+            "rse_kappa_used": torch.full_like(object_speed, rse_kappa_used),
+            "rse_kappa_after": torch.full_like(object_speed, self._rse_state.kappa),
+            **{name: value.clone() for name, value in rse_terms.items()},
             "full_horizon_evaluation": bool(self.cfg.ppo26d_full_horizon_evaluation),
             "terminal_contact_is_post_ppo_diagnostic": True,
             "terminal_stability_is_post_ppo_diagnostic": True,
@@ -690,6 +893,22 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         self._ppo26d_last_terminated = terminated.clone()
         self._ppo26d_last_timed_out = timed_out.clone()
         return terminated, timed_out
+
+    def rse_report(self) -> dict[str, object]:
+        return {
+            **self._rse_contract.as_dict(),
+            **self._rse_state.as_dict(),
+            "reset_reference_index": self.cfg.reset_reference_index,
+            "uniform_rsi_preserved": self.cfg.reset_reference_index == "uniform",
+        }
+
+    def restore_rse_state(self, *, fail_count: int, total_count: int) -> None:
+        """Restore adaptive counters from a durable checkpoint on technical resume."""
+
+        if fail_count < 1 or total_count < 1 or fail_count > total_count:
+            raise ValueError("RSE_V1_RESTORE_COUNTERS_INVALID")
+        self._rse_state.fail_count = int(fail_count)
+        self._rse_state.total_count = int(total_count)
 
     def start_trace_capture(
         self,
@@ -863,6 +1082,20 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
                     "error_obj_ang_vel": self._last_reward_terms["e_obj_ang_vel"],
                 }
             )
+        if self.cfg.ppo26d_reward_aggregation_mode == GROUPED_MULTIPLICATIVE_V1:
+            values.update(
+                {
+                    "reward_group_object": self._last_reward_terms["R_obj"],
+                    "reward_group_hand": self._last_reward_terms["R_hand"],
+                    "reward_group_interaction": self._last_reward_terms["R_int"],
+                    "reward_group_regularization": self._last_reward_terms["R_reg"],
+                    "reference_surface_distance_min": self._last_reward_terms["D_ref"],
+                    "reference_scope_weight": self._last_reward_terms["w_scope"],
+                    "actual_fingertip_surface_distance": self._last_reward_terms[
+                        "actual_fingertip_surface_distance_m"
+                    ],
+                }
+            )
         if isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV3):
             force_indices = self._fingertip_force_sensor_indices
             if force_indices is None:
@@ -1027,6 +1260,11 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             "action_semantic": "Stage16DReferenceResidualAction26DV1",
             "observation": self._observation_contract.as_dict(),
             "reward": self._reward_contract.as_dict(),
+            "reward_aggregation": {
+                "mode": self.cfg.ppo26d_reward_aggregation_mode,
+                "grouped_contract": self._grouped_reward_contract.as_dict(),
+            },
+            "rse": self.rse_report(),
             "rsi": self.rsi_report(),
             "rsi_curriculum": {
                 "phase": getattr(self.cfg, "curriculum_phase", None),

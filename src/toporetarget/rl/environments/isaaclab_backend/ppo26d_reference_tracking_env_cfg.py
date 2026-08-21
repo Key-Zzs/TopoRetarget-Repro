@@ -11,6 +11,11 @@ from toporetarget.rl.reference_tracking.contact_reward_mode import (
     ContactRewardMode,
     validate_frozen_contact_contract,
 )
+from toporetarget.rl.reference_tracking.grouped_multiplicative_reward import (
+    GROUPED_MULTIPLICATIVE_V1,
+    LEGACY_ADDITIVE,
+    REWARD_MODES,
+)
 from toporetarget.rl.rsi.contact_ready_v2 import INITIAL_P3_BANKS, ContactReadySamplerV2
 
 from .physics_consistent_retargeting_env_cfg import (
@@ -33,6 +38,14 @@ class IsaacPPO26DReferenceTrackingEnvCfg(IsaacPhysicsConsistentRetargetingEnvCfg
     ppo26d_contact_reward_mode: str | None = None
     ppo26d_reference_contact_mask_paths: dict[str, str] | None = None
     ppo26d_contact_reward_contract_path: str | None = None
+    ppo26d_reward_aggregation_mode = LEGACY_ADDITIVE
+    ppo26d_reference_surface_distance_paths: dict[str, str] | None = None
+    ppo26d_object_visual_mesh_paths: dict[str, str] | None = None
+    ppo26d_rse_enabled = False
+    ppo26d_rse_distance_relaxation = False
+    ppo26d_rse_adaptive_termination = False
+    ppo26d_rse_distance_scope_m = 0.20
+    ppo26d_rse_kappa_min = 0.50
     reference_kinematics_version = 1
     ppo26d_workspace_radius_m = 0.75
     ppo26d_object_linear_speed_max_mps = 10.0
@@ -234,6 +247,61 @@ def configure_stage16d_strict_per_finger_contact_reward_v4(
     )
 
 
+def configure_stage16d_grouped_multiplicative_rse(
+    cfg: IsaacPPO26DReferenceTrackingEnvCfg,
+    *,
+    reward_mode: str = GROUPED_MULTIPLICATIVE_V1,
+    rse_enabled: bool = True,
+    distance_relaxation: bool = True,
+    adaptive_termination: bool = True,
+    reference_distance_root: Path,
+    object_mesh_root: Path,
+    distance_scope_m: float = 0.20,
+    kappa_min: float = 0.50,
+) -> None:
+    """Bind the opt-in V1 aggregation/RSE contract without changing RSI or physics."""
+
+    if reward_mode not in REWARD_MODES:
+        raise ValueError(f"PPO26D_REWARD_AGGREGATION_MODE_INVALID:{reward_mode}")
+    if cfg.ppo26d_reward_contract != "TopoRetargetReferenceTrackingReward26DV4":
+        raise ValueError("GROUPED_MULTIPLICATIVE_RSE_REQUIRES_STRICT_V4")
+    training_uniform_rsi = cfg.reset_reference_index == "uniform" and cfg.ppo26d_rsi_enabled
+    frame0_full_horizon_evaluation = (
+        cfg.reset_reference_index == "frame0"
+        and not cfg.ppo26d_rsi_enabled
+        and cfg.ppo26d_full_horizon_evaluation
+    )
+    if not training_uniform_rsi and not frame0_full_horizon_evaluation:
+        raise ValueError("GROUPED_MULTIPLICATIVE_RSE_REQUIRES_UNIFORM_RSI")
+    if distance_scope_m != 0.20 or kappa_min != 0.50:
+        raise ValueError("GROUPED_MULTIPLICATIVE_RSE_V1_GLOBAL_SCOPE_DRIFT")
+    reference_paths = {
+        clip: reference_distance_root.resolve() / f"reference_contact_mask_{clip}.npz"
+        for clip in ("hocap_170105", "hocap_170650")
+    }
+    mesh_paths = {
+        clip: object_mesh_root.resolve() / f"{clip}.obj"
+        for clip in ("hocap_170105", "hocap_170650")
+    }
+    missing = [
+        str(path)
+        for path in (*reference_paths.values(), *mesh_paths.values())
+        if not path.is_file()
+    ]
+    if missing:
+        raise FileNotFoundError(f"GROUPED_MULTIPLICATIVE_RSE_AUTHORITY_MISSING:{missing}")
+    cfg.ppo26d_reward_aggregation_mode = reward_mode
+    cfg.ppo26d_reference_surface_distance_paths = {
+        clip: str(path) for clip, path in reference_paths.items()
+    }
+    cfg.ppo26d_object_visual_mesh_paths = {clip: str(path) for clip, path in mesh_paths.items()}
+    cfg.ppo26d_rse_enabled = bool(rse_enabled)
+    cfg.ppo26d_rse_distance_relaxation = bool(rse_enabled and distance_relaxation)
+    cfg.ppo26d_rse_adaptive_termination = bool(rse_enabled and adaptive_termination)
+    cfg.ppo26d_rse_distance_scope_m = distance_scope_m
+    cfg.ppo26d_rse_kappa_min = kappa_min
+
+
 __all__ = [
     "IsaacPPO26DReferenceTrackingEnvCfg",
     "configure_stage16d_ppo26d",
@@ -244,4 +312,5 @@ __all__ = [
     "configure_stage16_p3_p4_curriculum",
     "configure_stage16d_reference_gated_contact_reward",
     "configure_stage16d_strict_per_finger_contact_reward_v4",
+    "configure_stage16d_grouped_multiplicative_rse",
 ]
