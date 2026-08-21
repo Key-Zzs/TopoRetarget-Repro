@@ -619,8 +619,7 @@ def main() -> int:
     root = args.root.resolve()
     training_root = (args.training_root or root / "training").resolve()
     simulation_root = (
-        args.simulation_root
-        or REPO_ROOT / ".local/sim_data/stage16_causal_physical_c4"
+        args.simulation_root or REPO_ROOT / ".local/sim_data/stage16_causal_physical_c4"
     ).resolve()
     git_receipt = _git_receipt(args.start_head)
     results: dict[tuple[str, str], dict[str, Any]] = {}
@@ -694,20 +693,46 @@ def main() -> int:
                 "scripts/rl/isaaclab/replay_stage16d_simulation_trace.py "
                 "--accept-eula --headless --max-loops 1 "
                 f"--trace {sim}/episode_{selection['representative_best']:03d}.npz "
-                f"--object {clip} --qualification {root}/formal/{directory}/{clip}/qualification.json "
+                f"--object {clip} "
+                f"--qualification {root}/formal/{directory}/{clip}/qualification.json "
                 f"--validation-output {root}/replay/{directory}_{clip}_main.json"
             )
-            def gui(episode: int) -> str:
+
+            def gui(
+                episode: int,
+                *,
+                simulation_dir: Path,
+                object_id: str,
+                mode_directory: str,
+            ) -> str:
                 return (
-                    "OMNI_KIT_ACCEPT_EULA=YES PYTHONPATH=src conda run -n toporetarget-isaaclab python "
+                    "OMNI_KIT_ACCEPT_EULA=YES PYTHONPATH=src "
+                    "conda run -n toporetarget-isaaclab python "
                     "scripts/rl/isaaclab/replay_stage16d_simulation_trace.py "
                     "--accept-eula --loop "
-                    f"--trace {sim}/episode_{episode:03d}.npz --object {clip} "
-                    f"--qualification {root}/formal/{directory}/{clip}/qualification.json"
+                    f"--trace {simulation_dir}/episode_{episode:03d}.npz "
+                    f"--object {object_id} "
+                    f"--qualification {root}/formal/{mode_directory}/{object_id}/qualification.json"
                 )
-            best = gui(selection["representative_best"])
-            median = gui(selection["median_typical"])
-            failure = gui(selection["representative_failure_or_worst"])
+
+            best = gui(
+                selection["representative_best"],
+                simulation_dir=sim,
+                object_id=clip,
+                mode_directory=directory,
+            )
+            median = gui(
+                selection["median_typical"],
+                simulation_dir=sim,
+                object_id=clip,
+                mode_directory=directory,
+            )
+            failure = gui(
+                selection["representative_failure_or_worst"],
+                simulation_dir=sim,
+                object_id=clip,
+                mode_directory=directory,
+            )
             commands.append(
                 f"### {label} / {clip} / C4\n\n"
                 f"Headless validation: `{validation}`\n\n"
