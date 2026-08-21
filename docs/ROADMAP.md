@@ -58,6 +58,24 @@ See [actual angular velocity semantics](rl/ACTUAL_ANGULAR_VELOCITY_SEMANTICS.md)
 [angular-twist audit](rl/ANGULAR_TWIST_AUDIT.md), and
 [PF/DF](rl/PHYSICAL_FUNCTIONALITY_AND_DEMONSTRATION_FIDELITY.md).
 
+## Stage16 170650 physical-HOI closure and generic profile (CLOSED)
+
+V4/`hocap_170650` is formally `ACCEPTED_STAGE16_PHYSICAL_HOI`: PF, pose,
+linear, Angular-Authority-V2, causality, and geometry all pass 20/20. The
+lineage is frozen as a physical-HOI data source/positive control and requires
+no further PPO or policy adaptation.
+
+`HumanObjectCouplingContactProfileV1` now describes raw contact geometry,
+regions, geometric topology, `T_H^-1 T_O`, relative motion, and continuous
+coupling for `hocap_170105` and `hocap_170650`. Its cross-layer status is
+`PROFILE_PARTIALLY_VALIDATED` because actual contact points/normals and exact
+slip are absent. The next and only generic refinement family is
+`SOURCE_PROFILE_TRACKING` at medium confidence; support transfer remains an
+outcome metric. No refinement or training is started. See [170650
+acceptance](rl/STAGE16_170650_ACCEPTANCE.md), [coupling contact
+profile](rl/HUMAN_OBJECT_COUPLING_CONTACT_PROFILE.md), and [generic refinement
+target](rl/GENERIC_PHYSICAL_REFINEMENT_TARGET.md).
+
 ## Stage16-D causal zero-g milestone (CLOSED)
 
 `CAUSAL_ZERO_G_MILESTONE_COMPLETE`
@@ -179,12 +197,14 @@ This remains a historical C0 optimization-preservation result, not the current
 physical-program main action. The frozen-source C0--C4 gravity/friction sweep
 has now received isolated-process timeout/terminal-capture repair and the
 authorized minimal-adaptation decision tree. All four C4 receipts are
-technically complete. V4/170650 was frozen-C4 functional but failed Formal20
-(2/20 qualified; required 16/20); V3/170650 recovered through C2 but failed
-the full C3 budget, and V3/170105 C1 plus V4/170105 C4 exhausted their budgets
-without lift recovery. The current state is `NO_SUCCESS`, with no success
-export or further PPO/reward/LR sweep authorized. See [full-gravity capability
-closure](rl/FULL_GRAVITY_CAPABILITY_CLOSURE.md).
+technically complete. The historical V4/170650 `SR_dynamic V1` result was
+2/20; the later comparable-semantics Authority-V2 requalification supersedes
+that result for physical-HOI acceptance with PF/DF 20/20. V3/170650 recovered
+through C2 but failed the full C3 budget, and V3/170105 C1 plus V4/170105 C4
+exhausted their budgets without lift recovery. No further PPO/reward/LR sweep
+is authorized; accepted V4/170650 is frozen and 170105 proceeds only through
+the selected future object-agnostic profile-tracking refinement. See
+[full-gravity capability closure](rl/FULL_GRAVITY_CAPABILITY_CLOSURE.md).
 
 ### Support resolution reconstruction (implemented, not promoted)
 

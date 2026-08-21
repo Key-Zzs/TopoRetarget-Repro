@@ -66,3 +66,15 @@ replay questions are generated under:
 ```text
 .local/reports/stage16_angular_semantics_and_raw_grasp_authority/raw_grasp_authority/
 ```
+
+## Structured coupling-profile successor
+
+`HumanObjectCouplingContactProfileV1` retains these frozen contact authorities
+and adds the correct hand-frame relative transform `T_H^-1 T_O`, pose-derived
+relative linear/angular motion, windowed pose variation, and dimensionless
+coupling ratios. It still does not define a functional-grasp binary. The two
+HOCap source profiles reproduce the event frames above; Raw/Retarget/Actual
+comparison is `PROFILE_PARTIALLY_VALIDATED` because immutable PhysX traces do
+not contain contact points/normals or exact surface slip.
+
+See [Human-Object Coupling Contact Profile](HUMAN_OBJECT_COUPLING_CONTACT_PROFILE.md).

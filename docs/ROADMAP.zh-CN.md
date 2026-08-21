@@ -49,6 +49,21 @@ attribution 仍为 `INCONCLUSIVE`，现为 medium confidence 且显式采用 pro
 [angular-twist audit](rl/ANGULAR_TWIST_AUDIT.md) 与
 [PF/DF](rl/PHYSICAL_FUNCTIONALITY_AND_DEMONSTRATION_FIDELITY.md)。
 
+## Stage16 170650 physical-HOI 收口与通用 profile（CLOSED）
+
+V4/`hocap_170650` 已正式成为 `ACCEPTED_STAGE16_PHYSICAL_HOI`：PF、pose、linear、
+Angular-Authority-V2、causality 与 geometry 均为 20/20。该 lineage 现在冻结为
+physical-HOI 数据源/positive control，不再需要 PPO 或 policy adaptation。
+
+`HumanObjectCouplingContactProfileV1` 已为 `hocap_170105` 与 `hocap_170650` 描述 raw
+contact geometry、regions、geometric topology、`T_H^-1 T_O`、relative motion 与 continuous
+coupling。由于 immutable PhysX trace 缺少 actual contact points/normals 与 exact slip，其跨层状态为
+`PROFILE_PARTIALLY_VALIDATED`。下一步唯一 generic refinement family 是 medium-confidence 的
+`SOURCE_PROFILE_TRACKING`；support transfer 只作为 outcome metric。本任务不实施 refinement，也不启动训练。
+见 [170650 acceptance](rl/STAGE16_170650_ACCEPTANCE.md)、[coupling contact
+profile](rl/HUMAN_OBJECT_COUPLING_CONTACT_PROFILE.md) 与 [generic refinement
+target](rl/GENERIC_PHYSICAL_REFINEMENT_TARGET.md)。
+
 ## Stage16-D 因果零重力里程碑（CLOSED）
 
 `CAUSAL_ZERO_G_MILESTONE_COMPLETE`
@@ -154,10 +169,12 @@ validation](rl/CONTACT_PRESERVING_FULL_C0_VALIDATION.md)。
 
 这仍是历史 C0 optimization-preservation 结论，不再是当前 physical program 的主动作。
 冻结 source 的 C0--C4 gravity/friction sweep 已完成 isolated-process 的 timeout/terminal-capture
-修复和授权的最小 adaptation 决策树。四条 C4 receipt 均已技术完成。V4/170650 虽然 frozen-C4
-functional，但 Formal20 只通过 2/20（要求 16/20）；V3/170650 仅恢复到 C2，完整 C3 budget
-失败；V3/170105 的 C1 和 V4/170105 的 C4 均耗尽 budget，未恢复 lift。当前状态为
-`NO_SUCCESS`：不得 success export，也不得继续 PPO/reward/LR sweep。见
+修复和授权的最小 adaptation 决策树。四条 C4 receipt 均已技术完成。历史 V4/170650
+`SR_dynamic V1` 结果为 2/20；后续采用 comparable semantics 的 Authority-V2 requalification
+已以 PF/DF 20/20 取代它作为 physical-HOI acceptance authority。V3/170650 仅恢复到 C2，完整
+C3 budget 失败；V3/170105 的 C1 和 V4/170105 的 C4 均耗尽 budget，未恢复 lift。不得继续
+PPO/reward/LR sweep；accepted V4/170650 保持冻结，170105 只进入未来选定的 object-agnostic
+profile-tracking refinement。见
 [full-gravity capability closure](rl/FULL_GRAVITY_CAPABILITY_CLOSURE.md)。
 
 ### Support resolution reconstruction（已实现，不提升）

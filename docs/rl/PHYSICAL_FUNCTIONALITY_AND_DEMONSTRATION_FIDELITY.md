@@ -78,5 +78,16 @@ The additive Authority V2 comparison is under:
 .local/reports/stage16_angular_semantics_and_raw_grasp_authority/pf_df/
 ```
 
+The formal versioned acceptance receipt is under:
+
+```text
+.local/reports/stage16_170650_closure_and_human_object_profile/part_a_170650/
+```
+
+It records `ACCEPTED_STAGE16_PHYSICAL_HOI` only after PF, pose, linear,
+Authority-V2 angular, causality, and geometry each pass 20/20. The accepted
+V4/hocap_170650 lineage is frozen and requires no further policy adaptation.
+See [Stage16 170650 acceptance](STAGE16_170650_ACCEPTANCE.md).
+
 Neither PF nor DF modifies Evaluation Suite V2, historical `SRphysics`, or
 Stage16 Dynamic Physical Qualification V1.
