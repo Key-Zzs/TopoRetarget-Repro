@@ -212,6 +212,7 @@ external guidance 或 data-H2R 仍是该 causal physics 路线之后的 assisted
 
 ## 文档入口
 
+- [Dexplore 风格乘法 reward 与 RSE](rl/DEXPLORE_STYLE_MULTIPLICATIVE_REWARD_RSE.md)
 - [Stage16-D causal zero-g milestone](stages/STAGE16D_CAUSAL_ZERO_G_MILESTONE.zh-CN.md)
 - [Stage 16 Physical Bootstrap](stages/STAGE16_PHYSICAL_BOOTSTRAP.zh-CN.md)
 - [Physics curriculum](rl/PHYSICS_CURRICULUM.md)
@@ -236,3 +237,13 @@ external guidance 或 data-H2R 仍是该 causal physics 路线之后的 assisted
 P3-B.7 严格区分不可修改的几何参考（诊断性的 soft target）与物理合法的
 hard reset、实际 PPO 轨迹（两者均为 hard gate）。整条参考轨迹的几何失败
 本身不再阻止训练；缺少安全的早期桌面支撑 reset 才会阻止重启。
+
+## Stage16 grouped-reward/RSE 有界 refinement
+
+opt-in 的 grouped multiplicative reward 与 reference-scoped exploration 已通过
+offline 和 no-step runtime gate，随后完成预注册的十次
+V4/`hocap_170105`/C4 update（409,600 samples）。U10 将 lift 从 0/10 提升到
+6/10，但 persistent multi-contact 仍晚于 LIFT，因此 PF 保持 0/10，未触发
+Confirm20。分类为 `MULTIPLICATIVE_RSE_REFINEMENT_PARTIAL`。accepted V4/170650
+只作 offline positive control，没有 PPO。唯一下一步是
+`NEXT_DIAGNOSE_MULTIPLICATIVE_RSE_RESIDUAL_FAILURE`，而不是继续调参。

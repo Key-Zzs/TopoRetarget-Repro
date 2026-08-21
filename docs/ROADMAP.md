@@ -248,6 +248,7 @@ physics route; it is not a replacement for it.
 
 ## Documentation entry points
 
+- [Dexplore-style multiplicative reward and RSE](rl/DEXPLORE_STYLE_MULTIPLICATIVE_REWARD_RSE.md)
 - [Stage16-D causal zero-g milestone](stages/STAGE16D_CAUSAL_ZERO_G_MILESTONE.md)
 - [Stage 16 Physical Bootstrap](stages/STAGE16_PHYSICAL_BOOTSTRAP.md)
 - [Physics curriculum](rl/PHYSICS_CURRICULUM.md)
@@ -273,3 +274,14 @@ P3-B.7 distinguishes an immutable geometric reference (diagnostic soft
 target) from a physically valid hard reset and the actual PPO trajectory
 (both hard gates).  A failed reference-wide geometry audit no longer blocks
 training by itself; absent safe early table-supported resets does.
+
+## Stage16 grouped-reward/RSE bounded refinement
+
+The opt-in grouped multiplicative reward and reference-scoped exploration
+passed offline and no-step runtime gates, then completed the preregistered ten
+V4/`hocap_170105`/C4 updates (409,600 samples). U10 improved lift from 0/10 to
+6/10, but PF remained 0/10 because persistent multi-contact followed LIFT;
+Confirm20 was not triggered. The classification is
+`MULTIPLICATIVE_RSE_REFINEMENT_PARTIAL`. Accepted V4/170650 remained an offline
+positive control with no PPO. The only next action is
+`NEXT_DIAGNOSE_MULTIPLICATIVE_RSE_RESIDUAL_FAILURE`, not additional tuning.
