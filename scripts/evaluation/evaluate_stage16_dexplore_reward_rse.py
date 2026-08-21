@@ -33,6 +33,9 @@ from scripts.rl.isaaclab.run_stage16_frozen_source_policy_gravity_sweep import (
     _valid_rows,
 )
 from toporetarget.evaluation import hand_metric_series, object_metric_series
+from toporetarget.evaluation.stage16_pf_v2_causal_lift import (
+    evaluate_stage16_physical_functionality_v2,
+)
 from toporetarget.rl.geometry_audit.hand_collision_reconstruction import (
     HAND_COLLISION_BODY_NAMES,
 )
@@ -53,6 +56,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--accept-eula", action="store_true")
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--clip", choices=("hocap_170105", "hocap_170650"), required=True)
     parser.add_argument("--episodes", type=int, choices=(10, 20), required=True)
     parser.add_argument("--update", type=int, required=True)
     parser.add_argument("--samples", type=int, required=True)
@@ -102,6 +106,7 @@ def _episode_row(
     rollout: dict[str, object],
     gate: dict[str, object],
     tracked_link_names: list[str],
+    clip: str,
 ) -> tuple[dict[str, object], dict[str, np.ndarray]]:
     valid = _valid_rows(trace)
     actual = np.asarray(trace["tip_pair_presence"], dtype=bool)
@@ -114,7 +119,7 @@ def _episode_row(
     trace["hand_collision_body_names"] = np.asarray(HAND_COLLISION_BODY_NAMES)
     trace["hand_collision_body_pose"] = _reconstruct_hand(trace)
     geometry, _ = _evaluate_geometry_with_exact_broadphase(
-        clip="hocap_170105",
+        clip=clip,
         object_pose=np.asarray(trace["object_pose"], dtype=np.float64)[:, None],
         hand_collision_body_pose=np.asarray(trace["hand_collision_body_pose"], dtype=np.float64)[
             :, None
@@ -195,6 +200,26 @@ def _episode_row(
         no_hidden_control=causal,
         contract=PhysicalFunctionalityContract(),
     )
+    interaction_valid = np.asarray(trace["fingertip_object_pair_force_valid"], dtype=bool)
+    support_valid = (
+        np.asarray(trace["table_object_contact_valid"], dtype=bool)
+        if "table_object_contact_valid" in trace
+        else np.ones(len(interaction_valid), dtype=bool)
+    )
+    pf_v2 = evaluate_stage16_physical_functionality_v2(
+        object_pose_wxyz=trace["object_pose"],
+        wrist_pose_wxyz=trace["wrist_pose"],
+        tip_pair_presence=trace["tip_pair_presence"],
+        hand_object_pair_presence=trace["hand_object_pair_presence"],
+        table_object_contact=trace["table_object_contact"],
+        interaction_valid=interaction_valid,
+        support_valid=support_valid,
+        reference_lift_onset=lift_frame,
+        causal_execution=causal,
+        geometry_safe=geometry_safe,
+        action_bounds_safe=action_safe,
+        no_hidden_control=causal,
+    )
     df = evaluate_demonstration_fidelity(
         e_r_mean_deg=means["E_r_mean_deg"],
         e_t_mean_cm=means["E_t_mean_cm"],
@@ -213,15 +238,21 @@ def _episode_row(
         and causal
         and geometry_safe
     )
-    table = np.asarray(trace["table_object_contact"], dtype=bool)
-    prelift = np.arange(len(phase)) < lift_frame
-    lift = phase == "LIFT"
+    actual_lift = pf_v2["actual_lift"]
+    causal_lift = pf_v2["causal_interaction"]
+    timing = pf_v2["interaction_timing"]
     row = {
         "episode": episode,
         "seed": seed,
         "PF": bool(pf["pf"]),
+        "PF_V1": bool(pf["pf"]),
         "PF_failure_reasons": ";".join(pf["pf_failure_reasons"]),
+        "PF_V2": bool(pf_v2["pf_v2"]),
+        "PF_V2_failure_reasons": ";".join(pf_v2["pf_v2_failure_reasons"]),
         "lift": bool(pf["lift_success"]),
+        "physical_lift": bool(pf_v2["physical_lift_success"]),
+        "causal_lift": bool(pf_v2["causal_hand_object_lift"]),
+        "sustained_hand_object_coupling": bool(pf_v2["sustained_hand_object_coupling"]),
         "DF_pose": bool(df["df_pose"]),
         "DF_linear": bool(df["df_linear"]),
         "DF_angular_v2": bool(df["df_angular_pose_derived"]),
@@ -240,8 +271,19 @@ def _episode_row(
             None if persistent_contact is None else int(lift_frame - persistent_contact)
         ),
         "lift_dz_m": lift_dz,
-        "support_transfer": bool(table[prelift].any() and not table[lift].any()),
-        "table_object_contact_fraction": float(table.mean()),
+        "first_hand_object_contact": timing["first_hand_object_contact"],
+        "persistent_multifinger_contact": timing["persistent_multifinger_contact"],
+        "actual_lift_onset": actual_lift["onset"],
+        "support_release_event": actual_lift["support_release_event"],
+        "support_transfer": bool(pf_v2["support_transfer_success"]),
+        "pre_reference_lift_multifinger_contact": timing["pre_reference_lift_multifinger_contact"],
+        "interaction_timing_fidelity": timing["interaction_timing_fidelity"],
+        "ballistic_or_flick_rejected": causal_lift["ballistic_or_flick_rejected"],
+        "relative_linear_coupling_mean_mps": causal_lift["relative_linear_speed_mps"]["mean"],
+        "relative_angular_coupling_mean_radps": causal_lift["relative_angular_speed_radps"]["mean"],
+        "table_object_contact_fraction": float(
+            np.asarray(trace["table_object_contact"], dtype=bool).mean()
+        ),
         "R_obj": float(np.asarray(trace["reward_group_object"])[valid].mean()),
         "R_hand": float(np.asarray(trace["reward_group_hand"])[valid].mean()),
         "R_int": float(np.asarray(trace["reward_group_interaction"])[valid].mean()),
@@ -269,10 +311,10 @@ def main() -> int:
         from scripts.rl.isaaclab.smoke_stage16_full_trajectory_ppo import _make_table_env
         from toporetarget.rl.reference_tracking.contact_reward_mode import ContactRewardMode
 
-        seeds = _seeds("hocap_170105", count=args.episodes)
-        start = _full_start("hocap_170105")
+        seeds = _seeds(args.clip, count=args.episodes)
+        start = _full_start(args.clip)
         env = _make_table_env(
-            clip="hocap_170105",
+            clip=args.clip,
             num_envs=args.episodes,
             start_index=start,
             mode=ContactRewardMode.STRICT_PER_FINGER_V4,
@@ -283,7 +325,7 @@ def main() -> int:
             full_horizon_evaluation=True,
         )
         trainer, payload = model_from_checkpoint(
-            checkpoint, str(env.device), expected_clip="hocap_170105"
+            checkpoint, str(env.device), expected_clip=args.clip
         )
         contract = env.contract_report()
         physics = contract["gravity_friction_curriculum"]
@@ -295,11 +337,11 @@ def main() -> int:
             or contract["ppo26d"]["rse"]["enabled"] is not True
         ):
             raise RuntimeError("DEXPLORE_EVALUATION_RUNTIME_CONTRACT_DRIFT")
-        gate = _load_gate(FROZEN_GATES, clip="hocap_170105")
+        gate = _load_gate(FROZEN_GATES, clip=args.clip)
         rollouts = _parallel_rollouts(
             env=env,
             trainer=trainer,
-            clip="hocap_170105",
+            clip=args.clip,
             seeds=seeds,
             start=start,
         )
@@ -313,6 +355,7 @@ def main() -> int:
                 rollout=rollout,
                 gate=gate,
                 tracked_link_names=list(env.reference_bank.tracked_link_names),
+                clip=args.clip,
             )
             trace_path = output / "traces" / f"episode_{episode:02d}.npz"
             trace_path.parent.mkdir(parents=True, exist_ok=True)
@@ -331,7 +374,13 @@ def main() -> int:
             name: sum(bool(row[name]) for row in rows)
             for name in (
                 "PF",
+                "PF_V1",
+                "PF_V2",
                 "lift",
+                "physical_lift",
+                "causal_lift",
+                "support_transfer",
+                "sustained_hand_object_coupling",
                 "DF_pose",
                 "DF_linear",
                 "DF_angular_v2",
@@ -343,7 +392,7 @@ def main() -> int:
         required = int(np.ceil(0.8 * args.episodes))
         summary = {
             "schema_version": "Stage16DexploreRewardRSEEvaluationV1",
-            "clip": "hocap_170105",
+            "clip": args.clip,
             "update": args.update,
             "samples": args.samples,
             "episodes": args.episodes,
@@ -382,6 +431,17 @@ def main() -> int:
                 if any(row["persistent_multi_contact"] is not None for row in rows)
                 else None,
                 "LIFT": int(rows[0]["LIFT"]),
+                "actual_lift_onset_median": float(
+                    np.median(
+                        [
+                            int(row["actual_lift_onset"])
+                            for row in rows
+                            if row["actual_lift_onset"] is not None
+                        ]
+                    )
+                )
+                if any(row["actual_lift_onset"] is not None for row in rows)
+                else None,
                 "pre_LIFT_margin_median": float(
                     np.median(
                         [

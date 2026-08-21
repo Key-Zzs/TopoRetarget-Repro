@@ -474,6 +474,11 @@ def _initial_trace_snapshot(
         values["table_object_contact"] = (
             torch.linalg.vector_norm(force, dim=-1).amax(dim=(1, 2)) > 1.0e-4
         )
+        # This is an independently read support ContactSensor datum.  Unlike
+        # hand/object pair force, a true reset sample must remain available to
+        # support-transfer diagnostics rather than inheriting pair-force
+        # frame-zero invalidity.
+        values["table_object_contact_valid"] = torch.ones(count, dtype=torch.bool, device=device)
     return {name: value.detach().cpu().numpy().copy() for name, value in values.items()}
 
 

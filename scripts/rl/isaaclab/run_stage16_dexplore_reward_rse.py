@@ -354,6 +354,8 @@ def _run_evaluation(
         sys.executable,
         str(EVALUATOR),
         "--accept-eula",
+        "--clip",
+        "hocap_170105",
         "--checkpoint",
         str(checkpoint.resolve()),
         "--output",

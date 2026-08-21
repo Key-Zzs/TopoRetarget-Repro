@@ -25,6 +25,8 @@ def _evaluate(
     tip_contact: np.ndarray,
     hand_contact: np.ndarray | None = None,
     table: np.ndarray | None = None,
+    interaction_valid: np.ndarray | None = None,
+    support_valid: np.ndarray | None = None,
     causal: bool = True,
     hidden: bool = True,
 ) -> dict[str, object]:
@@ -40,7 +42,10 @@ def _evaluate(
         tip_pair_presence=tips,
         hand_object_pair_presence=hand,
         table_object_contact=np.ones(count, dtype=bool) if table is None else table,
-        valid=np.ones(count, dtype=bool),
+        interaction_valid=(
+            np.ones(count, dtype=bool) if interaction_valid is None else interaction_valid
+        ),
+        support_valid=support_valid,
         reference_lift_onset=3,
         causal_execution=causal,
         geometry_safe=True,
@@ -68,6 +73,20 @@ def test_dynamic_grasp_can_consolidate_after_reference_lift_and_pass() -> None:
     assert result["pf_v2"] is True
     assert result["interaction_timing"]["pre_reference_lift_multifinger_contact"] is False
     assert result["interaction_timing"]["pre_actual_lift_margin"] == 2
+
+
+def test_reset_table_support_is_not_masked_by_invalid_hand_pair_force() -> None:
+    count = 10
+    result = _evaluate(
+        z=np.asarray((0.0, 0.0, 0.0, 0.01, 0.02, 0.03, 0.05, 0.07, 0.09, 0.11)),
+        tip_contact=np.asarray((False, False, False, False, True, True, True, True, True, True)),
+        table=np.asarray((True, False, False, False, False, False, False, False, False, False)),
+        interaction_valid=np.asarray((False,) + (True,) * (count - 1)),
+        support_valid=np.ones(count, dtype=bool),
+    )
+    assert result["support_transfer"]["support_present_before_release"] is True
+    assert result["support_transfer_success"] is True
+    assert result["pf_v2"] is True
 
 
 def test_flick_lift_without_post_lift_contact_fails() -> None:

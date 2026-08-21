@@ -220,7 +220,13 @@ def _make_table_env(
                     dtype=torch.bool,
                     device=self.device,
                 )
+                capture["table_object_contact_valid"] = torch.empty(
+                    (self._ppo26d_trace_capacity, self.num_envs),
+                    dtype=torch.bool,
+                    device=self.device,
+                )
             capture["table_object_contact"][self._ppo26d_trace_length - 1].copy_(contact)
+            capture["table_object_contact_valid"][self._ppo26d_trace_length - 1].fill_(True)
 
     cfg = ppo_cfg.IsaacPPO26DReferenceTrackingEnvCfg()
     ppo_cfg.configure_stage16d_ppo26d(

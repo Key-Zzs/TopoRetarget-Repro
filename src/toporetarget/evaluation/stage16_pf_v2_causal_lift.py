@@ -42,6 +42,10 @@ class Stage16PhysicalFunctionalityV2Contract:
     control_period_s: float = 0.05
     vertical_velocity_rule: str = "pose_derived_centered_vertical_velocity_strictly_positive"
     support_signal: str = "table_object_contact_binary_proxy_no_exact_normal_wrench"
+    support_validity_rule: str = (
+        "table_contact_sensor_validity_is_independent_of_hand_object_pair_force_validity; "
+        "a recorded reset support sample is retained"
+    )
     coupling_rule: str = (
         "persistent_multifinger_contact_through_actual_lift_plus_"
         "finite_pose_derived_relative_motion"
@@ -114,7 +118,7 @@ def _actual_lift_event(
     *,
     object_pose_wxyz: np.ndarray,
     table_object_contact: np.ndarray,
-    valid: np.ndarray,
+    support_valid: np.ndarray,
     contract: Stage16PhysicalFunctionalityV2Contract,
 ) -> dict[str, object]:
     pose = np.asarray(object_pose_wxyz, dtype=np.float64)
@@ -122,16 +126,16 @@ def _actual_lift_event(
         raise ValueError("PF_V2_OBJECT_POSE_MUST_BE_[T,7]_WITH_PERSISTENCE")
     count = len(pose)
     table = _vector(table_object_contact, name="TABLE_OBJECT_CONTACT", count=count, dtype=bool)
-    rows = _vector(valid, name="VALID", count=count, dtype=bool)
+    support_rows = _vector(support_valid, name="SUPPORT_VALID", count=count, dtype=bool)
     timestamps = np.arange(count, dtype=np.float64) * contract.control_period_s
     vertical_velocity = np.gradient(pose[:, 2], timestamps, edge_order=1)
     displacement = pose[:, 2] - pose[0, 2]
-    support_free = (~table) & rows
+    support_free = (~table) & support_rows
     support_release = _first_true(
         _persistent(support_free, minimum_steps=contract.persistence_control_steps)
     )
     actual_lift_mask = (
-        rows
+        support_rows
         & support_free
         & (displacement >= contract.lift_threshold_m)
         & (vertical_velocity > 0.0)
@@ -148,7 +152,7 @@ def _actual_lift_event(
         "physical_lift_success": onset is not None,
         "support_present_before_release": bool(
             support_release is not None
-            and bool(np.any(table[:support_release] & rows[:support_release]))
+            and bool(np.any(table[:support_release] & support_rows[:support_release]))
         ),
     }
 
@@ -160,7 +164,9 @@ def evaluate_stage16_physical_functionality_v2(
     tip_pair_presence: np.ndarray,
     hand_object_pair_presence: np.ndarray,
     table_object_contact: np.ndarray,
-    valid: np.ndarray,
+    valid: np.ndarray | None = None,
+    interaction_valid: np.ndarray | None = None,
+    support_valid: np.ndarray | None = None,
     reference_lift_onset: int | None,
     causal_execution: bool,
     geometry_safe: bool,
@@ -171,10 +177,14 @@ def evaluate_stage16_physical_functionality_v2(
     """Evaluate causal physical lift while retaining timing as a DF diagnostic.
 
     A physical pass requires actual, persistent support-free lift with observed
-    hand-object interaction through the actual event.  The recorded support
-    signal is binary; this proves a *support-transfer proxy*, not exact normal
-    load transfer.  Relative-motion fields are reported from the established
-    pose-derived estimator family but intentionally receive no fitted cutoff.
+    hand-object interaction through the actual event.  Hand-object pair-force
+    validity and table-contact validity are separate: frame zero has no
+    post-physics hand-pair sample, but a recorded reset table-support sample
+    remains admissible evidence of support before release.  The recorded
+    support signal is binary; this proves a *support-transfer proxy*, not exact
+    normal load transfer.  Relative-motion fields are reported from the
+    established pose-derived estimator family but intentionally receive no
+    fitted cutoff.
     """
 
     frozen = contract or Stage16PhysicalFunctionalityV2Contract()
@@ -183,7 +193,18 @@ def evaluate_stage16_physical_functionality_v2(
     if pose.ndim != 2 or pose.shape[1] != 7 or wrist.shape != pose.shape:
         raise ValueError("PF_V2_WRIST_AND_OBJECT_POSE_MUST_MATCH_[T,7]")
     count = len(pose)
-    rows = _vector(valid, name="VALID", count=count, dtype=bool)
+    if interaction_valid is not None and valid is not None:
+        raise ValueError("PF_V2_INTERACTION_VALID_AND_LEGACY_VALID_BOTH_PROVIDED")
+    if interaction_valid is None:
+        if valid is None:
+            raise ValueError("PF_V2_INTERACTION_VALID_REQUIRED")
+        interaction_valid = valid
+    rows = _vector(interaction_valid, name="INTERACTION_VALID", count=count, dtype=bool)
+    support_rows = (
+        np.ones(count, dtype=bool)
+        if support_valid is None
+        else _vector(support_valid, name="SUPPORT_VALID", count=count, dtype=bool)
+    )
     tips = _matrix(tip_pair_presence, name="TIP_PAIR_PRESENCE", count=count) & rows[:, None]
     hand = _matrix(hand_object_pair_presence, name="HAND_OBJECT_PAIR_PRESENCE", count=count)
     hand &= rows[:, None]
@@ -191,7 +212,7 @@ def evaluate_stage16_physical_functionality_v2(
     event = _actual_lift_event(
         object_pose_wxyz=pose,
         table_object_contact=table_object_contact,
-        valid=rows,
+        support_valid=support_rows,
         contract=frozen,
     )
     onset_value = event["actual_lift_onset"]
@@ -307,6 +328,8 @@ def evaluate_stage16_physical_functionality_v2(
             "schema_version": SUPPORT_TRANSFER_PROXY_V1,
             "is_exact_wrench_transfer": False,
             "signal": frozen.support_signal,
+            "validity_rule": frozen.support_validity_rule,
+            "observed_support_rows": int(support_rows.sum()),
             "support_present_before_release": event["support_present_before_release"],
             "support_release_event": support_release,
             "support_transfer_success": support_transfer,

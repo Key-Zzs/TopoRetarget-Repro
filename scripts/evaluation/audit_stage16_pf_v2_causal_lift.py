@@ -141,7 +141,21 @@ def _evaluate_trace(
     *, label: str, episode: int, trace_path: Path, v1: dict[str, str]
 ) -> dict[str, object]:
     with np.load(trace_path) as trace:
-        valid = np.asarray(trace["fingertip_object_pair_force_valid"], dtype=bool)
+        interaction_valid = np.asarray(trace["fingertip_object_pair_force_valid"], dtype=bool)
+        # Pair-force frame zero is intentionally invalid because no hand/object
+        # post-physics sample exists there.  Table support is a different
+        # ContactSensor stream: the trace's reset sample is evidence when its
+        # boolean value is recorded.  New traces persist an explicit validity
+        # field; frozen historical traces predate it and retain every support
+        # row rather than borrowing hand-pair validity.
+        support_valid = (
+            np.asarray(trace["table_object_contact_valid"], dtype=bool)
+            if "table_object_contact_valid" in trace.files
+            else np.ones(len(interaction_valid), dtype=bool)
+        )
+        recorded_support_rows = int(
+            (np.asarray(trace["table_object_contact"], dtype=bool) & support_valid).sum()
+        )
         causal = _v1_gate(v1, ("causality",))
         action_safe = (
             _v1_gate(v1, ("action_bounds_safe",))
@@ -155,7 +169,8 @@ def _evaluate_trace(
             tip_pair_presence=trace["tip_pair_presence"],
             hand_object_pair_presence=trace["hand_object_pair_presence"],
             table_object_contact=trace["table_object_contact"],
-            valid=valid,
+            interaction_valid=interaction_valid,
+            support_valid=support_valid,
             reference_lift_onset=_phase_lift_onset(trace),
             causal_execution=causal,
             geometry_safe=_v1_gate(v1, ("geometry", "penetration_safe")),
@@ -170,6 +185,9 @@ def _evaluate_trace(
         "episode": episode,
         "trace": str(trace_path.resolve()),
         "trace_sha256": _sha256(trace_path),
+        "interaction_valid_rows": int(interaction_valid.sum()),
+        "support_valid_rows": int(support_valid.sum()),
+        "recorded_support_rows": recorded_support_rows,
         "PF_V1": _v1_gate(v1, ("PF", "pf")),
         "physical_lift_success": bool(result["physical_lift_success"]),
         "causal_hand_object_lift": bool(result["causal_hand_object_lift"]),
@@ -316,6 +334,7 @@ def main() -> int:
             "schema_version": "Stage16SupportTransferProxyV1",
             "exact_wrench_transfer": False,
             "signal": frozen.support_signal,
+            "validity_rule": frozen.support_validity_rule,
             "requirements": [
                 "persistent table-support absence after a prior observed support frame",
                 "release no later than ActualLiftOnset",
@@ -340,6 +359,11 @@ not an exact normal-wrench claim. A trace that begins after support has already
 disappeared cannot prove transfer under this proxy and is marked
 `NOT_IDENTIFIABLE`; it is never silently promoted to a pass.
 
+The table ContactSensor is independent of the hand-object pair-force stream.
+In particular, its recorded reset support sample remains usable when frame zero
+has no post-physics hand-pair sample.  The audit never applies a hand-pair
+validity mask to this support stream.
+
 `CausalLoadBearingInteractionV1` requires persistent observed hand contact and
 multi-finger contact at actual lift plus a three-step post-lift contact and
 finite pose-derived relative linear/angular motion. This rejects a flick that
@@ -352,7 +376,11 @@ raises the object but loses contact before or immediately after actual lift.
             "PF_V2_AUDIT": classification,
             "CONFIDENCE": confidence,
             "rationale": rationale,
-            "ppo_authorized": False,
+            "ppo_authorized": classification
+            in {
+                "PF_V1_PRELIFT_GATE_OVERCONSTRAINED_CONFIRMED",
+                "PF_V1_PRELIFT_GATE_PARTIALLY_OVERCONSTRAINED",
+            },
             "stop_condition": (
                 "170650 historical accepted PF V2 regression"
                 if classification == "PF_V2_SEMANTICS_INVALID"
@@ -391,6 +419,18 @@ raises the object but loses contact before or immediately after actual lift.
             "STOP_BEFORE_PPO": classification == "PF_V2_SEMANTICS_INVALID",
         },
     )
+    consequence = (
+        "The accepted 170650 positive control retains a recorded reset table-support "
+        "sample and passes the V2 proxy. The audit authorizes the bounded symmetric PPO "
+        "experiment; it does not promote PF V2 to a historical PF V1 acceptance authority."
+        if classification
+        in {
+            "PF_V1_PRELIFT_GATE_OVERCONSTRAINED_CONFIRMED",
+            "PF_V1_PRELIFT_GATE_PARTIALLY_OVERCONSTRAINED",
+        }
+        else "The accepted 170650 positive control fails the V2 support-transfer proxy, so "
+        "symmetric PPO is not authorized and was not run."
+    )
     _write_text(
         REPORT_ROOT / "handoff.md",
         f"""# Stage16 PF V2 Causal Lift Audit Handoff
@@ -399,9 +439,7 @@ raises the object but loses contact before or immediately after actual lift.
 
 {rationale}
 
-The audit preserves PF V1 and the historical trace hashes. Because the
-accepted 170650 positive-control traces fail the required V2 support-transfer
-proxy, symmetric PPO is not authorized and was not run.
+The audit preserves PF V1 and the historical trace hashes. {consequence}
 """,
     )
     print(json.dumps({"classification": classification, "confidence": confidence}))
