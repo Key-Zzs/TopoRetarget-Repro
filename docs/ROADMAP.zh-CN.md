@@ -8,6 +8,14 @@ stage/RL 文档中。
 稳定基础包括规范 HOI 数据、语义 MANO 转换、目标手运动学、交互感知重定向、几何/SDF 验证、绑定
 manifest 的导出和浏览器证据。Arti-MANO 与 Wuji Hand2 Beta1 仍是支持的目标手路线。
 
+## Stage16 原始 mocap replay overlay（已实现）
+
+authoritative IsaacLab replay 现在可在同一 world frame/timeline 中显示记录的 PhysX actual、按
+provenance 解析的原始 HOCap MANO/object ghost，以及可区分的 geometric-retarget reference ghost。
+raw layer 仅用于可视化；coordinate/time alignment 是 deterministic 且 fail-closed。它支持
+object-local fingertip diagnostic，但不修改 PPO、reward、physics、controller 或 reference。见
+[raw-mocap replay overlay](rl/RAW_MOCAP_REPLAY_OVERLAY.md)。
+
 ## Stage16-D 因果零重力里程碑（CLOSED）
 
 `CAUSAL_ZERO_G_MILESTONE_COMPLETE`

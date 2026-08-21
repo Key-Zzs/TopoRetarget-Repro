@@ -11,6 +11,16 @@ target-hand kinematics, interaction-aware retargeting, geometry/SDF validation,
 manifest-bound exports, and browser-based evidence. Arti-MANO and Wuji Hand2
 Beta1 remain the supported target-hand lanes.
 
+## Stage16 raw-mocap replay overlay (implemented)
+
+The authoritative IsaacLab replay can now show recorded PhysX actual poses,
+the original provenance-resolved HOCap MANO/object ghosts, and a distinct
+geometric-retarget reference ghost in one world frame/timeline. The raw layer
+is visual-only and coordinate/time alignment is deterministic and fail-closed.
+It supports object-local fingertip diagnostics but makes no PPO, reward,
+physics, controller, or reference change. See [raw-mocap replay
+overlay](rl/RAW_MOCAP_REPLAY_OVERLAY.md).
+
 ## Stage16-D causal zero-g milestone (CLOSED)
 
 `CAUSAL_ZERO_G_MILESTONE_COMPLETE`
