@@ -1,0 +1,52 @@
+schema_version: HumanObjectCouplingContactProfileV1
+purpose: descriptive_offline_profile_not_reward_or_success_gate
+raw_human_functional_grasp_binary_required: false
+outcome_tuned_contact_threshold: false
+hard_coupling_threshold_defined: false
+force_closure_claimed: false
+
+frames:
+  hand: authoritative_wrist_or_mano_root
+  object: active_object_body
+  relative_pose: T_hand_to_object_equals_inverse_T_world_hand_times_T_world_object
+  angular_estimator: ReferenceKinematicsV2.SO3_log_centered_world_with_one_sided_endpoints
+  linear_estimator: centered_pose_difference_with_one_sided_endpoints
+  raw_rate_time_basis: raw_source_seconds
+  retarget_actual_rate_time_basis: runtime_control_seconds
+  cross_layer_alignment: reference_phase_and_explicit_raw_to_runtime_mapping
+
+source_contact:
+  authority: SourcePerFingerContactEvidenceV1_plus_RawHumanGraspReadinessProfileV1
+  nominal_contact_distance_m: 0.002
+  component_distance_m: 0.005
+  minimum_component_vertices: 3
+  persistence_duration_s: 0.06666666666666667
+  multi_region_minimum: 2
+  opposition_normal_angle_deg: 90.0
+  opposition_minimum_separation_m: 0.004
+
+coupling:
+  variation_window_steps: 5
+  ratio_epsilon: 1.0e-8
+  continuous_only: true
+  event_detector: none_no_frozen_threshold
+
+candidate_families_frozen_before_results:
+  - CONTACT_ACQUISITION_TIMING
+  - CONTACT_TOPOLOGY_PRESERVATION
+  - HAND_OBJECT_COUPLING_PRESERVATION
+  - RELATIVE_SLIP_SUPPRESSION
+  - SUPPORT_TRANSFER_SUCCESS
+  - SOURCE_PROFILE_TRACKING
+  - MULTI_OBJECTIVE_INTERACTION_PRESERVATION
+  - INCONCLUSIVE
+
+selection_contract:
+  CONTACT_ACQUISITION_TIMING: source_and_retarget_reasonable_but_actual_systematically_late
+  CONTACT_TOPOLOGY_PRESERVATION: source_topology_good_but_retarget_or_actual_loses_structure
+  HAND_OBJECT_COUPLING_PRESERVATION: actual_relative_motion_degrades_before_failure
+  RELATIVE_SLIP_SUPPRESSION: exact_contact_surface_slip_telemetry_required
+  SUPPORT_TRANSFER_SUCCESS: contacts_exist_but_support_never_transfers_result_metric
+  SOURCE_PROFILE_TRACKING: gradual_source_interaction_cannot_be_reduced_to_fixed_prelift_gate
+  MULTI_OBJECTIVE_INTERACTION_PRESERVATION: at_least_two_independent_mechanisms_with_strong_evidence
+  INCONCLUSIVE: evidence_does_not_select_one_family
