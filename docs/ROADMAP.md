@@ -32,15 +32,31 @@ Raw Mocap
      + Demonstration Fidelity
 ```
 
-The additive `SR_dynamic` receipt remains immutable. The new offline contracts
+The additive `SR_dynamic` receipt remains immutable. The offline contracts
 separate raw-MANO, retarget-reference, and PhysX contact timing; audit trace
 omega against pose-derived omega; and keep physical completion (`PF`) separate
-from demonstration fidelity (`DF`). The frozen 170105 timing result is
-fail-closed `INCONCLUSIVE`: raw readiness is after LIFT, retarget readiness is
-before LIFT, and actual readiness is after LIFT. The 170650 angular failure is
-primarily a trace-versus-pose measurement-semantics mismatch, not established
-pose-derived wobble. See [contact timing attribution](rl/CONTACT_TIMING_LAYER_ATTRIBUTION.md),
-[angular-twist audit](rl/ANGULAR_TWIST_AUDIT.md), and [PF/DF](rl/PHYSICAL_FUNCTIONALITY_AND_DEMONSTRATION_FIDELITY.md).
+from demonstration fidelity (`DF`).
+
+The angular semantics closeout identifies the historical trace field as
+world-frame instantaneous PhysX COM angular velocity and adopts
+`Stage16ActualAngularVelocityAuthorityV2`: actual omega is derived from saved
+actual pose using the same control-rate SO(3)-log estimator as Reference
+Kinematics V2. V4/170650 changes from 2/20 under the legacy trace field to
+20/20 under comparable semantics, without rewriting traces or tuning the
+inherited threshold.
+
+The raw grasp review shows that Strict V4 is a reward-specific named-finger to
+robot-tip target, not a validated functional human-grasp binary. The additive
+`RawHumanGraspReadinessProfileV1` reports all-surface, multi-region, topology,
+and coupling layers. For 170105, any-surface contact occurs just before LIFT,
+while multi-region and Strict-V4 readiness occur after LIFT; functional raw
+readiness remains `NOT_IDENTIFIABLE`. Contact-timing attribution is therefore
+still `INCONCLUSIVE`, now at medium confidence and explicitly profile-based.
+See [actual angular velocity semantics](rl/ACTUAL_ANGULAR_VELOCITY_SEMANTICS.md),
+[raw human grasp readiness authority](rl/RAW_HUMAN_GRASP_READINESS_AUTHORITY.md),
+[contact timing attribution](rl/CONTACT_TIMING_LAYER_ATTRIBUTION.md),
+[angular-twist audit](rl/ANGULAR_TWIST_AUDIT.md), and
+[PF/DF](rl/PHYSICAL_FUNCTIONALITY_AND_DEMONSTRATION_FIDELITY.md).
 
 ## Stage16-D causal zero-g milestone (CLOSED)
 
@@ -224,6 +240,8 @@ physics route; it is not a replacement for it.
 - [C1 PPO optimization attribution](rl/C1_PPO_OPTIMIZATION_ATTRIBUTION.md)
 - [Contact-preserving full C0 validation](rl/CONTACT_PRESERVING_FULL_C0_VALIDATION.md)
 - [Frozen source policy gravity sweep](rl/FROZEN_SOURCE_POLICY_GRAVITY_SWEEP.md)
+- [Actual angular velocity semantics](rl/ACTUAL_ANGULAR_VELOCITY_SEMANTICS.md)
+- [Raw human grasp readiness authority](rl/RAW_HUMAN_GRASP_READINESS_AUTHORITY.md)
 - [Reference-gated contact reward V3](rl/REFERENCE_GATED_CONTACT_REWARD.md)
 - [Strict per-finger contact reward V4](rl/STRICT_PER_FINGER_CONTACT_REWARD.md)
 - [Source contact semantics](rl/SOURCE_CONTACT_SEMANTICS.md)

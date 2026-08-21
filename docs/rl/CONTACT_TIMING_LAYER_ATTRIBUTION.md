@@ -54,5 +54,28 @@ The complete per-episode and per-finger receipts are generated under:
 .local/reports/stage16_contact_timing_angular_twist_pf_df/contact_timing/
 ```
 
-This audit does not modify the reference, retime contact, train a policy, or
+## V2 raw-authority review
+
+The earlier raw layer above is retained as the immutable V1 Strict-V4 timing
+receipt, but Strict V4 is a reward-specific named-human-finger to named-robot-tip
+target and is not a validated functional human-grasp authority. The additive
+`RawHumanGraspReadinessProfileV1` now reports all-surface, region, segment,
+topology, and relative-motion layers separately.
+
+For 170105, persistent any-surface contact begins at frame 182, multi-region
+contact at 190, Strict V4 target readiness at 192, and geometric opposition at
+197, with LIFT at 184. Functional raw readiness remains
+`NOT_IDENTIFIABLE`. Retarget-to-actual lag remains measured at 17 frames, but
+the primary layer cannot be selected using an invented raw binary.
+
+```text
+CONTACT_TIMING_ATTRIBUTION_PROFILE_BASED=YES
+DOES_NEW_AUTHORITY_RESOLVE_170105=PARTIALLY
+CONTACT_TIMING_V2_ROOT_CAUSE=INCONCLUSIVE
+CONFIDENCE=MEDIUM
+FRICTION_PRIMARY=NOT_SUPPORTED
+```
+
+See [raw human grasp readiness authority](RAW_HUMAN_GRASP_READINESS_AUTHORITY.md).
+This review does not modify the reference, retime contact, train a policy, or
 authorize geometric or physical refinement.

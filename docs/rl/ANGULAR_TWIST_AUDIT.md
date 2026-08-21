@@ -54,6 +54,21 @@ are generated under:
 .local/reports/stage16_contact_timing_angular_twist_pf_df/angular_twist/
 ```
 
-The only next research action is to align actual and reference twist measurement
-semantics. This audit does not tune a threshold, add a reward, or authorize
-training.
+## Authority V2 closeout
+
+The measurement-semantics action is complete. Static IsaacLab/PhysX provenance
+shows that the historical field is world-frame instantaneous COM angular
+velocity from `RigidBodyView.get_velocities()`, sampled after the final physics
+substep. It is not kinematically closed to control-rate sampled pose; no frame
+conversion or plus/minus-one-row shift repairs that mismatch.
+
+`Stage16ActualAngularVelocityAuthorityV2` therefore derives actual omega from
+the saved actual object quaternion with the same world-frame, control-rate
+SO(3)-log estimator used by Reference Kinematics V2. This changes no historical
+trace byte and tunes no threshold. V4/170650 is 20/20 under Authority V2 versus
+2/20 under the legacy instantaneous trace field. See [actual angular velocity
+semantics](ACTUAL_ANGULAR_VELOCITY_SEMANTICS.md).
+
+The next action is
+`NEXT_REQUALIFY_170650_WITH_ANGULAR_AUTHORITY_V2`; this audit does not add a
+reward or authorize training.

@@ -27,13 +27,27 @@ Raw Mocap
      + Demonstration Fidelity
 ```
 
-`SR_dynamic` receipt 保持 immutable。新增离线合同将 raw-MANO、retarget-reference 与 PhysX
+`SR_dynamic` receipt 保持 immutable。离线合同将 raw-MANO、retarget-reference 与 PhysX
 contact timing 分层，比较 trace omega 与 pose-derived omega，并将 physical completion（PF）
-与 demonstration fidelity（DF）分开。冻结的 170105 timing 结果保持 fail-closed
-`INCONCLUSIVE`：raw readiness 在 LIFT 后，retarget readiness 在 LIFT 前，actual readiness
-又在 LIFT 后。170650 的 angular failure 主要来自 trace-versus-pose measurement semantics
-mismatch，而不是已证明的 pose-derived wobble。见 [contact timing attribution](rl/CONTACT_TIMING_LAYER_ATTRIBUTION.md)、
-[angular-twist audit](rl/ANGULAR_TWIST_AUDIT.md) 与 [PF/DF](rl/PHYSICAL_FUNCTIONALITY_AND_DEMONSTRATION_FIDELITY.md)。
+与 demonstration fidelity（DF）分开。
+
+angular semantics closeout 确认历史 trace 字段是 world-frame、instantaneous PhysX COM
+angular velocity，并采用 `Stage16ActualAngularVelocityAuthorityV2`：从保存的 actual pose
+使用与 Reference Kinematics V2 相同的 control-rate SO(3)-log estimator 计算 actual omega。
+V4/170650 从 legacy trace 字段下的 2/20 变为 comparable semantics 下的 20/20；没有重写
+trace，也没有调整 inherited threshold。
+
+raw grasp review 证明 Strict V4 是 reward-specific 的 named-finger 到 robot-tip target，
+不是经验证的 functional human-grasp binary。新增的
+`RawHumanGraspReadinessProfileV1` 分别报告 all-surface、multi-region、topology 与 coupling
+层。170105 的 any-surface contact 略早于 LIFT，但 multi-region 与 Strict-V4 readiness
+均晚于 LIFT；functional raw readiness 仍为 `NOT_IDENTIFIABLE`。因此 contact-timing
+attribution 仍为 `INCONCLUSIVE`，现为 medium confidence 且显式采用 profile-based 解释。
+见 [actual angular velocity semantics](rl/ACTUAL_ANGULAR_VELOCITY_SEMANTICS.md)、
+[raw human grasp readiness authority](rl/RAW_HUMAN_GRASP_READINESS_AUTHORITY.md)、
+[contact timing attribution](rl/CONTACT_TIMING_LAYER_ATTRIBUTION.md)、
+[angular-twist audit](rl/ANGULAR_TWIST_AUDIT.md) 与
+[PF/DF](rl/PHYSICAL_FUNCTIONALITY_AND_DEMONSTRATION_FIDELITY.md)。
 
 ## Stage16-D 因果零重力里程碑（CLOSED）
 
@@ -193,6 +207,8 @@ external guidance 或 data-H2R 仍是该 causal physics 路线之后的 assisted
 - [C1 PPO optimization attribution](rl/C1_PPO_OPTIMIZATION_ATTRIBUTION.md)
 - [Contact-preserving full C0 validation](rl/CONTACT_PRESERVING_FULL_C0_VALIDATION.md)
 - [Frozen source policy gravity sweep](rl/FROZEN_SOURCE_POLICY_GRAVITY_SWEEP.md)
+- [Actual angular velocity semantics](rl/ACTUAL_ANGULAR_VELOCITY_SEMANTICS.md)
+- [Raw human grasp readiness authority](rl/RAW_HUMAN_GRASP_READINESS_AUTHORITY.md)
 - [Reference-gated contact reward V3](rl/REFERENCE_GATED_CONTACT_REWARD.zh-CN.md)
 - [Strict per-finger contact reward V4](rl/STRICT_PER_FINGER_CONTACT_REWARD.zh-CN.md)
 - [Source contact semantics](rl/SOURCE_CONTACT_SEMANTICS.zh-CN.md)

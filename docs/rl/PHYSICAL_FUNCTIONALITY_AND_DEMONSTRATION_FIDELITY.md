@@ -57,16 +57,25 @@ These are conceptual quadrants; they do not hard-code a clip result.
 | SR dynamic V1 | 0/10 | 2/20 |
 
 PF/DF separation changes the interpretation of 170650: it is physically
-functional and pose/linear faithful, while the recorded omega field fails its
-inherited angular gate. The angular audit shows that this failure is dominated
-by measurement semantics rather than actual pose-derived rotational motion.
-For 170105, later contact without lift remains a PF failure regardless of any
-individual angular pass.
+functional and pose/linear faithful. The legacy instantaneous omega field fails
+its inherited angular gate, but the comparable-semantics
+`Stage16ActualAngularVelocityAuthorityV2` passes 20/20. Accordingly, 170650 is
+accepted for physical-HOI evidence under PF, pose, linear V1, and angular
+Authority V2, with the explicit caveat that the numerical velocity limits are
+still inherited and not scientifically recalibrated. For 170105, later contact
+without lift remains a PF failure regardless of its 10/10 Authority V2 angular
+result.
 
 The complete receipt is ignored local evidence under:
 
 ```text
 .local/reports/stage16_contact_timing_angular_twist_pf_df/pf_df/
+```
+
+The additive Authority V2 comparison is under:
+
+```text
+.local/reports/stage16_angular_semantics_and_raw_grasp_authority/pf_df/
 ```
 
 Neither PF nor DF modifies Evaluation Suite V2, historical `SRphysics`, or
