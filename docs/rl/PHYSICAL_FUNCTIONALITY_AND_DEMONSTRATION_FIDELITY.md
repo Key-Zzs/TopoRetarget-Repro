@@ -20,6 +20,18 @@ and absence of hidden guidance/object/wrist-root writes. Source-required named
 finger recall, table support transfer, and relative hand-object coupling are
 reported supporting metrics because no additional frozen hard threshold exists.
 
+## PF V2 causal-lift audit (unpromoted)
+
+An additive `Stage16PhysicalFunctionalityV2` proposal moved reference-LIFT
+contact timing into `DFInteractionTimingV1` and evaluated actual support-free
+lift from the inherited 5 cm displacement event. It did not modify PF V1.
+The proposal is **not** an acceptance authority: the historical accepted
+170650 traces begin after recorded table support is already absent, so their
+support-transfer proxy is `NOT_IDENTIFIABLE` and PF V2 would fail 20/20. The
+required positive-control regression therefore classified the proposal
+`PF_V2_SEMANTICS_INVALID` and stopped before new PPO. See
+[PF V2 causal-lift audit](PHYSICAL_FUNCTIONALITY_V2_CAUSAL_LIFT.md).
+
 `Stage16DemonstrationFidelityV1` reports separate dimensions rather than an
 unvalidated total boolean:
 

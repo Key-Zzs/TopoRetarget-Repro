@@ -247,3 +247,12 @@ V4/`hocap_170105`/C4 update（409,600 samples）。U10 将 lift 从 0/10 提升�
 Confirm20。分类为 `MULTIPLICATIVE_RSE_REFINEMENT_PARTIAL`。accepted V4/170650
 只作 offline positive control，没有 PPO。唯一下一步是
 `NEXT_DIAGNOSE_MULTIPLICATIVE_RSE_RESIDUAL_FAILURE`，而不是继续调参。
+
+## Stage16 PF V2 causal-lift 审计（已停止）
+
+新增的 PF V2 proposal 将 reference-LIFT timing 与 actual support-free lift 分开，但没有被
+promote。PF V1 保持不变；170105 U10 有 causal-lift proxy evidence。然而 accepted 170650 的
+frozen trace 在记录开始时 table support 已经不存在；在冻结的 binary support proxy 下，transfer
+为 `NOT_IDENTIFIABLE`，所以 PF V2 对该 positive control 是 0/20。结论为
+`PF_V2_SEMANTICS_INVALID`；没有运行 U10 Eval20，也没有运行两条 symmetric PPO lineage。见
+[PF V2 causal-lift audit](rl/PHYSICAL_FUNCTIONALITY_V2_CAUSAL_LIFT.md)。

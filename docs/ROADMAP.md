@@ -285,3 +285,14 @@ Confirm20 was not triggered. The classification is
 `MULTIPLICATIVE_RSE_REFINEMENT_PARTIAL`. Accepted V4/170650 remained an offline
 positive control with no PPO. The only next action is
 `NEXT_DIAGNOSE_MULTIPLICATIVE_RSE_RESIDUAL_FAILURE`, not additional tuning.
+
+## Stage16 PF V2 causal-lift audit (stopped)
+
+The additive PF V2 proposal separated reference-LIFT timing from actual
+support-free lift, but was not promoted. It retained PF V1 unchanged and found
+170105 U10 causal-lift proxy evidence; however, accepted 170650 traces start
+after observed table support is absent. Their transfer is therefore
+`NOT_IDENTIFIABLE` under the frozen binary support proxy, making PF V2 0/20
+on the accepted positive control. The classification is
+`PF_V2_SEMANTICS_INVALID`; U10 Eval20 and both symmetric PPO lineages were not
+run. See [PF V2 causal-lift audit](rl/PHYSICAL_FUNCTIONALITY_V2_CAUSAL_LIFT.md).

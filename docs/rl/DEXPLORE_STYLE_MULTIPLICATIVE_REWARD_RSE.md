@@ -113,3 +113,14 @@ of 7/10, 6/10, and 6/10, but PF remained 0/10 because persistent multi-contact
 began after LIFT. The result is `MULTIPLICATIVE_RSE_REFINEMENT_PARTIAL`, not an
 accepted physical-HOI checkpoint. The only next action is residual-failure
 diagnosis, not more tuning.
+
+## PF V2 follow-up stop
+
+The subsequent causal-lift semantics audit did not authorize continuation of
+this method. It separated reference-LIFT timing from actual 5 cm lift and
+showed U10 causal-lift proxy evidence, but the frozen accepted 170650 trace
+set has no observed pre-release table-support sample. Its required
+support-transfer proxy therefore fails 20/20. The resulting
+`PF_V2_SEMANTICS_INVALID` stop means no U11--U20 continuation, no new 170650
+PPO lineage, no reward/RSE ablation, and no tuning occurred. The historical
+accepted 170650 actor remains unchanged.
