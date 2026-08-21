@@ -16,23 +16,24 @@ raw layer 仅用于可视化；coordinate/time alignment 是 deterministic 且 f
 object-local fingertip diagnostic，但不修改 PPO、reward、physics、controller 或 reference。见
 [raw-mocap replay overlay](rl/RAW_MOCAP_REPLAY_OVERLAY.md)。
 
-## Stage16 动态物理资格与抓取鲁棒性（已实现）
+## Stage16 contact timing、angular twist、PF 与 DF（已实现）
 
 主线证据顺序现在固定为：
 
 ```text
-raw-vs-actual visualization
-    -> dynamic physical qualification
-    -> object-agnostic grasp robustness diagnosis
-    -> 仅在此后进行单独授权的 physical refinement
+Raw Mocap
+    -> Geometric Retarget
+    -> Physical Functionality
+     + Demonstration Fidelity
 ```
 
-新增的 `SR_dynamic` receipt 在冻结 V2 threshold 下评估 Reference Kinematics V2 的
-reference-relative terminal twist；它不是 hold criterion，也不会改变历史 `SRphysics`。
-冻结的 V4 170105/170650 对比将 raw-MANO、retarget 和 PhysX evidence 保持为独立层；在缺少
-contact normal、point 或 effective friction 时，不得提出无证据的 friction-primary 结论。见
-[dynamic physical qualification](rl/DYNAMIC_PHYSICAL_QUALIFICATION.md) 与
-[grasp robustness diagnostic](rl/GRASP_ROBUSTNESS_170105_VS_170650.md)。
+`SR_dynamic` receipt 保持 immutable。新增离线合同将 raw-MANO、retarget-reference 与 PhysX
+contact timing 分层，比较 trace omega 与 pose-derived omega，并将 physical completion（PF）
+与 demonstration fidelity（DF）分开。冻结的 170105 timing 结果保持 fail-closed
+`INCONCLUSIVE`：raw readiness 在 LIFT 后，retarget readiness 在 LIFT 前，actual readiness
+又在 LIFT 后。170650 的 angular failure 主要来自 trace-versus-pose measurement semantics
+mismatch，而不是已证明的 pose-derived wobble。见 [contact timing attribution](rl/CONTACT_TIMING_LAYER_ATTRIBUTION.md)、
+[angular-twist audit](rl/ANGULAR_TWIST_AUDIT.md) 与 [PF/DF](rl/PHYSICAL_FUNCTIONALITY_AND_DEMONSTRATION_FIDELITY.md)。
 
 ## Stage16-D 因果零重力里程碑（CLOSED）
 

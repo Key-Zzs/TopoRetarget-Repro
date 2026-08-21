@@ -21,25 +21,26 @@ It supports object-local fingertip diagnostics but makes no PPO, reward,
 physics, controller, or reference change. See [raw-mocap replay
 overlay](rl/RAW_MOCAP_REPLAY_OVERLAY.md).
 
-## Stage16 dynamic physical qualification and grasp robustness (implemented)
+## Stage16 contact timing, angular twist, PF, and DF (implemented)
 
 The mainline evidence order is now:
 
 ```text
-raw-vs-actual visualization
-    -> dynamic physical qualification
-    -> object-agnostic grasp robustness diagnosis
-    -> only then a separately authorized physical refinement
+Raw Mocap
+    -> Geometric Retarget
+    -> Physical Functionality
+     + Demonstration Fidelity
 ```
 
-The additive `SR_dynamic` receipt evaluates Reference Kinematics V2
-reference-relative terminal twist using the frozen V2 thresholds; it is not a
-hold criterion and leaves historical `SRphysics` untouched. The V4 frozen
-170105/170650 comparison preserves raw-MANO, retarget, and PhysX evidence as
-separate layers and does not make an unsupported friction claim when contact
-normals, points, or effective friction are missing. See [dynamic physical
-qualification](rl/DYNAMIC_PHYSICAL_QUALIFICATION.md) and [grasp robustness
-diagnostic](rl/GRASP_ROBUSTNESS_170105_VS_170650.md).
+The additive `SR_dynamic` receipt remains immutable. The new offline contracts
+separate raw-MANO, retarget-reference, and PhysX contact timing; audit trace
+omega against pose-derived omega; and keep physical completion (`PF`) separate
+from demonstration fidelity (`DF`). The frozen 170105 timing result is
+fail-closed `INCONCLUSIVE`: raw readiness is after LIFT, retarget readiness is
+before LIFT, and actual readiness is after LIFT. The 170650 angular failure is
+primarily a trace-versus-pose measurement-semantics mismatch, not established
+pose-derived wobble. See [contact timing attribution](rl/CONTACT_TIMING_LAYER_ATTRIBUTION.md),
+[angular-twist audit](rl/ANGULAR_TWIST_AUDIT.md), and [PF/DF](rl/PHYSICAL_FUNCTIONALITY_AND_DEMONSTRATION_FIDELITY.md).
 
 ## Stage16-D causal zero-g milestone (CLOSED)
 
