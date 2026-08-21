@@ -12,6 +12,18 @@ NEXT_IMPLEMENT_OBJECT_AGNOSTIC_PHYSICAL_REFINEMENT_V1:SOURCE_PROFILE_TRACKING
 This document selects the next objective family. It does not implement a
 reward or authorize training.
 
+## V1 implementation result
+
+`Stage16SourceProfileTrackingV1` was subsequently implemented as an
+offline-only hard gate using the selected activity, object-local geometry, and
+pose-derived coupling channels.  The gate was numerically finite and did not
+regress the 170650 positive control, but it was
+`PROFILE_OBJECTIVE_NOT_DISCRIMINATIVE`: 170105's combined
+CONTACT-to-early-LIFT loss was lower than 170650's.  No PPO update was
+authorized and V4 is unchanged.  The exact bounded receipt is in
+`docs/rl/SOURCE_PROFILE_TRACKING_REFINEMENT.md` and the ignored local report
+root named there.
+
 ## Why source-profile tracking
 
 For 170105, raw any-surface contact begins at frame 182, only two frames before

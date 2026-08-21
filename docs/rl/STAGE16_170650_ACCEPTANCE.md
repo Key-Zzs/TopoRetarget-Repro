@@ -44,3 +44,9 @@ no-object-rollout-write, and no-wrist-root-write evidence:
 This lineage is frozen and may only be used as an accepted physical-HOI data
 source or positive control. Do not continue PPO, modify its reward, or adapt
 the accepted actor.
+
+The first SourceProfileTracking V1 offline gate used these same immutable
+Formal20 traces only as a positive control and did **not** train 170650.  Its
+combined negative/positive objective was not discriminative, so no unvalidated
+profile reward was added to this accepted lineage.  See
+[`SOURCE_PROFILE_TRACKING_REFINEMENT.md`](SOURCE_PROFILE_TRACKING_REFINEMENT.md).
