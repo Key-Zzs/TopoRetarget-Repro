@@ -4,10 +4,38 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 from toporetarget.rl.geometry_audit.raw_mocap_overlay import (
+    decimate_visual_mesh,
     interpolate_mano_pca_pose,
     interpolate_object_pose,
     pose_wxyz_to_matrix,
 )
+
+
+def test_visual_mesh_decimation_is_bounded_and_preserves_source_arrays() -> None:
+    vertices = np.array([[x, y, 0.0] for y in range(5) for x in range(5)], dtype=np.float64)
+    faces = np.array(
+        [[y * 5 + x, y * 5 + x + 1, (y + 1) * 5 + x] for y in range(4) for x in range(4)]
+        + [
+            [y * 5 + x + 1, (y + 1) * 5 + x + 1, (y + 1) * 5 + x]
+            for y in range(4)
+            for x in range(4)
+        ],
+        dtype=np.int64,
+    )
+    vertices_before = vertices.copy()
+    faces_before = faces.copy()
+
+    display_vertices, display_faces = decimate_visual_mesh(vertices, faces, max_faces=8)
+
+    assert len(display_faces) <= 8
+    assert len(display_faces) > 0
+    assert np.isfinite(display_vertices).all()
+    assert (display_faces >= 0).all()
+    assert display_faces.max() < len(display_vertices)
+    assert np.all(display_faces[:, 0] != display_faces[:, 1])
+    assert np.all(display_faces[:, 1] != display_faces[:, 2])
+    assert np.array_equal(vertices, vertices_before)
+    assert np.array_equal(faces, faces_before)
 
 
 def test_object_interpolation_uses_shortest_arc_slerp() -> None:

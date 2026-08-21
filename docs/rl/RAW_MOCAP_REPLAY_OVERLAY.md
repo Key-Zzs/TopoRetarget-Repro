@@ -64,6 +64,31 @@ reference only. `--no-mocap-ghost` hides the raw MANO, raw object, and tips.
 asset fails closed; otherwise ACTUAL replay remains usable and reports
 `RAW_MOCAP_GHOST_UNAVAILABLE=<reason>`.
 
+The raw object defaults to its full frozen source mesh. For faster rendering,
+`--mocap-object-low-poly` selects a deterministic 2,000-face **display-only**
+mesh; `--mocap-object-max-faces N` selects another face budget (minimum 4).
+The source mesh and raw pose remain immutable; similarity diagnostics and
+recorded replay-transform evidence still use their full-resolution sources.
+The startup line reports `object_display_faces=shown/raw`.
+
+## Live ghost visibility in IsaacLab
+
+In the non-headless replay, the `Replay Ghost Visibility` floating panel lets
+you show or hide **Raw MOCAP** and **Retarget reference** independently while
+the replay continues. The matching shortcuts are `M` and `R`. They author only
+the USD visibility of `/World/Replay/Mocap` and `/World/Replay/Reference`; they
+do not restart playback or modify the recorded transforms, physics, collision
+proxies, or diagnostics. Start with the default ghost options so the desired
+layer is constructed; a layer explicitly disabled with `--no-mocap-ghost` or
+`--no-reference-ghost` remains unavailable to the live controls.
+
+When a layer is hidden, the replay also skips its per-frame USD transform,
+marker, and vertex-buffer writes. Revealing it resumes updates at the current
+replay frame; no hidden catch-up work is accumulated.
+
+The raw MANO surface now uses opacity `0.18`, its object uses `0.20`, and its
+fingertip markers use `0.65` so the actual replay stays visually dominant.
+
 The optional similarity JSON is explicitly `RAW_MOCAP_VS_ACTUAL`. It records
 object translation/rotation differences and each morphology-aware,
 object-local MANO-tip versus robot-distal-body support-point distance. It does

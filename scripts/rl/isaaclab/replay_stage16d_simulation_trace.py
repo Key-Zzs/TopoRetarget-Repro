@@ -22,6 +22,7 @@ from toporetarget.rl.geometry_audit.raw_mocap_overlay import (  # noqa: E402
     FINGER_ORDER,
     RawMocapOverlay,
     RawMocapOverlayUnavailable,
+    decimate_visual_mesh,
     resolve_raw_mocap_overlay,
 )
 from toporetarget.rl.geometry_audit.runtime_geometry import (  # noqa: E402
@@ -100,6 +101,19 @@ def parse_args() -> argparse.Namespace:
         "--mocap-object", dest="mocap_object", action="store_true", default=True
     )
     mocap_object_group.add_argument("--no-mocap-object", dest="mocap_object", action="store_false")
+    mocap_mesh_group = parser.add_mutually_exclusive_group()
+    mocap_mesh_group.add_argument(
+        "--mocap-object-low-poly",
+        dest="mocap_object_max_faces",
+        action="store_const",
+        const=2000,
+        help="Display raw object using the deterministic 2,000-face visual mesh",
+    )
+    mocap_mesh_group.add_argument(
+        "--mocap-object-max-faces",
+        type=int,
+        help="Maximum faces for the deterministic raw-object display mesh (minimum: 4)",
+    )
     mocap_tip_group = parser.add_mutually_exclusive_group()
     mocap_tip_group.add_argument(
         "--mocap-fingertips", dest="mocap_fingertips", action="store_true", default=True
@@ -208,6 +222,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--max-loops must be positive")
     if args.hold_seconds is not None and args.hold_seconds < 0.0:
         raise ValueError("--hold-seconds must be non-negative")
+    if args.mocap_object_max_faces is not None and args.mocap_object_max_faces < 4:
+        raise ValueError("--mocap-object-max-faces must be at least 4")
     frame_range_requested = args.loop or args.end_frame is not None or args.start_frame != 0
     if args.frame is not None and frame_range_requested:
         raise ValueError("--frame cannot be combined with --loop/--start-frame/--end-frame")
@@ -504,6 +520,10 @@ def main() -> int:
 
     simulation_app = AppLauncher(headless=args.headless).app
     sim = None
+    ghost_ui = None
+    keyboard_input = None
+    keyboard = None
+    keyboard_subscription = None
     try:
         import isaaclab.sim as sim_utils
         import omni.usd
@@ -520,6 +540,8 @@ def main() -> int:
         light_cfg.func("/World/ReplayLight", light_cfg)
         stage = omni.usd.get_context().get_stage()
         UsdGeom.Xform.Define(stage, "/World/Replay")
+        reference_layer = UsdGeom.Xform.Define(stage, "/World/Replay/Reference")
+        mocap_layer = UsdGeom.Xform.Define(stage, "/World/Replay/Mocap")
 
         if inferred_table_rendered:
             table = _inferred_table_proxy(object_id)
@@ -587,11 +609,17 @@ def main() -> int:
                 mesh.GetPointsAttr() if dynamic_vertices else mesh.GetPointsAttr()
             )
 
-        def create_marker(path: str, color: tuple[float, float, float], radius: float) -> object:
+        def create_marker(
+            path: str,
+            color: tuple[float, float, float],
+            radius: float,
+            *,
+            opacity: float = 0.9,
+        ) -> object:
             marker = UsdGeom.Sphere.Define(stage, path)
             marker.CreateRadiusAttr(radius)
             marker.CreateDisplayColorAttr([Gf.Vec3f(*color)])
-            marker.CreateDisplayOpacityAttr([0.9])
+            marker.CreateDisplayOpacityAttr([opacity])
             return marker.AddTranslateOp(UsdGeom.XformOp.PrecisionDouble, "replay")
 
         hand_prims = [
@@ -613,7 +641,7 @@ def main() -> int:
         if reference_object_pose is not None and not args.no_reference_object:
             reference_object_prim = create_proxy(
                 object_proxy_map[object_id][0],
-                f"/World/Replay/HOCapReferenceObject/{object_id}",
+                f"/World/Replay/Reference/Object/{object_id}",
                 (0.20, 0.88, 1.00),
                 0.25,
             )
@@ -628,31 +656,113 @@ def main() -> int:
         mocap_mano_prim = None
         mocap_object_prim = None
         mocap_tip_markers: list[object] = []
+        mocap_object_vertices = None
+        mocap_object_faces = None
         if mocap_overlay is not None:
             mocap_mano_prim = create_visual_mesh(
                 mocap_overlay.raw_mano_vertices_world[0],
                 mocap_overlay.raw_mano_faces,
                 "/World/Replay/Mocap/MANO",
                 (0.94, 0.24, 0.68),
-                0.32,
+                0.18,
                 dynamic_vertices=True,
             )
             if args.mocap_object:
+                mocap_object_vertices = mocap_overlay.raw_object_vertices_local
+                mocap_object_faces = mocap_overlay.raw_object_faces
+                if args.mocap_object_max_faces is not None:
+                    mocap_object_vertices, mocap_object_faces = decimate_visual_mesh(
+                        mocap_object_vertices,
+                        mocap_object_faces,
+                        max_faces=args.mocap_object_max_faces,
+                    )
                 mocap_object_prim = create_visual_mesh(
-                    mocap_overlay.raw_object_vertices_local,
-                    mocap_overlay.raw_object_faces,
+                    mocap_object_vertices,
+                    mocap_object_faces,
                     f"/World/Replay/Mocap/Object/{object_id}",
                     (0.88, 0.22, 0.78),
-                    0.35,
+                    0.20,
                     dynamic_vertices=False,
                 )
             if args.mocap_fingertips:
                 mocap_tip_markers = [
                     create_marker(
-                        f"/World/Replay/Mocap/Fingertips/{finger}", (1.0, 0.12, 0.74), 0.008
+                        f"/World/Replay/Mocap/Fingertips/{finger}",
+                        (1.0, 0.12, 0.74),
+                        0.008,
+                        opacity=0.65,
                     )
                     for finger in FINGER_ORDER
                 ]
+
+        reference_layer_available = bool(reference_object_prim or reference_link_markers)
+        mocap_layer_available = bool(mocap_mano_prim or mocap_object_prim or mocap_tip_markers)
+        layer_visible = {
+            "reference": reference_layer_available,
+            "mocap": mocap_layer_available,
+        }
+
+        def set_layer_visibility(layer_name: str, prim: object, visible: bool) -> None:
+            """Toggle a whole visual layer without mutating replay or physics state."""
+
+            visibility = UsdGeom.Imageable(prim).GetVisibilityAttr()
+            visibility.Set(UsdGeom.Tokens.inherited if visible else UsdGeom.Tokens.invisible)
+            layer_visible[layer_name] = visible
+            print(
+                f"GHOST_VISIBILITY layer={layer_name} visible={visible}",
+                flush=True,
+            )
+
+        set_layer_visibility("reference", reference_layer.GetPrim(), layer_visible["reference"])
+        set_layer_visibility("mocap", mocap_layer.GetPrim(), layer_visible["mocap"])
+
+        if not args.headless:
+            import carb
+            import omni.appwindow
+            import omni.ui as ui
+
+            mocap_model = ui.SimpleBoolModel(default_value=layer_visible["mocap"])
+            reference_model = ui.SimpleBoolModel(default_value=layer_visible["reference"])
+            mocap_model.add_value_changed_fn(
+                lambda model: set_layer_visibility(
+                    "mocap", mocap_layer.GetPrim(), model.get_value_as_bool()
+                )
+            )
+            reference_model.add_value_changed_fn(
+                lambda model: set_layer_visibility(
+                    "reference", reference_layer.GetPrim(), model.get_value_as_bool()
+                )
+            )
+            ghost_ui = ui.Window("Replay Ghost Visibility", width=310, height=105)
+            with ghost_ui.frame:
+                with ui.VStack(spacing=6, height=0):
+                    ui.Label("Visual-only live controls (no replay restart)")
+                    with ui.HStack(height=22):
+                        ui.CheckBox(model=mocap_model, width=18, enabled=mocap_layer_available)
+                        ui.Label("Raw MOCAP ghost  [M]")
+                    with ui.HStack(height=22):
+                        ui.CheckBox(
+                            model=reference_model,
+                            width=18,
+                            enabled=reference_layer_available,
+                        )
+                        ui.Label("Retarget reference ghost  [R]")
+
+            keyboard_input = carb.input.acquire_input_interface()
+            keyboard = omni.appwindow.get_default_app_window().get_keyboard()
+
+            def on_keyboard_event(event: object, *_args: object, **_kwargs: object) -> bool:
+                if event.type != carb.input.KeyboardEventType.KEY_PRESS:
+                    return True
+                if event.input == carb.input.KeyboardInput.M and mocap_layer_available:
+                    mocap_model.set_value(not mocap_model.get_value_as_bool())
+                elif event.input == carb.input.KeyboardInput.R and reference_layer_available:
+                    reference_model.set_value(not reference_model.get_value_as_bool())
+                return True
+
+            keyboard_subscription = keyboard_input.subscribe_to_keyboard_events(
+                keyboard, on_keyboard_event
+            )
 
         def set_pose(prim: ProxyPrim, pose: np.ndarray) -> None:
             position = pose[:3].astype(float)
@@ -672,19 +782,29 @@ def main() -> int:
                 )
                 prim.color_attr.Set([Gf.Vec3f(*color)])
             set_pose(object_prim, trace.object_pose[frame, replica])
-            if reference_object_prim is not None and reference_object_pose is not None:
-                set_pose(reference_object_prim, reference_object_pose[frame])
-            for marker, position in zip(
-                reference_link_markers,
-                reference_link_positions[frame] if reference_link_positions is not None else (),
-                strict=True,
+            if (
+                layer_visible["reference"]
+                and reference_object_prim is not None
+                and reference_object_pose is not None
             ):
-                marker.Set(Gf.Vec3d(*position))
-            if mocap_overlay is not None and mocap_mano_prim is not None:
+                set_pose(reference_object_prim, reference_object_pose[frame])
+            if layer_visible["reference"]:
+                for marker, position in zip(
+                    reference_link_markers,
+                    reference_link_positions[frame] if reference_link_positions is not None else (),
+                    strict=True,
+                ):
+                    marker.Set(Gf.Vec3d(*position))
+            if layer_visible["mocap"] and mocap_overlay is not None and mocap_mano_prim is not None:
                 mocap_mano_prim.points_attr.Set(
                     [Gf.Vec3f(*row) for row in mocap_overlay.raw_mano_vertices_world[frame]]
                 )
-            if mocap_overlay is not None and mocap_object_prim is not None:
+            if (
+                layer_visible["mocap"]
+                and mocap_overlay is not None
+                and mocap_object_prim is not None
+                and mocap_object_vertices is not None
+            ):
                 pose = mocap_overlay.raw_object_pose_world_wxyz[frame]
                 matrix = np.eye(4, dtype=np.float64)
                 quaternion = pose[3:] / np.linalg.norm(pose[3:])
@@ -694,11 +814,9 @@ def main() -> int:
                     np.r_[quaternion[1:], quaternion[0]]
                 ).as_matrix()
                 matrix[:3, 3] = pose[:3]
-                world_vertices = (
-                    mocap_overlay.raw_object_vertices_local @ matrix[:3, :3].T + matrix[:3, 3]
-                )
+                world_vertices = mocap_object_vertices @ matrix[:3, :3].T + matrix[:3, 3]
                 mocap_object_prim.points_attr.Set([Gf.Vec3f(*row) for row in world_vertices])
-            if mocap_overlay is not None:
+            if layer_visible["mocap"] and mocap_overlay is not None:
                 for marker, position in zip(
                     mocap_tip_markers, mocap_overlay.raw_mano_fingertips_world[frame], strict=True
                 ):
@@ -782,7 +900,10 @@ def main() -> int:
                 "RAW_MOCAP_GHOST=AVAILABLE "
                 f"clip={mocap_overlay.clip} alignment={alignment_status} "
                 f"time={time_status} "
-                f"object_visible={args.mocap_object} fingertips_visible={args.mocap_fingertips}",
+                f"object_visible={args.mocap_object} fingertips_visible={args.mocap_fingertips} "
+                f"object_display_faces="
+                f"{0 if mocap_object_faces is None else len(mocap_object_faces)}/"
+                f"{len(mocap_overlay.raw_object_faces)}",
                 flush=True,
             )
         elif args.mocap_ghost:
@@ -847,6 +968,13 @@ def main() -> int:
         )
         return 0
     finally:
+        if (
+            keyboard_input is not None
+            and keyboard is not None
+            and keyboard_subscription is not None
+        ):
+            keyboard_input.unsubscribe_to_keyboard_events(keyboard, keyboard_subscription)
+        ghost_ui = None
         if sim is not None:
             sim.clear_all_callbacks()
             sim.clear_instance()

@@ -92,6 +92,77 @@ def pose_wxyz_to_matrix(pose: np.ndarray) -> np.ndarray:
     return result
 
 
+def decimate_visual_mesh(
+    vertices: np.ndarray, faces: np.ndarray, *, max_faces: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Deterministically cluster a display mesh without changing source geometry.
+
+    This is deliberately a visualization-only voxel clustering pass.  It is
+    intended to reduce USD vertex uploads for replay, not to produce a mesh
+    suitable for geometry, contact, or provenance computations.
+    """
+
+    source_vertices = np.asarray(vertices, dtype=np.float64)
+    source_faces = np.asarray(faces, dtype=np.int64)
+    if (
+        source_vertices.ndim != 2
+        or source_vertices.shape[1] != 3
+        or source_faces.ndim != 2
+        or source_faces.shape[1] != 3
+        or not np.isfinite(source_vertices).all()
+        or source_faces.size == 0
+        or source_faces.min() < 0
+        or source_faces.max() >= len(source_vertices)
+    ):
+        raise ValueError("RAW_MOCAP_DISPLAY_MESH_INVALID")
+    if max_faces < 4:
+        raise ValueError("RAW_MOCAP_DISPLAY_MAX_FACES_TOO_SMALL")
+    if len(source_faces) <= max_faces:
+        return source_vertices.copy(), source_faces.copy()
+
+    lower = source_vertices.min(axis=0)
+    extent = source_vertices.max(axis=0) - lower
+    active_axes = extent > 1.0e-12
+    if not np.any(active_axes):
+        raise ValueError("RAW_MOCAP_DISPLAY_MESH_DEGENERATE")
+    normalized = np.zeros_like(source_vertices)
+    normalized[:, active_axes] = (source_vertices[:, active_axes] - lower[active_axes]) / extent[
+        active_axes
+    ]
+    # Surface triangle count grows roughly with the square of the grid
+    # resolution.  Search a small deterministic range and retain the most
+    # detailed nonempty candidate within the requested budget.
+    resolution_limit = max(2, int(np.ceil(len(source_vertices) ** (1.0 / 3.0))) + 1)
+    best: tuple[np.ndarray, np.ndarray] | None = None
+    for resolution in range(1, resolution_limit + 1):
+        cells = np.minimum((normalized * resolution).astype(np.int64), resolution - 1)
+        _, inverse = np.unique(cells, axis=0, return_inverse=True)
+        count = int(inverse.max()) + 1
+        cluster_vertices = np.empty((count, 3), dtype=np.float64)
+        cluster_counts = np.bincount(inverse, minlength=count)
+        for axis in range(3):
+            cluster_vertices[:, axis] = (
+                np.bincount(inverse, weights=source_vertices[:, axis], minlength=count)
+                / cluster_counts
+            )
+        cluster_faces = inverse[source_faces]
+        cluster_faces = cluster_faces[
+            (cluster_faces[:, 0] != cluster_faces[:, 1])
+            & (cluster_faces[:, 1] != cluster_faces[:, 2])
+            & (cluster_faces[:, 0] != cluster_faces[:, 2])
+        ]
+        if not len(cluster_faces):
+            continue
+        canonical_faces = np.sort(cluster_faces, axis=1)
+        _, first = np.unique(canonical_faces, axis=0, return_index=True)
+        cluster_faces = cluster_faces[np.sort(first)]
+        if len(cluster_faces) <= max_faces and (best is None or len(cluster_faces) > len(best[1])):
+            best = (cluster_vertices, cluster_faces)
+    if best is None:
+        raise ValueError("RAW_MOCAP_DISPLAY_MESH_DECIMATION_FAILED")
+    return best
+
+
 def interpolate_mano_pca_pose(
     timestamps: np.ndarray, pose: np.ndarray, target_timestamps: np.ndarray
 ) -> np.ndarray:
