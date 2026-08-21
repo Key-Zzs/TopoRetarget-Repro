@@ -385,12 +385,10 @@ def main() -> int:
             "paper_fidelity": "PASS",
             "ruff_changed_paths": "PASS",
             "ruff_repository": (
-                "PRE_EXISTING_FAILURE: scripts/evaluation/"
-                "finalize_stage16_causal_physical_c4.py"
+                "PRE_EXISTING_FAILURE: scripts/evaluation/finalize_stage16_causal_physical_c4.py"
             ),
             "ruff_format_repository": (
-                "PRE_EXISTING_FAILURE: scripts/evaluation/"
-                "finalize_stage16_causal_physical_c4.py"
+                "PRE_EXISTING_FAILURE: scripts/evaluation/finalize_stage16_causal_physical_c4.py"
             ),
         },
     )
