@@ -48,6 +48,7 @@ class RawMocapOverlay:
     raw_mano_vertices_world: np.ndarray
     raw_mano_faces: np.ndarray
     raw_mano_fingertips_world: np.ndarray
+    raw_mano_root_pose_world_wxyz: np.ndarray
     raw_object_vertices_local: np.ndarray
     raw_object_faces: np.ndarray
     raw_object_pose_world_wxyz: np.ndarray
@@ -609,6 +610,15 @@ def resolve_raw_mocap_overlay(
         np.interp(runtime_times, source_times, np.arange(source_times.size, dtype=np.float64))
         + raw_start
     )
+    mano_root_quaternion_xyzw = Rotation.from_rotvec(mano_pose[:, :3]).as_quat()
+    mano_root_pose_world_wxyz = np.concatenate(
+        (
+            mano_pose[:, 48:51],
+            mano_root_quaternion_xyzw[:, 3:4],
+            mano_root_quaternion_xyzw[:, :3],
+        ),
+        axis=-1,
+    )
     time_alignment = {
         "schema_version": "RawMocapRuntimeTimeAlignmentV1",
         "status": "PASS",
@@ -635,6 +645,7 @@ def resolve_raw_mocap_overlay(
         raw_mano_vertices_world=vertices,
         raw_mano_faces=faces,
         raw_mano_fingertips_world=vertices[:, MANO_TIP_VERTEX_INDICES],
+        raw_mano_root_pose_world_wxyz=mano_root_pose_world_wxyz,
         raw_object_vertices_local=np.asarray(object_vertices, dtype=np.float64),
         raw_object_faces=np.asarray(object_faces, dtype=np.int64),
         raw_object_pose_world_wxyz=_pose_matrix_to_wxyz(object_matrix),
