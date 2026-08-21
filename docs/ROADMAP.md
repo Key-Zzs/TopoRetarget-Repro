@@ -58,6 +58,20 @@ See [actual angular velocity semantics](rl/ACTUAL_ANGULAR_VELOCITY_SEMANTICS.md)
 [angular-twist audit](rl/ANGULAR_TWIST_AUDIT.md), and
 [PF/DF](rl/PHYSICAL_FUNCTIONALITY_AND_DEMONSTRATION_FIDELITY.md).
 
+## Stage16 PF V2 causal lift and symmetric PPO (CLOSED)
+
+`Stage16PhysicalFunctionalityV2` is a frozen additive causal-lift authority;
+it does not rewrite PF V1. Its support proxy uses the independent recorded
+table ContactSensor reset sample, not the replay table or the hand-pair force
+validity mask. The corrected positive control is 20/20 PF V2 on historical
+170650. U10/170105's U11 Confirm20 gives PF V2 and all DF dimensions 20/20,
+while PF V1 deliberately remains 0/20 under its historical timing gate. The
+new 170650 experimental continuation first reaches its maximum at U2 (20/20),
+then is non-monotonic (U8 0/10 and U10 Eval10 recovery 10/10); the historical
+accepted actor remains frozen. The only next action is no-tuning diagnosis of
+170650 continuation instability. See [PF V2 causal-lift
+audit](rl/PHYSICAL_FUNCTIONALITY_V2_CAUSAL_LIFT.md).
+
 ## Stage16 170650 physical-HOI closure and generic profile (CLOSED)
 
 V4/`hocap_170650` is formally `ACCEPTED_STAGE16_PHYSICAL_HOI`: PF, pose,
@@ -278,21 +292,13 @@ training by itself; absent safe early table-supported resets does.
 ## Stage16 grouped-reward/RSE bounded refinement
 
 The opt-in grouped multiplicative reward and reference-scoped exploration
-passed offline and no-step runtime gates, then completed the preregistered ten
-V4/`hocap_170105`/C4 updates (409,600 samples). U10 improved lift from 0/10 to
-6/10, but PF remained 0/10 because persistent multi-contact followed LIFT;
-Confirm20 was not triggered. The classification is
-`MULTIPLICATIVE_RSE_REFINEMENT_PARTIAL`. Accepted V4/170650 remained an offline
-positive control with no PPO. The only next action is
-`NEXT_DIAGNOSE_MULTIPLICATIVE_RSE_RESIDUAL_FAILURE`, not additional tuning.
-
-## Stage16 PF V2 causal-lift audit (stopped)
-
-The additive PF V2 proposal separated reference-LIFT timing from actual
-support-free lift, but was not promoted. It retained PF V1 unchanged and found
-170105 U10 causal-lift proxy evidence; however, accepted 170650 traces start
-after observed table support is absent. Their transfer is therefore
-`NOT_IDENTIFIABLE` under the frozen binary support proxy, making PF V2 0/20
-on the accepted positive control. The classification is
-`PF_V2_SEMANTICS_INVALID`; U10 Eval20 and both symmetric PPO lineages were not
-run. See [PF V2 causal-lift audit](rl/PHYSICAL_FUNCTIONALITY_V2_CAUSAL_LIFT.md).
+passed offline and no-step runtime gates before the original ten
+V4/`hocap_170105`/C4 updates (409,600 samples). U10 improved legacy lift to
+6/10 but retained PF V1=0/10 because persistent multi-contact followed LIFT.
+After the corrected PF V2 support-sensor audit, U10 received one further
+bounded update: U11 reached PF V2 Eval10 10/10 and Confirm20 20/20 on PF V2
+and all DF dimensions, while PF V1 remains unchanged at 0/20. The independent
+historical-170650 experimental continuation completed its own U1--U10 budget;
+its first maximum is U2 Eval20 20/20, with non-monotonic later Eval10 behavior
+(U8 0/10 and U10 recovery 10/10). The frozen accepted 170650 actor remains
+unchanged. See [PF V2 causal-lift audit](rl/PHYSICAL_FUNCTIONALITY_V2_CAUSAL_LIFT.md).

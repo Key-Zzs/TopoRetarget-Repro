@@ -114,13 +114,28 @@ began after LIFT. The result is `MULTIPLICATIVE_RSE_REFINEMENT_PARTIAL`, not an
 accepted physical-HOI checkpoint. The only next action is residual-failure
 diagnosis, not more tuning.
 
-## PF V2 follow-up stop
+## PF V2 correction and symmetric continuation
 
-The subsequent causal-lift semantics audit did not authorize continuation of
-this method. It separated reference-LIFT timing from actual 5 cm lift and
-showed U10 causal-lift proxy evidence, but the frozen accepted 170650 trace
-set has no observed pre-release table-support sample. Its required
-support-transfer proxy therefore fails 20/20. The resulting
-`PF_V2_SEMANTICS_INVALID` stop means no U11--U20 continuation, no new 170650
-PPO lineage, no reward/RSE ablation, and no tuning occurred. The historical
-accepted 170650 actor remains unchanged.
+The first PF V2 stop was invalid: the evaluator masked the independent table
+ContactSensor with the frame-zero-invalid hand-object pair-force stream. The
+historical accepted 170650 traces retain a recorded reset support sample before
+release, so the corrected audit is
+`PF_V1_PRELIFT_GATE_PARTIALLY_OVERCONSTRAINED`, not
+`PF_V2_SEMANTICS_INVALID`. The V2 support-proxy rule is frozen and still makes
+no exact wrench-transfer or surface-slip claim.
+
+With the identical grouped multiplicative reward, RSE, C4 physics, PPO
+hyperparameters, and uniform RSI contract, U10/170105 received one new update:
+U11 reached PF V2 Eval10 10/10 and its same-checkpoint Confirm20 gives PF V2,
+physical lift, causal lift, support transfer, sustained coupling, and all three
+DF dimensions at 20/20. PF V1 deliberately remains 0/20 because its historical
+pre-reference-LIFT timing gate was not changed.
+
+The separate historical-170650 experimental actor received the full ten-update
+409,600-sample budget. Its best observed U2 Eval20 remains 20/20 on PF V1,
+PF V2, lift, support transfer, and DF. The continuation is non-monotonic: U8
+PF V2=0/10, followed by U10 Eval10 recovery to 10/10. This instability does
+not overwrite or demote the frozen historical accepted 170650 actor. It also
+does not identify an RSE-specific effect because reward aggregation and RSE
+were changed together. The only next action is no-tuning diagnosis of that
+continuation instability.
