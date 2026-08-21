@@ -201,8 +201,14 @@ def test_closeout_uses_fixed_eval10_count_for_progression_rows() -> None:
     assert _candidate_episode_count(point="Endpoint", candidate_metrics={"episodes": 20}) == 20
 
 
-def test_closeout_accepts_the_explicit_c0_continuation_label_alias() -> None:
-    historical = _historical_row("U25")
+def test_closeout_accepts_the_explicit_c0_continuation_label_alias(tmp_path: Path) -> None:
+    historical_path = tmp_path / "grasp_vs_update.csv"
+    historical_path.write_text(
+        "stage,label,update,samples\nC0,C0_U25,25,1024000\n",
+        encoding="utf-8",
+    )
+
+    historical = _historical_row("U25", historical_path=historical_path)
 
     assert historical["label"] == "C0_U25"
     assert historical["update"] == "25"

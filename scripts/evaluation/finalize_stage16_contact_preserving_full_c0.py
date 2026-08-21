@@ -190,8 +190,8 @@ def _source_summary() -> dict[str, Any]:
     return source
 
 
-def _historical_row(label: str) -> dict[str, str]:
-    rows = [row for row in _read_csv(HISTORICAL) if row.get("stage") == "C0"]
+def _historical_row(label: str, *, historical_path: Path = HISTORICAL) -> dict[str, str]:
+    rows = [row for row in _read_csv(historical_path) if row.get("stage") == "C0"]
     # The original C0 evidence switches from ``U6`` to ``C0_U7`` after the
     # continuation boundary.  Both spellings name the same update under the
     # single frozen C0 lineage, so accept only that explicit prefix alias.
