@@ -26,7 +26,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--clip", default="hocap_170650")
     parser.add_argument("--reference", type=Path)
     parser.add_argument("--object-usd", type=Path)
-    parser.add_argument("--physics-contract-root", type=Path)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_ROOT)
     parser.add_argument("--selected-capacity", type=Path)
     parser.add_argument("--num-envs", type=int)
@@ -143,13 +142,12 @@ def main() -> int:
     if not args.accept_eula:
         raise ValueError("--accept-eula is required")
     os.environ["OMNI_KIT_ACCEPT_EULA"] = "YES"
-    independent_inputs = (args.reference, args.object_usd, args.physics_contract_root)
+    independent_inputs = (args.reference, args.object_usd)
     if any(value is not None for value in independent_inputs) and not all(
         value is not None for value in independent_inputs
     ):
         raise ValueError(
-            "independent source training requires --reference, --object-usd, and "
-            "--physics-contract-root together"
+            "independent source training requires --reference and --object-usd together"
         )
     from isaaclab.app import AppLauncher
 
@@ -176,9 +174,6 @@ def main() -> int:
         # Isaac modules import Omniverse extensions such as pxr; load them
         # only after AppLauncher owns the SimulationApp lifecycle.
         from toporetarget.rl.environments.isaaclab_backend import (
-            physics_consistent_retargeting_env_cfg as physics_cfg,
-        )
-        from toporetarget.rl.environments.isaaclab_backend import (
             ppo26d_reference_tracking_env_cfg as ppo26d_cfg,
         )
         from toporetarget.rl.environments.isaaclab_backend.ppo26d_reference_tracking_env import (
@@ -197,18 +192,13 @@ def main() -> int:
             critical_dr=args.critical_dr,
         )
         if args.reference is not None:
-            assert args.object_usd is not None and args.physics_contract_root is not None
+            assert args.object_usd is not None
             configure_independent_clip_runtime(
                 cfg,
                 clip_id=args.clip,
                 reference_path=args.reference,
                 object_usd_path=args.object_usd,
                 reference_time_scale=8,
-            )
-            physics_cfg.configure_independent_physics_contracts(
-                cfg,
-                clip_id=args.clip,
-                contract_root=args.physics_contract_root,
             )
         env = IsaacPPO26DReferenceTrackingEnv(cfg)
         active_clip_indices = sorted(set(env._clip_index.detach().cpu().tolist()))

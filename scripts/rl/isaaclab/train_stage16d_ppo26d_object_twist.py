@@ -458,7 +458,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-root", type=Path, default=DEFAULT_ROOT)
     parser.add_argument("--reference", type=Path)
     parser.add_argument("--object-usd", type=Path)
-    parser.add_argument("--physics-contract-root", type=Path)
     parser.add_argument(
         "--run-label",
         help=(
@@ -571,13 +570,12 @@ def main() -> int:
         raise ValueError("--accept-eula is required")
     if args.num_envs <= 0:
         raise ValueError("--num-envs must be positive")
-    independent_inputs = (args.reference, args.object_usd, args.physics_contract_root)
+    independent_inputs = (args.reference, args.object_usd)
     if any(value is not None for value in independent_inputs) and not all(
         value is not None for value in independent_inputs
     ):
         raise ValueError(
-            "independent reward training requires --reference, --object-usd, and "
-            "--physics-contract-root together"
+            "independent reward training requires --reference and --object-usd together"
         )
     if args.reward_v3_contact and args.strict_per_finger_contact_reward_v4:
         raise ValueError("REWARD_V3_AND_STRICT_V4_ARE_MUTUALLY_EXCLUSIVE")
@@ -710,9 +708,6 @@ def main() -> int:
     env: Any | None = None
     try:
         from toporetarget.rl.environments.isaaclab_backend import (
-            physics_consistent_retargeting_env_cfg as physics_cfg,
-        )
-        from toporetarget.rl.environments.isaaclab_backend import (
             ppo26d_reference_tracking_env_cfg as ppo_cfg,
         )
         from toporetarget.rl.environments.isaaclab_backend.ppo26d_reference_tracking_env import (
@@ -733,17 +728,12 @@ def main() -> int:
             critical_dr=args.critical_dr,
         )
         if args.reference is not None:
-            assert args.object_usd is not None and args.physics_contract_root is not None
+            assert args.object_usd is not None
             configure_independent_clip_runtime(
                 cfg,
                 clip_id=args.clip,
                 reference_path=args.reference,
                 object_usd_path=args.object_usd,
-            )
-            physics_cfg.configure_independent_physics_contracts(
-                cfg,
-                clip_id=args.clip,
-                contract_root=args.physics_contract_root,
             )
         if contact_mode is not None:
             ppo_cfg.configure_stage16d_contact_reward(
