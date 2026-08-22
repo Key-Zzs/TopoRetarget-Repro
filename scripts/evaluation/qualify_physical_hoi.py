@@ -24,6 +24,7 @@ from scripts.evaluation.audit_stage16_zero_g_frozen_actor_contact import _full_s
 from scripts.rl.isaaclab.evaluate_physical_hoi import model_from_checkpoint
 from scripts.rl.isaaclab.run_stage16_frozen_source_policy_gravity_sweep import (
     FROZEN_GATES,
+    GEOMETRY,
     _evaluate_geometry_with_exact_broadphase,
     _inter_finger_penetration,
     _load_gate,
@@ -56,10 +57,21 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--accept-eula", action="store_true")
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--clip", choices=("hocap_170105", "hocap_170650"), required=True)
+    parser.add_argument("--clip", required=True)
     parser.add_argument("--episodes", type=int, choices=(10, 20), required=True)
     parser.add_argument("--update", type=int, required=True)
     parser.add_argument("--samples", type=int, required=True)
+    parser.add_argument("--reference", type=Path)
+    parser.add_argument("--object-usd", type=Path)
+    parser.add_argument("--support-proxy", type=Path)
+    parser.add_argument("--support-asset", type=Path)
+    parser.add_argument("--contact-contract", type=Path)
+    parser.add_argument("--contact-mask-root", type=Path)
+    parser.add_argument("--reference-distance-root", type=Path)
+    parser.add_argument("--object-mesh-root", type=Path)
+    parser.add_argument("--runtime-geometry-manifest", type=Path)
+    parser.add_argument("--frozen-evaluation-gates", type=Path)
+    parser.add_argument("--seed-manifest", type=Path)
     return parser
 
 
@@ -107,6 +119,7 @@ def _episode_row(
     gate: dict[str, object],
     tracked_link_names: list[str],
     clip: str,
+    geometry_path: Path = GEOMETRY,
 ) -> tuple[dict[str, object], dict[str, np.ndarray]]:
     valid = _valid_rows(trace)
     actual = np.asarray(trace["tip_pair_presence"], dtype=bool)
@@ -125,6 +138,7 @@ def _episode_row(
             :, None
         ],
         hand_collision_body_names=tuple(str(value) for value in trace["hand_collision_body_names"]),
+        geometry_path=geometry_path,
     )
     inter_finger = _inter_finger_penetration(trace["hand_collision_body_pose"])
     geometry_safe = bool(
@@ -297,6 +311,26 @@ def main() -> int:
     args = _parser().parse_args()
     if not args.accept_eula:
         raise ValueError("DEXPLORE_EVALUATION_REQUIRES_EULA")
+    if not args.clip or any(token in args.clip for token in ("/", "\\", "..")):
+        raise ValueError("INDEPENDENT_PHYSICAL_QUALIFICATION_CLIP_ID_INVALID")
+    independent_inputs = (
+        args.reference,
+        args.object_usd,
+        args.support_proxy,
+        args.support_asset,
+        args.contact_contract,
+        args.contact_mask_root,
+        args.reference_distance_root,
+        args.object_mesh_root,
+        args.runtime_geometry_manifest,
+        args.frozen_evaluation_gates,
+        args.seed_manifest,
+    )
+    if any(value is not None for value in independent_inputs) and not all(
+        value is not None for value in independent_inputs
+    ):
+        raise ValueError("INDEPENDENT_PHYSICAL_QUALIFICATION_INPUT_SET_INCOMPLETE")
+    independent = args.reference is not None
     checkpoint = args.checkpoint.resolve()
     output = args.output.resolve()
     if output.exists():
@@ -311,8 +345,23 @@ def main() -> int:
         from scripts.rl.isaaclab.smoke_stage16_full_trajectory_ppo import _make_table_env
         from toporetarget.rl.reference_tracking.contact_reward_mode import ContactRewardMode
 
-        seeds = _seeds(args.clip, count=args.episodes)
-        start = _full_start(args.clip)
+        if independent:
+            assert args.seed_manifest is not None
+            seed_payload = json.loads(args.seed_manifest.read_text(encoding="utf-8"))
+            seed_key = "eval10" if args.episodes == 10 else "confirm20"
+            seeds = seed_payload.get(seed_key)
+            if (
+                seed_payload.get("schema_version") != "IndependentPhysicalEvaluationSeedManifestV1"
+                or seed_payload.get("clip_id") != args.clip
+                or not isinstance(seeds, list)
+                or len(seeds) != args.episodes
+                or any(isinstance(value, bool) or not isinstance(value, int) for value in seeds)
+            ):
+                raise ValueError("INDEPENDENT_PHYSICAL_QUALIFICATION_SEED_MANIFEST_INVALID")
+            start = 0
+        else:
+            seeds = _seeds(args.clip, count=args.episodes)
+            start = _full_start(args.clip)
         env = _make_table_env(
             clip=args.clip,
             num_envs=args.episodes,
@@ -323,6 +372,14 @@ def main() -> int:
             reward_aggregation_mode="grouped_multiplicative_v1",
             rse_enabled=True,
             full_horizon_evaluation=True,
+            reference_path=args.reference,
+            object_usd_path=args.object_usd,
+            support_proxy_path=args.support_proxy,
+            support_asset_path=args.support_asset,
+            contact_contract_path=args.contact_contract,
+            contact_mask_root=args.contact_mask_root,
+            reference_distance_root=args.reference_distance_root,
+            object_mesh_root=args.object_mesh_root,
         )
         trainer, payload = model_from_checkpoint(
             checkpoint, str(env.device), expected_clip=args.clip
@@ -337,7 +394,10 @@ def main() -> int:
             or contract["ppo26d"]["rse"]["enabled"] is not True
         ):
             raise RuntimeError("DEXPLORE_EVALUATION_RUNTIME_CONTRACT_DRIFT")
-        gate = _load_gate(FROZEN_GATES, clip=args.clip)
+        gate = _load_gate(
+            args.frozen_evaluation_gates or FROZEN_GATES,
+            clip=args.clip,
+        )
         rollouts = _parallel_rollouts(
             env=env,
             trainer=trainer,
@@ -356,6 +416,7 @@ def main() -> int:
                 gate=gate,
                 tracked_link_names=list(env.reference_bank.tracked_link_names),
                 clip=args.clip,
+                geometry_path=args.runtime_geometry_manifest or GEOMETRY,
             )
             trace_path = output / "traces" / f"episode_{episode:02d}.npz"
             trace_path.parent.mkdir(parents=True, exist_ok=True)

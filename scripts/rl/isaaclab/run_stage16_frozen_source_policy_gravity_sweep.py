@@ -516,6 +516,7 @@ def _evaluate_geometry_with_exact_broadphase(
     object_pose: np.ndarray,
     hand_collision_body_pose: np.ndarray,
     hand_collision_body_names: tuple[str, ...],
+    geometry_path: Path = GEOMETRY,
 ) -> tuple[dict[str, object], dict[str, np.ndarray]]:
     """Keep exact FCL for every potentially colliding pair.
 
@@ -532,7 +533,7 @@ def _evaluate_geometry_with_exact_broadphase(
 
     objects = np.asarray(object_pose, dtype=np.float64)
     hands = np.asarray(hand_collision_body_pose, dtype=np.float64)
-    hand_proxies, objects_by_clip = load_runtime_geometry_manifest(GEOMETRY)
+    hand_proxies, objects_by_clip = load_runtime_geometry_manifest(geometry_path)
     object_proxies = objects_by_clip.get(clip)
     if object_proxies is None or hand_collision_body_names != tuple(
         item.body_name for item in hand_proxies
