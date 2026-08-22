@@ -62,6 +62,16 @@ def parse_args() -> argparse.Namespace:
         help="Direct collision-bearing object USD for one independent clip.",
     )
     parser.add_argument(
+        "--support-proxy",
+        type=Path,
+        help="Finite support table_proxy.json for an independent full-gravity clip.",
+    )
+    parser.add_argument(
+        "--support-asset",
+        type=Path,
+        help="Finite support USD for an independent full-gravity clip.",
+    )
+    parser.add_argument(
         "--full-trajectory-table",
         action="store_true",
         help="Evaluate a C4 full-trajectory checkpoint with inferred table support active.",
@@ -1000,8 +1010,16 @@ def main() -> int:
         contact_mode is None or args.rsi_replicas != 0 or args.curriculum_stage != "C4"
     ):
         raise ValueError("FULL_TRAJECTORY_C4_EVALUATION_REQUIRES_CONTACT_MODE_AND_NO_RSI")
-    if args.full_trajectory_table and args.reference is not None:
-        raise ValueError("INDEPENDENT_FULL_TRAJECTORY_TABLE_AUTHORITY_NOT_BOUND")
+    if args.full_trajectory_table and args.reference is not None and (
+        args.support_proxy is None or args.support_asset is None
+    ):
+        raise ValueError(
+            "independent full-trajectory evaluation requires --support-proxy and --support-asset"
+        )
+    if not args.full_trajectory_table and (
+        args.support_proxy is not None or args.support_asset is not None
+    ):
+        raise ValueError("support inputs require --full-trajectory-table")
     if args.hand_gravity_mode != "current_off" and not args.full_trajectory_table:
         raise ValueError("HAND_GRAVITY_ABLATION_REQUIRES_FULL_TRAJECTORY_TABLE")
     if not args.artifact_label.replace("_", "").isalnum():
@@ -1044,7 +1062,7 @@ def main() -> int:
             from smoke_stage16_full_trajectory_ppo import _load_start, _make_table_env
 
             assert contact_mode is not None
-            start = _load_start(args.clip)
+            start = {"start_index": 0} if args.reference is not None else _load_start(args.clip)
             robot_usd_path = None
             if args.hand_gravity_mode == "ablation_on":
                 from scripts.rl.isaaclab.inspect_stage16_hand_gravity import (
@@ -1059,6 +1077,12 @@ def main() -> int:
                 mode=contact_mode,
                 stage=args.curriculum_stage,
                 robot_usd_path=robot_usd_path,
+                reference_path=args.reference,
+                object_usd_path=args.object_usd,
+                support_proxy_path=args.support_proxy,
+                support_asset_path=args.support_asset,
+                contact_contract_path=args.contact_reward_contract,
+                contact_mask_root=args.contact_mask_root,
             )
             env.cfg.ppo26d_full_horizon_evaluation = True
         else:

@@ -80,6 +80,14 @@ def _make_table_env(
     reward_aggregation_mode: str = "legacy_additive",
     rse_enabled: bool = False,
     full_horizon_evaluation: bool = False,
+    reference_path: Path | None = None,
+    object_usd_path: Path | None = None,
+    support_proxy_path: Path | None = None,
+    support_asset_path: Path | None = None,
+    contact_contract_path: Path | None = None,
+    contact_mask_root: Path | None = None,
+    reference_distance_root: Path | None = None,
+    object_mesh_root: Path | None = None,
 ) -> Any:
     """Construct the production PPO environment with fixed finite supports."""
 
@@ -99,8 +107,32 @@ def _make_table_env(
     )
     from toporetarget.rl.reference_tracking.contact_reward_mode import ContactRewardMode
 
-    def support_cfg(support_clip: str, name: str) -> RigidObjectCfg:
-        proxy_path = SUPPORT_ROOT / support_clip / "table_proxy.json"
+    independent_inputs = (
+        reference_path,
+        object_usd_path,
+        support_proxy_path,
+        support_asset_path,
+    )
+    if any(value is not None for value in independent_inputs) and not all(
+        value is not None for value in independent_inputs
+    ):
+        raise ValueError(
+            "INDEPENDENT_TABLE_ENV_REQUIRES_REFERENCE_OBJECT_SUPPORT_PROXY_AND_ASSET"
+        )
+    independent = reference_path is not None
+
+    def support_cfg(
+        support_clip: str,
+        name: str,
+        *,
+        proxy_override: Path | None = None,
+        asset_override: Path | None = None,
+    ) -> RigidObjectCfg:
+        proxy_path = (
+            proxy_override.resolve()
+            if proxy_override is not None
+            else SUPPORT_ROOT / support_clip / "table_proxy.json"
+        )
         proxy = json.loads(proxy_path.read_text(encoding="utf-8"))
         normal = np.asarray(proxy["plane_normal"], dtype=np.float64)
         center = np.asarray(proxy["table_pose"][:3], dtype=np.float64) - (
@@ -110,7 +142,12 @@ def _make_table_env(
             prim_path=f"/World/envs/env_.*/{name}",
             spawn=sim_utils.UsdFileCfg(
                 usd_path=str(
-                    REPO_ROOT / ".local/support_assets/hocap" / support_clip / "support_proxy.usda"
+                    asset_override.resolve()
+                    if asset_override is not None
+                    else REPO_ROOT
+                    / ".local/support_assets/hocap"
+                    / support_clip
+                    / "support_proxy.usda"
                 ),
                 copy_from_source=False,
                 activate_contact_sensors=False,
@@ -146,19 +183,41 @@ def _make_table_env(
         support_170650: RigidObjectCfg | None = None
         object_170105_support_contact: ContactSensorCfg | None = None
         object_170650_support_contact: ContactSensorCfg | None = None
+        support_external: RigidObjectCfg | None = None
+        object_external_support_contact: ContactSensorCfg | None = None
 
     class TableSupportedEnv(IsaacPPO26DReferenceTrackingEnv):
         def _setup_scene(self) -> None:
             self._robot = Articulation(self.cfg.robot)
-            self._object_170105 = RigidObject(self.cfg.object_170105)
-            self._object_170650 = RigidObject(self.cfg.object_170650)
-            self._support_170105 = RigidObject(self.cfg.scene.support_170105)
-            self._support_170650 = RigidObject(self.cfg.scene.support_170650)
             self.scene.articulations["robot"] = self._robot
-            self.scene.rigid_objects["object_170105"] = self._object_170105
-            self.scene.rigid_objects["object_170650"] = self._object_170650
-            self.scene.rigid_objects["support_170105"] = self._support_170105
-            self.scene.rigid_objects["support_170650"] = self._support_170650
+            for (
+                _clip_id,
+                _object_name,
+                scene_key,
+                _hand_sensor_name,
+                attribute,
+            ) in self._configured_object_specs(self.cfg):
+                object_cfg = (
+                    self.cfg.external_object
+                    if self.cfg.external_object is not None
+                    else getattr(self.cfg, scene_key)
+                )
+                if object_cfg is None:
+                    raise RuntimeError(f"INDEPENDENT_TABLE_OBJECT_CONFIG_MISSING:{scene_key}")
+                object_actor = RigidObject(object_cfg)
+                setattr(self, attribute, object_actor)
+                self.scene.rigid_objects[scene_key] = object_actor
+                support_key = (
+                    "support_external"
+                    if scene_key == "object_external"
+                    else scene_key.replace("object_", "support_", 1)
+                )
+                support_actor_cfg = getattr(self.cfg.scene, support_key)
+                if support_actor_cfg is None:
+                    raise RuntimeError(f"INDEPENDENT_TABLE_SUPPORT_CONFIG_MISSING:{support_key}")
+                support_actor = RigidObject(support_actor_cfg)
+                setattr(self, f"_{support_key}", support_actor)
+                self.scene.rigid_objects[support_key] = support_actor
             self.scene.clone_environments(copy_from_source=False)
             if self.device == "cpu":
                 self.scene.filter_collisions(global_prim_paths=[])
@@ -169,12 +228,22 @@ def _make_table_env(
             super()._reset_idx(env_ids)
             # Valid only for this receipt-selected stable table support start.
             ids = self._robot._ALL_INDICES if env_ids is None else env_ids
-            state_105 = self._object_170105.data.root_state_w[ids].clone()
-            state_650 = self._object_170650.data.root_state_w[ids].clone()
-            state_105[:, 7:] = 0.0
-            state_650[:, 7:] = 0.0
-            self._object_170105.write_root_state_to_sim(state_105, env_ids=ids)
-            self._object_170650.write_root_state_to_sim(state_650, env_ids=ids)
+            for _clip_id, _name, _key, _sensor, attribute in self._configured_object_specs(
+                self.cfg
+            ):
+                actor = getattr(self, attribute)
+                state = actor.data.root_state_w[ids].clone()
+                state[:, 7:] = 0.0
+                actor.write_root_state_to_sim(state, env_ids=ids)
+
+        def _table_support_sensor_name(self) -> str:
+            if self.cfg.external_object is not None:
+                return "object_external_support_contact"
+            return (
+                "object_170105_support_contact"
+                if self.cfg.stage16d_fixed_clip == "hocap_170105"
+                else "object_170650_support_contact"
+            )
 
         def contract_report(self) -> dict[str, object]:
             report = super().contract_report()
@@ -182,17 +251,15 @@ def _make_table_env(
             assert isinstance(physical, dict)
             physical["support"] = "finite_inferred_table_proxy_v1"
             physical["table_actor_active"] = True
-            physical["mid_trajectory_rsi"] = "uniform[0,320]" if training_rsi else "disabled"
+            physical["mid_trajectory_rsi"] = (
+                "uniform_runtime_reference_valid_index_domain" if training_rsi else "disabled"
+            )
             physical["table_resting_reset_semantics"] = "TABLE_RESTING_RESET_SEMANTICS_V1"
             return report
 
         def stage16_saturation_telemetry(self) -> dict[str, Any]:
             telemetry = super().stage16_saturation_telemetry()
-            sensor_name = (
-                "object_170105_support_contact"
-                if self.cfg.stage16d_fixed_clip == "hocap_170105"
-                else "object_170650_support_contact"
-            )
+            sensor_name = self._table_support_sensor_name()
             force = self.scene[sensor_name].data.force_matrix_w
             telemetry["table_object_contact"] = (
                 torch.linalg.vector_norm(force, dim=-1).amax(dim=(1, 2)) > 1.0e-4
@@ -207,11 +274,7 @@ def _make_table_env(
             # instead of turning ordinary C1--C4 PPO collection into an error.
             if capture is None or self._ppo26d_trace_length <= 0:
                 return
-            sensor_name = (
-                "object_170105_support_contact"
-                if self.cfg.stage16d_fixed_clip == "hocap_170105"
-                else "object_170650_support_contact"
-            )
+            sensor_name = self._table_support_sensor_name()
             force = self.scene[sensor_name].data.force_matrix_w
             contact = torch.linalg.vector_norm(force, dim=-1).amax(dim=(1, 2)) > 1.0e-4
             if "table_object_contact" not in capture:
@@ -232,25 +295,37 @@ def _make_table_env(
     ppo_cfg.configure_stage16d_ppo26d(
         cfg, num_envs=num_envs, clip=clip, rsi=training_rsi, critical_dr=False
     )
+    if independent:
+        assert reference_path is not None and object_usd_path is not None
+        from toporetarget.rl.environments.isaaclab_backend.world_wrist_direct_env_cfg import (
+            configure_independent_clip_runtime,
+        )
+
+        configure_independent_clip_runtime(
+            cfg,
+            clip_id=clip,
+            reference_path=reference_path,
+            object_usd_path=object_usd_path,
+        )
     selected_mode = ContactRewardMode.AGGREGATE_V3 if mode is None else mode
     if selected_mode is ContactRewardMode.AGGREGATE_V3:
-        contact_contract = (
+        default_contact_contract = (
             REPO_ROOT
             / ".local/reports/stage16d_reward_v3_pairforce_unblock"
             / "contact_reward_contract.json"
         )
-        contact_mask_root = REPO_ROOT / ".local/reports/stage16d_reward_v3_contact"
+        default_contact_mask_root = REPO_ROOT / ".local/reports/stage16d_reward_v3_contact"
     else:
-        contact_contract = (
+        default_contact_contract = (
             REPO_ROOT / ".local/reports/stage16d_strict_per_finger_v4/strict_v4_contract.json"
         )
-        contact_mask_root = REPO_ROOT / ".local/reports/stage16d_strict_per_finger_v4"
+        default_contact_mask_root = REPO_ROOT / ".local/reports/stage16d_strict_per_finger_v4"
     ppo_cfg.configure_stage16d_contact_reward(
         cfg,
         mode=selected_mode,
-        reference_root=REFERENCE_ROOT,
-        contact_reward_contract=contact_contract,
-        contact_mask_root=contact_mask_root,
+        reference_root=REFERENCE_ROOT if not independent else reference_path.parent,
+        contact_reward_contract=contact_contract_path or default_contact_contract,
+        contact_mask_root=contact_mask_root or default_contact_mask_root,
     )
     ppo_cfg.configure_stage16_p3_p4_curriculum(
         cfg,
@@ -267,8 +342,8 @@ def _make_table_env(
             rse_enabled=rse_enabled,
             distance_relaxation=rse_enabled,
             adaptive_termination=rse_enabled,
-            reference_distance_root=REFERENCE_DISTANCE_ROOT,
-            object_mesh_root=OBJECT_VISUAL_MESH_ROOT,
+            reference_distance_root=reference_distance_root or REFERENCE_DISTANCE_ROOT,
+            object_mesh_root=object_mesh_root or OBJECT_VISUAL_MESH_ROOT,
         )
     if robot_usd_path is not None:
         resolved_robot_asset = robot_usd_path.resolve()
@@ -285,10 +360,27 @@ def _make_table_env(
         replicate_physics=True,
         clone_in_fabric=False,
         lazy_sensor_update=True,
-        support_170105=support_cfg("hocap_170105", "Support170105"),
-        support_170650=support_cfg("hocap_170650", "Support170650"),
-        object_170105_support_contact=support_sensor("Object170105", "Support170105"),
-        object_170650_support_contact=support_sensor("Object170650", "Support170650"),
+        support_170105=(None if independent else support_cfg("hocap_170105", "Support170105")),
+        support_170650=(None if independent else support_cfg("hocap_170650", "Support170650")),
+        object_170105_support_contact=(
+            None if independent else support_sensor("Object170105", "Support170105")
+        ),
+        object_170650_support_contact=(
+            None if independent else support_sensor("Object170650", "Support170650")
+        ),
+        support_external=(
+            support_cfg(
+                clip,
+                "SupportExternal",
+                proxy_override=support_proxy_path,
+                asset_override=support_asset_path,
+            )
+            if independent
+            else None
+        ),
+        object_external_support_contact=(
+            support_sensor(cfg.external_object_name, "SupportExternal") if independent else None
+        ),
     )
     cfg.stage16d_fixed_clip = clip
     cfg.evaluation_reset_reference_indices = None if training_rsi else (start_index,) * num_envs
