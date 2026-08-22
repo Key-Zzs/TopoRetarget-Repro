@@ -59,6 +59,20 @@ def _synthetic(sequence: str, frame_range: FrameRange | None = None):
     return SyntheticAdapter().load_raw_renderable(sequence, frame_range=frame_range)
 
 
+def _hocap_adapter(*, data_root: Path | None, mano_model_root: Path | None):
+    """Construct the existing one-sequence HOCap adapter for public conversion.
+
+    This deliberately exposes no dataset-wide operation.  The adapter already
+    validates right-hand MANO calibration and every declared object mesh; the
+    CLI merely makes that authoritative conversion reachable from the same
+    ``data convert`` boundary used by raw-to-retarget production callers.
+    """
+
+    from toporetarget.adapters.datasets.hocap import HOCapAdapterV1
+
+    return HOCapAdapterV1(data_root=data_root, mano_model_root=mano_model_root)
+
+
 def _load_raw(
     dataset: str,
     sequence: str,
@@ -68,6 +82,8 @@ def _load_raw(
     grab_root: Path | None,
     mano_model_root: Path | None,
     frame_range: FrameRange | None,
+    data_root: Path | None = None,
+    primary_object: str | None = None,
 ):
     if dataset == "synthetic":
         return _synthetic(sequence, frame_range)
@@ -85,7 +101,16 @@ def _load_raw(
             hand=hand,
         )
         return adapter.load_raw_renderable(sequence_path.name, frame_range=frame_range)
-    raise typer.BadParameter(f"unsupported dataset: {dataset}; use synthetic or grab")
+    if dataset == "hocap":
+        if primary_object is None:
+            raise typer.BadParameter("--primary-object is required for --dataset hocap")
+        return _hocap_adapter(data_root=data_root, mano_model_root=mano_model_root).load_sequence(
+            sequence,
+            frame_range=frame_range,
+            hand=hand,
+            primary_object_id=primary_object,
+        )
+    raise typer.BadParameter(f"unsupported dataset: {dataset}; use synthetic, grab, or hocap")
 
 
 @app.command("make-synthetic")
@@ -121,6 +146,7 @@ def describe(
     index: Path | None = typer.Option(None, "--index"),
     hand: str = typer.Option("right", "--hand"),
     grab_root: Path | None = typer.Option(None, "--grab-root"),
+    data_root: Path | None = typer.Option(None, "--data-root"),
     mano_model_root: Path | None = typer.Option(None, "--mano-model-root"),
 ) -> None:
     """Describe one sequence without scanning a dataset."""
@@ -150,6 +176,7 @@ def describe(
         grab_root=grab_root,
         mano_model_root=mano_model_root,
         frame_range=None,
+        data_root=data_root,
     )
     _json_print(
         {
@@ -171,7 +198,13 @@ def convert(
     hand: str = typer.Option("right", "--hand"),
     hands: str | None = typer.Option(None, "--hands", help="auto, right, left, or both."),
     grab_root: Path | None = typer.Option(None, "--grab-root"),
+    data_root: Path | None = typer.Option(
+        None, "--data-root", help="Dataset storage root; HOCap is under <root>/HOCap."
+    ),
     mano_model_root: Path | None = typer.Option(None, "--mano-model-root"),
+    primary_object: str | None = typer.Option(
+        None, "--primary-object", help="Required manipulation object when converting HOCap."
+    ),
     include_table: bool = typer.Option(True, "--include-table/--no-table"),
     contact_mode: str = typer.Option("source", "--contact-mode"),
     include_mediapipe21: bool = typer.Option(True, "--include-mediapipe21/--no-mediapipe21"),
@@ -244,6 +277,8 @@ def convert(
             grab_root=grab_root,
             mano_model_root=mano_model_root,
             frame_range=_range(start_frame, end_frame),
+            data_root=data_root,
+            primary_object=primary_object,
         )
         canonical = raw
         if output is not None:
