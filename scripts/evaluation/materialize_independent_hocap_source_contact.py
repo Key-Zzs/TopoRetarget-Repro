@@ -57,6 +57,9 @@ from toporetarget.rl.reference_tracking.contact_reward_mode import (  # noqa: E4
     ContactRewardMode,
     validate_frozen_contact_contract,
 )
+from toporetarget.rl.reference_tracking.reference_gated_contact import (  # noqa: E402
+    EVALUATION_FINGERTIP_LINKS,
+)
 from toporetarget.rl.reference_tracking.strict_per_finger_contact import (  # noqa: E402
     SOURCE_CONTACT_REQUIRED_CLASSES,
     strict_source_contact_mask,
@@ -192,9 +195,7 @@ def _reference_v2_alignment(
         if missing:
             raise ValueError(f"INDEPENDENT_REFERENCE_V2_FIELDS_MISSING:{missing}")
         timestamps = np.asarray(archive["timestamps"], dtype=np.float64)
-        translation = np.asarray(
-            archive["object_pose_translation_world_ref"], dtype=np.float64
-        )
+        translation = np.asarray(archive["object_pose_translation_world_ref"], dtype=np.float64)
         quaternion_wxyz = np.asarray(
             archive["object_pose_quaternion_world_ref_wxyz"], dtype=np.float64
         )
@@ -228,6 +229,63 @@ def _reference_v2_alignment(
         "factor": 8,
         "translation_max_m": translation_error,
         "rotation_max_rad": rotation_error,
+    }
+
+
+def _reference_robot_tip_distances(
+    path: Path, *, object_surface: ObjectLocalBVH
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Measure the retargeted robot tips against the same object triangle surface.
+
+    Grouped reward/RSE consumes this robot-reference field, whereas the Strict
+    V4 mask above deliberately remains raw-MANO semantic authority.  Keeping
+    both in one manifest-bound materialization prevents either representation
+    from being silently substituted for the other.
+    """
+
+    with np.load(path, allow_pickle=False) as archive:
+        required = {
+            "tracked_link_positions_world_ref",
+            "object_pose_translation_world_ref",
+            "object_pose_quaternion_world_ref_wxyz",
+            "metadata",
+        }
+        missing = sorted(required.difference(archive.files))
+        if missing:
+            raise ValueError(f"INDEPENDENT_REFERENCE_DISTANCE_FIELDS_MISSING:{missing}")
+        tracked = np.asarray(archive["tracked_link_positions_world_ref"], dtype=np.float64)
+        translation = np.asarray(archive["object_pose_translation_world_ref"], dtype=np.float64)
+        quaternion = np.asarray(archive["object_pose_quaternion_world_ref_wxyz"], dtype=np.float64)
+        metadata = json.loads(str(archive["metadata"].item()))
+    names = tuple(str(value) for value in metadata.get("tracked_link_names", ()))
+    missing_names = [name for name in EVALUATION_FINGERTIP_LINKS if name not in names]
+    if (
+        missing_names
+        or tracked.ndim != 3
+        or tracked.shape[1:] != (len(names), 3)
+        or translation.shape != (tracked.shape[0], 3)
+        or quaternion.shape != (tracked.shape[0], 4)
+        or not np.isfinite(tracked).all()
+        or not np.isfinite(translation).all()
+        or not np.isfinite(quaternion).all()
+    ):
+        raise ValueError(f"INDEPENDENT_REFERENCE_DISTANCE_RUNTIME_INVALID:{missing_names}")
+    indices = [names.index(name) for name in EVALUATION_FINGERTIP_LINKS]
+    tips = tracked[:, indices]
+    xyzw = np.concatenate((quaternion[:, 1:], quaternion[:, :1]), axis=1)
+    rotation = Rotation.from_quat(xyzw).as_matrix()
+    distances = np.empty((tracked.shape[0], len(indices)), dtype=np.float32)
+    for frame in range(tracked.shape[0]):
+        object_local = (tips[frame] - translation[frame]) @ rotation[frame]
+        distances[frame] = object_surface.query(object_local)[-1]
+    if not np.isfinite(distances).all() or np.any(distances < 0.0):
+        raise ValueError("INDEPENDENT_REFERENCE_DISTANCE_NONFINITE")
+    return distances, {
+        "source": "retargeted_robot_fingertip_to_primary_object_triangle_surface",
+        "finger_order": list(FINGER_ORDER),
+        "tracked_link_names": list(EVALUATION_FINGERTIP_LINKS),
+        "runtime_frames": int(distances.shape[0]),
+        "heldout_threshold_calibration": False,
     }
 
 
@@ -333,10 +391,20 @@ def main() -> int:
     mask = strict_source_contact_mask(runtime["class"])
     if mask.shape != (runtime_frames, 5):
         raise AssertionError("INDEPENDENT_SOURCE_CONTACT_RUNTIME_MASK_SHAPE_INVALID")
+    reference_distances, reference_distance_contract = _reference_robot_tip_distances(
+        reference_v2, object_surface=bvh
+    )
+    if reference_distances.shape != (runtime_frames, 5):
+        raise AssertionError("INDEPENDENT_REFERENCE_DISTANCE_SHAPE_INVALID")
 
     output = args.output_root.resolve()
     clip_output = output / args.clip_id
-    if clip_output.exists() or (output / f"strict_source_contact_mask_{args.clip_id}.npz").exists():
+    reference_distance_path = output / f"reference_contact_mask_{args.clip_id}.npz"
+    if (
+        clip_output.exists()
+        or (output / f"strict_source_contact_mask_{args.clip_id}.npz").exists()
+        or reference_distance_path.exists()
+    ):
         raise FileExistsError(f"INDEPENDENT_SOURCE_CONTACT_REFUSES_OVERWRITE:{clip_output}")
     clip_output.mkdir(parents=True)
     native_path = clip_output / "source_contact_evidence_native.npz"
@@ -362,9 +430,7 @@ def main() -> int:
         thresholds_m=surface["thresholds_m"],
         near_vertex_count=surface["near_vertex_count"],
         near_vertex_fraction=surface["near_vertex_fraction"],
-        largest_component_vertices_at_5mm=surface[
-            "largest_component_vertices_at_5mm"
-        ],
+        largest_component_vertices_at_5mm=surface["largest_component_vertices_at_5mm"],
         nearest_segment=nearest_segment,
         nearest_segment_distance_m=nearest_segment_distance,
     )
@@ -383,6 +449,12 @@ def main() -> int:
         source_contact_class=runtime["class"],
         finger_names=np.asarray(FINGER_ORDER),
         control_index=np.arange(runtime_frames, dtype=np.int64),
+    )
+    np.savez_compressed(
+        reference_distance_path,
+        reference_fingertip_to_object_distance_m=reference_distances,
+        finger_order=np.asarray(FINGER_ORDER),
+        metadata=np.asarray(json.dumps(reference_distance_contract, sort_keys=True)),
     )
     source_inputs = {
         "manifest": _artifact(args.manifest.resolve()),
@@ -418,10 +490,16 @@ def main() -> int:
         },
         "coordinate_alignment": geometry.coordinate_alignment,
         "reference_v2_alignment": v2_alignment,
+        "reference_robot_tip_distance": {
+            **reference_distance_contract,
+            "statistics_m": {
+                finger: _stats(reference_distances[:, index])
+                for index, finger in enumerate(FINGER_ORDER)
+            },
+        },
         "mesh_query": {"backend": ObjectLocalBVH.backend_id, **bvh.stats()},
         "counts_by_finger": {
-            finger: int(mask[:, index].sum())
-            for index, finger in enumerate(FINGER_ORDER)
+            finger: int(mask[:, index].sum()) for index, finger in enumerate(FINGER_ORDER)
         },
         "required_runtime_frame_count": int(mask.any(axis=1).sum()),
         "minimum_distance_m": {
@@ -432,6 +510,10 @@ def main() -> int:
             "native": {"path": str(native_path), "sha256": _sha256(native_path)},
             "runtime": {"path": str(runtime_path), "sha256": _sha256(runtime_path)},
             "strict_mask": {"path": str(mask_path), "sha256": _sha256(mask_path)},
+            "reference_distance": {
+                "path": str(reference_distance_path),
+                "sha256": _sha256(reference_distance_path),
+            },
         },
         "frozen_inputs": source_inputs,
         "policy_outcomes_observed": False,
