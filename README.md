@@ -236,6 +236,30 @@ no-reference-ghost mode, and a deterministic low-poly raw object. Detailed
 reward semantics are in [Grouped reward and RSE](docs/rl/DEXPLORE_STYLE_MULTIPLICATIVE_REWARD_RSE.md);
 support authority is in [Support resolution](docs/physics/SUPPORT_RESOLUTION.md).
 
+### 5. Independent Multi-Clip Physical Refinement
+
+`run_physical_refinement_batch.py` freezes a five-clip HOCap selection using
+raw metadata only, allocates separate actor/critic/optimizer/normalizer/RNG
+lineages, and records atomic per-clip timing and status receipts. It is
+evaluate-first, uses failure-only PPO, and stops a clip on Confirm20 acceptance.
+Resume never repeats a durable completed stage.
+
+The batch runner deliberately does not reinterpret a development-only physical
+CLI as held-out authority. It performs an explicit authority preflight before
+any retargeting or PPO. With the current two-clip production physical runner,
+the commands below freeze the manifest and report `PIPELINE_INVALID` with zero
+PPO updates; they do not create synthetic held-out outcomes.
+
+```bash
+PYTHONPATH=src conda run -n toporetarget-rl \
+  python scripts/rl/isaaclab/run_physical_refinement_batch.py prepare
+PYTHONPATH=src conda run -n toporetarget-rl \
+  python scripts/rl/isaaclab/run_physical_refinement_batch.py validate-config
+```
+
+See [Independent multi-clip physical refinement](docs/rl/INDEPENDENT_MULTI_CLIP_PHYSICAL_REFINEMENT.md)
+for the authority manifest, receipts, timing boundary, and promotion criteria.
+
 ### 6. Further reproduction
 
 The main offline pipeline is documented in [configs/README.md](configs/README.md)

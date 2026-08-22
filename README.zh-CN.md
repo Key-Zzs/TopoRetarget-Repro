@@ -209,6 +209,27 @@ replay 支持 full/windowed trajectory、raw MANO/object overlay、no-reference-
 low-poly raw object。详细 reward 语义见 [Grouped reward and RSE](docs/rl/DEXPLORE_STYLE_MULTIPLICATIVE_REWARD_RSE.md)，
 support authority 见 [Support resolution](docs/physics/SUPPORT_RESOLUTION.zh-CN.md)。
 
+### 5. 独立多 Clip 物理精炼
+
+`run_physical_refinement_batch.py` 仅按 raw metadata 冻结五条 HOCap clip，并为每条分配独立的
+actor、critic、optimizer、normalizer 和 RNG lineage；它会原子持久化每条的 timing/status receipt。
+流程遵循 evaluate-first、failure-only PPO 和 Confirm20 acceptance 后立即停止；`--resume` 不会重跑
+durable completed stage。
+
+该 batch runner 不会把只用于开发的 physical CLI 偷换为 held-out authority。任何 retarget/PPO 前都会先
+检查 authority。当前 production physical runner 只支持两条开发 clip，因此下列命令只会冻结 manifest 并报告
+`PIPELINE_INVALID` 与 0 次 PPO update，不会伪造 held-out outcome：
+
+```bash
+PYTHONPATH=src conda run -n toporetarget-rl \
+  python scripts/rl/isaaclab/run_physical_refinement_batch.py prepare
+PYTHONPATH=src conda run -n toporetarget-rl \
+  python scripts/rl/isaaclab/run_physical_refinement_batch.py validate-config
+```
+
+详见 [独立多 clip 物理精炼](docs/rl/INDEPENDENT_MULTI_CLIP_PHYSICAL_REFINEMENT.md)，其中定义了 authority
+manifest、receipt、timing scope 和可执行 promotion 条件。
+
 ### 6. 进一步复现
 
 主要离线 pipeline 见 [configs/README.md](configs/README.md) 与 CLI help。完整的参数合同与验收边界见
