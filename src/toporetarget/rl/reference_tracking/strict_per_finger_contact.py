@@ -53,8 +53,11 @@ class StrictPerFingerContactRewardV4:
             raise ValueError("STRICT_V4_WEIGHT_OR_EPSILON_DRIFT")
         if self.numerical_floor_n <= 0.0:
             raise ValueError("STRICT_V4_NUMERICAL_FLOOR_INVALID")
-        if self.expected_runtime_frames != 321:
-            raise ValueError("STRICT_V4_RUNTIME_FRAME_COUNT_DRIFT")
+        if (
+            self.expected_runtime_frames < 17
+            or (self.expected_runtime_frames - 1) % 8 != 0
+        ):
+            raise ValueError("STRICT_V4_RUNTIME_FRAME_DOMAIN_INVALID")
         if self.aggregation != "mean_over_source_required_fingers_only":
             raise ValueError("STRICT_V4_NORMALIZATION_DRIFT")
         if not self.pair_contact_required:
@@ -68,12 +71,17 @@ def strict_source_contact_mask(class_label: np.ndarray) -> np.ndarray:
     """Make the immutable V4 source mask from a source-audit label array."""
 
     labels = np.asarray(class_label)
-    if labels.ndim != 2 or labels.shape != (321, 5):
+    if (
+        labels.ndim != 2
+        or labels.shape[1] != 5
+        or labels.shape[0] < 17
+        or (labels.shape[0] - 1) % 8 != 0
+    ):
         raise ValueError(f"STRICT_V4_SOURCE_CLASS_SHAPE_INVALID:{labels.shape}")
     if labels.dtype.kind not in {"U", "S", "O"}:
         raise ValueError("STRICT_V4_SOURCE_CLASS_DTYPE_INVALID")
     result = np.isin(labels.astype(str), SOURCE_CONTACT_REQUIRED_CLASSES)
-    if result.shape != (321, 5):  # Defensive invariant for future NumPy changes.
+    if result.shape != labels.shape:  # Defensive invariant for future NumPy changes.
         raise AssertionError("STRICT_V4_SOURCE_MASK_SHAPE_INVALID")
     return result
 

@@ -103,3 +103,15 @@ def test_contract_is_frozen_to_v4_strict_semantics() -> None:
     assert contract.aggregation == "mean_over_source_required_fingers_only"
     with pytest.raises(ValueError, match="STRICT_V4_SOURCE_CLASS_POLICY_DRIFT"):
         StrictPerFingerContactRewardV4(source_required_classes=("SOURCE_CONTACT_PROBABLE",))
+
+
+def test_contract_accepts_manifest_bound_factor8_runtime_length() -> None:
+    labels = np.full((129, 5), "SOURCE_NO_CONTACT", dtype="U32")
+    labels[64, 2] = "SOURCE_CONTACT_PERSISTENT"
+
+    contract = StrictPerFingerContactRewardV4(expected_runtime_frames=129)
+    mask = strict_source_contact_mask(labels)
+
+    assert contract.expected_runtime_frames == 129
+    assert mask.shape == (129, 5)
+    assert mask[64, 2]
