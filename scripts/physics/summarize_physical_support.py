@@ -28,7 +28,7 @@ def _args() -> argparse.Namespace:
         type=Path,
         default=REPO_ROOT / ".local/reports/stage16_support_reconstruction",
     )
-    parser.add_argument("--clip", choices=CLIPS)
+    parser.add_argument("--clip")
     return parser.parse_args()
 
 
@@ -156,6 +156,10 @@ def _reduce_clip(output_root: Path, clip: str) -> dict[str, Any]:
 
 def main() -> int:
     args = _args()
+    if args.clip is not None and (
+        not args.clip or any(token in args.clip for token in ("/", "\\", ".."))
+    ):
+        raise ValueError("INDEPENDENT_SUPPORT_SUMMARY_CLIP_ID_INVALID")
     output_root = args.output_root.resolve()
     clips = (args.clip,) if args.clip else CLIPS
     rows = [_reduce_clip(output_root, clip) for clip in clips]

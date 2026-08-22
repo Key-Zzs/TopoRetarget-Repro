@@ -32,6 +32,17 @@ from toporetarget.physics.support import (  # noqa: E402
 )
 from toporetarget.physics.support.types import jsonable  # noqa: E402
 from toporetarget.physics.support_contract import sha256_file  # noqa: E402
+from toporetarget.rl.geometry_audit.hand_collision_reconstruction import (  # noqa: E402
+    HAND_COLLISION_BODY_NAMES,
+    reconstruct_hand_collision_body_pose,
+)
+from toporetarget.rl.geometry_audit.runtime_geometry import (  # noqa: E402
+    load_runtime_geometry_manifest,
+)
+from toporetarget.rl.geometry_audit.transforms import (  # noqa: E402
+    compose_poses,
+    transform_points,
+)
 
 CLIPS = ("hocap_170105", "hocap_170650")
 DEFAULT_REFERENCE_ROOT = REPO_ROOT / ".local/stage16_reference_tracking_ppo/world_wrist_references"
@@ -85,14 +96,43 @@ def _collision_vertices(path: Path) -> tuple[np.ndarray, dict[str, object]]:
         }
 
 
+def _hand_collision_points_world(
+    reference: dict[str, np.ndarray], geometry_manifest: Path
+) -> np.ndarray:
+    wrist = np.concatenate(
+        (
+            np.asarray(reference["wrist_pose_translation_world_ref"], dtype=np.float64),
+            np.asarray(reference["wrist_pose_quaternion_world_ref_wxyz"], dtype=np.float64),
+        ),
+        axis=1,
+    )
+    qpos = np.asarray(reference["q_finger_ref"], dtype=np.float64)
+    body_pose = reconstruct_hand_collision_body_pose(wrist, qpos, repo_root=REPO_ROOT)
+    proxies, _objects = load_runtime_geometry_manifest(geometry_manifest)
+    if tuple(proxy.body_name for proxy in proxies) != HAND_COLLISION_BODY_NAMES:
+        raise ValueError("INDEPENDENT_SUPPORT_HAND_GEOMETRY_BODY_ORDER_INVALID")
+    frames: list[np.ndarray] = []
+    for frame in range(len(body_pose)):
+        points = [
+            transform_points(
+                proxy.scaled_vertices,
+                compose_poses(body_pose[frame, index], proxy.local_pose_xyz_wxyz),
+            )
+            for index, proxy in enumerate(proxies)
+        ]
+        frames.append(np.concatenate(points, axis=0))
+    result = np.stack(frames)
+    if not np.isfinite(result).all():
+        raise ValueError("INDEPENDENT_SUPPORT_HAND_GEOMETRY_NONFINITE")
+    return result
+
+
 def _write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(jsonable(value), indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _source_evidence(
-    clip: str, source_root: Path, source_sequence_dir: Path | None
-) -> object:
+def _source_evidence(clip: str, source_root: Path, source_sequence_dir: Path | None) -> object:
     source_dir = (
         source_sequence_dir.resolve()
         if source_sequence_dir is not None
@@ -199,6 +239,7 @@ def _resolve_clip(
     output_root: Path,
     static: bool,
     replay: bool,
+    runtime_geometry_manifest: Path | None,
 ) -> dict[str, object]:
     reference_path = reference_root / f"{clip}.world_wrist.stage16.npz"
     object_path = object_root / f"{clip}.obj"
@@ -296,11 +337,20 @@ def _resolve_clip(
                 "minimum_signed_distance_m": float(np.min(link_signed)),
                 "minimum_by_frame_m": np.min(link_signed, axis=1).tolist(),
             }
+        hand_points = (
+            None
+            if runtime_geometry_manifest is None
+            else _hand_collision_points_world(reference, runtime_geometry_manifest)
+        )
         hand_geometry = validate_hand_table_geometry(
-            hand_points_world=None,
+            hand_points_world=hand_points,
             plane_normal=result.plane_fit.plane_normal,
             plane_offset=result.plane_fit.plane_offset,
-            source="tracked_16_link_points_only; full hand mesh not supplied",
+            source=(
+                "tracked_16_link_points_only; full hand mesh not supplied"
+                if hand_points is None
+                else "authored_runtime_hand_convex_proxies_on_retargeted_reference_fk"
+            ),
         )
         hand_geometry["link_point_diagnostic"] = link_diagnostic
         geometry = qualify_geometry(
@@ -373,10 +423,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Exact raw sequence directory for an independent clip.",
     )
-    parser.add_argument(
-        "--support-asset-root", type=Path, default=DEFAULT_SUPPORT_ASSET_ROOT
-    )
+    parser.add_argument("--support-asset-root", type=Path, default=DEFAULT_SUPPORT_ASSET_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
+    parser.add_argument(
+        "--runtime-geometry-manifest",
+        type=Path,
+        help="Frozen authored hand collision proxies for formal hand/table clearance.",
+    )
     parser.add_argument("--static", action="store_true", help="write a static support overlay")
     parser.add_argument("--replay", action="store_true", help="write representative replay frames")
     return parser
@@ -407,6 +460,11 @@ def main() -> int:
                 output_root=output_root,
                 static=args.static,
                 replay=args.replay,
+                runtime_geometry_manifest=(
+                    None
+                    if args.runtime_geometry_manifest is None
+                    else args.runtime_geometry_manifest.resolve()
+                ),
             )
         )
     summary = {
