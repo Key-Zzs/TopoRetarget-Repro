@@ -51,7 +51,7 @@ SAMPLES_PER_UPDATE = NUM_ENVS * 40
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("evaluate-first", "runtime-sanity", "train"))
-    parser.add_argument("--clip", choices=("hocap_170105", "hocap_170650"), required=True)
+    parser.add_argument("--clip", required=True)
     parser.add_argument("--accept-eula", action="store_true")
     parser.add_argument("--num-envs", type=int, default=NUM_ENVS)
     parser.add_argument(
@@ -66,7 +66,47 @@ def _parser() -> argparse.ArgumentParser:
         default=RUN_ROOT,
         help="Write new runtime/checkpoint artifacts here; existing roots are never overwritten.",
     )
+    parser.add_argument("--source-training-result", type=Path)
+    parser.add_argument("--reference", type=Path)
+    parser.add_argument("--object-usd", type=Path)
+    parser.add_argument("--support-proxy", type=Path)
+    parser.add_argument("--support-asset", type=Path)
+    parser.add_argument("--contact-contract", type=Path)
+    parser.add_argument("--contact-mask-root", type=Path)
+    parser.add_argument("--reference-distance-root", type=Path)
+    parser.add_argument("--object-mesh-root", type=Path)
+    parser.add_argument("--runtime-geometry-manifest", type=Path)
+    parser.add_argument("--frozen-evaluation-gates", type=Path)
+    parser.add_argument("--seed-manifest", type=Path)
+    parser.add_argument("--max-new-updates", type=int)
     return parser
+
+
+def _independent_inputs(args: argparse.Namespace) -> dict[str, Path] | None:
+    values = {
+        "source_training_result": args.source_training_result,
+        "reference": args.reference,
+        "object_usd": args.object_usd,
+        "support_proxy": args.support_proxy,
+        "support_asset": args.support_asset,
+        "contact_contract": args.contact_contract,
+        "contact_mask_root": args.contact_mask_root,
+        "reference_distance_root": args.reference_distance_root,
+        "object_mesh_root": args.object_mesh_root,
+        "runtime_geometry_manifest": args.runtime_geometry_manifest,
+        "frozen_evaluation_gates": args.frozen_evaluation_gates,
+        "seed_manifest": args.seed_manifest,
+    }
+    if not any(value is not None for value in values.values()):
+        return None
+    missing = sorted(name for name, value in values.items() if value is None)
+    if missing:
+        raise ValueError(f"INDEPENDENT_PHYSICAL_REFINEMENT_INPUT_SET_INCOMPLETE:{missing}")
+    resolved = {name: value.resolve() for name, value in values.items() if value is not None}
+    missing_paths = sorted(str(path) for path in resolved.values() if not path.exists())
+    if missing_paths:
+        raise FileNotFoundError(f"INDEPENDENT_PHYSICAL_REFINEMENT_INPUT_MISSING:{missing_paths}")
+    return resolved
 
 
 def _gradient_sanity(trainer: PPO26DTrainer, batch_path: Path) -> dict[str, object]:
@@ -162,6 +202,20 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _path_authority_hash(path: Path) -> str:
+    if path.is_file():
+        return _sha256(path)
+    if path.is_dir():
+        rows = [
+            {"relative_path": str(item.relative_to(path)), "sha256": _sha256(item)}
+            for item in sorted(candidate for candidate in path.rglob("*") if candidate.is_file())
+        ]
+        if not rows:
+            raise ValueError(f"INDEPENDENT_PHYSICAL_REFINEMENT_AUTHORITY_ROOT_EMPTY:{path}")
+        return _stable_hash(rows)
+    raise FileNotFoundError(path)
+
+
 def _stable_hash(value: object) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
@@ -222,7 +276,45 @@ def _require_gates() -> dict[str, object]:
     return {"offline": offline, "pf_v2_audit": audit, "pf_v2_freeze": freeze}
 
 
-def _source(clip: str) -> dict[str, object]:
+def _source(clip: str, *, independent: dict[str, Path] | None = None) -> dict[str, object]:
+    if independent is not None:
+        result_path = independent["source_training_result"]
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        checkpoint = Path(str(result.get("checkpoint", ""))).resolve()
+        checkpoint_hash = str(result.get("checkpoint_sha256", ""))
+        if (
+            result.get("schema_version") != "Stage16DStrictPerFingerV4TrainingResultV1"
+            or result.get("status") != "STRICT_V4_TRAINING_SEGMENT_COMPLETE"
+            or result.get("clip") != clip
+            or int(result.get("reward_v4_samples_start", -1)) != 1_024_000
+            or int(result.get("reward_v4_samples", -1)) != 1_064_960
+            or int(result.get("target_reward_v4_samples", -1)) != 1_064_960
+            or not checkpoint.is_file()
+            or _sha256(checkpoint) != checkpoint_hash
+        ):
+            raise RuntimeError("INDEPENDENT_PHYSICAL_REFINEMENT_SOURCE_RESULT_INVALID")
+        payload = load_checkpoint(checkpoint, map_location="cpu")
+        reward = payload.get("environment_contract", {}).get("ppo26d", {}).get("reward", {})
+        if (
+            payload.get("schema_version") != "Stage16DStrictPerFingerV4CheckpointV1"
+            or payload.get("clip") != clip
+            or int(payload.get("reward_v4_samples", -1)) != 1_064_960
+            or reward.get("identifier") != "TopoRetargetReferenceTrackingReward26DV4"
+        ):
+            raise RuntimeError("INDEPENDENT_PHYSICAL_REFINEMENT_SOURCE_CHECKPOINT_INVALID")
+        return {
+            "kind": "independent_accepted_v4",
+            "clip": clip,
+            "checkpoint": str(checkpoint),
+            "checkpoint_sha256": checkpoint_hash,
+            "initial_update": 0,
+            "initial_stage_samples": 0,
+            "initial_cumulative_samples": 1_064_960,
+            "source_training_result": str(result_path),
+            "source_training_result_sha256": _sha256(result_path),
+            "l0_samples": 1_024_000,
+            "strict_v4_samples": 1_064_960,
+        }
     if clip == "hocap_170105":
         if not U10_CHECKPOINT.is_file() or _sha256(U10_CHECKPOINT) != U10_CHECKPOINT_SHA256:
             raise RuntimeError("PF_V2_SYMMETRIC_U10_SOURCE_HASH_INVALID")
@@ -274,7 +366,7 @@ def _source(clip: str) -> dict[str, object]:
     }
 
 
-def _make_env(clip: str) -> Any:
+def _make_env(clip: str, *, independent: dict[str, Path] | None = None) -> Any:
     from scripts.rl.isaaclab.smoke_stage16_full_trajectory_ppo import _make_table_env
 
     return _make_table_env(
@@ -286,6 +378,16 @@ def _make_env(clip: str) -> Any:
         training_rsi=True,
         reward_aggregation_mode="grouped_multiplicative_v1",
         rse_enabled=True,
+        reference_path=None if independent is None else independent["reference"],
+        object_usd_path=None if independent is None else independent["object_usd"],
+        support_proxy_path=None if independent is None else independent["support_proxy"],
+        support_asset_path=None if independent is None else independent["support_asset"],
+        contact_contract_path=None if independent is None else independent["contact_contract"],
+        contact_mask_root=None if independent is None else independent["contact_mask_root"],
+        reference_distance_root=(
+            None if independent is None else independent["reference_distance_root"]
+        ),
+        object_mesh_root=None if independent is None else independent["object_mesh_root"],
     )
 
 
@@ -301,7 +403,7 @@ def _runtime_contract(env: Any, *, clip: str) -> dict[str, object]:
         or physics.get("friction_scale") != 1.0
         or physics.get("support") != "finite_inferred_table_proxy_v1"
         or physics.get("table_actor_active") is not True
-        or physics.get("mid_trajectory_rsi") != "uniform[0,320]"
+        or physics.get("mid_trajectory_rsi") != "uniform_runtime_reference_valid_index_domain"
         or ppo.get("fixed_clip") != clip
         or ppo.get("reward", {}).get("identifier") != "TopoRetargetReferenceTrackingReward26DV4"
         or ppo.get("reward_aggregation", {}).get("mode") != "grouped_multiplicative_v1"
@@ -342,7 +444,7 @@ def _runtime_contract(env: Any, *, clip: str) -> dict[str, object]:
 def _restore_source(env: Any, source: dict[str, object]) -> tuple[PPO26DTrainer, dict[str, object]]:
     trainer = PPO26DTrainer(observation_dim=764, device=str(env.device))
     checkpoint = Path(str(source["checkpoint"]))
-    if source["kind"] == "historical_accepted_v4":
+    if source["kind"] in {"historical_accepted_v4", "independent_accepted_v4"}:
         initialization = _restore_zero_g_checkpoint(
             trainer,
             checkpoint=checkpoint,
@@ -373,7 +475,14 @@ def _restore_source(env: Any, source: dict[str, object]) -> tuple[PPO26DTrainer,
 
 
 def _run_evaluation(
-    *, clip: str, checkpoint: Path, output: Path, update: int, stage_samples: int, episodes: int
+    *,
+    clip: str,
+    checkpoint: Path,
+    output: Path,
+    update: int,
+    stage_samples: int,
+    episodes: int,
+    independent: dict[str, Path] | None = None,
 ) -> dict[str, object]:
     command = [
         sys.executable,
@@ -392,6 +501,21 @@ def _run_evaluation(
         "--samples",
         str(stage_samples),
     ]
+    if independent is not None:
+        for flag, name in (
+            ("--reference", "reference"),
+            ("--object-usd", "object_usd"),
+            ("--support-proxy", "support_proxy"),
+            ("--support-asset", "support_asset"),
+            ("--contact-contract", "contact_contract"),
+            ("--contact-mask-root", "contact_mask_root"),
+            ("--reference-distance-root", "reference_distance_root"),
+            ("--object-mesh-root", "object_mesh_root"),
+            ("--runtime-geometry-manifest", "runtime_geometry_manifest"),
+            ("--frozen-evaluation-gates", "frozen_evaluation_gates"),
+            ("--seed-manifest", "seed_manifest"),
+        ):
+            command.extend((flag, str(independent[name])))
     environment = dict(os.environ)
     environment["OMNI_KIT_ACCEPT_EULA"] = "YES"
     completed = subprocess.run(
@@ -417,7 +541,9 @@ def _requires_refinement(qualification: dict[str, object]) -> bool:
     return qualification.get("accepted") is not True
 
 
-def _evaluate_first(source: dict[str, object]) -> dict[str, object]:
+def _evaluate_first(
+    source: dict[str, object], *, independent: dict[str, Path] | None = None
+) -> dict[str, object]:
     """Run Eval10 and, only for a candidate pass, Confirm20 before PPO starts."""
 
     clip = str(source["clip"])
@@ -434,6 +560,7 @@ def _evaluate_first(source: dict[str, object]) -> dict[str, object]:
         update=update,
         stage_samples=stage_samples,
         episodes=10,
+        independent=independent,
     )
     confirm20: dict[str, object] | None = None
     if int(eval10["counts"]["PF_V2"]) == 10:
@@ -444,6 +571,7 @@ def _evaluate_first(source: dict[str, object]) -> dict[str, object]:
             update=update,
             stage_samples=stage_samples,
             episodes=20,
+            independent=independent,
         )
     decision = {
         "schema_version": "PhysicalRefinementEvaluateFirstV1",
@@ -582,7 +710,12 @@ def assert_symmetric_static_contracts(
 
 
 def _train(
-    env: Any, trainer: PPO26DTrainer, *, source: dict[str, object], runtime: dict[str, object]
+    env: Any,
+    trainer: PPO26DTrainer,
+    *,
+    source: dict[str, object],
+    runtime: dict[str, object],
+    independent: dict[str, Path] | None = None,
 ) -> dict[str, object]:
     clip = str(source["clip"])
     run_lineage = RUN_ROOT / clip
@@ -646,6 +779,7 @@ def _train(
             update=update,
             stage_samples=stage_samples,
             episodes=10,
+            independent=independent,
         )
         row = _progress_row(
             update=update,
@@ -709,6 +843,7 @@ def _train(
                 update=update,
                 stage_samples=stage_samples,
                 episodes=20,
+                independent=independent,
             )
             receipt["confirm20"] = confirm
             _write_json(report_update / "receipt.json", receipt)
@@ -736,22 +871,37 @@ def _train(
 
 
 def main() -> int:
-    global REPORT_ROOT, RUN_ROOT
+    global MAX_NEW_UPDATES, REPORT_ROOT, RUN_ROOT
     args = _parser().parse_args()
+    if not args.clip or any(token in args.clip for token in ("/", "\\", "..")):
+        raise ValueError("INDEPENDENT_PHYSICAL_REFINEMENT_CLIP_ID_INVALID")
     if not args.accept_eula or args.num_envs != NUM_ENVS:
         raise ValueError("PF_V2_SYMMETRIC_REQUIRES_EULA_AND_1024_ENVS")
+    independent = _independent_inputs(args)
+    if independent is None:
+        if args.clip not in {"hocap_170105", "hocap_170650"}:
+            raise ValueError("PHYSICAL_REFINEMENT_LEGACY_CLIP_INVALID")
+        if args.max_new_updates not in {None, 10}:
+            raise ValueError("PHYSICAL_REFINEMENT_LEGACY_BUDGET_MUST_BE_U10")
+        MAX_NEW_UPDATES = 10
+    else:
+        if args.clip in {"hocap_170105", "hocap_170650"}:
+            raise ValueError("INDEPENDENT_PHYSICAL_REFINEMENT_DEVELOPMENT_CLIP_FORBIDDEN")
+        if args.max_new_updates not in {None, 15}:
+            raise ValueError("INDEPENDENT_PHYSICAL_REFINEMENT_BUDGET_MUST_BE_U15")
+        MAX_NEW_UPDATES = 15
     REPORT_ROOT = args.report_root.resolve()
     RUN_ROOT = args.run_root.resolve()
     _require_gates()
-    source = _source(args.clip)
+    source = _source(args.clip, independent=independent)
     REPORT_ROOT.mkdir(parents=True, exist_ok=True)
     RUN_ROOT.mkdir(parents=True, exist_ok=True)
     if args.mode == "evaluate-first":
-        result = _evaluate_first(source)
+        result = _evaluate_first(source, independent=independent)
         print(json.dumps(result, sort_keys=True))
         return 0
     if args.mode == "train":
-        decision = _evaluate_first(source)
+        decision = _evaluate_first(source, independent=independent)
         if decision["ppo_required"] is False:
             result = {
                 "schema_version": "PhysicalRefinementTrainingDecisionV1",
@@ -770,7 +920,7 @@ def main() -> int:
     app = AppLauncher(headless=True).app
     env = None
     try:
-        env = _make_env(args.clip)
+        env = _make_env(args.clip, independent=independent)
         env.reset(seed=20260822)
         runtime = _runtime_contract(env, clip=args.clip)
         trainer, initialization = _restore_source(env, source)
@@ -784,6 +934,11 @@ def main() -> int:
             "reward_rse_mode": "grouped_multiplicative_v1_with_rse_v1",
             "max_new_updates": MAX_NEW_UPDATES,
             "samples_per_update": SAMPLES_PER_UPDATE,
+            "independent_input_hashes": (
+                None
+                if independent is None
+                else {name: _path_authority_hash(path) for name, path in independent.items()}
+            ),
         }
         if args.mode == "runtime-sanity":
             _write_json(
@@ -800,7 +955,13 @@ def main() -> int:
                 {"initialization": initialization, **static_contract},
             )
             _require_runtime_gate(args.clip)
-            result = _train(env, trainer, source=source, runtime=runtime)
+            result = _train(
+                env,
+                trainer,
+                source=source,
+                runtime=runtime,
+                independent=independent,
+            )
         print(json.dumps(result, sort_keys=True))
         return 0
     except BaseException as error:
