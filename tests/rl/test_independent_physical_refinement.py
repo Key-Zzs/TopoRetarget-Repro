@@ -90,6 +90,21 @@ def test_authority_validation_is_per_clip_and_fail_closed() -> None:
     assert "source_policy" in result["unsupported"]
 
 
+def test_authority_templates_receive_frozen_object_identity(tmp_path: Path) -> None:
+    module = _batch_script()
+    clip = _candidate(7).as_dict()
+
+    rendered = module._template(
+        "{clip_id}:{sequence}:{object_id}:{clip_run_root}",
+        clip=clip,
+        report_root=tmp_path / "reports",
+        run_root=tmp_path / "runs",
+    )
+
+    assert rendered.startswith(f"{clip['clip_id']}:{clip['sequence']}:{clip['object_id']}:")
+    assert rendered.endswith(f"runs/{clip['clip_id']}")
+
+
 def test_lineages_cannot_share_storage_or_rng() -> None:
     alpha = {
         "lineage": {

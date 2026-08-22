@@ -87,6 +87,7 @@ def _template(value: str, *, clip: dict[str, Any], report_root: Path, run_root: 
     return value.format(
         clip_id=clip["clip_id"],
         sequence=clip["sequence"],
+        object_id=clip["object_id"],
         report_root=str(report_root),
         run_root=str(run_root),
         clip_report_root=str(report_root / "clips" / clip["clip_id"]),
