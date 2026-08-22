@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import subprocess
 import sys
@@ -18,6 +17,7 @@ from toporetarget.rl.ppo.ppo26d_contract import Stage16DPPO26DTrainingConfigV1  
 from toporetarget.rl.ppo.ppo26d_trainer import PPO26DTrainer  # noqa: E402
 
 DEFAULT_ROOT = REPO_ROOT / ".local/reports/stage16d_ppo26d"
+L0_SAMPLES = 1_024_000
 
 
 def parse_args() -> argparse.Namespace:
@@ -164,10 +164,18 @@ def main() -> int:
     )
     contract = Stage16DPPO26DTrainingConfigV1()
     samples_per_iteration = num_envs * contract.rollout_length
-    required_iterations = math.ceil(1_000_000 / samples_per_iteration)
-    iterations = max(2, required_iterations if args.iterations is None else args.iterations)
-    if iterations * samples_per_iteration < 1_000_000:
-        raise ValueError("requested iterations do not satisfy the L0 minimum of 1,000,000 samples")
+    required_iterations, remainder = divmod(L0_SAMPLES, samples_per_iteration)
+    if remainder:
+        raise ValueError(
+            "L0 exact 1,024,000-sample authority is not divisible by the selected "
+            f"num_envs*rollout_length={samples_per_iteration}"
+        )
+    iterations = required_iterations if args.iterations is None else args.iterations
+    if iterations != required_iterations:
+        raise ValueError(
+            "requested iterations must produce exactly 1,024,000 L0 samples: "
+            f"expected={required_iterations}:received={iterations}"
+        )
     app = AppLauncher(headless=True).app
     env = None
     try:
@@ -223,6 +231,7 @@ def main() -> int:
                 "samples_per_iteration": samples_per_iteration,
                 "required_iterations": required_iterations,
                 "iterations": iterations,
+                "target_l0_samples": L0_SAMPLES,
                 "critical_dr": args.critical_dr,
                 "contract": contract.as_dict(),
                 "environment": env.contract_report(),
@@ -262,6 +271,7 @@ def main() -> int:
             "clip": args.clip,
             "iterations": iterations,
             "cumulative_samples": trainer.cumulative_samples,
+            "target_l0_samples": L0_SAMPLES,
             "samples_per_iteration": samples_per_iteration,
             "smoke_checkpoint": str((output / "smoke_checkpoint.pt").resolve()),
             "smoke_checkpoint_reload": str((output / "smoke_checkpoint_reload.json").resolve()),
@@ -269,6 +279,8 @@ def main() -> int:
             "checkpoint_reload": reload_result,
             "metrics": str(metrics_path.resolve()),
         }
+        if trainer.cumulative_samples != L0_SAMPLES:
+            raise RuntimeError("PPO26D_L0_EXACT_SAMPLE_AUTHORITY_VIOLATION")
         write_json(output / "l0_training.json", result)
         print(json.dumps(result, sort_keys=True))
         return 0
