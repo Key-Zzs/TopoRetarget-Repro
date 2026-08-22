@@ -487,6 +487,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--resume-checkpoint", type=Path)
     parser.add_argument("--num-envs", type=int, default=1024)
+    parser.add_argument("--seed", type=int)
     parser.add_argument("--target-reward-v2-samples", type=int)
     parser.add_argument(
         "--contact-mode",
@@ -566,6 +567,14 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if args.seed is not None:
+        if args.seed < 0 or args.seed > 0x7FFFFFFF:
+            raise ValueError("INDEPENDENT_REWARD_TRAINING_SEED_INVALID")
+        import random
+
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
     if not args.accept_eula:
         raise ValueError("--accept-eula is required")
     if args.num_envs <= 0:
@@ -654,8 +663,7 @@ def main() -> int:
     if args.initialization_checkpoint is None and default_initialization_checkpoint is None:
         raise ValueError("INDEPENDENT_REWARD_TRAINING_INITIALIZATION_REQUIRED")
     assert (
-        args.initialization_checkpoint is not None
-        or default_initialization_checkpoint is not None
+        args.initialization_checkpoint is not None or default_initialization_checkpoint is not None
     )
     initialization_checkpoint = (
         args.initialization_checkpoint or default_initialization_checkpoint
@@ -833,6 +841,7 @@ def main() -> int:
             ),
             "clip": args.clip,
             "run_label": args.run_label,
+            "seed": args.seed,
             "reference_kinematics_version": cfg.reference_kinematics_version,
             f"{sample_key}_start": trainer.cumulative_samples,
             f"target_{sample_key}": target_samples,
@@ -1022,6 +1031,7 @@ def main() -> int:
                 )
             ),
             "clip": args.clip,
+            "seed": args.seed,
             f"{sample_key}_start": config[f"{sample_key}_start"],
             sample_key: trainer.cumulative_samples,
             f"target_{sample_key}": target_samples,

@@ -30,6 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--selected-capacity", type=Path)
     parser.add_argument("--num-envs", type=int)
     parser.add_argument("--iterations", type=int)
+    parser.add_argument("--seed", type=int)
     parser.add_argument("--no-critical-dr", action="store_false", dest="critical_dr")
     parser.set_defaults(critical_dr=True)
     return parser.parse_args()
@@ -141,6 +142,17 @@ def main() -> int:
     args = parse_args()
     if not args.accept_eula:
         raise ValueError("--accept-eula is required")
+    if args.seed is not None:
+        if args.seed < 0 or args.seed > 0x7FFFFFFF:
+            raise ValueError("INDEPENDENT_SOURCE_TRAINING_SEED_INVALID")
+        import random
+
+        import numpy as np
+        import torch
+
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
     os.environ["OMNI_KIT_ACCEPT_EULA"] = "YES"
     independent_inputs = (args.reference, args.object_usd)
     if any(value is not None for value in independent_inputs) and not all(
@@ -232,6 +244,7 @@ def main() -> int:
                 "required_iterations": required_iterations,
                 "iterations": iterations,
                 "target_l0_samples": L0_SAMPLES,
+                "seed": args.seed,
                 "critical_dr": args.critical_dr,
                 "contract": contract.as_dict(),
                 "environment": env.contract_report(),
@@ -272,6 +285,7 @@ def main() -> int:
             "iterations": iterations,
             "cumulative_samples": trainer.cumulative_samples,
             "target_l0_samples": L0_SAMPLES,
+            "seed": args.seed,
             "samples_per_iteration": samples_per_iteration,
             "smoke_checkpoint": str((output / "smoke_checkpoint.pt").resolve()),
             "smoke_checkpoint_reload": str((output / "smoke_checkpoint_reload.json").resolve()),
