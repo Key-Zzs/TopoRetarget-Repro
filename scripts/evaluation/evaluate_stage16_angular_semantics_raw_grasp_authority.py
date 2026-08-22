@@ -639,7 +639,7 @@ def _raw_clip(clip: str) -> dict[str, object]:
 
 
 def _provenance() -> dict[str, object]:
-    writer = REPO_ROOT / "scripts/rl/isaaclab/evaluate_stage16d_ppo26d.py"
+    writer = REPO_ROOT / "scripts/rl/isaaclab/evaluate_physical_hoi.py"
     env = (
         REPO_ROOT
         / "src/toporetarget/rl/environments/isaaclab_backend/ppo26d_reference_tracking_env.py"
@@ -788,7 +788,7 @@ def _replay(angular: dict[str, dict[str, object]]) -> None:
     median = ordered[len(ordered) // 2]
     prefix = (
         "OMNI_KIT_ACCEPT_EULA=YES conda run -n toporetarget-isaaclab python "
-        "scripts/rl/isaaclab/replay_stage16d_simulation_trace.py --accept-eula --loop"
+        "scripts/rl/isaaclab/replay_physical_hoi_trace.py --accept-eula --loop"
     )
 
     def command(path: str, clip: str, extra: str = "") -> str:

@@ -1407,7 +1407,7 @@ def _materialize_final_layout(
                 f"--report {output} --clip {clip}"
             ),
             "robot_replay_command": (
-                "python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py "
+                "python scripts/rl/isaaclab/replay_physical_hoi_trace.py "
                 f"--trace {_clip_source_assets(clip)['trace']}"
             ),
             "categories": {

@@ -301,7 +301,7 @@ def replay_commands(*, clip: str, case_id: str) -> str:
         path = f"{root}/{variant}"
         return f"""# {label}
 conda run --no-capture-output -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \\
-  python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py \\
+  python scripts/rl/isaaclab/replay_physical_hoi_trace.py \\
   --trace {path}/trace.npz \\
   --geometry {path}/geometry_pairs.npz \\
   --object {clip} --replica 0 --frame 0 --no-reference-ghost --accept-eula"""

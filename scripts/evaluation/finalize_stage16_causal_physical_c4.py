@@ -690,7 +690,7 @@ def main() -> int:
             sim = simulation_root / directory / clip
             validation = (
                 "OMNI_KIT_ACCEPT_EULA=YES PYTHONPATH=src conda run -n toporetarget-isaaclab python "
-                "scripts/rl/isaaclab/replay_stage16d_simulation_trace.py "
+                "scripts/rl/isaaclab/replay_physical_hoi_trace.py "
                 "--accept-eula --headless --max-loops 1 "
                 f"--trace {sim}/episode_{selection['representative_best']:03d}.npz "
                 f"--object {clip} "
@@ -708,7 +708,7 @@ def main() -> int:
                 return (
                     "OMNI_KIT_ACCEPT_EULA=YES PYTHONPATH=src "
                     "conda run -n toporetarget-isaaclab python "
-                    "scripts/rl/isaaclab/replay_stage16d_simulation_trace.py "
+                    "scripts/rl/isaaclab/replay_physical_hoi_trace.py "
                     "--accept-eula --loop "
                     f"--trace {simulation_dir}/episode_{episode:03d}.npz "
                     f"--object {object_id} "

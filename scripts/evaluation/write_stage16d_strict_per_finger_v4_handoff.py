@@ -139,7 +139,7 @@ def _visualization_commands(
         extras = " --no-reference-ghost" if actual_only else ""
         return (
             "conda run -n toporetarget-isaaclab python scripts/rl/isaaclab/"
-            "replay_stage16d_simulation_trace.py --accept-eula --object "
+            "replay_physical_hoi_trace.py --accept-eula --object "
             f"{clip} --trace {trace} --qualification {qualification} --replica {replica} "
             f"--start-frame {start} --end-frame {end}{extras}"
         )

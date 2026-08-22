@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate one grouped-multiplicative/RSE checkpoint under frozen C4 gates."""
+"""Qualify one grouped-multiplicative/RSE checkpoint under frozen physical gates."""
 
 # ruff: noqa: E402
 
@@ -21,7 +21,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from scripts.evaluation.audit_stage16_zero_g_frozen_actor_contact import _full_start
-from scripts.rl.isaaclab.evaluate_stage16d_ppo26d import model_from_checkpoint
+from scripts.rl.isaaclab.evaluate_physical_hoi import model_from_checkpoint
 from scripts.rl.isaaclab.run_stage16_frozen_source_policy_gravity_sweep import (
     FROZEN_GATES,
     _evaluate_geometry_with_exact_broadphase,
@@ -231,7 +231,7 @@ def _episode_row(
         contract=DemonstrationFidelityContract(),
     )
     accepted = bool(
-        pf["pf"]
+        pf_v2["pf_v2"]
         and df["df_pose"]
         and df["df_linear"]
         and df["df_angular_pose_derived"]

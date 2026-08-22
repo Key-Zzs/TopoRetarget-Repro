@@ -28,7 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from scripts.rl.isaaclab.evaluate_stage16d_ppo26d import (
+from scripts.rl.isaaclab.evaluate_physical_hoi import (
     _device_trace_to_numpy,
     _initial_trace_snapshot,
     _prepend_initial_trace,

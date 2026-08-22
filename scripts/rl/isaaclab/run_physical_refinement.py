@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one bounded Stage16 PF-V2 symmetric grouped-reward/RSE PPO lineage."""
+"""Evaluate first, then run bounded causal physical PPO refinement when needed."""
 
 # ruff: noqa: E402
 
@@ -17,14 +17,12 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+import torch
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from scripts.rl.isaaclab.run_stage16_dexplore_reward_rse import (
-    _gradient_sanity,
-    _reward_scale,
-)
 from scripts.rl.isaaclab.train_stage16_p3_physical_curriculum import _restore_zero_g_checkpoint
 from toporetarget.rl.ppo.checkpoint import load_checkpoint, restore_rng_state, save_checkpoint
 from toporetarget.rl.ppo.policy_preservation import state_hash
@@ -33,9 +31,10 @@ from toporetarget.rl.reference_tracking.contact_reward_mode import ContactReward
 
 REPORT_ROOT = REPO_ROOT / ".local/reports/stage16_pf_v2_causal_lift_and_symmetric_ppo"
 RUN_ROOT = REPO_ROOT / ".local/runs/stage16_pf_v2_causal_lift_and_symmetric_ppo"
+FROZEN_REPORT_ROOT = REPORT_ROOT
 OFFLINE_GATE = REPO_ROOT / ".local/reports/stage16_dexplore_reward_rse/offline/offline_gate.json"
 AUDIT_GATE = REPORT_ROOT / "pf_v2/audit_classification.json"
-EVALUATOR = REPO_ROOT / "scripts/evaluation/evaluate_stage16_dexplore_reward_rse.py"
+EVALUATOR = REPO_ROOT / "scripts/evaluation/qualify_physical_hoi.py"
 HISTORICAL_SOURCE_ROOT = (
     REPO_ROOT / ".local/reports/stage16_frozen_source_policy_gravity_sweep/sources"
 )
@@ -51,11 +50,108 @@ SAMPLES_PER_UPDATE = NUM_ENVS * 40
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("runtime-sanity", "train"))
+    parser.add_argument("mode", choices=("evaluate-first", "runtime-sanity", "train"))
     parser.add_argument("--clip", choices=("hocap_170105", "hocap_170650"), required=True)
     parser.add_argument("--accept-eula", action="store_true")
     parser.add_argument("--num-envs", type=int, default=NUM_ENVS)
+    parser.add_argument(
+        "--report-root",
+        type=Path,
+        default=REPORT_ROOT,
+        help="Write new qualification receipts here; existing roots are never overwritten.",
+    )
+    parser.add_argument(
+        "--run-root",
+        type=Path,
+        default=RUN_ROOT,
+        help="Write new runtime/checkpoint artifacts here; existing roots are never overwritten.",
+    )
     return parser
+
+
+def _gradient_sanity(trainer: PPO26DTrainer, batch_path: Path) -> dict[str, object]:
+    """Backpropagate a frozen batch without changing policy or optimizer state."""
+
+    batch = load_checkpoint(batch_path, map_location=trainer.trainer.device)
+    observations = batch["observations"].flatten(0, 1)
+    actions = batch["actions"].flatten(0, 1)
+    old_log_probs = batch["old_log_probs"].flatten(0, 1)
+    advantages = batch["advantages"].flatten(0, 1)
+    returns = batch["returns"].flatten(0, 1)
+    normalized_advantages = (advantages - advantages.mean()) / (
+        advantages.std(unbiased=False) + 1.0e-8
+    )
+    selected = slice(0, len(observations) // trainer.training_contract.minibatches)
+    actor_before = parameter_hash(trainer.model, "actor")
+    critic_before = parameter_hash(trainer.model, "critic")
+    optimizer_before = state_hash(trainer.trainer.optimizer.state_dict())
+    normalizer_before = state_hash(trainer.trainer.normalizer.state_dict())
+    distribution = trainer.trainer.distribution(observations[selected])
+    ratio = torch.exp(distribution.log_prob(actions[selected]) - old_log_probs[selected])
+    surrogate = torch.minimum(
+        ratio * normalized_advantages[selected],
+        torch.clamp(
+            ratio,
+            1.0 - trainer.training_contract.ppo_clip,
+            1.0 + trainer.training_contract.ppo_clip,
+        )
+        * normalized_advantages[selected],
+    )
+    actor_loss = -surrogate.mean()
+    value = trainer.model.value(trainer.trainer.normalizer.normalize(observations[selected]))
+    critic_loss = torch.nn.functional.mse_loss(value, returns[selected])
+    entropy = distribution.entropy().mean()
+    loss = actor_loss + 0.5 * critic_loss - trainer.training_contract.entropy_coefficient * entropy
+    trainer.trainer.optimizer.zero_grad(set_to_none=True)
+    loss.backward()
+    gradients = [item.grad for item in trainer.model.parameters() if item.grad is not None]
+    gradient_finite = bool(gradients) and all(bool(item.isfinite().all()) for item in gradients)
+    gradient_norm = float(
+        torch.linalg.vector_norm(torch.stack([item.detach().norm() for item in gradients])).cpu()
+    )
+    trainer.trainer.optimizer.zero_grad(set_to_none=True)
+    actor_after = parameter_hash(trainer.model, "actor")
+    critic_after = parameter_hash(trainer.model, "critic")
+    optimizer_after = state_hash(trainer.trainer.optimizer.state_dict())
+    normalizer_after = state_hash(trainer.trainer.normalizer.state_dict())
+    return {
+        "backward_executed": True,
+        "optimizer_step_executed": False,
+        "loss": float(loss.detach().cpu()),
+        "actor_loss": float(actor_loss.detach().cpu()),
+        "critic_loss": float(critic_loss.detach().cpu()),
+        "entropy": float(entropy.detach().cpu()),
+        "gradient_finite": gradient_finite,
+        "gradient_norm": gradient_norm,
+        "parameters_unchanged": actor_before == actor_after and critic_before == critic_after,
+        "optimizer_unchanged": optimizer_before == optimizer_after,
+        "normalizer_unchanged": normalizer_before == normalizer_after,
+    }
+
+
+def _reward_scale(batch_path: Path, trainer: PPO26DTrainer) -> dict[str, object]:
+    """Record the literal grouped reward scale from a no-step sanity batch."""
+
+    batch = load_checkpoint(batch_path, map_location="cpu")
+    product = batch["rewards"].double().flatten()
+    legacy = batch["reward_terms"]["total_legacy_additive"].double().flatten()
+
+    def stats(value: torch.Tensor) -> dict[str, float]:
+        return {
+            "mean": float(value.mean()),
+            "std": float(value.std(unbiased=False)),
+            "median": float(value.median()),
+            "p05": float(torch.quantile(value, 0.05)),
+            "p95": float(torch.quantile(value, 0.95)),
+        }
+
+    return {
+        "advantage_normalization_enabled": trainer.training_contract.advantage_normalization,
+        "reward_rescaled": False,
+        "grouped_multiplicative": stats(product),
+        "same_rollout_legacy_additive": stats(legacy),
+        "ppo_contract_comparable": bool(product.std(unbiased=False) > 0.0),
+    }
 
 
 def _sha256(path: Path) -> str:
@@ -109,7 +205,7 @@ def _append_failure(clip: str, scope: str, error: BaseException) -> None:
 def _require_gates() -> dict[str, object]:
     offline = json.loads(OFFLINE_GATE.read_text(encoding="utf-8"))
     audit = json.loads(AUDIT_GATE.read_text(encoding="utf-8"))
-    freeze_path = REPORT_ROOT / "pf_v2/contract_freeze.json"
+    freeze_path = FROZEN_REPORT_ROOT / "pf_v2/contract_freeze.json"
     if not freeze_path.is_file():
         raise RuntimeError("PF_V2_SYMMETRIC_PF_CONTRACT_NOT_FROZEN")
     freeze = json.loads(freeze_path.read_text(encoding="utf-8"))
@@ -313,6 +409,54 @@ def _run_evaluation(
     if completed.returncode != 0 or (output / "technical_failure.json").is_file():
         raise RuntimeError(f"PF_V2_SYMMETRIC_EVALUATION_FAILED:{clip}:{output}")
     return json.loads((output / "summary.json").read_text(encoding="utf-8"))
+
+
+def _requires_refinement(qualification: dict[str, object]) -> bool:
+    """Return ``False`` only for a Confirm-accepted frozen policy."""
+
+    return qualification.get("accepted") is not True
+
+
+def _evaluate_first(source: dict[str, object]) -> dict[str, object]:
+    """Run Eval10 and, only for a candidate pass, Confirm20 before PPO starts."""
+
+    clip = str(source["clip"])
+    root = REPORT_ROOT / "evaluate_first" / clip
+    if root.exists():
+        raise FileExistsError(f"PHYSICAL_REFINEMENT_EVALUATION_NAMESPACE_EXISTS:{root}")
+    checkpoint = Path(str(source["checkpoint"]))
+    stage_samples = int(source["initial_stage_samples"])
+    update = int(source["initial_update"])
+    eval10 = _run_evaluation(
+        clip=clip,
+        checkpoint=checkpoint,
+        output=root / "eval10",
+        update=update,
+        stage_samples=stage_samples,
+        episodes=10,
+    )
+    confirm20: dict[str, object] | None = None
+    if int(eval10["counts"]["PF_V2"]) == 10:
+        confirm20 = _run_evaluation(
+            clip=clip,
+            checkpoint=checkpoint,
+            output=root / "confirm20",
+            update=update,
+            stage_samples=stage_samples,
+            episodes=20,
+        )
+    decision = {
+        "schema_version": "PhysicalRefinementEvaluateFirstV1",
+        "clip": clip,
+        "source_checkpoint": str(checkpoint.resolve()),
+        "eval10": eval10,
+        "confirm20": confirm20,
+        "accepted": bool(confirm20 and confirm20.get("accepted") is True),
+        "ppo_required": _requires_refinement(confirm20 or eval10),
+        "ppo_optimizer_steps": 0,
+    }
+    _write_json(root / "decision.json", decision)
+    return decision
 
 
 def _runtime_sanity(env: Any, trainer: PPO26DTrainer, *, clip: str) -> dict[str, object]:
@@ -557,7 +701,7 @@ def _train(
             run_lineage / "progress.json",
             {"completed_new_updates": new_update, "new_samples": new_samples, "best": best},
         )
-        if clip == "hocap_170105" and int(evaluation["counts"]["PF_V2"]) == 10:
+        if int(evaluation["counts"]["PF_V2"]) == 10:
             confirm = _run_evaluation(
                 clip=clip,
                 checkpoint=checkpoint_path,
@@ -568,15 +712,20 @@ def _train(
             )
             receipt["confirm20"] = confirm
             _write_json(report_update / "receipt.json", receipt)
-            break
+            if confirm.get("accepted") is True:
+                best["confirm20"] = confirm
+                best["accepted"] = True
+                _write_json(report_lineage / "best_accepted_checkpoint.json", best)
+                break
     if best is None:
         raise RuntimeError("PF_V2_SYMMETRIC_NO_UPDATE_COMPLETED")
     _write_json(report_lineage / "best_checkpoint.json", best)
     result = {
-        "schema_version": "Stage16Pfv2SymmetricPPOTrainingV1",
+        "schema_version": "PhysicalRefinementTrainingV1",
         "clip": clip,
-        "experimental_refinement_lineage": True,
-        "historical_170650_actor_overwritten": False,
+        "evaluate_first_required": True,
+        "accepted": bool(best.get("accepted") is True),
+        "success_stop_triggered": bool(best.get("accepted") is True),
         "max_new_updates": MAX_NEW_UPDATES,
         "actual_new_updates": len(rows),
         "actual_new_samples": int(rows[-1]["new_samples"]),
@@ -587,13 +736,34 @@ def _train(
 
 
 def main() -> int:
+    global REPORT_ROOT, RUN_ROOT
     args = _parser().parse_args()
     if not args.accept_eula or args.num_envs != NUM_ENVS:
         raise ValueError("PF_V2_SYMMETRIC_REQUIRES_EULA_AND_1024_ENVS")
+    REPORT_ROOT = args.report_root.resolve()
+    RUN_ROOT = args.run_root.resolve()
     _require_gates()
     source = _source(args.clip)
     REPORT_ROOT.mkdir(parents=True, exist_ok=True)
     RUN_ROOT.mkdir(parents=True, exist_ok=True)
+    if args.mode == "evaluate-first":
+        result = _evaluate_first(source)
+        print(json.dumps(result, sort_keys=True))
+        return 0
+    if args.mode == "train":
+        decision = _evaluate_first(source)
+        if decision["ppo_required"] is False:
+            result = {
+                "schema_version": "PhysicalRefinementTrainingDecisionV1",
+                "clip": args.clip,
+                "status": "ACCEPTED_FROZEN_POLICY_PPO_SKIPPED",
+                "evaluate_first": decision,
+                "PPO_UPDATES_ACTUALLY_RUN": 0,
+                "PPO_OPTIMIZER_STEP": 0,
+            }
+            _write_json(REPORT_ROOT / "training" / args.clip / "decision.json", result)
+            print(json.dumps(result, sort_keys=True))
+            return 0
     os.environ["OMNI_KIT_ACCEPT_EULA"] = "YES"
     from isaaclab.app import AppLauncher
 

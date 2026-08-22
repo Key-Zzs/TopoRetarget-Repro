@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reload, evaluate, and export a Stage 16-D.5 PPO-26D L0 checkpoint."""
+"""Reload, evaluate, and export a causal physical PPO checkpoint."""
 
 # ruff: noqa: E402
 

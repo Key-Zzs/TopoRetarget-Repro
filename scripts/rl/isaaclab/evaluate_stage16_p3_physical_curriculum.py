@@ -29,7 +29,7 @@ import torch
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from evaluate_stage16d_ppo26d import (  # noqa: E402
+from evaluate_physical_hoi import (  # noqa: E402
     checkpoint_hash,
     model_from_checkpoint,
     run_episode,
@@ -843,9 +843,7 @@ def main() -> int:
             {
                 "schema_version": "Stage16P3P4ReplayContractV1",
                 "trace_schema": "stage16_p3_p4_contact_ready_physical",
-                "viewer": str(
-                    REPO_ROOT / "scripts/rl/isaaclab/replay_stage16d_simulation_trace.py"
-                ),
+                "viewer": str(REPO_ROOT / "scripts/rl/isaaclab/replay_physical_hoi_trace.py"),
                 "full_hand_manifest": hand_body_manifest(
                     tuple(FK_HAND_COLLISION_BODY_NAMES), repo_root=REPO_ROOT
                 ),

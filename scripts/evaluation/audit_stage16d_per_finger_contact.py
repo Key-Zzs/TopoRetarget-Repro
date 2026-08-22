@@ -998,7 +998,7 @@ def main() -> int:
         "schema_version": "Stage16DPerFingerReplayCompatibilityV1",
         "status": "PASS",
         "existing_replay_script": str(
-            REPO_ROOT / "scripts/rl/isaaclab/replay_stage16d_simulation_trace.py"
+            REPO_ROOT / "scripts/rl/isaaclab/replay_physical_hoi_trace.py"
         ),
         "trace_schema_mutated": False,
         "viewer_modified": False,

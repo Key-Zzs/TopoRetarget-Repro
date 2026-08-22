@@ -460,7 +460,7 @@ def main() -> int:
     (REPORT_ROOT / "replay/commands.md").parent.mkdir(parents=True, exist_ok=True)
     (REPORT_ROOT / "replay/commands.md").write_text(
         "# Replay commands\n\nNo success replay commands exist because Formal20 failed. Representative failure replay:\n\n"
-        "```bash\nOMNI_KIT_ACCEPT_EULA=YES conda run -n toporetarget-isaaclab python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py --accept-eula --object hocap_170650 --trace "
+        "```bash\nOMNI_KIT_ACCEPT_EULA=YES conda run -n toporetarget-isaaclab python scripts/rl/isaaclab/replay_physical_hoi_trace.py --accept-eula --object hocap_170650 --trace "
         f"{replay_trace} --loop\n```\n",
         encoding="utf-8",
     )

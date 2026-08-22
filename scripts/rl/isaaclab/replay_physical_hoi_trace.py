@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Replay a recorded Stage 16-D simulation trace as exact collision proxies in IsaacLab."""
+"""Replay a recorded physical-HOI trace as exact collision proxies in IsaacLab."""
 
 from __future__ import annotations
 

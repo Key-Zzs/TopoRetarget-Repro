@@ -39,7 +39,7 @@ from scripts.evaluation.audit_stage16_zero_g_frozen_actor_contact import (
     _selection,
     _trace_metrics,
 )
-from scripts.rl.isaaclab.evaluate_stage16d_ppo26d import (
+from scripts.rl.isaaclab.evaluate_physical_hoi import (
     model_from_checkpoint,
     run_parallel_episodes,
 )

@@ -4,7 +4,8 @@ import copy
 
 import pytest
 
-from scripts.rl.isaaclab.run_stage16_pf_v2_symmetric_ppo import (
+from scripts.rl.isaaclab.run_physical_refinement import (
+    _requires_refinement,
     assert_symmetric_static_contracts,
 )
 
@@ -45,3 +46,11 @@ def test_symmetric_contract_rejects_reward_rse_drift() -> None:
 
     with pytest.raises(RuntimeError, match="PF_V2_SYMMETRIC_STATIC_CONTRACT_DRIFT"):
         assert_symmetric_static_contracts(first, second)
+
+
+def test_confirmed_acceptance_skips_ppo() -> None:
+    assert _requires_refinement({"accepted": True}) is False
+
+
+def test_unconfirmed_evaluation_requires_bounded_ppo() -> None:
+    assert _requires_refinement({"accepted": False}) is True

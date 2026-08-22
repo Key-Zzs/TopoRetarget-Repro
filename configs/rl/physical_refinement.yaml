@@ -1,4 +1,4 @@
-schema_version: Stage16DexploreStyleGroupedMultiplicativeRSEV1
+schema_version: PhysicalRefinementGroupedMultiplicativeRSEV1
 status: preregistered_global_contract
 reward:
   mode: grouped_multiplicative_v1

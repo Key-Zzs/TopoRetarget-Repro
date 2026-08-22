@@ -855,7 +855,7 @@ PF answers whether the robot physically performs the interaction. DF answers whe
 def _replay_commands(selected: Mapping[str, int]) -> str:
     base = (
         "OMNI_KIT_ACCEPT_EULA=YES conda run -n toporetarget-isaaclab python "
-        "scripts/rl/isaaclab/replay_stage16d_simulation_trace.py --accept-eula --loop"
+        "scripts/rl/isaaclab/replay_physical_hoi_trace.py --accept-eula --loop"
     )
     trace_650 = ".local/sim_data/stage16_full_gravity_capability_closure/formal20/v4_hocap_170650"
     trace_105 = ".local/sim_data/stage16_full_gravity_capability_closure/technical_remediation/smoke/former_timeout_v4_170105_c4/v4/hocap_170105/c4"
