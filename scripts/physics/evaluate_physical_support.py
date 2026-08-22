@@ -26,7 +26,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--clip", choices=("hocap_170105", "hocap_170650"), required=True)
+    parser.add_argument("--clip", required=True)
     parser.add_argument("--case", choices=("with_support", "without_support"), required=True)
     parser.add_argument("--steps", type=int, default=360)
     parser.add_argument("--accept-eula", action="store_true")
@@ -365,6 +365,8 @@ def _run_simulation(
 
 def main() -> int:
     args = _parse_args()
+    if not args.clip or any(token in args.clip for token in ("/", "\\", "..")):
+        raise SystemExit("INDEPENDENT_SUPPORT_CLIP_ID_INVALID")
     if not args.accept_eula:
         raise SystemExit("explicit --accept-eula is required for this licensed runtime process")
     if args.steps < 1:

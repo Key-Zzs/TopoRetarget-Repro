@@ -38,6 +38,7 @@ DEFAULT_REFERENCE_ROOT = REPO_ROOT / ".local/stage16_reference_tracking_ppo/worl
 DEFAULT_OBJECT_ROOT = REPO_ROOT / ".local/stage16_reference_tracking_ppo/objects"
 DEFAULT_OUTPUT_ROOT = REPO_ROOT / ".local/reports/stage16_support_reconstruction"
 DEFAULT_SOURCE_ROOT = Path("/mnt/nas/storage/Ref2Dex_storage/HOCap/data/subject_1")
+DEFAULT_SUPPORT_ASSET_ROOT = REPO_ROOT / ".local/support_assets/hocap"
 
 
 def _load_obj_vertices(path: Path) -> np.ndarray:
@@ -89,8 +90,14 @@ def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(jsonable(value), indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _source_evidence(clip: str, source_root: Path) -> object:
-    source_dir = source_root / f"20231025_{clip.removeprefix('hocap_')}"
+def _source_evidence(
+    clip: str, source_root: Path, source_sequence_dir: Path | None
+) -> object:
+    source_dir = (
+        source_sequence_dir.resolve()
+        if source_sequence_dir is not None
+        else source_root / f"20231025_{clip.removeprefix('hocap_')}"
+    )
     try:
         return evidence_from_sequence_directory(source_dir)
     except FileNotFoundError as error:
@@ -187,6 +194,8 @@ def _resolve_clip(
     reference_root: Path,
     object_root: Path,
     source_root: Path,
+    source_sequence_dir: Path | None,
+    support_asset_root: Path,
     output_root: Path,
     static: bool,
     replay: bool,
@@ -197,7 +206,7 @@ def _resolve_clip(
         reference = {key: loaded[key] for key in loaded.files}
     visual = _load_obj_vertices(object_path)
     collision, collision_evidence = _collision_vertices(object_path)
-    source = _source_evidence(clip, source_root)
+    source = _source_evidence(clip, source_root, source_sequence_dir)
     result = resolve_support(
         dataset="hocap",
         sequence=clip,
@@ -232,7 +241,7 @@ def _resolve_clip(
     )
     _write_json(clip_root / "collision_mesh_evidence.json", collision_evidence)
     if result.table_proxy is not None and result.support_interval is not None:
-        support_asset_root = REPO_ROOT / ".local/support_assets/hocap" / clip
+        support_asset_root = support_asset_root / clip
         support_asset = write_finite_planar_support_usda(
             result.table_proxy, support_asset_root / "support_proxy.usda"
         )
@@ -352,13 +361,21 @@ def _resolve_clip(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", default="hocap", choices=("hocap",))
-    parser.add_argument("--sequence", choices=CLIPS)
+    parser.add_argument("--sequence")
     parser.add_argument(
         "--support", default="auto", choices=[item.value for item in SupportResolutionMode]
     )
     parser.add_argument("--reference-root", type=Path, default=DEFAULT_REFERENCE_ROOT)
     parser.add_argument("--object-root", type=Path, default=DEFAULT_OBJECT_ROOT)
     parser.add_argument("--source-root", type=Path, default=DEFAULT_SOURCE_ROOT)
+    parser.add_argument(
+        "--source-sequence-dir",
+        type=Path,
+        help="Exact raw sequence directory for an independent clip.",
+    )
+    parser.add_argument(
+        "--support-asset-root", type=Path, default=DEFAULT_SUPPORT_ASSET_ROOT
+    )
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--static", action="store_true", help="write a static support overlay")
     parser.add_argument("--replay", action="store_true", help="write representative replay frames")
@@ -367,6 +384,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
+    if args.sequence is not None and (
+        not args.sequence or any(token in args.sequence for token in ("/", "\\", ".."))
+    ):
+        raise ValueError("INDEPENDENT_SUPPORT_CLIP_ID_INVALID")
+    if args.source_sequence_dir is not None and args.sequence is None:
+        raise ValueError("--source-sequence-dir requires --sequence")
     clips = (args.sequence,) if args.sequence else CLIPS
     output_root = args.output_root.resolve()
     output_root.mkdir(parents=True, exist_ok=True)
@@ -379,6 +402,8 @@ def main() -> int:
                 reference_root=args.reference_root.resolve(),
                 object_root=args.object_root.resolve(),
                 source_root=args.source_root.resolve(),
+                source_sequence_dir=args.source_sequence_dir,
+                support_asset_root=args.support_asset_root.resolve(),
                 output_root=output_root,
                 static=args.static,
                 replay=args.replay,
