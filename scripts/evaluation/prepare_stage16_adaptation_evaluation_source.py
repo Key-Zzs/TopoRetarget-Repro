@@ -54,7 +54,7 @@ def main() -> int:
         raise FileNotFoundError(f"ADAPTATION_EVALUATION_SOURCE_CHECKPOINT_MISSING:{checkpoint}")
 
     # These helpers import Torch-only evaluation code; Isaac is never started.
-    from scripts.rl.isaaclab.evaluate_stage16d_ppo26d import model_from_checkpoint
+    from scripts.rl.isaaclab.evaluate_physical_hoi import model_from_checkpoint
     from scripts.rl.isaaclab.run_stage16_frozen_source_policy_gravity_sweep import (
         _component_hashes,
     )

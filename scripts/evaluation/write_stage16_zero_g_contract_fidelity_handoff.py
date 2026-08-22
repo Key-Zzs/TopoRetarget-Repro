@@ -638,7 +638,7 @@ def main() -> int:
         replay += f"## V3 / hocap_170105 / {start}\n\n```bash\n"
         replay += (
             "OMNI_KIT_ACCEPT_EULA=YES PYTHONPATH=src conda run -n toporetarget-isaaclab "
-            "python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py --accept-eula "
+            "python scripts/rl/isaaclab/replay_physical_hoi_trace.py --accept-eula "
             f"--trace {trace.relative_to(REPO_ROOT)} --object hocap_170105 --loop\n```\n\n"
         )
     _write_text(ROOT / "replay/visualization_commands.md", replay)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reload, evaluate, and export a Stage 16-D.5 PPO-26D L0 checkpoint."""
+"""Reload, evaluate, and export a causal physical PPO checkpoint."""
 
 # ruff: noqa: E402
 
@@ -42,6 +42,7 @@ DEFAULT_ROOT = REPO_ROOT / ".local/reports/stage16d_ppo26d"
 PHASE3_CHECKPOINT_SCHEMA = "Stage16DPhase3RewardV2CheckpointV1"
 REWARD_V3_CHECKPOINT_SCHEMA = "Stage16DRewardV3CheckpointV1"
 STRICT_V4_CHECKPOINT_SCHEMA = "Stage16DStrictPerFingerV4CheckpointV1"
+DEXPLORE_REFINEMENT_CHECKPOINT_SCHEMA = "Stage16DGroupedMultiplicativeRSECheckpointV1"
 
 
 def parse_args() -> argparse.Namespace:
@@ -216,6 +217,7 @@ def model_from_checkpoint(
         PHASE3_CHECKPOINT_SCHEMA,
         REWARD_V3_CHECKPOINT_SCHEMA,
         STRICT_V4_CHECKPOINT_SCHEMA,
+        DEXPLORE_REFINEMENT_CHECKPOINT_SCHEMA,
         PHYSICAL_PPO_CHECKPOINT_SCHEMA,
         FULL_TRAJECTORY_P3_CHECKPOINT_SCHEMA,
     }:
@@ -249,6 +251,8 @@ def model_from_checkpoint(
                 else (
                     payload["reward_v4_samples"]
                     if schema == STRICT_V4_CHECKPOINT_SCHEMA
+                    else payload["dexplore_refinement_samples"]
+                    if schema == DEXPLORE_REFINEMENT_CHECKPOINT_SCHEMA
                     else payload["cumulative_samples"]
                 )
             )
@@ -267,6 +271,8 @@ def checkpoint_sample_counter(payload: dict[str, Any]) -> tuple[str, int]:
         return "reward_v3_samples", int(payload["reward_v3_samples"])
     if payload.get("schema_version") == STRICT_V4_CHECKPOINT_SCHEMA:
         return "reward_v4_samples", int(payload["reward_v4_samples"])
+    if payload.get("schema_version") == DEXPLORE_REFINEMENT_CHECKPOINT_SCHEMA:
+        return "dexplore_refinement_samples", int(payload["dexplore_refinement_samples"])
     if payload.get("schema_version") == PHYSICAL_PPO_CHECKPOINT_SCHEMA:
         return "policy_training_samples", int(payload["policy_training_samples"])
     if payload.get("schema_version") == FULL_TRAJECTORY_P3_CHECKPOINT_SCHEMA:
@@ -389,6 +395,18 @@ def _initial_trace_snapshot(
                 "error_obj_ang_vel": torch.zeros(count, device=device),
             }
         )
+    if env.cfg.ppo26d_reward_aggregation_mode == "grouped_multiplicative_v1":
+        values.update(
+            {
+                "reward_group_object": torch.ones(count, device=device),
+                "reward_group_hand": torch.ones(count, device=device),
+                "reward_group_interaction": torch.ones(count, device=device),
+                "reward_group_regularization": torch.ones(count, device=device),
+                "reference_surface_distance_min": torch.zeros(count, device=device),
+                "reference_scope_weight": torch.zeros(count, device=device),
+                "actual_fingertip_surface_distance": torch.zeros((count, 5), device=device),
+            }
+        )
     if env.cfg.ppo26d_reward_contract == "TopoRetargetReferenceTrackingReward26DV3":
         # Like pair force, these are a reset snapshot rather than a sensor/reward
         # callback row.  Keep their dimensions aligned with V3 post-physics trace
@@ -456,6 +474,11 @@ def _initial_trace_snapshot(
         values["table_object_contact"] = (
             torch.linalg.vector_norm(force, dim=-1).amax(dim=(1, 2)) > 1.0e-4
         )
+        # This is an independently read support ContactSensor datum.  Unlike
+        # hand/object pair force, a true reset sample must remain available to
+        # support-transfer diagnostics rather than inheriting pair-force
+        # frame-zero invalidity.
+        values["table_object_contact_valid"] = torch.ones(count, dtype=torch.bool, device=device)
     return {name: value.detach().cpu().numpy().copy() for name, value in values.items()}
 
 

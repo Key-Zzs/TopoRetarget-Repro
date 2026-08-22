@@ -245,7 +245,7 @@ def test_v1_pairforce_telemetry_is_reward_independent_and_world_frame_only() -> 
         REPO_ROOT
         / "src/toporetarget/rl/environments/isaaclab_backend/ppo26d_reference_tracking_env.py"
     ).read_text(encoding="utf-8")
-    evaluator = (REPO_ROOT / "scripts/rl/isaaclab/evaluate_stage16d_ppo26d.py").read_text(
+    evaluator = (REPO_ROOT / "scripts/rl/isaaclab/evaluate_physical_hoi.py").read_text(
         encoding="utf-8"
     )
     freezer = (
@@ -358,7 +358,7 @@ def test_trace_capture_does_not_apply_canonical_joint_order_twice() -> None:
 
 
 def test_ppo26d_evaluation_keeps_any_contact_distinct_from_terminal_contact() -> None:
-    source = (REPO_ROOT / "scripts/rl/isaaclab/evaluate_stage16d_ppo26d.py").read_text(
+    source = (REPO_ROOT / "scripts/rl/isaaclab/evaluate_physical_hoi.py").read_text(
         encoding="utf-8"
     )
     assert '"contact": contact_seen' in source

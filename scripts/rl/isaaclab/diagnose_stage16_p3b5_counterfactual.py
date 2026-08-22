@@ -25,18 +25,18 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 sys.path.insert(0, str(REPO_ROOT / "scripts/rl/isaaclab"))
 
-from evaluate_stage16_p3_physical_curriculum import (  # noqa: E402
-    DEFAULT_GEOMETRY_MANIFEST,
-    _inter_finger_penetration,
-    _reconstruct_hand,
-)
-from evaluate_stage16d_ppo26d import (  # noqa: E402
+from evaluate_physical_hoi import (  # noqa: E402
     _device_trace_to_numpy,
     _initial_trace_snapshot,
     _prepend_initial_trace,
     apply_episode_seed,
     checkpoint_hash,
     model_from_checkpoint,
+)
+from evaluate_stage16_p3_physical_curriculum import (  # noqa: E402
+    DEFAULT_GEOMETRY_MANIFEST,
+    _inter_finger_penetration,
+    _reconstruct_hand,
 )
 
 from toporetarget.rl.c2_geometry_attribution import (  # noqa: E402

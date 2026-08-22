@@ -28,7 +28,7 @@ from scripts.evaluation.audit_stage16_zero_g_frozen_actor_contact import (
     _selection,
     _trace_metrics,
 )
-from scripts.rl.isaaclab.evaluate_stage16d_ppo26d import model_from_checkpoint
+from scripts.rl.isaaclab.evaluate_physical_hoi import model_from_checkpoint
 from toporetarget.rl.contact_skill_collapse import (
     FINGER_NAMES,
     command_tracking_metrics,

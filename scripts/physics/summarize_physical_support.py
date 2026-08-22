@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reduce PhysX receipts into the auditable Stage 16 support report."""
+"""Reduce PhysX receipts into an auditable physical-support report."""
 
 from __future__ import annotations
 

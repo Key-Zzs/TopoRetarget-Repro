@@ -1,0 +1,38 @@
+schema_version: PhysicalRefinementGroupedMultiplicativeRSEV1
+status: preregistered_global_contract
+reward:
+  mode: grouped_multiplicative_v1
+  legacy_mode: legacy_additive
+  group_exponents: {object: 1.0, hand: 1.0, interaction: 1.0, regularization: 1.0}
+  interaction:
+    contact: strict_per_finger_v4_unchanged
+    proximity_tolerance_m: 0.03
+    proximity_scale_per_m: 33.333333333333336
+    aggregation: mean_contact_and_proximity
+  numerical_epsilon: 1.0e-12
+rse:
+  enabled: true
+  distance_relaxation: true
+  adaptive_termination: true
+  distance_scope_m: 0.20
+  kappa_min: 0.50
+  initial_counts: {fail: 1, total: 1}
+  training_reset: uniform_reference_index_0_320
+  base_thresholds:
+    object_position_m: 0.05
+    object_axis_m: 0.05
+    object_orientation_rad: 0.7853981633974483
+    hand_position_m: 0.20
+    hand_orientation_rad: 1.5707963267948966
+    interaction_excess_over_0p03m_normalized: 1.0
+frozen:
+  physics_stage: C4
+  object_gravity: 1g
+  nominal_friction: true
+  table_active: true
+  controller_changed: false
+  reference_changed: false
+  action_changed: false
+  ppo_hyperparameters_changed: false
+  per_object_tuning: false
+  phase_hard_gate: false

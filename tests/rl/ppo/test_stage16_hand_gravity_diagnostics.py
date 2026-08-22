@@ -102,7 +102,7 @@ def test_per_body_gravity_interpretation_handles_schema_defaults() -> None:
 
 
 def test_gravity_on_mode_is_diagnostic_only_and_cannot_replace_normal_evaluation() -> None:
-    evaluator = (REPO_ROOT / "scripts/rl/isaaclab/evaluate_stage16d_ppo26d.py").read_text(
+    evaluator = (REPO_ROOT / "scripts/rl/isaaclab/evaluate_physical_hoi.py").read_text(
         encoding="utf-8"
     )
     inspector = (REPO_ROOT / "scripts/rl/isaaclab/inspect_stage16_hand_gravity.py").read_text(

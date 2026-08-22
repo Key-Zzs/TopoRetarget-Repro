@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a matched full-gravity object-only support counterfactual in PhysX.
+"""Evaluate a matched full-gravity object-only support counterfactual in PhysX.
 
 The command is deliberately separate from the RL environment.  It spawns the
 frozen object once with its frame-zero reset pose, optionally spawns the

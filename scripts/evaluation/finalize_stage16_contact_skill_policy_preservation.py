@@ -366,11 +366,11 @@ def main() -> int:
                 "# Replay commands",
                 "",
                 "```bash",
-                "python scripts/evaluation/replay_stage16d_simulation_trace.py --trace "
+                "python scripts/evaluation/replay_physical_hoi_trace.py --trace "
                 + str(C0 / "frame0_eval/contact_eval/C0_U25/episode_00.npz"),
-                "python scripts/evaluation/replay_stage16d_simulation_trace.py --trace "
+                "python scripts/evaluation/replay_physical_hoi_trace.py --trace "
                 + str(C0 / "frame0_eval/contact_eval/C0_U26/episode_00.npz"),
-                "python scripts/evaluation/replay_stage16d_simulation_trace.py --trace "
+                "python scripts/evaluation/replay_physical_hoi_trace.py --trace "
                 + str(
                     ROOT
                     / "a1_actor_lr/scale_0p5/frame0_eval_paired/contact_eval"

@@ -17,7 +17,7 @@ REPORT_ROOT = REPO_ROOT / ".local/reports/stage16_contact_preserving_full_c0_val
 HISTORICAL = (
     REPO_ROOT / ".local/reports/stage16_grasp_lift_skill_collapse/localization/grasp_vs_update.csv"
 )
-REPLAY_DRIVER = REPO_ROOT / "scripts/rl/isaaclab/replay_stage16d_simulation_trace.py"
+REPLAY_DRIVER = REPO_ROOT / "scripts/rl/isaaclab/replay_physical_hoi_trace.py"
 
 PPO_FIELDS = (
     "actor_lr",

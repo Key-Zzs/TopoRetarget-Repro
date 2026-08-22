@@ -73,6 +73,52 @@ class PPO26DTrainer:
     def model(self) -> torch.nn.Module:
         return self.trainer.model
 
+    @staticmethod
+    def _termination_summary(
+        telemetry: dict[str, list[torch.Tensor]],
+    ) -> dict[str, object]:
+        reasons = telemetry["primary_reason_code"]
+        if not reasons:
+            return {
+                "samples": 0,
+                "reason_counts": {},
+                "rse_primary_failure_rate": 0.0,
+                "rse_kappa": None,
+            }
+        reason_tensor = torch.stack(reasons)
+        labels = {
+            1: "FAILURE_NUMERICAL",
+            2: "FAILURE_JOINT_LIMIT",
+            3: "FAILURE_ACTION_INVALID",
+            4: "FAILURE_OBJECT_LINEAR_VELOCITY",
+            5: "FAILURE_OBJECT_ANGULAR_VELOCITY",
+            6: "FAILURE_WRIST_WORKSPACE",
+            7: "TIMEOUT_REFERENCE_END",
+            8: "FAILURE_RSE_DEVIATION",
+        }
+        failures = telemetry["rse_primary_failure"]
+        failure_tensor = (
+            torch.stack(failures) if failures else torch.zeros_like(reason_tensor, dtype=torch.bool)
+        )
+        kappa_used = telemetry["rse_kappa_used"]
+        kappa_after = telemetry["rse_kappa_after"]
+        return {
+            "samples": int(reason_tensor.numel()),
+            "reason_counts": {
+                label: int((reason_tensor == code).sum().item()) for code, label in labels.items()
+            },
+            "rse_primary_failure_rate": float(failure_tensor.float().mean().item()),
+            "rse_kappa": (
+                None
+                if not kappa_used or not kappa_after
+                else {
+                    "used_min": float(torch.stack(kappa_used).amin().item()),
+                    "used_max": float(torch.stack(kappa_used).amax().item()),
+                    "after_last": float(torch.stack(kappa_after)[-1, 0].item()),
+                }
+            ),
+        }
+
     @torch.no_grad()
     def _policy_safety_metrics(
         self,
@@ -196,6 +242,12 @@ class PPO26DTrainer:
         reward_terms: dict[str, list[float]] = {}
         reward_term_tensors: dict[str, list[torch.Tensor]] = {}
         reference_indices: list[torch.Tensor] = []
+        termination_telemetry: dict[str, list[torch.Tensor]] = {
+            "primary_reason_code": [],
+            "rse_primary_failure": [],
+            "rse_kappa_used": [],
+            "rse_kappa_after": [],
+        }
         started = time.perf_counter()
         reference_index_sum = 0.0
         reference_index_count = 0
@@ -211,7 +263,12 @@ class PPO26DTrainer:
                 value = self.trainer.model.value(
                     self.trainer.normalizer.normalize(policy_observation)
                 )
-            next_observation, reward, terminated, timed_out, _ = env.step(action)
+            next_observation, reward, terminated, timed_out, extras = env.step(action)
+            ppo_extras = extras.get("ppo26d", {})
+            for name in termination_telemetry:
+                telemetry_value = ppo_extras.get(name)
+                if isinstance(telemetry_value, torch.Tensor):
+                    termination_telemetry[name].append(telemetry_value.detach().clone())
             if saturation_recorder is not None:
                 telemetry = env.stage16_saturation_telemetry()
                 saturation_recorder.record_step(
@@ -322,6 +379,11 @@ class PPO26DTrainer:
                         name: torch.stack(values).detach().cpu()
                         for name, values in reward_term_tensors.items()
                     },
+                    "termination_telemetry": {
+                        name: torch.stack(values).detach().cpu()
+                        for name, values in termination_telemetry.items()
+                        if values
+                    },
                     "rng_before_optimizer_update": rng_state(),
                     "advantage_diagnostic": advantage_diagnostic,
                     "return_diagnostic": return_diagnostic,
@@ -375,6 +437,7 @@ class PPO26DTrainer:
             elapsed = time.perf_counter() - started
             actor_hash = parameter_hash(self.model, "actor")
             critic_hash = parameter_hash(self.model, "critic")
+            termination_summary = self._termination_summary(termination_telemetry)
             return {
                 "rollout_length": storage.rollout_steps,
                 "num_envs": storage.num_envs,
@@ -404,7 +467,11 @@ class PPO26DTrainer:
                 "reward": {
                     name: sum(values) / len(values) for name, values in reward_terms.items()
                 },
-                "reference": {"rsi": env.rsi_report()},
+                "reference": {
+                    "rsi": env.rsi_report(),
+                    "rse": env.rse_report() if hasattr(env, "rse_report") else None,
+                },
+                "termination": termination_summary,
                 "last_policy_observation": policy_observation.detach().clone(),
                 "saturation_instrumentation": saturation_summary,
             }
@@ -529,7 +596,9 @@ class PPO26DTrainer:
                 "reference_progress": reference_index_sum
                 / max(reference_index_count * (env.reference_bank.frame_count - 1), 1),
                 "rsi": env.rsi_report(),
+                "rse": env.rse_report() if hasattr(env, "rse_report") else None,
             },
+            "termination": self._termination_summary(termination_telemetry),
             "last_policy_observation": policy_observation.detach().clone(),
             "saturation_instrumentation": saturation_summary,
         }

@@ -20,6 +20,25 @@ and absence of hidden guidance/object/wrist-root writes. Source-required named
 finger recall, table support transfer, and relative hand-object coupling are
 reported supporting metrics because no additional frozen hard threshold exists.
 
+## PF V2 causal-lift audit (frozen additive authority)
+
+An additive `Stage16PhysicalFunctionalityV2` proposal moved reference-LIFT
+contact timing into `DFInteractionTimingV1` and evaluated actual support-free
+lift from the inherited 5 cm displacement event. It did not modify PF V1.
+Its table-support proxy is binary rather than an exact wrench/slip measurement.
+The table ContactSensor is independent from the hand-pair force stream: each
+historical accepted 170650 trace has a retained reset support sample before
+release. The prior 0/20 support result was a mask-authority bug, now repaired.
+
+The corrected positive-control audit is
+`PF_V1_PRELIFT_GATE_PARTIALLY_OVERCONSTRAINED`. U10/170105's no-step Eval20
+and U11 Confirm20 both give PF V2 causal lift 20/20 while PF V1 stays 0/20
+because its pre-reference-LIFT timing gate remains immutable. A symmetric
+170650 experimental continuation is stable at U2 Eval20 (PF V1/PF V2/DF all
+20/20), but is non-monotonic (U8 PF V2=0/10, U10 Eval10=10/10); the frozen
+historical accepted actor is unchanged.
+See [PF V2 causal-lift audit](PHYSICAL_FUNCTIONALITY_V2_CAUSAL_LIFT.md).
+
 `Stage16DemonstrationFidelityV1` reports separate dimensions rather than an
 unvalidated total boolean:
 

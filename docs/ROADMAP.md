@@ -58,6 +58,20 @@ See [actual angular velocity semantics](rl/ACTUAL_ANGULAR_VELOCITY_SEMANTICS.md)
 [angular-twist audit](rl/ANGULAR_TWIST_AUDIT.md), and
 [PF/DF](rl/PHYSICAL_FUNCTIONALITY_AND_DEMONSTRATION_FIDELITY.md).
 
+## Stage16 PF V2 causal lift and symmetric PPO (CLOSED)
+
+`Stage16PhysicalFunctionalityV2` is a frozen additive causal-lift authority;
+it does not rewrite PF V1. Its support proxy uses the independent recorded
+table ContactSensor reset sample, not the replay table or the hand-pair force
+validity mask. The corrected positive control is 20/20 PF V2 on historical
+170650. U10/170105's U11 Confirm20 gives PF V2 and all DF dimensions 20/20,
+while PF V1 deliberately remains 0/20 under its historical timing gate. The
+new 170650 experimental continuation first reaches its maximum at U2 (20/20),
+then is non-monotonic (U8 0/10 and U10 Eval10 recovery 10/10); the historical
+accepted actor remains frozen. The only next action is no-tuning diagnosis of
+170650 continuation instability. See [PF V2 causal-lift
+audit](rl/PHYSICAL_FUNCTIONALITY_V2_CAUSAL_LIFT.md).
+
 ## Stage16 170650 physical-HOI closure and generic profile (CLOSED)
 
 V4/`hocap_170650` is formally `ACCEPTED_STAGE16_PHYSICAL_HOI`: PF, pose,
@@ -260,6 +274,7 @@ physics route; it is not a replacement for it.
 
 ## Documentation entry points
 
+- [Dexplore-style multiplicative reward and RSE](rl/DEXPLORE_STYLE_MULTIPLICATIVE_REWARD_RSE.md)
 - [Stage16-D causal zero-g milestone](stages/STAGE16D_CAUSAL_ZERO_G_MILESTONE.md)
 - [Stage 16 Physical Bootstrap](stages/STAGE16_PHYSICAL_BOOTSTRAP.md)
 - [Physics curriculum](rl/PHYSICS_CURRICULUM.md)
@@ -285,3 +300,17 @@ P3-B.7 distinguishes an immutable geometric reference (diagnostic soft
 target) from a physically valid hard reset and the actual PPO trajectory
 (both hard gates).  A failed reference-wide geometry audit no longer blocks
 training by itself; absent safe early table-supported resets does.
+
+## Stage16 grouped-reward/RSE bounded refinement
+
+The opt-in grouped multiplicative reward and reference-scoped exploration
+passed offline and no-step runtime gates before the original ten
+V4/`hocap_170105`/C4 updates (409,600 samples). U10 improved legacy lift to
+6/10 but retained PF V1=0/10 because persistent multi-contact followed LIFT.
+After the corrected PF V2 support-sensor audit, U10 received one further
+bounded update: U11 reached PF V2 Eval10 10/10 and Confirm20 20/20 on PF V2
+and all DF dimensions, while PF V1 remains unchanged at 0/20. The independent
+historical-170650 experimental continuation completed its own U1--U10 budget;
+its first maximum is U2 Eval20 20/20, with non-monotonic later Eval10 behavior
+(U8 0/10 and U10 recovery 10/10). The frozen accepted 170650 actor remains
+unchanged. See [PF V2 causal-lift audit](rl/PHYSICAL_FUNCTIONALITY_V2_CAUSAL_LIFT.md).

@@ -8,7 +8,7 @@ force.
 Enable it only for an existing frozen Formal20 re-export:
 
 ```bash
-python scripts/rl/isaaclab/evaluate_stage16d_ppo26d.py \
+python scripts/rl/isaaclab/evaluate_physical_hoi.py \
   --capture-all-frame-zero-replicas \
   --capture-full-hand-object-pair-telemetry \
   --frame-zero-replicas 20 --rsi-replicas 0

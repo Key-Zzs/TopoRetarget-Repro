@@ -49,6 +49,16 @@ attribution 仍为 `INCONCLUSIVE`，现为 medium confidence 且显式采用 pro
 [angular-twist audit](rl/ANGULAR_TWIST_AUDIT.md) 与
 [PF/DF](rl/PHYSICAL_FUNCTIONALITY_AND_DEMONSTRATION_FIDELITY.md)。
 
+## Stage16 PF V2 因果 lift 与对称 PPO（已收口）
+
+`Stage16PhysicalFunctionalityV2` 是冻结的附加因果 lift authority，不重写 PF V1。其 support
+proxy 取自独立记录的 table ContactSensor reset sample，而非 replay 中的桌面几何或手-物
+pair-force validity mask。修正后的历史 170650 positive control 为 PF V2 20/20。170105 从
+U10 接续到 U11 的 Confirm20 取得 PF V2 与三个 DF 维度 20/20；历史 PF V1 的 timing gate
+保持不变，故仍为 0/20。新的 170650 experimental continuation 首次在 U2 达到最大值（20/20），
+之后并非单调：U8 为 0/10，U10 Eval10 恢复为 10/10；历史 accepted actor 仍被冻结。唯一后续是
+无 tuning 地诊断 170650 continuation instability。见 [PF V2 因果 lift 审计](rl/PHYSICAL_FUNCTIONALITY_V2_CAUSAL_LIFT.md)。
+
 ## Stage16 170650 physical-HOI 收口与通用 profile（CLOSED）
 
 V4/`hocap_170650` 已正式成为 `ACCEPTED_STAGE16_PHYSICAL_HOI`：PF、pose、linear、
@@ -220,6 +230,7 @@ external guidance 或 data-H2R 仍是该 causal physics 路线之后的 assisted
 
 ## 文档入口
 
+- [Dexplore 风格乘法 reward 与 RSE](rl/DEXPLORE_STYLE_MULTIPLICATIVE_REWARD_RSE.md)
 - [Stage16-D causal zero-g milestone](stages/STAGE16D_CAUSAL_ZERO_G_MILESTONE.zh-CN.md)
 - [Stage 16 Physical Bootstrap](stages/STAGE16_PHYSICAL_BOOTSTRAP.zh-CN.md)
 - [Physics curriculum](rl/PHYSICS_CURRICULUM.md)
@@ -244,3 +255,15 @@ external guidance 或 data-H2R 仍是该 causal physics 路线之后的 assisted
 P3-B.7 严格区分不可修改的几何参考（诊断性的 soft target）与物理合法的
 hard reset、实际 PPO 轨迹（两者均为 hard gate）。整条参考轨迹的几何失败
 本身不再阻止训练；缺少安全的早期桌面支撑 reset 才会阻止重启。
+
+## Stage16 grouped-reward/RSE 有界 refinement
+
+opt-in 的 grouped multiplicative reward 与 reference-scoped exploration 已通过
+offline 与 no-step runtime gate，随后完成原始预注册的十次
+V4/`hocap_170105`/C4 update（409,600 samples）。U10 将 legacy lift 提升到 6/10，
+但 persistent multi-contact 晚于 LIFT，故 PF V1 仍为 0/10。修正 PF V2 support-sensor 审计后，
+U10 又执行一次有界 update：U11 的 PF V2 Eval10 为 10/10，Confirm20 的 PF V2 与三个 DF
+维度均为 20/20，PF V1 则保持 0/20。独立的 historical-170650 experimental continuation
+完成自己的 U1--U10 预算；其首次最大值为 U2 Eval20 20/20，之后 Eval10 非单调（U8 为 0/10，
+U10 恢复到 10/10）。冻结的 accepted 170650 actor 未被改写。见
+[PF V2 causal-lift audit](rl/PHYSICAL_FUNCTIONALITY_V2_CAUSAL_LIFT.md)。

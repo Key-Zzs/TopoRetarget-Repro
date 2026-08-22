@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resolve and visualize finite support for one frozen Stage 16 clip.
+"""Prepare and visualize finite support for one frozen physical-HOI clip.
 
 This command is intentionally useful in headless mode.  It writes only under
 ``.local`` by default and never edits source data, PPO artifacts, or runtime
@@ -397,23 +397,23 @@ def main() -> int:
         "# Stage 16 support reconstruction commands\n\n"
         "Geometry/static overlays:\n\n"
         "```bash\n"
-        "PYTHONPATH=src python scripts/physics/visualize_support_reconstruction.py "
+        "PYTHONPATH=src python scripts/physics/prepare_physical_support.py "
         "--support auto --static --replay\n"
         "```\n\n"
         "Full-gravity object-only PhysX for each clip:\n\n"
         "```bash\n"
         "conda run --no-capture-output -n toporetarget-isaaclab "
         "env OMNI_KIT_ACCEPT_EULA=YES PYTHONPATH=src "
-        "python scripts/physics/validate_support_physx.py "
+        "python scripts/physics/evaluate_physical_support.py "
         "--clip hocap_170105 --case with_support --steps 360 --accept-eula "
         "--support-asset .local/support_assets/hocap/hocap_170105/support_proxy.usda "
         "--proxy-json .local/reports/stage16_support_reconstruction/inference/"
         "hocap_170105/table_proxy.json\n"
         "conda run --no-capture-output -n toporetarget-isaaclab "
         "env OMNI_KIT_ACCEPT_EULA=YES PYTHONPATH=src "
-        "python scripts/physics/validate_support_physx.py "
+        "python scripts/physics/evaluate_physical_support.py "
         "--clip hocap_170105 --case without_support --steps 360 --accept-eula\n"
-        "PYTHONPATH=src python scripts/physics/finalize_support_reconstruction.py\n"
+        "PYTHONPATH=src python scripts/physics/summarize_physical_support.py\n"
         "```\n\n"
         "The same commands apply to hocap_170650 after changing clip and paths. "
         "See docs/physics/SUPPORT_RESOLUTION.md for the full contract.\n",

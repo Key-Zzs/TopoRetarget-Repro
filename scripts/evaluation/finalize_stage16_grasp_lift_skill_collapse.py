@@ -413,7 +413,7 @@ def training_rows() -> list[dict[str, object]]:
 
 def fixed_probe(checkpoints: dict[str, dict[str, object]]) -> list[dict[str, object]]:
     """Run deterministic inference on the exact U26 batch's fixed contact/grasp observations."""
-    from scripts.rl.isaaclab.evaluate_stage16d_ppo26d import model_from_checkpoint
+    from scripts.rl.isaaclab.evaluate_physical_hoi import model_from_checkpoint
 
     batch = torch.load(
         CONTINUATION / "c0/exact_batches/update_0026.pt", map_location="cpu", weights_only=False
@@ -880,7 +880,7 @@ def main() -> int:
         replay_lines.extend(
             (
                 f"# {label}",
-                f"python scripts/evaluation/replay_stage16d_simulation_trace.py --trace {trace}",
+                f"python scripts/evaluation/replay_physical_hoi_trace.py --trace {trace}",
             )
         )
     replay = "\n".join(replay_lines) + "\n"

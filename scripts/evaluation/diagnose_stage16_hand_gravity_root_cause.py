@@ -496,7 +496,7 @@ def main() -> int:
             replay_commands.extend(
                 [
                     "OMNI_KIT_ACCEPT_EULA=YES conda run -n toporetarget-isaaclab python "
-                    "scripts/rl/isaaclab/replay_stage16d_simulation_trace.py \\",
+                    "scripts/rl/isaaclab/replay_physical_hoi_trace.py \\",
                     "  --accept-eula --headless --max-loops 1 --object hocap_170105 \\",
                     f"  --trace {trace} \\",
                     f"  --validation-output {receipt}",

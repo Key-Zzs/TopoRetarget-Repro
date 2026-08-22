@@ -344,7 +344,7 @@ def _replay_commands(output: Path) -> None:
     ]
     prefix = (
         "conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES "
-        "python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py --accept-eula"
+        "python scripts/rl/isaaclab/replay_physical_hoi_trace.py --accept-eula"
     )
     for label, trace in traces.items():
         lines.extend(

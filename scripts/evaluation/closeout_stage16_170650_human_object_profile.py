@@ -793,7 +793,7 @@ def _select_replays(rows: list[dict[str, object]]) -> dict[str, int]:
 def _replay_command(path: Path, clip: str, suffix: str = "") -> str:
     return (
         "OMNI_KIT_ACCEPT_EULA=YES conda run -n toporetarget-isaaclab python "
-        "scripts/rl/isaaclab/replay_stage16d_simulation_trace.py --accept-eula --loop "
+        "scripts/rl/isaaclab/replay_physical_hoi_trace.py --accept-eula --loop "
         f"--trace {path.relative_to(REPO_ROOT)} --object {clip} --no-reference-ghost{suffix}"
     )
 

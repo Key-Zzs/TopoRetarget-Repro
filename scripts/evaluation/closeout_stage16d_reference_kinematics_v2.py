@@ -186,7 +186,7 @@ def main() -> int:
     )
     replay_prefix = (
         "conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES python "
-        "scripts/rl/isaaclab/replay_stage16d_simulation_trace.py --accept-eula"
+        "scripts/rl/isaaclab/replay_physical_hoi_trace.py --accept-eula"
     )
     resource = {
         "schema_version": "Stage16DReferenceKinematicsV2ResourceUsageV1",

@@ -2,7 +2,7 @@
 """Analyze and export one causal table-supported C4 Formal20 trace.
 
 This is deliberately Isaac-free.  It consumes the all-replica physical trace
-written by ``evaluate_stage16d_ppo26d.py`` and never reruns a policy or alters
+written by ``evaluate_physical_hoi.py`` and never reruns a policy or alters
 the frozen C4 checkpoint.  Failed episodes are retained alongside successful
 ones in both the metrics and the generic simulation-data export.
 """
