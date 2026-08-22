@@ -115,9 +115,13 @@ def main() -> int:
         updates = 0
         samples = 0
     else:
-        if args.physical_refinement_receipt is None or frozen.get("ppo_required") is not True:
+        if frozen.get("ppo_required") is not True:
             raise ValueError("INDEPENDENT_FINAL_RESULT_REFINEMENT_RECEIPT_REQUIRED")
-        refinement_path = args.physical_refinement_receipt.resolve()
+        refinement_path = (
+            args.physical_refinement_receipt.resolve()
+            if args.physical_refinement_receipt is not None
+            else frozen_path.parent / "physical_refinement_receipt.json"
+        )
         refinement = _json(refinement_path)
         if (
             refinement.get("status") != "PASS"
