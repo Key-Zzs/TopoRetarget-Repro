@@ -11,12 +11,18 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from toporetarget.retarget.refinement_performance import (  # noqa: E402
+    RefinementExecutionProfile,
+)
 from toporetarget.rl.independent_physical_refinement import (  # noqa: E402
     assert_frozen_manifest,
     atomic_write_json,
     freeze_method_contract,
     validate_authority_manifest,
 )
+
+RETARGET_SOLVER_PROFILE_ID = "wuji_continuous_sequential_v1"
+RETARGET_EXECUTION_PROFILE_ID = "wuji_continuous_sequential_fast_exact_v2"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -37,14 +43,33 @@ def main() -> int:
     if manifest.get("primary_object_authority_sha256") != primary.get("authority_sha256"):
         raise ValueError("INDEPENDENT_PRODUCTION_AUTHORITY_PRIMARY_HASH_MISMATCH")
     clips = [str(row["clip_id"]) for row in manifest["clips"]]
+    execution = RefinementExecutionProfile.load(RETARGET_EXECUTION_PROFILE_ID, REPO_ROOT)
+    if not (
+        execution.math_equivalent
+        and execution.paper_objective_unchanged
+        and execution.paper_constraints_unchanged
+        and execution.continuity_contract_unchanged
+        and execution.final_full_surface_audit
+    ):
+        raise ValueError("INDEPENDENT_RETARGET_EXECUTION_PROFILE_NOT_QUALIFIED")
     common = {"supported_clips": clips, "max_concurrent_clips": 1}
     authority = {
-        "schema_version": "IndependentPhysicalRefinementProductionAuthorityV1",
+        "schema_version": "IndependentPhysicalRefinementProductionAuthorityV2",
         "selection_manifest_sha256": manifest["manifest_sha256"],
         "primary_object_authority_sha256": primary["authority_sha256"],
         "authorities": {
             "retarget": {
                 **common,
+                "method": {
+                    "solver_profile_id": RETARGET_SOLVER_PROFILE_ID,
+                    "execution_profile_id": execution.profile_id,
+                    "execution_profile_sha256": execution.profile_hash,
+                    "math_equivalent": execution.math_equivalent,
+                    "paper_objective_unchanged": execution.paper_objective_unchanged,
+                    "paper_constraints_unchanged": execution.paper_constraints_unchanged,
+                    "continuity_contract_unchanged": execution.continuity_contract_unchanged,
+                    "final_full_surface_audit": execution.final_full_surface_audit,
+                },
                 "command": [
                     sys.executable,
                     "scripts/run_hocap_geometric_retarget_v2.py",
@@ -60,6 +85,8 @@ def main() -> int:
                     "{run_root}",
                     "--report-root",
                     "{report_root}",
+                    "--execution-profile",
+                    execution.profile_id,
                 ],
                 "receipt": "{clip_report_root}/geometric_retarget_receipt.json",
             },

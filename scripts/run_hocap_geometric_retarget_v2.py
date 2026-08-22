@@ -20,12 +20,18 @@ from toporetarget.adapters.datasets.hocap_primary_object import (  # noqa: E402
     load_primary_object_authority,
     primary_object_from_authority,
 )
+from toporetarget.retarget.refinement_performance import (  # noqa: E402
+    RefinementExecutionProfile,
+)
 from toporetarget.rl.independent_physical_refinement import (  # noqa: E402
     BatchContractError,
     assert_frozen_manifest,
     atomic_write_json,
 )
 from toporetarget.utils.hashing import sha256_file  # noqa: E402
+
+SOLVER_PROFILE_ID = "wuji_continuous_sequential_v1"
+PRODUCTION_EXECUTION_PROFILE_ID = "wuji_continuous_sequential_fast_exact_v2"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -37,6 +43,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-root", type=Path, required=True)
     parser.add_argument("--report-root", type=Path, required=True)
     parser.add_argument("--asset-root", type=Path)
+    parser.add_argument(
+        "--execution-profile",
+        default=PRODUCTION_EXECUTION_PROFILE_ID,
+        choices=[PRODUCTION_EXECUTION_PROFILE_ID],
+        help=(
+            "Frozen, cross-clip execution authority. Alternative profiles require a new "
+            "versioned production contract and are rejected here."
+        ),
+    )
     return parser
 
 
@@ -86,6 +101,18 @@ def _run_step(name: str, command: list[str], *, log_root: Path) -> dict[str, Any
 
 def main() -> int:
     args = _parser().parse_args()
+    execution = RefinementExecutionProfile.load(args.execution_profile, REPO_ROOT)
+    if not (
+        execution.profile_id == PRODUCTION_EXECUTION_PROFILE_ID
+        and execution.math_equivalent
+        and execution.paper_objective_unchanged
+        and execution.paper_constraints_unchanged
+        and execution.continuity_contract_unchanged
+        and execution.final_full_surface_audit
+        and execution.device == "cpu"
+        and execution.dtype == "float64"
+    ):
+        raise BatchContractError("RETARGET_EXECUTION_PROFILE_NOT_PRODUCTION_QUALIFIED")
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     assert_frozen_manifest(manifest)
     authority = load_primary_object_authority(args.primary_object_authority)
@@ -324,9 +351,9 @@ def main() -> int:
                 "--robot",
                 "wuji_hand2_beta1_rh",
                 "--solver-profile",
-                "wuji_continuous_sequential_v1",
+                SOLVER_PROFILE_ID,
                 "--execution-profile",
-                "cached_checkpoint_cpu_float64_v1",
+                execution.profile_id,
                 "--checkpoint-root",
                 str(retarget / "continuous_checkpoints"),
                 "--progress-json",
@@ -392,6 +419,12 @@ def main() -> int:
         "primary_object_id": primary,
         "primary_object_authority_sha256": authority["authority_sha256"],
         "selection_manifest_sha256": manifest["manifest_sha256"],
+        "retarget_method": {
+            "solver_profile_id": SOLVER_PROFILE_ID,
+            "execution_profile_id": execution.profile_id,
+            "execution_profile_sha256": execution.profile_hash,
+            "math_equivalent": execution.math_equivalent,
+        },
         "run_root": str(retarget),
         "artifacts": {
             "canonical": {"path": str(canonical)},
@@ -432,6 +465,9 @@ def main() -> int:
         "primary_object_id": primary,
         "primary_object_authority_sha256": authority["authority_sha256"],
         "selection_manifest_sha256": manifest["manifest_sha256"],
+        "solver_profile_id": SOLVER_PROFILE_ID,
+        "execution_profile_id": execution.profile_id,
+        "execution_profile_sha256": execution.profile_hash,
         "frame_range": selected_frame_range,
         "frame_count": frame_count,
         "artifacts": html_manifest["artifacts"],

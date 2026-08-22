@@ -20,6 +20,9 @@ from toporetarget.rl.independent_physical_refinement import (  # noqa: E402
 )
 from toporetarget.utils.hashing import sha256_file  # noqa: E402
 
+PRODUCTION_SOLVER_PROFILE_ID = "wuji_continuous_sequential_v1"
+PRODUCTION_EXECUTION_PROFILE_ID = "wuji_continuous_sequential_fast_exact_v2"
+
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -83,6 +86,16 @@ def _validate_clip(
         == authority_hash,
         "render_authority_matches": render.get("primary_object_authority_sha256") == authority_hash,
         "selection_manifest_matches": receipt.get("selection_manifest_sha256") == manifest_hash,
+        "solver_profile_matches_production": receipt.get("solver_profile_id")
+        == PRODUCTION_SOLVER_PROFILE_ID,
+        "execution_profile_matches_production": receipt.get("execution_profile_id")
+        == PRODUCTION_EXECUTION_PROFILE_ID,
+        "html_execution_profile_matches": html_manifest.get("retarget_method", {}).get(
+            "execution_profile_id"
+        )
+        == PRODUCTION_EXECUTION_PROFILE_ID,
+        "execution_profile_hash_matches_html": receipt.get("execution_profile_sha256")
+        == html_manifest.get("retarget_method", {}).get("execution_profile_sha256"),
     }
     failures = sorted(name for name, passed in checks.items() if not passed)
     return {
