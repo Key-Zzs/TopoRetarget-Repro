@@ -230,9 +230,10 @@ def evaluate_stage16_physical_functionality_v2(
         axis=1,
     )
     persistent_multi = persistent_tips.sum(axis=1) >= frozen.multifinger_minimum
-    persistent_hand = _persistent(hand.any(axis=1), minimum_steps=frozen.persistence_control_steps)
+    any_hand = np.asarray(hand.any(axis=1), dtype=np.bool_)
+    persistent_hand = _persistent(any_hand, minimum_steps=frozen.persistence_control_steps)
     persistent_multi_onset = _first_true(persistent_multi)
-    first_hand_contact = _first_true(hand.any(axis=1))
+    first_hand_contact = _first_true(any_hand)
     hand_contact_at_lift = bool(onset is not None and persistent_hand[onset])
     multi_contact_at_lift = bool(onset is not None and persistent_multi[onset])
     sustained_contact = _at_least(persistent_multi, onset, count=frozen.persistence_control_steps)
