@@ -1,6 +1,6 @@
 # Raw Mocap Replay Overlay
 
-`replay_stage16d_simulation_trace.py` can display three strictly distinct
+`replay_physical_hoi_trace.py` can display three strictly distinct
 visual layers in one Stage16 world frame and one recorded replay timeline:
 
 - **PHYSX ACTUAL** is the recorded collision-body/object pose from the replay
@@ -40,7 +40,7 @@ The currently accepted positive C4 Formal20 scene is:
 
 ```bash
 OMNI_KIT_ACCEPT_EULA=YES conda run -n toporetarget-isaaclab python \
-  scripts/rl/isaaclab/replay_stage16d_simulation_trace.py --accept-eula --loop \
+  scripts/rl/isaaclab/replay_physical_hoi_trace.py --accept-eula --loop \
   --trace .local/sim_data/stage16_full_gravity_capability_closure/formal20/v4_hocap_170650/episode_000.npz \
   --object hocap_170650 \
   --mocap-similarity-output .local/reports/stage16_raw_mocap_replay_overlay/hocap_170650/similarity.json
@@ -50,7 +50,7 @@ The representative 170105 C4 failure is:
 
 ```bash
 OMNI_KIT_ACCEPT_EULA=YES conda run -n toporetarget-isaaclab python \
-  scripts/rl/isaaclab/replay_stage16d_simulation_trace.py --accept-eula --loop \
+  scripts/rl/isaaclab/replay_physical_hoi_trace.py --accept-eula --loop \
   --trace .local/sim_data/stage16_frozen_source_policy_gravity_sweep/v3/hocap_170105/c4/episode_00.npz \
   --object hocap_170105 \
   --mocap-similarity-output .local/reports/stage16_raw_mocap_replay_overlay/hocap_170105/similarity.json

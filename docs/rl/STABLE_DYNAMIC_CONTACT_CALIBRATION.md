@@ -24,7 +24,7 @@ evidence—not physical truth or a mathematical lower bound.
 
 ## IsaacLab simulation-trace replay
 
-`scripts/rl/isaaclab/replay_stage16d_simulation_trace.py` provides a stable,
+`scripts/rl/isaaclab/replay_physical_hoi_trace.py` provides a stable,
 read-only viewer for every calibration/fix trace that follows the recorded
 Stage 16-D trace contract. It renders the exact 21 authored runtime convex hand
 proxies and the selected object proxy at their recorded poses. Contacting hand
@@ -54,7 +54,7 @@ cd /home/deepcybo/workspace/dex/retarget/TopoRetarget-Repro
 DISPLAY=:1 XAUTHORITY=/run/user/1000/gdm/Xauthority \
 conda run --no-capture-output -n toporetarget-isaaclab \
 env OMNI_KIT_ACCEPT_EULA=YES \
-python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py \
+python scripts/rl/isaaclab/replay_physical_hoi_trace.py \
   --trace .local/reports/stage16d_stable_grasp_geometry_ppo/calibration_dev_hocap_170105_c2_ce94ed85254f.npz \
   --geometry .local/reports/stage16d_stable_grasp_geometry_ppo/calibration_dev_hocap_170105_c2_ce94ed85254f_geometry.npz \
   --replica 0 --fps 20 --speed 0.5 --loop --accept-eula
@@ -66,7 +66,7 @@ Freeze a suspicious frame for inspection (close the IsaacLab window to exit):
 DISPLAY=:1 XAUTHORITY=/run/user/1000/gdm/Xauthority \
 conda run --no-capture-output -n toporetarget-isaaclab \
 env OMNI_KIT_ACCEPT_EULA=YES \
-python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py \
+python scripts/rl/isaaclab/replay_physical_hoi_trace.py \
   --trace .local/reports/stage16d_stable_grasp_geometry_ppo/calibration_dev_hocap_170105_c2_ce94ed85254f.npz \
   --geometry .local/reports/stage16d_stable_grasp_geometry_ppo/calibration_dev_hocap_170105_c2_ce94ed85254f_geometry.npz \
   --replica 0 --frame 250 --accept-eula
@@ -84,7 +84,7 @@ cd /home/deepcybo/workspace/dex/retarget/TopoRetarget-Repro
 DISPLAY=:1 XAUTHORITY=/run/user/1000/gdm/Xauthority \
 conda run --no-capture-output -n toporetarget-isaaclab \
 env OMNI_KIT_ACCEPT_EULA=YES \
-python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py \
+python scripts/rl/isaaclab/replay_physical_hoi_trace.py \
   --trace .local/reports/stage16d_self_collision_terminal_revision/final_trace_170105.npz \
   --reference .local/stage16_reference_tracking_ppo/world_wrist_references/hocap_170105.world_wrist.stage16.npz \
   --qualification .local/reports/stage16d_self_collision_terminal_revision/final_qualification_170105.json \

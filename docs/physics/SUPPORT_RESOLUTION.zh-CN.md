@@ -39,14 +39,14 @@
 几何推断和可视化：
 
 ```bash
-PYTHONPATH=src python scripts/physics/visualize_support_reconstruction.py \
+PYTHONPATH=src python scripts/physics/prepare_physical_support.py \
   --support auto --static --replay
 ```
 
 真实 PhysX receipt 的 `with_support` 与 `without_support` 命令见英文合同；对另一个 clip 替换 clip 与资产路径，最后运行：
 
 ```bash
-PYTHONPATH=src python scripts/physics/finalize_support_reconstruction.py
+PYTHONPATH=src python scripts/physics/summarize_physical_support.py
 ```
 
 当物理资格化被阻塞时，finalizer 返回非零是预期行为。

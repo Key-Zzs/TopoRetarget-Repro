@@ -9,7 +9,7 @@ uniform reference-state initialization (RSI).
 ## Scope and frozen boundary
 
 The opt-in configuration is
-`configs/rl/stage16/stage16_dexplore_reward_rse_v1.yaml`. The default remains
+`configs/rl/physical_refinement.yaml`. The default remains
 `legacy_additive`; existing jobs therefore preserve branch-point reward
 semantics unless `grouped_multiplicative_v1` is selected explicitly.
 

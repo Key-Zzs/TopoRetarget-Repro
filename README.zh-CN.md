@@ -83,7 +83,7 @@ export TOPORETARGET_OUTPUT=/path/to/toporetarget-output
 ## 快速开始与核心工作流
 
 先完成[环境配置](#环境配置)。下面的顺序从最小 smoke check 开始，依次进入数据准备、几何重定向、
-Stage16-D、评价和 replay。授权的原始数据保持只读；派生 cache、report 和 HTML 请写到仓库外，例如
+因果物理 PPO 精炼、评价和 replay。授权的原始数据保持只读；派生 cache、report 和 HTML 请写到仓库外，例如
 `$TOPORETARGET_OUTPUT` 下。
 
 ### 1. 环境入口与最小 smoke check
@@ -127,46 +127,87 @@ Stage16-D、评价和 replay。授权的原始数据保持只读；派生 cache�
 "$TOPORETARGET_PYTHON" -m toporetarget geometry --help
 ```
 
-### 4. Stage16-D 因果 PPO 入口
+### 4. 因果物理 PPO 精炼
 
-Stage16-D 因果 PPO workflow 见 [Physics-correction PPO](docs/rl/PHYSICS_CORRECTION_PPO.md) 和
-[Stage 16-D physics-consistent retargeting](docs/stages/STAGE16D_PHYSICS_CONSISTENT_RETARGETING.md)。
-它仍是在冻结、简化的 zero-gravity / no-support Isaac/PhysX 合同下的因果 reference-tracking baseline：
-没有 guidance force、support、attachment、隐藏 object controller，也没有 rollout-time object-state 或
-wrist-root write。不声称 full-gravity 或 real-world physical validation。
+该 production workflow 从已验证的几何重定向输出开始，到已接受的 physical-HOI trace 结束。当前证据
+仅覆盖物理 runner 支持的两条 HOCap clip。旧开发记录可能称其为 Stage16-D；production 命令不使用该名称。
 
-后续物理路线定义 Contact-ready RSI V2、source-support feasibility 与 fail-closed 的重力/摩擦 curriculum。
-其 C0--C2 pilot 已完成，但两个 reward mode 均未能同时在两个 clip 上通过全局 C2 absolute geometry gate。
-因此该路线在 G3、C3/C4 与 P4 之前停止；仓库不声称 full-gravity 或 real-world validation。见
-[Physics curriculum](docs/rl/PHYSICS_CURRICULUM.md)、[support
-feasibility](docs/physics/SUPPORT_FEASIBILITY.md) 与 [Stage16 full-gravity causal
-status](docs/stages/STAGE16_FULL_GRAVITY_CAUSAL.md)。
+1. 先准备 source-first support。若 source 没有可恢复的 support，则使用
+   `INFERRED_PLANAR_SUPPORT`。有限 table 在整个 episode 始终 active，不能在接触后关闭。
 
-可复用的 source-first 支撑解析与有限平面 proxy 合同见 [Support resolution](docs/physics/SUPPORT_RESOLUTION.zh-CN.md)。当前 HOCap receipt 已通过 inferred support geometry 与 object-only full-gravity physics；runtime support transfer 仍受现有 hand-object geometry blocker 延后。
+   ```bash
+   PYTHONPATH=src python scripts/physics/prepare_physical_support.py \
+     --dataset hocap --sequence <clip> --support auto \
+     --output-root <support_output> --static
+   ```
 
-### 5. 评价、replay 与可视化
+2. 冻结的 full-gravity evaluation 使用 C4 physics：nominal friction、object gravity on、
+   hand/virtual wrist gravity off、active support，且没有 guidance、attachment、rollout-time
+   object-state write 或 wrist-root write。
 
-geometry inspection 是只读的；冻结 benchmark 按明确的
-`inspect-datasets -> select -> freeze -> run -> evaluate` 状态机执行：
+   ```bash
+   conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
+     python scripts/evaluation/qualify_physical_hoi.py --accept-eula \
+     --clip <clip> --checkpoint <frozen_checkpoint> \
+     --output <run_dir>/eval10 --episodes 10 --update 0 --samples 0
+   ```
 
-```bash
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark inspect-datasets --help
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark select --help
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark freeze --help
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark run --help
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark evaluate --help
-```
+3. 阅读 PF V2（当前 physical functionality authority）。它要求 physical lift、causal
+   hand-object lift、support transfer、sustained coupling、geometry safety 和 no-cheating
+   contract。PF V1 仍可查询，但只是 legacy timing-constrained metric；
+   pre-reference-LIFT persistent multi-contact 现在只是 interaction timing diagnostic，不是 PF V2 hard gate。
 
-检查已有 Isaac Lab trace。replay 仅用于诊断：不会重新训练 PPO、修改 trace，或生成新的物理资格化。
+4. PPO 前必须决策。PF V2 PASS 则接受 frozen policy，PPO update 为 0；PF V2 FAIL 才允许在
+   evaluate-first receipt 与 no-step sanity gate 后做 bounded refinement。
+
+   ```bash
+   conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
+     python scripts/rl/isaaclab/run_physical_refinement.py evaluate-first \
+     --clip <clip> --accept-eula
+   conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
+     python scripts/rl/isaaclab/run_physical_refinement.py runtime-sanity \
+     --clip <clip> --accept-eula
+   conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
+     python scripts/rl/isaaclab/run_physical_refinement.py train \
+     --clip <clip> --accept-eula
+   ```
+
+   `train` 会再次执行 evaluate-first。candidate 达到 PF V2 Eval10 后运行 Confirm20；Confirm20
+   acceptance 会持久化 checkpoint 并立即停止。`configs/rl/physical_refinement.yaml` 的
+   `max_new_updates=10` 是上限，不是必须跑满的目标。
+
+精炼 reward 为 grouped multiplicative：`R = R_obj * R_hand * R_int * R_reg`。group 内先聚合，
+group 间再相乘，因此任一弱 group 都不能被另一 group 抵消。`R_int` 混合未改变的 V4 contact 与
+geometric proximity。RSE 保持 training RSI 在 `[0,320]` uniform 采样，evaluation 则从 frame 0
+确定性运行完整 trajectory。其冻结的全局项为 `w_scope(D_ref)=clip(D_ref/0.20,0,1)` 和
+`kappa=clip(N_fail/N_total,0.5,1)`；不进行 per-object reward/friction/grasp-frame tuning。
+
+| 合同项 | Production 值 |
+| --- | --- |
+| Clip | `--clip {hocap_170105,hocap_170650}` |
+| Support | source-first，否则 `INFERRED_PLANAR_SUPPORT` |
+| Reward / RSE | `grouped_multiplicative_v1`，RSE enabled |
+| RSE scope / kappa 下限 | `0.20 m` / `0.50` |
+| Training / evaluation RSI | uniform `[0,320]` / frame 0 full horizon |
+| PPO budget | `max_new_updates: 10` upper bound |
+
+qualification 在给定的 `<run_dir>` 下写入 summary、per-episode rows、manifest 和不可变 trace 路径。
+replay 仅用于诊断：不会 retrain PPO、改写 trace 或生成新的 qualification。
 
 ```bash
 conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
-  python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py --help
+  python scripts/rl/isaaclab/replay_physical_hoi_trace.py --accept-eula \
+  --trace <run_dir>/traces/episode_000.npz --object <clip> --loop
+conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
+  python scripts/rl/isaaclab/replay_physical_hoi_trace.py --accept-eula \
+  --trace <run_dir>/traces/episode_000.npz --object <clip> \
+  --start-frame <start> --end-frame <end> --no-reference-ghost \
+  --mocap-object-low-poly --loop
 ```
 
-项目生成独立浏览器 HTML，用于查看 source、warm-start、final mesh、interaction graph、contact 和
-collision diagnostics、continuity 以及 provenance。请使用所选 pipeline manifest 给出的可视化命令，
-并在浏览器中检查生成的 HTML。
+replay 支持 full/windowed trajectory、raw MANO/object overlay、no-reference-ghost 和确定性的
+low-poly raw object。详细 reward 语义见 [Grouped reward and RSE](docs/rl/DEXPLORE_STYLE_MULTIPLICATIVE_REWARD_RSE.md)，
+support authority 见 [Support resolution](docs/physics/SUPPORT_RESOLUTION.zh-CN.md)。
 
 ### 6. 进一步复现
 
@@ -192,9 +233,9 @@ rotation/translation tracking、retargeted-hand joint/fingertip tracking，以�
 kinematic、physics 和 qualified success rate。轨迹指标使用移除 environment origin 后的共同
 world/env frame；legacy metrics 仍会保留，但不会被静默重定义。
 
-Stage 16-D 因果 PPO pipeline 支持 reference pose、object twist tracking 和版本化 contact reward。
-**Aggregate V3 是当前稳定的默认 contact baseline**（`aggregate_v3`）。**Strict Per-Finger V4
-是实验性 opt-in**（`strict_per_finger_v4`），它使用
+因果物理 PPO pipeline 支持 reference pose、object twist tracking 和版本化 contact reward。
+**Aggregate V3 是 legacy additive baseline**（`aggregate_v3`）。**Strict Per-Finger V4 是物理精炼使用的
+冻结 contact authority**（`strict_per_finger_v4`），它使用
 `SourcePerFingerContactEvidenceV1`：只有 source-confirmed 或 persistent-confirmed 的指定 finger
 的 MANO/object contact，才要求同名 Wuji distal/tip body 与 active object 接触。probable、
 transition、proximity-only、no-contact 和 ambiguous source state 都不是 V4 的 mandatory contact
@@ -205,18 +246,19 @@ required finger 记分，source 要求更多 fingers 也不会改变总 contact 
 经 filter 的 PhysX named-tip-to-active-object pair force，从不直接控制 object；共享 per-tip force
 scale 在 PPO 前由精确的 V1 Formal20 pair-force telemetry 冻结。
 
-已完成的 Stage16-D milestone 是在冻结、简化的 **zero-gravity / no-support** Isaac/PhysX 合同下的
-物理因果 reference-tracking baseline：没有 external object guidance，也没有 rollout-time object-state
-或 wrist-root write。这不是 physically realistic、real-world calibrated 或 full-gravity validation。
-新配置使用稳定默认值：
+物理精炼使用冻结的 **full gravity + active finite support**、nominal friction、object gravity on、
+hand/virtual-wrist gravity off，且没有 external object guidance、rollout-time object-state write 或
+wrist-root write。PF V2 是 physical functionality authority。当前证据仍仅限单 clip 仿真，
+不是硬件或 cross-dataset validation；旧 zero-gravity receipt 保留为历史证据。新精炼配置使用：
 
 ```yaml
 reward:
-  contact:
-    mode: aggregate_v3
+  aggregation: grouped_multiplicative_v1
+rse:
+  enabled: true
 ```
 
-如需明确 opt-in 到实验目标：
+contact authority 仍须显式指定：
 
 ```yaml
 reward:

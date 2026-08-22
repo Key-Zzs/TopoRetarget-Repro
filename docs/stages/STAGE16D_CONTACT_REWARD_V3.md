@@ -65,5 +65,5 @@ diagnostic failure, and only qualified episodes receive qualified labels.
 V3 traces add reference mask, actual mask, exact pair force, force magnitude,
 force scale, and `r_contact` while retaining existing V1/V2 replay fields.
 They remain replayable by
-`scripts/rl/isaaclab/replay_stage16d_simulation_trace.py`; replay is a viewer,
+`scripts/rl/isaaclab/replay_physical_hoi_trace.py`; replay is a viewer,
 not a physics rollout or qualification.

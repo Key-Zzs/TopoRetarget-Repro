@@ -91,8 +91,8 @@ model files.
 ## Quick Start and Core Workflows
 
 Complete [Setup](#setup) first. The sequence below starts with a small smoke
-check, then moves through dataset preparation, geometric retargeting,
-Stage16-D, evaluation, and replay. Raw licensed data is read-only; write
+check, then moves through dataset preparation, geometric retargeting, causal
+physical PPO refinement, evaluation, and replay. Raw licensed data is read-only; write
 derived caches, reports, and HTML outside the repository, for example under
 `$TOPORETARGET_OUTPUT`.
 
@@ -139,57 +139,102 @@ workflow is resumable and does not scan or mutate unrelated source data.
 "$TOPORETARGET_PYTHON" -m toporetarget geometry --help
 ```
 
-### 4. Stage16-D causal PPO entry
+### 4. Causal Physical PPO Refinement
 
-The Stage16-D causal PPO workflow is documented in [Physics-correction
-PPO](docs/rl/PHYSICS_CORRECTION_PPO.md) and [Stage 16-D
-physics-consistent retargeting](docs/stages/STAGE16D_PHYSICS_CONSISTENT_RETARGETING.md).
-It remains a causal reference-tracking baseline under the frozen simplified
-zero-gravity, no-support Isaac/PhysX contract: no guidance forces, support,
-attachments, hidden object controller, or rollout-time object-state or
-wrist-root writes. It does not claim full-gravity or real-world physical
-validation.
+This production workflow starts from a validated geometric retarget output and
+ends with an accepted physical-HOI trace. It is currently evidenced only for
+the two HOCap clips supported by the physical runner. Historical development
+notes may call this route “Stage16-D”; production commands do not.
 
-The follow-on physical route defines Contact-ready RSI V2, source-support
-feasibility, and a fail-closed gravity/friction curriculum. Its C0--C2 pilot
-is complete, but neither reward mode passed the required global C2 absolute
-geometry gate across both clips. The route is therefore blocked before G3,
-C3/C4, and P4: the repository makes no full-gravity or real-world validation
-claim. See [Physics curriculum](docs/rl/PHYSICS_CURRICULUM.md), [support
-feasibility](docs/physics/SUPPORT_FEASIBILITY.md), and [Stage16 full-gravity
-causal status](docs/stages/STAGE16_FULL_GRAVITY_CAUSAL.md).
+1. Prepare source-first support. The resolver uses explicit/recovered source
+   support when available, otherwise `INFERRED_PLANAR_SUPPORT`. The finite
+   table remains active for the full episode; it is never disabled after
+   contact.
 
-The reusable source-first support resolver and finite-planar reconstruction
-contract are documented in [Support resolution](docs/physics/SUPPORT_RESOLUTION.md).
-The current HOCap receipts qualify the inferred support geometry and object-only
-full-gravity physics; runtime support transfer remains deferred by the existing
-hand-object geometry blocker.
+   ```bash
+   PYTHONPATH=src python scripts/physics/prepare_physical_support.py \
+     --dataset hocap --sequence <clip> --support auto \
+     --output-root <support_output> --static
+   ```
 
-### 5. Evaluation, replay, and visualization
+2. Run frozen full-gravity evaluation. This uses C4 physics: nominal friction,
+   object gravity on, hand and virtual-wrist gravity off, active support, and
+   no guidance, attachment, rollout object-state writes, or wrist-root writes.
 
-Geometry inspection is read-only; a frozen benchmark follows the explicit
-`inspect-datasets -> select -> freeze -> run -> evaluate` state machine:
+   ```bash
+   conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
+     python scripts/evaluation/qualify_physical_hoi.py --accept-eula \
+     --clip <clip> --checkpoint <frozen_checkpoint> \
+     --output <run_dir>/eval10 --episodes 10 --update 0 --samples 0
+   ```
 
-```bash
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark inspect-datasets --help
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark select --help
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark freeze --help
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark run --help
-"$TOPORETARGET_PYTHON" -m toporetarget benchmark evaluate --help
-```
+3. Read PF V2, the physical-functionality authority. A pass requires physical
+   lift, causal hand-object lift, support transfer, sustained coupling,
+   geometry safety, and the no-cheating contract. The former PF V1 remains a
+   queryable historical timing-constrained metric; pre-reference-LIFT
+   persistent multi-contact is now an interaction-timing diagnostic, not a
+   PF-V2 hard gate.
 
-Inspect an existing Isaac Lab trace. Replay is diagnostic only: it does not
-retrain PPO, alter the trace, or create a new physics qualification.
+4. Decide before PPO. PF V2 pass means accept the frozen policy and run zero
+   PPO updates. PF V2 failure permits bounded refinement only after the
+   evaluate-first receipt and the no-step sanity gate.
+
+   ```bash
+   conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
+     python scripts/rl/isaaclab/run_physical_refinement.py evaluate-first \
+     --clip <clip> --accept-eula
+   conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
+     python scripts/rl/isaaclab/run_physical_refinement.py runtime-sanity \
+     --clip <clip> --accept-eula
+   conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
+     python scripts/rl/isaaclab/run_physical_refinement.py train \
+     --clip <clip> --accept-eula
+   ```
+
+   `train` repeats evaluate-first. A candidate PF-V2 Eval10 pass triggers
+   Confirm20; a Confirm20 acceptance durably saves the checkpoint and stops
+   immediately. `max_new_updates=10` in
+   [`configs/rl/physical_refinement.yaml`](configs/rl/physical_refinement.yaml)
+   is an upper bound, not a target.
+
+The refinement reward is grouped multiplicative:
+`R = R_obj * R_hand * R_int * R_reg`. Terms are aggregated within each group
+and groups are multiplied, so one weak group cannot be hidden by another.
+`R_int` mixes unchanged V4 contact with geometric proximity. RSE retains
+uniform training RSI over `[0, 320]`, while evaluation is deterministic frame
+0 over the complete trajectory. Its frozen global terms are
+`w_scope(D_ref)=clip(D_ref/0.20,0,1)` and
+`kappa=clip(N_fail/N_total,0.5,1)`; no per-object reward, friction, or grasp
+frame tuning is performed.
+
+| Contract item | Production value |
+| --- | --- |
+| Clip | `--clip {hocap_170105,hocap_170650}` |
+| Support | source-first, otherwise `INFERRED_PLANAR_SUPPORT` |
+| Reward / RSE | `grouped_multiplicative_v1`, RSE enabled |
+| RSE scope / kappa floor | `0.20 m` / `0.50` |
+| Training / evaluation RSI | uniform `[0,320]` / frame 0 full horizon |
+| PPO budget | `max_new_updates: 10` upper bound |
+
+Qualification writes a summary, per-episode rows, a manifest, and immutable
+trace paths under the supplied `<run_dir>`. Replay is diagnostic only: it does
+not retrain PPO, alter the trace, or create a new qualification.
 
 ```bash
 conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
-  python scripts/rl/isaaclab/replay_stage16d_simulation_trace.py --help
+  python scripts/rl/isaaclab/replay_physical_hoi_trace.py --accept-eula \
+  --trace <run_dir>/traces/episode_000.npz --object <clip> --loop
+conda run -n toporetarget-isaaclab env OMNI_KIT_ACCEPT_EULA=YES \
+  python scripts/rl/isaaclab/replay_physical_hoi_trace.py --accept-eula \
+  --trace <run_dir>/traces/episode_000.npz --object <clip> \
+  --start-frame <start> --end-frame <end> --no-reference-ghost \
+  --mocap-object-low-poly --loop
 ```
 
-The project generates self-contained browser HTML for source, warm-start, and
-final meshes; interaction graphs; contact and collision diagnostics; continuity;
-and provenance. Use the visualization commands emitted by the selected
-pipeline manifest, then inspect the generated HTML in a browser.
+The replay supports full or windowed trajectories, raw MANO/object overlays,
+no-reference-ghost mode, and a deterministic low-poly raw object. Detailed
+reward semantics are in [Grouped reward and RSE](docs/rl/DEXPLORE_STYLE_MULTIPLICATIVE_REWARD_RSE.md);
+support authority is in [Support resolution](docs/physics/SUPPORT_RESOLUTION.md).
 
 ### 6. Further reproduction
 
@@ -221,10 +266,10 @@ rates. Trajectory metrics use a common world/env frame with the environment
 origin removed; legacy metrics remain available for comparison but are not
 silently redefined.
 
-The Stage 16-D causal PPO pipeline supports reference pose and object-twist
-tracking together with versioned contact rewards. **Aggregate V3 is the current
-stable/default contact baseline** (`aggregate_v3`). **Strict Per-Finger V4 is
-experimental and opt-in** (`strict_per_finger_v4`); it instead uses
+The causal physical PPO pipeline supports reference pose and object-twist
+tracking together with versioned contact rewards. **Aggregate V3 is the legacy
+additive baseline** (`aggregate_v3`). **Strict Per-Finger V4 is the frozen
+contact authority used by physical refinement** (`strict_per_finger_v4`); it uses
 `SourcePerFingerContactEvidenceV1`: only source-confirmed or
 persistent-confirmed MANO/object contact for a named finger requires that same
 Wuji distal/tip body to contact the active object. Probable, transition,
@@ -239,19 +284,21 @@ named-tip-to-active-object pair force and never directly controls the object.
 Its shared per-tip force scale is frozen from exact V1 Formal20 pair-force
 telemetry before PPO.
 
-The completed Stage16-D milestone is a physically causal reference-tracking
-baseline under a frozen simplified **zero-gravity, no-support** Isaac/PhysX
-contract. It has no external object guidance and no rollout-time object-state
-or wrist-root writes. This is not physically realistic, real-world calibrated,
-or full-gravity validation. New configurations use the stable default:
+Physical refinement uses frozen **full gravity with active finite support**,
+nominal friction, object gravity on, hand/virtual-wrist gravity off, no external
+object guidance, and no rollout-time object-state or wrist-root writes. PF V2
+is its physical-functionality authority. The evidence remains single-clip and
+simulation-only, not hardware or cross-dataset validation. Legacy zero-gravity
+records remain historical evidence. New refinement configurations use:
 
 ```yaml
 reward:
-  contact:
-    mode: aggregate_v3
+  aggregation: grouped_multiplicative_v1
+rse:
+  enabled: true
 ```
 
-To explicitly opt into the experimental objective:
+The contact authority remains explicit:
 
 ```yaml
 reward:

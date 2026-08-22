@@ -80,14 +80,14 @@ promote the support actor into the main RL environment.
 Geometry inference and overlays:
 
 ```bash
-PYTHONPATH=src python scripts/physics/visualize_support_reconstruction.py \
+PYTHONPATH=src python scripts/physics/prepare_physical_support.py \
   --support auto --static --replay
 ```
 
 The source-only audit is fail-closed:
 
 ```bash
-PYTHONPATH=src python scripts/physics/visualize_support_reconstruction.py \
+PYTHONPATH=src python scripts/physics/prepare_physical_support.py \
   --sequence hocap_170105 --support source_only
 ```
 
@@ -97,17 +97,17 @@ Full-gravity object-only PhysX receipts use the generated local proxy. Run the
 ```bash
 conda run --no-capture-output -n toporetarget-isaaclab \
   env OMNI_KIT_ACCEPT_EULA=YES PYTHONPATH=src \
-  python scripts/physics/validate_support_physx.py \
+  python scripts/physics/evaluate_physical_support.py \
   --clip hocap_170105 --case with_support --steps 360 --accept-eula \
   --support-asset .local/support_assets/hocap/hocap_170105/support_proxy.usda \
   --proxy-json .local/reports/stage16_support_reconstruction/inference/hocap_170105/table_proxy.json
 
 conda run --no-capture-output -n toporetarget-isaaclab \
   env OMNI_KIT_ACCEPT_EULA=YES PYTHONPATH=src \
-  python scripts/physics/validate_support_physx.py \
+  python scripts/physics/evaluate_physical_support.py \
   --clip hocap_170105 --case without_support --steps 360 --accept-eula
 
-PYTHONPATH=src python scripts/physics/finalize_support_reconstruction.py
+PYTHONPATH=src python scripts/physics/summarize_physical_support.py
 ```
 
 The same commands apply to `hocap_170650` after changing the clip and asset

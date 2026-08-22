@@ -9,7 +9,7 @@ FRICTION_PRIMARY=NOT_SUPPORTED
 NEXT_IMPLEMENT_OBJECT_AGNOSTIC_PHYSICAL_REFINEMENT_V1:SOURCE_PROFILE_TRACKING
 ```
 
-This document selects the next objective family. It does not implement a
+This is a historical objective-selection record. It does not implement a
 reward or authorize training.
 
 ## V1 implementation result
@@ -22,7 +22,9 @@ regress the 170650 positive control, but it was
 CONTACT-to-early-LIFT loss was lower than 170650's.  No PPO update was
 authorized and V4 is unchanged.  The exact bounded receipt is in
 `docs/rl/SOURCE_PROFILE_TRACKING_REFINEMENT.md` and the ignored local report
-root named there.
+root named there. Its one-off runtime implementation was removed during
+physical-pipeline closeout after this terminal gate; the record remains for
+scientific provenance, not as a production target.
 
 ## Why source-profile tracking
 

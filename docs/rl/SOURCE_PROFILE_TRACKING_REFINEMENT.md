@@ -1,5 +1,9 @@
 # Stage16 SourceProfileTracking Physical Refinement V1
 
+> Historical, offline-rejected experiment. Its one-off materialization,
+> validation, library, and test entrypoints were removed during physical-pipeline
+> closeout; this document and its immutable receipts are retained as evidence.
+
 ## Status
 
 ```text
@@ -68,8 +72,8 @@ MANUAL_GRASP_FRAME_ADDED=NO
 ```
 
 No gradient sanity run, PPO update, Eval10, Confirm20, or baseline-vs-profile
-training comparison was authorized.  The task-prescribed next action is
-`NEXT_FIX_SOURCE_PROFILE_OBJECTIVE_IMPLEMENTATION`; it was not started here.
+training comparison was authorized. The failed objective is not a production
+refinement option and has no remaining runtime dependency.
 
 The immutable receipts and tables are under
 `.local/reports/stage16_source_profile_tracking_refinement_v1/`.
