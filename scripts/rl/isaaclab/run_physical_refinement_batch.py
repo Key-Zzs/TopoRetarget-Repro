@@ -456,20 +456,120 @@ def _write_contract(
     root: Path, manifest: dict[str, Any], method_hash: str, authority: dict[str, Any]
 ) -> None:
     contracts = root / "contracts"
+    stages = [
+        {
+            "stage": "raw_validation",
+            "input": "HOCap poses_m.npy + poses_o.npy + meta.yaml + canonical mesh",
+            "output": "canonical.zarr + raw input hashes",
+            "authority": "python -m toporetarget data convert --dataset hocap",
+            "success_condition": "canonical contract validates and primary object is explicit",
+            "failure_condition": "missing modality, invalid timestamps, unsupported hand/object",
+            "cache_policy": (
+                "raw data immutable; canonical output is per-clip and never reused as result"
+            ),
+        },
+        {
+            "stage": "geometric_retarget",
+            "input": "canonical.zarr + warm start + interaction graph",
+            "output": "continuous final.zarr + checkpoint chain + validation receipt",
+            "authority": (
+                "python -m toporetarget retarget refine "
+                "--solver-profile wuji_continuous_sequential_v1"
+            ),
+            "success_condition": (
+                "all frames accepted, continuity accepted, and final validation uses its frozen "
+                "SDF backend"
+            ),
+            "failure_condition": (
+                "any unaccepted frame, chain failure, continuity failure, or provenance drift"
+            ),
+            "cache_policy": (
+                "robot collision samples may be immutable shared cache; final trajectory is "
+                "per-clip fresh output"
+            ),
+        },
+        {
+            "stage": "source_policy_preparation",
+            "input": "accepted continuous final + derived world-wrist reference + object mesh",
+            "output": (
+                "independent source actor, critic, optimizer, normalizer, RNG, and qualification "
+                "receipt"
+            ),
+            "authority": (
+                "scripts/rl/train_stage16_world_wrist_ppo.py "
+                "(current gate-controlled source trainer)"
+            ),
+            "success_condition": (
+                "source trainer gate authorizes and per-clip source qualification passes"
+            ),
+            "failure_condition": "source gate blocks, training fails, or qualification fails",
+            "cache_policy": (
+                "controller and robot assets are immutable global inputs; all policy state is "
+                "per-clip"
+            ),
+        },
+        {
+            "stage": "support_preparation",
+            "input": "per-clip reference and canonical object geometry",
+            "output": "support proxy and support receipt",
+            "authority": (
+                "held-out generic support authority required; current public implementation is "
+                "development-clip scoped"
+            ),
+            "success_condition": (
+                "support geometry and telemetry contract validates before Isaac bootstrap"
+            ),
+            "failure_condition": "support inference/asset/telemetry unavailable",
+            "cache_policy": (
+                "derived support assets are per-clip; immutable robot assets may be shared"
+            ),
+        },
+        {
+            "stage": "frozen_physical_evaluation",
+            "input": "independent source policy + support + full-gravity scene",
+            "output": "deterministic Eval10 and, if triggered, Confirm20 receipts",
+            "authority": (
+                "held-out generic PF V2 evaluator required; current public CLI is development-clip "
+                "scoped"
+            ),
+            "success_condition": (
+                "PF V2 / DF contracts are evaluated at frame 0 over the full trajectory"
+            ),
+            "failure_condition": "technical bootstrap failure or PF/DF failure",
+            "cache_policy": "evaluation traces are per-clip and immutable after receipt",
+        },
+        {
+            "stage": "failure_only_physical_ppo",
+            "input": "only frozen-Eval10 failures with that clip's source actor",
+            "output": "independent bounded PPO checkpoints, Eval10 progression, Confirm20 result",
+            "authority": (
+                "held-out generic grouped-multiplicative RSE PPO authority required; "
+                "current public CLI is development-clip scoped"
+            ),
+            "success_condition": (
+                "Confirm20 passes and immediately stops PPO, or exact 15-update budget exhausts"
+            ),
+            "failure_condition": (
+                "technical failure or budget exhaustion; neither authorizes per-clip tuning"
+            ),
+            "cache_policy": (
+                "actor/critic/optimizer/normalizer/RNG/checkpoints/traces must be per-clip"
+            ),
+        },
+        {
+            "stage": "final_trace_export",
+            "input": "accepted Confirm20 episode or failed best diagnostic episode",
+            "output": "replayable physical trace and replay command receipt",
+            "authority": "scripts/rl/isaaclab/replay_physical_hoi_trace.py",
+            "success_condition": "trace is replayable with declared clip/object/reference inputs",
+            "failure_condition": "trace missing or incompatible with replay CLI",
+            "cache_policy": "trace is per-clip output and never reused across policies",
+        },
+    ]
     pipeline = {
-        "schema_version": "SingleClipPhysicalPipelineContractV1",
+        "schema_version": "SingleClipPhysicalPipelineContractV2",
         "raw_input": "HOCap poses_m.npy + poses_o.npy + meta.yaml + canonical object mesh",
-        "stages": [
-            "raw_validation",
-            "geometric_retarget",
-            "source_policy_preparation",
-            "support_preparation",
-            "frozen_eval10",
-            "frozen_confirm20_if_candidate",
-            "failure_only_independent_ppo",
-            "confirm20_and_stop",
-            "final_trace_export",
-        ],
+        "stages": stages,
         "authority_manifest_sha256": validate_authority_manifest(
             authority, [item["clip_id"] for item in manifest["clips"]]
         )["authority_manifest_sha256"],
