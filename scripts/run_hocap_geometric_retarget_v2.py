@@ -46,6 +46,11 @@ def _utc() -> str:
 
 def _run_step(name: str, command: list[str], *, log_root: Path) -> dict[str, Any]:
     log_root.mkdir(parents=True, exist_ok=True)
+    receipt_path = log_root / f"{name}.receipt.json"
+    if receipt_path.is_file():
+        previous = json.loads(receipt_path.read_text(encoding="utf-8"))
+        if previous.get("status") == "PASS" and previous.get("command") == command:
+            return {**previous, "resumed_from_pass_receipt": True}
     started = _utc()
     tick = time.perf_counter()
     environment = dict(os.environ)
@@ -73,7 +78,7 @@ def _run_step(name: str, command: list[str], *, log_root: Path) -> dict[str, Any
         "log": str(log_path.resolve()),
         "log_sha256": sha256_file(log_path),
     }
-    atomic_write_json(log_root / f"{name}.receipt.json", receipt)
+    atomic_write_json(receipt_path, receipt)
     if result.returncode != 0:
         raise BatchContractError(f"GEOMETRIC_RETARGET_STAGE_FAILED:{name}:{log_path}")
     return receipt

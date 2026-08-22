@@ -51,6 +51,13 @@ def test_rotation_error_is_radians_and_det_is_positive() -> None:
     assert np.linalg.det(first[:3, :3]) == pytest.approx(1.0)
 
 
+def test_rotation_error_is_stable_for_identical_composed_frames() -> None:
+    first = _z_rotation(np.deg2rad(73.0))
+    second = first.copy()
+
+    assert float(pose_rotation_error(first, second)) <= 1e-15
+
+
 def test_reflection_and_bad_last_row_fail() -> None:
     reflected = np.eye(4)
     reflected[2, 2] = -1.0

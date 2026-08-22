@@ -88,7 +88,20 @@ def rotation_geodesic_error(first: np.ndarray, second: np.ndarray) -> np.ndarray
     b = np.asarray(second, dtype=np.float64)
     relative = np.matmul(np.swapaxes(a[..., :3, :3], -1, -2), b[..., :3, :3])
     cosine = (np.trace(relative, axis1=-2, axis2=-1) - 1.0) / 2.0
-    return np.arccos(np.clip(cosine, -1.0, 1.0))
+    # ``arccos(trace)`` loses relative precision near identity: a harmless
+    # matrix-product roundoff of one ulp becomes an apparent ~2e-8 rad error.
+    # The skew part is first-order in the angle, so atan2(sin, cos) preserves a
+    # true zero while retaining the full [0, pi] geodesic range.
+    skew_vector = np.stack(
+        (
+            relative[..., 2, 1] - relative[..., 1, 2],
+            relative[..., 0, 2] - relative[..., 2, 0],
+            relative[..., 1, 0] - relative[..., 0, 1],
+        ),
+        axis=-1,
+    )
+    sine = 0.5 * np.linalg.norm(skew_vector, axis=-1)
+    return np.arctan2(sine, np.clip(cosine, -1.0, 1.0))
 
 
 def pose_translation_error(first: np.ndarray, second: np.ndarray) -> np.ndarray:
