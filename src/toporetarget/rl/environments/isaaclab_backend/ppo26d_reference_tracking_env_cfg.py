@@ -128,6 +128,22 @@ def configure_stage16d_phase3_object_twist_reward(
     cfg.ppo26d_reward_contract = "TopoRetargetReferenceTrackingReward26DV2"
 
 
+def configure_independent_phase3_object_twist_reward(
+    cfg: IsaacPPO26DReferenceTrackingEnvCfg,
+) -> None:
+    """Enable Reward V2 for one already-bound variable-length independent reference."""
+
+    clips = tuple(sorted(cfg.reference_paths))
+    if (
+        cfg.external_clip_id is None
+        or clips != (cfg.external_clip_id,)
+        or cfg.reference_kinematics_version != 2
+        or cfg.reference_time_scale != 8
+    ):
+        raise ValueError("INDEPENDENT_REFERENCE_KINEMATICS_V2_INVALID")
+    cfg.ppo26d_reward_contract = "TopoRetargetReferenceTrackingReward26DV2"
+
+
 def configure_stage16d_contact_reward(
     cfg: IsaacPPO26DReferenceTrackingEnvCfg,
     *,
@@ -138,7 +154,10 @@ def configure_stage16d_contact_reward(
 ) -> None:
     """Bind a selected frozen contact objective without changing physics or observations."""
 
-    configure_stage16d_phase3_object_twist_reward(cfg, reference_root=reference_root)
+    if cfg.external_clip_id is None:
+        configure_stage16d_phase3_object_twist_reward(cfg, reference_root=reference_root)
+    else:
+        configure_independent_phase3_object_twist_reward(cfg)
     selected = ContactRewardMode.parse(mode)
     receipt_path = contact_reward_contract.resolve()
     payload = json.loads(receipt_path.read_text(encoding="utf-8"))
@@ -152,7 +171,7 @@ def configure_stage16d_contact_reward(
                 else f"strict_source_contact_mask_{clip}.npz"
             )
         )
-        for clip in ("hocap_170105", "hocap_170650")
+        for clip in sorted(cfg.reference_paths)
     }
     missing = [str(path) for path in paths.values() if not path.is_file()]
     if missing:
@@ -275,13 +294,14 @@ def configure_stage16d_grouped_multiplicative_rse(
         raise ValueError("GROUPED_MULTIPLICATIVE_RSE_REQUIRES_UNIFORM_RSI")
     if distance_scope_m != 0.20 or kappa_min != 0.50:
         raise ValueError("GROUPED_MULTIPLICATIVE_RSE_V1_GLOBAL_SCOPE_DRIFT")
+    clips = tuple(sorted(cfg.reference_paths))
     reference_paths = {
         clip: reference_distance_root.resolve() / f"reference_contact_mask_{clip}.npz"
-        for clip in ("hocap_170105", "hocap_170650")
+        for clip in clips
     }
     mesh_paths = {
         clip: object_mesh_root.resolve() / f"{clip}.obj"
-        for clip in ("hocap_170105", "hocap_170650")
+        for clip in clips
     }
     missing = [
         str(path)
@@ -307,6 +327,7 @@ __all__ = [
     "configure_stage16d_ppo26d",
     "configure_stage16d_reference_kinematics_v2",
     "configure_stage16d_phase3_object_twist_reward",
+    "configure_independent_phase3_object_twist_reward",
     "configure_stage16d_contact_reward",
     "configure_stage16_contact_ready_rsi_v2",
     "configure_stage16_p3_p4_curriculum",

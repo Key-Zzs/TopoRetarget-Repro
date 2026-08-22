@@ -55,8 +55,10 @@ class Stage16DPPO26DReferenceV1:
     )
 
     def __post_init__(self) -> None:
-        if (self.source_frames, self.runtime_samples, self.time_scale) != (41, 321, 8):
-            raise ValueError("PPO26D reference must be the Stage16-D 41-to-321 factor-8 view")
+        if self.source_frames < 3 or self.time_scale != REFERENCE_TIME_SCALE:
+            raise ValueError("PPO26D reference requires at least three source frames at factor 8")
+        if self.runtime_samples != (self.source_frames - 1) * self.time_scale + 1:
+            raise ValueError("PPO26D runtime domain must preserve every source key at factor 8")
         if self.control_hz != 20.0:
             raise ValueError("PPO26D control reference is fixed at 20 Hz")
 
@@ -74,8 +76,9 @@ def inspect_source_reference(path: Path) -> dict[str, Any]:
         if missing:
             raise ValueError(f"PPO26D source reference is missing fields: {missing}")
         timestamps = np.asarray(archive["timestamps"], dtype=np.float64)
-        if timestamps.shape != (SOURCE_FRAMES,):
-            raise ValueError("PPO26D source reference must have 41 source samples")
+        if timestamps.ndim != 1 or timestamps.size < 3:
+            raise ValueError("PPO26D source reference must have at least three source samples")
+        source_frames = int(timestamps.size)
         if not np.all(np.diff(timestamps) > 0.0) or not np.isclose(
             np.median(np.diff(timestamps)), 1.0 / CONTROL_HZ, atol=1.0e-8
         ):
@@ -83,7 +86,7 @@ def inspect_source_reference(path: Path) -> dict[str, Any]:
         shapes = {name: list(np.asarray(archive[name]).shape) for name in REFERENCE_FIELDS}
         for name in REFERENCE_FIELDS:
             value = np.asarray(archive[name])
-            if value.shape[0] != SOURCE_FRAMES or not np.isfinite(value).all():
+            if value.shape[0] != source_frames or not np.isfinite(value).all():
                 raise ValueError(f"PPO26D source reference has invalid {name}")
         metadata = json.loads(str(archive["metadata"].item()))
     if len(metadata.get("joint_order", ())) != 20:
@@ -93,7 +96,7 @@ def inspect_source_reference(path: Path) -> dict[str, Any]:
     return {
         "path": str(path.resolve()),
         "sha256": sha256_file(path),
-        "source_frames": SOURCE_FRAMES,
+        "source_frames": source_frames,
         "control_hz": CONTROL_HZ,
         "fields": shapes,
         "joint_order": list(metadata["joint_order"]),
@@ -102,8 +105,8 @@ def inspect_source_reference(path: Path) -> dict[str, Any]:
 
 
 def _interpolate_linear(values: np.ndarray, coordinates: np.ndarray) -> np.ndarray:
-    left = np.floor(coordinates).astype(np.int64).clip(0, SOURCE_FRAMES - 2)
-    alpha = (coordinates - left).reshape((RUNTIME_FRAMES,) + (1,) * (values.ndim - 1))
+    left = np.floor(coordinates).astype(np.int64).clip(0, values.shape[0] - 2)
+    alpha = (coordinates - left).reshape((coordinates.size,) + (1,) * (values.ndim - 1))
     alpha[-1] = 1.0
     return (1.0 - alpha) * values[left] + alpha * values[left + 1]
 
@@ -111,8 +114,8 @@ def _interpolate_linear(values: np.ndarray, coordinates: np.ndarray) -> np.ndarr
 def _interpolate_hermite(
     values: np.ndarray, derivatives: np.ndarray, coordinates: np.ndarray
 ) -> np.ndarray:
-    left = np.floor(coordinates).astype(np.int64).clip(0, SOURCE_FRAMES - 2)
-    weight = (coordinates - left).reshape((RUNTIME_FRAMES,) + (1,) * (values.ndim - 1))
+    left = np.floor(coordinates).astype(np.int64).clip(0, values.shape[0] - 2)
+    weight = (coordinates - left).reshape((coordinates.size,) + (1,) * (values.ndim - 1))
     weight[-1] = 1.0
     weight2 = weight * weight
     weight3 = weight2 * weight
@@ -126,7 +129,7 @@ def _interpolate_hermite(
 
 
 def _interpolate_quaternion(values: np.ndarray, coordinates: np.ndarray) -> np.ndarray:
-    left = np.floor(coordinates).astype(np.int64).clip(0, SOURCE_FRAMES - 2)
+    left = np.floor(coordinates).astype(np.int64).clip(0, values.shape[0] - 2)
     alpha = (coordinates - left)[:, None]
     alpha[-1] = 1.0
     start, end = values[left], values[left + 1].copy()
@@ -136,10 +139,12 @@ def _interpolate_quaternion(values: np.ndarray, coordinates: np.ndarray) -> np.n
 
 
 def export_factor8_reference(source: Path, destination: Path) -> dict[str, Any]:
-    """Materialize a standalone 321-sample PPO reference from the official NPZ."""
+    """Materialize a factor-8 PPO reference over the source's full valid domain."""
 
     inspection = inspect_source_reference(source)
-    coordinates = np.arange(RUNTIME_FRAMES, dtype=np.float64) / REFERENCE_TIME_SCALE
+    source_frames = int(inspection["source_frames"])
+    runtime_frames = (source_frames - 1) * REFERENCE_TIME_SCALE + 1
+    coordinates = np.arange(runtime_frames, dtype=np.float64) / REFERENCE_TIME_SCALE
     with np.load(source, allow_pickle=False) as archive:
         source_arrays = {
             name: np.asarray(archive[name], dtype=np.float32) for name in REFERENCE_FIELDS
@@ -185,15 +190,15 @@ def export_factor8_reference(source: Path, destination: Path) -> dict[str, Any]:
         metadata = json.loads(str(archive["metadata"].item()))
     payload = {
         **arrays,
-        "timestamps": np.arange(RUNTIME_FRAMES, dtype=np.float32) / CONTROL_HZ,
+        "timestamps": np.arange(runtime_frames, dtype=np.float32) / CONTROL_HZ,
         "metadata": np.asarray(
             json.dumps(
                 {
                     **metadata,
                     "schema_version": "Stage16DPPO26DReferenceV1",
                     "source_sha256": inspection["sha256"],
-                    "source_frames": SOURCE_FRAMES,
-                    "runtime_samples": RUNTIME_FRAMES,
+                    "source_frames": source_frames,
+                    "runtime_samples": runtime_frames,
                     "control_hz": CONTROL_HZ,
                     "time_scale": REFERENCE_TIME_SCALE,
                 },
@@ -204,7 +209,10 @@ def export_factor8_reference(source: Path, destination: Path) -> dict[str, Any]:
     destination.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(destination, **payload)  # type: ignore[arg-type]
     return {
-        "contract": Stage16DPPO26DReferenceV1().as_dict(),
+        "contract": Stage16DPPO26DReferenceV1(
+            source_frames=source_frames,
+            runtime_samples=runtime_frames,
+        ).as_dict(),
         "source": inspection,
         "destination": str(destination.resolve()),
         "destination_sha256": sha256_file(destination),

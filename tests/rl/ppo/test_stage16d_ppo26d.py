@@ -99,6 +99,11 @@ def test_action_and_observation_contracts_are_frozen() -> None:
     assert sum(observation.field_dimensions().values()) == 764
 
 
+def test_trainer_records_variable_factor8_runtime_domain() -> None:
+    trainer = PPO26DTrainer(observation_dim=764, device="cpu", runtime_reference_samples=129)
+    assert trainer.training_contract.runtime_reference_samples == 129
+
+
 def test_factor8_reference_contract_exports_321_samples(tmp_path: Path) -> None:
     source = tmp_path / "source.npz"
     destination = tmp_path / "derived.npz"
@@ -110,6 +115,28 @@ def test_factor8_reference_contract_exports_321_samples(tmp_path: Path) -> None:
         assert archive["timestamps"].shape == (321,)
         assert archive["q_finger_ref"].shape == (321, 20)
         assert archive["tracked_link_positions_world_ref"].shape == (321, 16, 3)
+
+
+def test_factor8_reference_uses_full_variable_source_domain(tmp_path: Path) -> None:
+    source = tmp_path / "source.npz"
+    destination = tmp_path / "derived.npz"
+    _source_reference(source)
+    with np.load(source, allow_pickle=False) as archive:
+        metadata = np.asarray(archive["metadata"]).copy()
+        payload = {
+            name: np.asarray(archive[name])[:17].copy()
+            for name in archive.files
+            if name != "metadata"
+        }
+    np.savez_compressed(source, **payload, metadata=metadata)
+
+    result = export_factor8_reference(source, destination)
+
+    assert result["contract"]["source_frames"] == 17
+    assert result["contract"]["runtime_samples"] == 129
+    with np.load(destination, allow_pickle=False) as archive:
+        assert archive["timestamps"].shape == (129,)
+        assert archive["q_finger_ref"].shape == (129, 20)
 
 
 def test_factor8_export_matches_runtime_reference_retiming(tmp_path: Path) -> None:

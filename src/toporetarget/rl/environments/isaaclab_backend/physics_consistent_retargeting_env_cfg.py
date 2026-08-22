@@ -48,8 +48,10 @@ def configure_stage16d_nominal(
 ) -> None:
     if num_envs < 1:
         raise ValueError("Stage16D needs at least one environment")
-    if clip not in {None, "hocap_170105", "hocap_170650"}:
-        raise ValueError("unknown Stage16D clip")
+    if clip is not None and (
+        not clip or any(token in clip for token in ("/", "\\", ".."))
+    ):
+        raise ValueError("invalid Stage16D clip")
     cfg.scene.num_envs = num_envs
     cfg.balanced_clip_assignment = clip is None
     cfg.alternate_clip_on_reset = False
@@ -67,6 +69,32 @@ def configure_stage16d_nominal(
         cfg.stage16d_fixed_clip = clip
 
 
+def configure_independent_physics_contracts(
+    cfg: IsaacPhysicsConsistentRetargetingEnvCfg,
+    *,
+    clip_id: str,
+    contract_root: Path,
+) -> None:
+    """Bind per-lineage semantic/gate receipts without changing shared method values."""
+
+    if not clip_id or any(token in clip_id for token in ("/", "\\", "..")):
+        raise ValueError("INDEPENDENT_PHYSICS_CLIP_ID_INVALID")
+    root = contract_root.resolve()
+    paths = {
+        "semantic": root / f"{clip_id}.task_semantics.json",
+        "topology": root / "contact_topology.json",
+        "task_gate": root / "anti_degenerate_contract.json",
+        "reward": root / "reward_contract.json",
+    }
+    missing = [str(path) for path in paths.values() if not path.is_file()]
+    if missing:
+        raise FileNotFoundError(f"INDEPENDENT_PHYSICS_CONTRACT_MISSING:{missing}")
+    cfg.semantic_contract_paths = {clip_id: str(paths["semantic"])}
+    cfg.contact_topology_path = str(paths["topology"])
+    cfg.task_gate_path = str(paths["task_gate"])
+    cfg.reward_contract_path = str(paths["reward"])
+
+
 def stage16d_contract_paths(cfg: IsaacPhysicsConsistentRetargetingEnvCfg) -> tuple[Path, ...]:
     return tuple(Path(value) for value in cfg.semantic_contract_paths.values()) + (
         Path(cfg.contact_topology_path),
@@ -78,6 +106,7 @@ def stage16d_contract_paths(cfg: IsaacPhysicsConsistentRetargetingEnvCfg) -> tup
 
 __all__ = [
     "IsaacPhysicsConsistentRetargetingEnvCfg",
+    "configure_independent_physics_contracts",
     "configure_stage16d_nominal",
     "stage16d_contract_paths",
 ]

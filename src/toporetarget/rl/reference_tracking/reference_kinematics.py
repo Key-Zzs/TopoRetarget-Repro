@@ -218,7 +218,7 @@ def angular_velocity_body_from_world(
 
 
 def _interpolate_linear(values: np.ndarray, coordinates: np.ndarray) -> np.ndarray:
-    left = np.floor(coordinates).astype(np.int64).clip(0, SOURCE_FRAMES - 2)
+    left = np.floor(coordinates).astype(np.int64).clip(0, values.shape[0] - 2)
     alpha = (coordinates - left).reshape((coordinates.size,) + (1,) * (values.ndim - 1))
     alpha[-1] = 1.0
     return (1.0 - alpha) * values[left] + alpha * values[left + 1]
@@ -227,7 +227,7 @@ def _interpolate_linear(values: np.ndarray, coordinates: np.ndarray) -> np.ndarr
 def _interpolate_hermite(
     values: np.ndarray, derivatives: np.ndarray, coordinates: np.ndarray, *, source_dt_s: float
 ) -> np.ndarray:
-    left = np.floor(coordinates).astype(np.int64).clip(0, SOURCE_FRAMES - 2)
+    left = np.floor(coordinates).astype(np.int64).clip(0, values.shape[0] - 2)
     alpha = (coordinates - left).reshape((coordinates.size,) + (1,) * (values.ndim - 1))
     alpha[-1] = 1.0
     alpha2 = alpha * alpha
@@ -242,7 +242,7 @@ def _interpolate_hermite(
 
 def _interpolate_quaternion(values: np.ndarray, coordinates: np.ndarray) -> np.ndarray:
     values = enforce_quaternion_sign_continuity_wxyz(values)
-    left = np.floor(coordinates).astype(np.int64).clip(0, SOURCE_FRAMES - 2)
+    left = np.floor(coordinates).astype(np.int64).clip(0, values.shape[0] - 2)
     alpha = (coordinates - left)[:, None]
     alpha[-1] = 1.0
     start, end = values[left], values[left + 1].copy()
@@ -261,7 +261,7 @@ def _load_archive(path: Path) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
     return arrays, metadata
 
 
-def _check_source_shapes(arrays: dict[str, np.ndarray]) -> None:
+def _check_source_shapes(arrays: dict[str, np.ndarray]) -> int:
     fields = set(REFERENCE_FIELDS) | {
         "timestamps",
         "object_axis_points_wrist_ref",
@@ -270,15 +270,20 @@ def _check_source_shapes(arrays: dict[str, np.ndarray]) -> None:
     missing = sorted(fields - set(arrays))
     if missing:
         raise ValueError(f"REFERENCE_V2_SOURCE_FIELDS_MISSING: {missing}")
+    timestamps = np.asarray(arrays["timestamps"])
+    if timestamps.ndim != 1 or timestamps.size < 3:
+        raise ValueError("REFERENCE_V2_SOURCE_TIMESTAMP_SHAPE_INVALID")
+    source_frames = int(timestamps.size)
     for field, shape in _RUNTIME_FIELD_SHAPES.items():
-        if arrays[field].shape != (SOURCE_FRAMES, *shape):
+        if arrays[field].shape != (source_frames, *shape):
             raise ValueError(f"REFERENCE_V2_SOURCE_SHAPE_INVALID: {field}")
+    return source_frames
 
 
 def source_contract_timestamps(
     arrays: dict[str, np.ndarray],
 ) -> tuple[np.ndarray, dict[str, object]]:
-    """Normalize the declared 41x20 Hz source timeline without changing its NPZ.
+    """Normalize the declared Nx20 Hz source timeline without changing its NPZ.
 
     The frozen source has one historical final timestamp of 1.966666... s even
     though its declared sampling contract is 41 samples at 20 Hz.  V2 records
@@ -287,8 +292,8 @@ def source_contract_timestamps(
     """
 
     stored = np.asarray(arrays["timestamps"], dtype=np.float64)
-    expected = np.arange(SOURCE_FRAMES, dtype=np.float64) * RUNTIME_DT_S
-    if stored.shape != (SOURCE_FRAMES,) or not np.all(np.diff(stored) > 0.0):
+    expected = np.arange(stored.size, dtype=np.float64) * RUNTIME_DT_S
+    if stored.ndim != 1 or stored.size < 3 or not np.all(np.diff(stored) > 0.0):
         raise ValueError("REFERENCE_SOURCE_TIMESTAMP_NONMONOTONIC")
     discrepancy = np.abs(stored - expected)
     return expected, {
@@ -323,6 +328,14 @@ class Stage16DReferenceTimeV2:
     source_dt_s: float = RUNTIME_DT_S
     time_scale: int = REFERENCE_TIME_SCALE
 
+    def __post_init__(self) -> None:
+        expected_samples = (self.source_samples - 1) * self.time_scale + 1
+        expected_duration = (self.runtime_samples - 1) * self.runtime_dt_s
+        if self.source_samples < 3 or self.runtime_samples != expected_samples:
+            raise ValueError("REFERENCE_V2_TIME_DOMAIN_INVALID")
+        if not np.isclose(self.runtime_duration_s, expected_duration, atol=1.0e-12):
+            raise ValueError("REFERENCE_V2_RUNTIME_DURATION_INVALID")
+
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
 
@@ -331,14 +344,16 @@ def inspect_v1_reference(source_path: Path, v1_path: Path) -> dict[str, Any]:
     """Audit V1 in-place; this function never writes V1 or its source."""
 
     source = inspect_source_reference(source_path)
+    source_frames = int(source["source_frames"])
+    runtime_frames = (source_frames - 1) * REFERENCE_TIME_SCALE + 1
     source_arrays, _ = _load_archive(source_path)
     v1_arrays, v1_metadata = _load_archive(v1_path)
     if v1_metadata.get("source_sha256") != source["sha256"]:
         raise RuntimeError("REFERENCE_SOURCE_HASH_DRIFT")
     times = np.asarray(v1_arrays["timestamps"], dtype=np.float64)
-    if times.shape != (RUNTIME_FRAMES,):
+    if times.shape != (runtime_frames,):
         raise ValueError("REFERENCE_V1_RUNTIME_LENGTH_INVALID")
-    indices = np.arange(SOURCE_FRAMES) * REFERENCE_TIME_SCALE
+    indices = np.arange(source_frames) * REFERENCE_TIME_SCALE
     source_times, source_time_audit = source_contract_timestamps(source_arrays)
     object_source_twist = _twist_from_pose(
         source_arrays["object_pose_translation_world_ref"],
@@ -402,10 +417,11 @@ def materialize_reference_kinematics_v2(
 
     v1_audit = inspect_v1_reference(source_path, v1_path)
     source_arrays, source_metadata = _load_archive(source_path)
-    _check_source_shapes(source_arrays)
+    source_frames = _check_source_shapes(source_arrays)
+    runtime_frames = (source_frames - 1) * REFERENCE_TIME_SCALE + 1
     source_times, source_time_audit = source_contract_timestamps(source_arrays)
-    coordinates = np.arange(RUNTIME_FRAMES, dtype=np.float64) / REFERENCE_TIME_SCALE
-    runtime_times = np.arange(RUNTIME_FRAMES, dtype=np.float64) * RUNTIME_DT_S
+    coordinates = np.arange(runtime_frames, dtype=np.float64) / REFERENCE_TIME_SCALE
+    runtime_times = np.arange(runtime_frames, dtype=np.float64) * RUNTIME_DT_S
 
     def hermite_from_pose(field: str) -> np.ndarray:
         values = source_arrays[field]
@@ -453,11 +469,15 @@ def materialize_reference_kinematics_v2(
         "reference_kinematics_version": 2,
         "parent_v1_sha256": sha256_file(v1_path),
         "source_sha256": sha256_file(source_path),
-        "source_frames": SOURCE_FRAMES,
-        "runtime_samples": RUNTIME_FRAMES,
+        "source_frames": source_frames,
+        "runtime_samples": runtime_frames,
         "control_hz": CONTROL_HZ,
         "time_scale": REFERENCE_TIME_SCALE,
-        "time_contract": Stage16DReferenceTimeV2().as_dict(),
+        "time_contract": Stage16DReferenceTimeV2(
+            runtime_samples=runtime_frames,
+            runtime_duration_s=(runtime_frames - 1) * RUNTIME_DT_S,
+            source_samples=source_frames,
+        ).as_dict(),
         "source_timestamp_normalization": source_time_audit,
         "interpolation": {
             "translation": "pose-derived-tangent cubic Hermite",
@@ -539,12 +559,13 @@ def _factor8_scaling(
         source_times,
     )
     runtime_twist = v2_arrays["object_twist_world_ref"]
-    indices = np.arange(1, SOURCE_FRAMES - 1) * REFERENCE_TIME_SCALE
+    source_frames = int(source_arrays["timestamps"].size)
+    indices = np.arange(1, source_frames - 1) * REFERENCE_TIME_SCALE
     result: dict[str, object] = {
         "definition": (
             "runtime pose/time derived twist at runtime index 8*k vs native pose/time twist[k] / 8"
         ),
-        "excluded_source_indices": [0, SOURCE_FRAMES - 1],
+        "excluded_source_indices": [0, source_frames - 1],
         "frozen_gate": {"median_relative_error_max": 0.05, "p95_relative_error_max": 0.15},
     }
     passes: list[bool] = []
@@ -600,7 +621,8 @@ def qualify_reference_kinematics_v2(
     source_arrays, _ = _load_archive(source_path)
     v1_arrays, _ = _load_archive(v1_path)
     v2_arrays, metadata = _load_archive(v2_path)
-    _check_source_shapes(source_arrays)
+    source_frames = _check_source_shapes(source_arrays)
+    runtime_frames = (source_frames - 1) * REFERENCE_TIME_SCALE + 1
     if (
         metadata.get("schema_version") != V2_IDENTIFIER
         or metadata.get("reference_kinematics_version") != 2
@@ -611,13 +633,13 @@ def qualify_reference_kinematics_v2(
     if metadata.get("parent_v1_sha256") != sha256_file(v1_path):
         raise RuntimeError("REFERENCE_V2_PARENT_HASH_MISMATCH")
     timestamps = v2_arrays["timestamps"]
-    expected_timestamps = np.arange(RUNTIME_FRAMES, dtype=np.float64) * RUNTIME_DT_S
+    expected_timestamps = np.arange(runtime_frames, dtype=np.float64) * RUNTIME_DT_S
     timestamp_pass = bool(
-        timestamps.shape == (RUNTIME_FRAMES,)
+        timestamps.shape == (runtime_frames,)
         and np.all(np.diff(timestamps) > 0.0)
         and np.array_equal(timestamps, expected_timestamps)
     )
-    indices = np.arange(SOURCE_FRAMES) * REFERENCE_TIME_SCALE
+    indices = np.arange(source_frames) * REFERENCE_TIME_SCALE
     key_checks: dict[str, dict[str, float | bool]] = {}
     for name in (
         "wrist_pose_translation_world_ref",
@@ -704,7 +726,11 @@ def qualify_reference_kinematics_v2(
         "checks": checks,
         "source_key_preservation": key_checks,
         "timestamp_contract": {
-            **Stage16DReferenceTimeV2().as_dict(),
+            **Stage16DReferenceTimeV2(
+                runtime_samples=runtime_frames,
+                runtime_duration_s=(runtime_frames - 1) * RUNTIME_DT_S,
+                source_samples=source_frames,
+            ).as_dict(),
             "strictly_monotonic": bool(np.all(np.diff(timestamps) > 0.0)),
             "exact_runtime_mapping": timestamp_pass,
             "runtime_index_for_source_k": "8*k",

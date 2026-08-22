@@ -454,8 +454,11 @@ def _run_reward_smoke(env: Any, trainer: PPO26DTrainer, *, steps: int) -> dict[s
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--accept-eula", action="store_true")
-    parser.add_argument("--clip", choices=("hocap_170105", "hocap_170650"), default="hocap_170650")
+    parser.add_argument("--clip", default="hocap_170650")
     parser.add_argument("--output-root", type=Path, default=DEFAULT_ROOT)
+    parser.add_argument("--reference", type=Path)
+    parser.add_argument("--object-usd", type=Path)
+    parser.add_argument("--physics-contract-root", type=Path)
     parser.add_argument(
         "--run-label",
         help=(
@@ -464,6 +467,12 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--reference-root", type=Path, default=DEFAULT_REFERENCE_ROOT)
+    parser.add_argument(
+        "--method-scale-reference-root",
+        type=Path,
+        default=DEFAULT_REFERENCE_ROOT,
+        help="Frozen development references used only to verify shared Reward V2 scales.",
+    )
     parser.add_argument(
         "--capacity-selection",
         type=Path,
@@ -562,6 +571,14 @@ def main() -> int:
         raise ValueError("--accept-eula is required")
     if args.num_envs <= 0:
         raise ValueError("--num-envs must be positive")
+    independent_inputs = (args.reference, args.object_usd, args.physics_contract_root)
+    if any(value is not None for value in independent_inputs) and not all(
+        value is not None for value in independent_inputs
+    ):
+        raise ValueError(
+            "independent reward training requires --reference, --object-usd, and "
+            "--physics-contract-root together"
+        )
     if args.reward_v3_contact and args.strict_per_finger_contact_reward_v4:
         raise ValueError("REWARD_V3_AND_STRICT_V4_ARE_MUTUALLY_EXCLUSIVE")
     legacy_mode = (
@@ -632,13 +649,15 @@ def main() -> int:
         output_group = "phase3"
     if target_samples > 16_777_216:
         raise ValueError("REWARD_TRAINING_SAMPLE_CAP_EXCEEDED")
-    default_initialization_checkpoint = (
-        {
-            "hocap_170650": DEFAULT_L0_CHECKPOINT_170650,
-            "hocap_170105": DEFAULT_L0_CHECKPOINT_170105,
-        }[args.clip]
-        if is_contact_reward
-        else DEFAULT_L0_CHECKPOINT_170650
+    default_initialization_checkpoint = {
+        "hocap_170650": DEFAULT_L0_CHECKPOINT_170650,
+        "hocap_170105": DEFAULT_L0_CHECKPOINT_170105,
+    }.get(args.clip)
+    if args.initialization_checkpoint is None and default_initialization_checkpoint is None:
+        raise ValueError("INDEPENDENT_REWARD_TRAINING_INITIALIZATION_REQUIRED")
+    assert (
+        args.initialization_checkpoint is not None
+        or default_initialization_checkpoint is not None
     )
     initialization_checkpoint = (
         args.initialization_checkpoint or default_initialization_checkpoint
@@ -678,7 +697,7 @@ def main() -> int:
             else _require_phase3_entry(root, clip=args.clip)
         )
     )
-    scale_freeze = _freeze_scales(args.reference_root.resolve())
+    scale_freeze = _freeze_scales(args.method_scale_reference_root.resolve())
     _write_json(root / output_group / "reward_v2_base_scale_freeze.json", scale_freeze)
     gpu_probe = _gpu_probe()
     _write_json(root / output_group / "gpu_probe.json", gpu_probe)
@@ -691,10 +710,16 @@ def main() -> int:
     env: Any | None = None
     try:
         from toporetarget.rl.environments.isaaclab_backend import (
+            physics_consistent_retargeting_env_cfg as physics_cfg,
+        )
+        from toporetarget.rl.environments.isaaclab_backend import (
             ppo26d_reference_tracking_env_cfg as ppo_cfg,
         )
         from toporetarget.rl.environments.isaaclab_backend.ppo26d_reference_tracking_env import (
             IsaacPPO26DReferenceTrackingEnv,
+        )
+        from toporetarget.rl.environments.isaaclab_backend.world_wrist_direct_env_cfg import (
+            configure_independent_clip_runtime,
         )
 
         _write_json(output / "launch_progress.json", {"phase": "isaac_imports_ready"})
@@ -707,6 +732,19 @@ def main() -> int:
             rsi=True,
             critical_dr=args.critical_dr,
         )
+        if args.reference is not None:
+            assert args.object_usd is not None and args.physics_contract_root is not None
+            configure_independent_clip_runtime(
+                cfg,
+                clip_id=args.clip,
+                reference_path=args.reference,
+                object_usd_path=args.object_usd,
+            )
+            physics_cfg.configure_independent_physics_contracts(
+                cfg,
+                clip_id=args.clip,
+                contract_root=args.physics_contract_root,
+            )
         if contact_mode is not None:
             ppo_cfg.configure_stage16d_contact_reward(
                 cfg,
@@ -743,7 +781,11 @@ def main() -> int:
         _write_json(output / "launch_progress.json", {"phase": "environment_ready"})
         if cfg.reference_kinematics_version != 2:
             raise RuntimeError("REWARD_TRAINING_REQUIRES_REFERENCE_KINEMATICS_V2")
-        trainer = PPO26DTrainer(observation_dim=764, device=str(env.device))
+        trainer = PPO26DTrainer(
+            observation_dim=764,
+            device=str(env.device),
+            runtime_reference_samples=env.reference_bank.frame_count,
+        )
         _write_json(output / "launch_progress.json", {"phase": "trainer_fresh_ready"})
         initialization = (
             (

@@ -5,9 +5,11 @@ This module is intentionally optional: import it only after ``AppLauncher``.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import isaaclab.sim as sim_utils
+import numpy as np
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 from isaaclab.envs import DirectRLEnvCfg
@@ -402,6 +404,7 @@ def configure_independent_clip_runtime(
     clip_id: str,
     reference_path: Path,
     object_usd_path: Path,
+    reference_time_scale: int | None = None,
 ) -> None:
     """Bind one raw-derived clip without borrowing a development scene input.
 
@@ -420,7 +423,42 @@ def configure_independent_clip_runtime(
         raise FileNotFoundError(f"INDEPENDENT_REFERENCE_MISSING:{reference}")
     if not object_usd.is_file():
         raise FileNotFoundError(f"INDEPENDENT_OBJECT_USD_MISSING:{object_usd}")
+    with np.load(reference, allow_pickle=False) as archive:
+        if "timestamps" not in archive.files or "metadata" not in archive.files:
+            raise ValueError("INDEPENDENT_REFERENCE_TIME_DOMAIN_MISSING")
+        timestamps = np.asarray(archive["timestamps"], dtype=np.float64)
+        metadata = json.loads(str(archive["metadata"].item()))
+    if (
+        timestamps.ndim != 1
+        or timestamps.size < 2
+        or not np.isfinite(timestamps).all()
+        or not np.all(np.diff(timestamps) > 0.0)
+        or not np.isclose(np.median(np.diff(timestamps)), 0.05, atol=1.0e-8)
+    ):
+        raise ValueError("INDEPENDENT_REFERENCE_TIME_DOMAIN_INVALID")
+    materialized_time_scale = int(metadata.get("time_scale", 1))
+    reference_kinematics_version = int(metadata.get("reference_kinematics_version", 1))
+    requested_time_scale = (
+        materialized_time_scale if reference_time_scale is None else reference_time_scale
+    )
+    if (
+        isinstance(requested_time_scale, bool)
+        or not isinstance(requested_time_scale, int)
+        or requested_time_scale < 1
+        or materialized_time_scale < 1
+        or reference_kinematics_version not in {1, 2}
+        or (materialized_time_scale != 1 and requested_time_scale != materialized_time_scale)
+    ):
+        raise ValueError("INDEPENDENT_REFERENCE_METADATA_INVALID")
     cfg.reference_paths = {clip_id: str(reference)}
+    cfg.reference_time_scale = requested_time_scale
+    cfg.reference_kinematics_version = reference_kinematics_version
+    runtime_frames = (
+        timestamps.size
+        if requested_time_scale == materialized_time_scale
+        else (timestamps.size - 1) * requested_time_scale + 1
+    )
+    cfg.episode_length_s = float(runtime_frames) / 20.0
     cfg.external_clip_id = clip_id
     cfg.external_object_name = "ObjectExternal"
     cfg.external_scene_object_key = "object_external"

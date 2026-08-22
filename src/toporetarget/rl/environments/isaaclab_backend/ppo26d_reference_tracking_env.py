@@ -136,7 +136,8 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         ) and (
             self.reference_bank.manifest.identifier != "world_wrist_reference_bank_kinematics_v2"
             or self.reference_bank.manifest.reference_time_scale != 8
-            or self.reference_bank.frame_count != 321
+            or self.reference_bank.frame_count
+            != (self.reference_bank.manifest.source_frame_count - 1) * 8 + 1
         ):
             raise RuntimeError("PPO26D_REWARD_V2_REQUIRES_MATERIALIZED_REFERENCE_KINEMATICS_V2")
         # The base implementation already supplies the required physical-state
@@ -313,15 +314,12 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             ),
             dim=-1,
         )
-        first_object = clips == 0
-        if bool(first_object.any()):
-            self._object_170105.write_root_state_to_sim(
-                active_state[first_object], env_ids=env_ids[first_object]
-            )
-        if bool((~first_object).any()):
-            self._object_170650.write_root_state_to_sim(
-                active_state[~first_object], env_ids=env_ids[~first_object]
-            )
+        for index, clip_id in enumerate(self.reference_bank.clip_ids):
+            selected = clips == index
+            if bool(selected.any()):
+                self._objects_by_clip[clip_id].write_root_state_to_sim(
+                    active_state[selected], env_ids=env_ids[selected]
+                )
         self._object_state_write_count[env_ids] += 1
 
     def _pose6(self, position: torch.Tensor, quaternion_wxyz: torch.Tensor) -> torch.Tensor:

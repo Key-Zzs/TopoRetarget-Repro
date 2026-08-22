@@ -58,3 +58,17 @@ def test_single_clip_bank_preserves_independent_runtime_domain(tmp_path: Path) -
 def test_empty_bank_is_rejected() -> None:
     with pytest.raises(ValueError, match="at least one clip"):
         WorldWristReferenceBank({}, device="cpu")
+
+
+def test_single_clip_bank_accepts_manifest_bound_variable_length(tmp_path: Path) -> None:
+    source = tmp_path / "hocap_111118.npz"
+    _reference(source, frames=57)
+
+    bank = WorldWristReferenceBank({"hocap_111118": source}, device="cpu")
+
+    assert bank.frame_count == 57
+    assert bank.manifest.source_frame_count == 57
+    assert bank.valid_mask.shape == (1, 57)
+    bank.apply_uniform_time_scale(8)
+    assert bank.frame_count == 449
+    assert bank.valid_mask.shape == (1, 449)

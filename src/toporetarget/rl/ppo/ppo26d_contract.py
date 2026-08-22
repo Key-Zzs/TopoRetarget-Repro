@@ -141,8 +141,12 @@ class Stage16DPPO26DTrainingConfigV1:
             raise ValueError("PPO26D rollout length is frozen at 40")
         if (self.epochs, self.minibatches) != (4, 32):
             raise ValueError("PPO26D uses the paper 4-epoch/32-minibatch update")
-        if self.runtime_reference_samples != 321 or self.decimation != 6:
-            raise ValueError("PPO26D must preserve the Stage16-D factor-8 timing contract")
+        if (
+            self.runtime_reference_samples < 17
+            or (self.runtime_reference_samples - 1) % 8 != 0
+            or self.decimation != 6
+        ):
+            raise ValueError("PPO26D must preserve a valid factor-8 reference timing contract")
         if not 0.0 < self.target_kl < 1.0:
             raise ValueError("PPO26D target KL must be in (0, 1)")
         if not 0.0 < self.action_saturation_fraction_limit < 1.0:

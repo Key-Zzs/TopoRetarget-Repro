@@ -113,7 +113,9 @@ class WorldWristReferenceBank:
                 kinematics_version = int(metadata.get("reference_kinematics_version", 1))
                 current_scale = int(metadata.get("time_scale", 1))
                 current_source_frames = int(metadata.get("source_frames", source_timestamps.size))
-                expected_frames = 321 if kinematics_version == 2 else 41
+                if current_source_frames < 2 or current_scale < 1:
+                    raise ValueError(f"{path} has an invalid reference time domain")
+                expected_frames = (current_source_frames - 1) * current_scale + 1
                 if (
                     current_timestamps.shape != (expected_frames,)
                     or not np.all(np.diff(source_timestamps) > 0.0)
@@ -122,7 +124,6 @@ class WorldWristReferenceBank:
                     raise ValueError(f"{path} is not a valid 20 Hz Stage 16 reference")
                 if kinematics_version == 2 and (
                     current_scale != 8
-                    or current_source_frames != 41
                     or metadata.get("angular_velocity_convention")
                     != "world: [omega]_x = R_dot @ R_T"
                 ):

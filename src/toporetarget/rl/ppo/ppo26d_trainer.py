@@ -42,10 +42,14 @@ def _policy_observation(observation: dict[str, torch.Tensor]) -> torch.Tensor:
 class PPO26DTrainer:
     """A minimal actual PPO runner over a Gym-like IsaacLab vector environment."""
 
-    def __init__(self, *, observation_dim: int, device: str) -> None:
+    def __init__(
+        self, *, observation_dim: int, device: str, runtime_reference_samples: int = 321
+    ) -> None:
         self.action_contract = Stage16DReferenceResidualAction26DV1()
         self.observation_contract = Stage16DPPO26DObservationV2()
-        self.training_contract = Stage16DPPO26DTrainingConfigV1()
+        self.training_contract = Stage16DPPO26DTrainingConfigV1(
+            runtime_reference_samples=runtime_reference_samples
+        )
         if observation_dim != self.observation_contract.dimension:
             raise ValueError("PPO26D observation dimension is frozen at 764")
         config = PPOConfig(
@@ -612,7 +616,12 @@ class PPO26DTrainer:
     ) -> dict[str, Any]:
         clip = environment_contract.get("ppo26d", {}).get("fixed_clip")
         active_clips = environment_contract.get("ppo26d", {}).get("active_clip_ids")
-        if clip not in {"hocap_170105", "hocap_170650"} or active_clips != [clip]:
+        if (
+            not isinstance(clip, str)
+            or not clip
+            or any(token in clip for token in ("/", "\\", ".."))
+            or active_clips != [clip]
+        ):
             raise ValueError(f"PPO26D_FIXED_CLIP_MISMATCH: fixed={clip!r} active={active_clips!r}")
         payload = {
             "schema_version": "Stage16DPPO26DCheckpointV1",

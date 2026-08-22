@@ -147,11 +147,17 @@ class IsaacPhysicsConsistentRetargetingEnv(IsaacWorldWristFingerDirectRLEnv):
             self._reset_idx(torch.arange(self.num_envs, device=self.device))
 
     def _contact_metrics(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        first = self._object_contact_sensors["Object170105"].data.force_matrix_w
-        second = self._object_contact_sensors["Object170650"].data.force_matrix_w
-        if first is None or second is None:
+        object_names = tuple(item[1] for item in self._object_specs)
+        force_matrices = [
+            self._object_contact_sensors[object_name].data.force_matrix_w
+            for object_name in object_names
+        ]
+        if any(value is None for value in force_matrices):
             raise RuntimeError("STAGE16D_CONTACT_FORCE_MATRIX_UNAVAILABLE")
-        forces = torch.where((self._clip_index == 0)[:, None, None], first[:, 0], second[:, 0])
+        force_by_clip = torch.stack([value[:, 0] for value in force_matrices if value is not None])
+        forces = force_by_clip.permute(1, 0, 2, 3)[
+            torch.arange(self.num_envs, device=self.device), self._clip_index
+        ]
         presence = torch.linalg.vector_norm(forces, dim=-1) > 1.0e-4
         group_order = ("thumb", "index", "middle", "ring", "pinky", "palm")
         grouped = torch.stack(

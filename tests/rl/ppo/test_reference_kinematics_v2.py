@@ -122,6 +122,33 @@ def test_v2_rebuilds_bad_terminal_tangent_preserves_keys_and_loads_bank(tmp_path
     assert bank.manifest.identifier == "world_wrist_reference_bank_kinematics_v2"
 
 
+def test_v2_preserves_variable_length_source_domain(tmp_path: Path) -> None:
+    source = tmp_path / "source.npz"
+    shortened = tmp_path / "source_17.npz"
+    v1 = tmp_path / "v1.npz"
+    v2 = tmp_path / "v2.npz"
+    _source(source)
+    with np.load(source, allow_pickle=False) as archive:
+        metadata = np.asarray(archive["metadata"]).copy()
+        payload = {
+            name: np.asarray(archive[name])[:17].copy()
+            for name in archive.files
+            if name != "metadata"
+        }
+    np.savez_compressed(shortened, **payload, metadata=metadata)
+
+    export_factor8_reference(shortened, v1)
+    materialize_reference_kinematics_v2(shortened, v1, v2)
+    report = qualify_reference_kinematics_v2(shortened, v1, v2)
+
+    assert report["status"] == "STAGE16D_REFERENCE_KINEMATICS_V2_VALIDATED"
+    assert report["timestamp_contract"]["source_samples"] == 17
+    assert report["timestamp_contract"]["runtime_samples"] == 129
+    bank = WorldWristReferenceBank({"hocap_111118": v2}, device="cpu")
+    assert bank.frame_count == 129
+    assert bank.manifest.source_frame_count == 17
+
+
 def test_reward_v2_tracks_signed_world_twist_and_retains_v1_terms() -> None:
     count = 2
     profile = TopoRetargetReferenceTrackingReward26DV2(

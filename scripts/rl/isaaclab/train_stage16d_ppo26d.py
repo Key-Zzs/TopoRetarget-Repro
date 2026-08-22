@@ -23,7 +23,10 @@ DEFAULT_ROOT = REPO_ROOT / ".local/reports/stage16d_ppo26d"
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--accept-eula", action="store_true")
-    parser.add_argument("--clip", choices=("hocap_170105", "hocap_170650"), default="hocap_170650")
+    parser.add_argument("--clip", default="hocap_170650")
+    parser.add_argument("--reference", type=Path)
+    parser.add_argument("--object-usd", type=Path)
+    parser.add_argument("--physics-contract-root", type=Path)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_ROOT)
     parser.add_argument("--selected-capacity", type=Path)
     parser.add_argument("--num-envs", type=int)
@@ -140,6 +143,14 @@ def main() -> int:
     if not args.accept_eula:
         raise ValueError("--accept-eula is required")
     os.environ["OMNI_KIT_ACCEPT_EULA"] = "YES"
+    independent_inputs = (args.reference, args.object_usd, args.physics_contract_root)
+    if any(value is not None for value in independent_inputs) and not all(
+        value is not None for value in independent_inputs
+    ):
+        raise ValueError(
+            "independent source training requires --reference, --object-usd, and "
+            "--physics-contract-root together"
+        )
     from isaaclab.app import AppLauncher
 
     root = args.output_root.resolve()
@@ -165,10 +176,16 @@ def main() -> int:
         # Isaac modules import Omniverse extensions such as pxr; load them
         # only after AppLauncher owns the SimulationApp lifecycle.
         from toporetarget.rl.environments.isaaclab_backend import (
+            physics_consistent_retargeting_env_cfg as physics_cfg,
+        )
+        from toporetarget.rl.environments.isaaclab_backend import (
             ppo26d_reference_tracking_env_cfg as ppo26d_cfg,
         )
         from toporetarget.rl.environments.isaaclab_backend.ppo26d_reference_tracking_env import (
             IsaacPPO26DReferenceTrackingEnv,
+        )
+        from toporetarget.rl.environments.isaaclab_backend.world_wrist_direct_env_cfg import (
+            configure_independent_clip_runtime,
         )
 
         cfg = ppo26d_cfg.IsaacPPO26DReferenceTrackingEnvCfg()
@@ -179,6 +196,20 @@ def main() -> int:
             rsi=True,
             critical_dr=args.critical_dr,
         )
+        if args.reference is not None:
+            assert args.object_usd is not None and args.physics_contract_root is not None
+            configure_independent_clip_runtime(
+                cfg,
+                clip_id=args.clip,
+                reference_path=args.reference,
+                object_usd_path=args.object_usd,
+                reference_time_scale=8,
+            )
+            physics_cfg.configure_independent_physics_contracts(
+                cfg,
+                clip_id=args.clip,
+                contract_root=args.physics_contract_root,
+            )
         env = IsaacPPO26DReferenceTrackingEnv(cfg)
         active_clip_indices = sorted(set(env._clip_index.detach().cpu().tolist()))
         expected_clip_index = env.reference_bank.clip_ids.index(args.clip)
@@ -187,7 +218,11 @@ def main() -> int:
                 "PPO26D_FIXED_CLIP_MISMATCH: "
                 f"requested={args.clip} active_indices={active_clip_indices}"
             )
-        trainer = PPO26DTrainer(observation_dim=764, device=str(env.device))
+        trainer = PPO26DTrainer(
+            observation_dim=764,
+            device=str(env.device),
+            runtime_reference_samples=env.reference_bank.frame_count,
+        )
         write_json(
             output / "training_config.json",
             {
