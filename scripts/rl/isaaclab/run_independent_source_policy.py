@@ -131,7 +131,8 @@ def main() -> int:
     log_root = report_root / "logs"
     reference_root = run_root / "references"
     object_root = run_root / "objects"
-    usd_root = run_root / "object_usd"
+    usd_parent = run_root / "object_usd"
+    usd_root = usd_parent / args.clip_id
     contact_root = run_root / "source_contact"
     world_reference = reference_root / f"{args.clip_id}.world_wrist.stage16.npz"
     object_mesh = object_root / f"{args.clip_id}.obj"
