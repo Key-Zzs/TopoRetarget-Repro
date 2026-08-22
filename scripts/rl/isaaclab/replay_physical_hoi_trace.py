@@ -132,7 +132,12 @@ def parse_args() -> argparse.Namespace:
         help="Optional JSON for RAW_MOCAP_VS_ACTUAL object/wrist/fingertip diagnostics",
     )
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
-    parser.add_argument("--object", choices=("hocap_170105", "hocap_170650"))
+    parser.add_argument("--object")
+    parser.add_argument(
+        "--support-proxy",
+        type=Path,
+        help="Direct table_proxy.json for an independent trace with support telemetry.",
+    )
     parser.add_argument("--replica", type=int, default=0)
     parser.add_argument("--start-frame", type=int, default=0)
     parser.add_argument("--end-frame", type=int, help="Exclusive; defaults to the trace end")
@@ -168,11 +173,13 @@ def _safe_prim_name(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_]", "_", value)
 
 
-def _inferred_table_proxy(clip: str) -> dict[str, object]:
+def _inferred_table_proxy(clip: str, path: Path | None = None) -> dict[str, object]:
     """Load the frozen finite support used by C4 without changing replay physics."""
 
-    path = INFERRED_TABLE_ROOT / clip / "table_proxy.json"
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    selected = (
+        path.resolve() if path is not None else INFERRED_TABLE_ROOT / clip / "table_proxy.json"
+    )
+    payload = json.loads(selected.read_text(encoding="utf-8"))
     required = {"table_pose", "table_extent", "table_thickness", "plane_normal"}
     if not required.issubset(payload):
         raise ValueError("C4_REPLAY_INFERRED_TABLE_CONTRACT_INVALID")
@@ -224,6 +231,10 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--hold-seconds must be non-negative")
     if args.mocap_object_max_faces is not None and args.mocap_object_max_faces < 4:
         raise ValueError("--mocap-object-max-faces must be at least 4")
+    if args.object is not None and (
+        not args.object or any(token in args.object for token in ("/", "\\", ".."))
+    ):
+        raise ValueError("INDEPENDENT_PHYSICAL_REPLAY_OBJECT_ID_INVALID")
     frame_range_requested = args.loop or args.end_frame is not None or args.start_frame != 0
     if args.frame is not None and frame_range_requested:
         raise ValueError("--frame cannot be combined with --loop/--start-frame/--end-frame")
@@ -459,7 +470,7 @@ def main() -> int:
             raise ValueError(
                 f"PPO trace clip {trace_clip!r} does not match replay object {object_id!r}"
             )
-        expected_clip_index = {"hocap_170105": 0, "hocap_170650": 1}[object_id]
+        expected_clip_index = {"hocap_170105": 0, "hocap_170650": 1}.get(object_id, 0)
         clip_index = np.asarray(ppo_metadata.get("clip_index"), dtype=np.int64)
         if clip_index.shape != (trace.frame_count,) or not np.all(
             clip_index == expected_clip_index
@@ -544,7 +555,7 @@ def main() -> int:
         mocap_layer = UsdGeom.Xform.Define(stage, "/World/Replay/Mocap")
 
         if inferred_table_rendered:
-            table = _inferred_table_proxy(object_id)
+            table = _inferred_table_proxy(object_id, args.support_proxy)
             pose = np.asarray(table["table_pose"], dtype=np.float64)
             normal = np.asarray(table["plane_normal"], dtype=np.float64)
             extent = np.asarray(table["table_extent"], dtype=np.float64)
