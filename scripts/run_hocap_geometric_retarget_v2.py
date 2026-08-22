@@ -102,6 +102,18 @@ def main() -> int:
         raise BatchContractError("SELECTION_PRIMARY_OBJECT_AUTHORITY_MISMATCH")
     if manifest.get("primary_object_authority_sha256") != authority["authority_sha256"]:
         raise BatchContractError("SELECTION_PRIMARY_OBJECT_AUTHORITY_HASH_MISMATCH")
+    selected_frame_range = clip.get("selected_frame_range")
+    if (
+        not isinstance(selected_frame_range, list)
+        or len(selected_frame_range) != 2
+        or not all(isinstance(value, int) for value in selected_frame_range)
+        or selected_frame_range[0] < 0
+        or selected_frame_range[1] <= selected_frame_range[0]
+        or selected_frame_range[1] > int(clip["raw_frames"])
+    ):
+        raise BatchContractError("SELECTION_INTERACTION_FRAME_RANGE_INVALID")
+    start_frame, end_frame = selected_frame_range
+    frame_count = end_frame - start_frame
 
     clip_run = args.run_root / args.clip_id
     clip_report = args.report_root / "clips" / args.clip_id
@@ -135,9 +147,9 @@ def main() -> int:
                 "--primary-object-authority",
                 str(args.primary_object_authority),
                 "--start-frame",
-                "0",
+                str(start_frame),
                 "--end-frame",
-                "41",
+                str(end_frame),
                 "--output",
                 str(canonical),
             ],
@@ -373,9 +385,9 @@ def main() -> int:
 
     html_manifest = {
         "schema_version": "IndependentHOCapRetargetHtmlVisualizationManifestV2",
-        "run_id": f"independent_multiclip_hocap_pilot_v2_{args.clip_id}",
+        "run_id": f"{args.report_root.name}_{args.clip_id}",
         "source_sequence": clip["sequence"],
-        "selected_frame_range": [0, 41],
+        "selected_frame_range": selected_frame_range,
         "robot": "wuji_hand2_beta1_rh",
         "primary_object_id": primary,
         "primary_object_authority_sha256": authority["authority_sha256"],
@@ -420,8 +432,8 @@ def main() -> int:
         "primary_object_id": primary,
         "primary_object_authority_sha256": authority["authority_sha256"],
         "selection_manifest_sha256": manifest["manifest_sha256"],
-        "frame_range": [0, 41],
-        "frame_count": 41,
+        "frame_range": selected_frame_range,
+        "frame_count": frame_count,
         "artifacts": html_manifest["artifacts"],
         "html": str((reports / "continuous_refinement_visualization.html").resolve()),
         "stages": receipts,

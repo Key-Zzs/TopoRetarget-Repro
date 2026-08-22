@@ -7,6 +7,7 @@ from toporetarget.adapters.datasets.hocap_primary_object import (
     HOCapPrimaryObjectError,
     primary_object_from_authority,
     resolve_hocap_primary_object,
+    resolve_hocap_primary_object_v2,
 )
 from toporetarget.rl.independent_physical_refinement import stable_hash
 
@@ -44,6 +45,39 @@ def _sequence(*, runner_distance: float = 0.11) -> SimpleNamespace:
     )
 
 
+def _multi_manipulation_sequence(*, runner_onset: int = 45) -> SimpleNamespace:
+    frame_count = 70
+    hand = np.zeros((frame_count, 21, 3), dtype=np.float64)
+    hand[..., 2] = 0.01
+    vertices = np.asarray([[-2.0, -2.0, 0.0], [2.0, -2.0, 0.0], [0.0, 2.0, 0.0]])
+    faces = np.asarray([[0, 1, 2]], dtype=np.int64)
+
+    def obj(object_id: str, onset: int) -> SimpleNamespace:
+        poses = np.repeat(np.eye(4, dtype=np.float64)[None], frame_count, axis=0)
+        poses[onset:, 0, 3] = np.arange(frame_count - onset, dtype=np.float64) * 0.01
+        return SimpleNamespace(
+            object_id=object_id,
+            mesh=SimpleNamespace(
+                vertices_local=vertices,
+                faces=faces,
+                mesh_hash=f"hash-{object_id}",
+            ),
+            pose_scene=SimpleNamespace(pose_scene=poses),
+        )
+
+    return SimpleNamespace(
+        metadata=SimpleNamespace(dataset_name="hocap", sequence_id="subject_1/multi"),
+        hands=[
+            SimpleNamespace(
+                keypoint_tracks={
+                    "mediapipe21": SimpleNamespace(positions_scene=hand),
+                }
+            )
+        ],
+        rigid_objects=[obj("G01_1", 8), obj("G01_2", runner_onset)],
+    )
+
+
 def test_raw_surface_resolver_selects_unique_candidate() -> None:
     result = resolve_hocap_primary_object(_sequence())
 
@@ -59,6 +93,24 @@ def test_raw_surface_resolver_refuses_small_margin() -> None:
     assert result["status"] == "UNRESOLVED"
     assert result["primary_object_id"] is None
     assert "PRIMARY_OBJECT_CANDIDATE_MARGIN_TOO_SMALL" in result["failure_reasons"]
+
+
+def test_first_manipulation_resolver_selects_earliest_coupled_motion() -> None:
+    result = resolve_hocap_primary_object_v2(_multi_manipulation_sequence())
+
+    assert result["status"] == "RESOLVED"
+    assert result["primary_object_id"] == "G01_1"
+    assert result["selected_frame_range"] == [0, 70]
+    assert result["winner_runner_up_onset_margin_frames"] >= 30
+    assert result["sequence_level_primary_object_exists"] is False
+
+
+def test_first_manipulation_resolver_refuses_ambiguous_onsets() -> None:
+    result = resolve_hocap_primary_object_v2(_multi_manipulation_sequence(runner_onset=12))
+
+    assert result["status"] == "UNRESOLVED"
+    assert result["primary_object_id"] is None
+    assert "PRIMARY_OBJECT_MANIPULATION_ONSET_MARGIN_TOO_SMALL" in result["failure_reasons"]
 
 
 def test_authority_lookup_detects_object_set_drift() -> None:
