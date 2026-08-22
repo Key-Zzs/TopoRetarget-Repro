@@ -48,9 +48,19 @@ DEXPLORE_REFINEMENT_CHECKPOINT_SCHEMA = "Stage16DGroupedMultiplicativeRSECheckpo
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--accept-eula", action="store_true")
-    parser.add_argument("--clip", choices=("hocap_170105", "hocap_170650"), default="hocap_170650")
+    parser.add_argument("--clip", default="hocap_170650")
     parser.add_argument("--output-root", type=Path, default=DEFAULT_ROOT)
     parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument(
+        "--reference",
+        type=Path,
+        help="Direct variable-length V1/V2 reference for one independent clip.",
+    )
+    parser.add_argument(
+        "--object-usd",
+        type=Path,
+        help="Direct collision-bearing object USD for one independent clip.",
+    )
     parser.add_argument(
         "--full-trajectory-table",
         action="store_true",
@@ -465,11 +475,8 @@ def _initial_trace_snapshot(
             }
         )
     if getattr(env.cfg, "stage16_support_mode", None) == "finite_inferred_table_proxy_v1":
-        sensor_name = (
-            "object_170105_support_contact"
-            if env.cfg.stage16d_fixed_clip == "hocap_170105"
-            else "object_170650_support_contact"
-        )
+        clip_index = env.reference_bank.clip_ids.index(env.cfg.stage16d_fixed_clip)
+        sensor_name = f"{env._object_specs[clip_index][1]}_support_contact"
         force = env.scene[sensor_name].data.force_matrix_w
         values["table_object_contact"] = (
             torch.linalg.vector_norm(force, dim=-1).amax(dim=(1, 2)) > 1.0e-4
@@ -923,6 +930,15 @@ def main() -> int:
     args = parse_args()
     if not args.accept_eula:
         raise ValueError("--accept-eula is required")
+    if not args.clip or any(token in args.clip for token in ("/", "\\", "..")):
+        raise ValueError("INDEPENDENT_PHYSICAL_EVALUATION_CLIP_ID_INVALID")
+    independent_inputs = (args.reference, args.object_usd)
+    if any(value is not None for value in independent_inputs) and not all(
+        value is not None for value in independent_inputs
+    ):
+        raise ValueError(
+            "independent physical evaluation requires --reference and --object-usd together"
+        )
     legacy_mode = (
         ContactRewardMode.AGGREGATE_V3
         if args.reference_gated_contact_reward_v3
@@ -951,7 +967,7 @@ def main() -> int:
         args.object_twist_reward_v2
         or args.reference_gated_contact_reward_v3
         or args.strict_per_finger_contact_reward_v4
-    ) and args.reference_kinematics_v2_root is None:
+    ) and args.reference_kinematics_v2_root is None and args.reference is None:
         raise ValueError("PPO26D_REWARD_V2_REQUIRES_REFERENCE_KINEMATICS_V2")
     if (
         sum(
@@ -984,6 +1000,8 @@ def main() -> int:
         contact_mode is None or args.rsi_replicas != 0 or args.curriculum_stage != "C4"
     ):
         raise ValueError("FULL_TRAJECTORY_C4_EVALUATION_REQUIRES_CONTACT_MODE_AND_NO_RSI")
+    if args.full_trajectory_table and args.reference is not None:
+        raise ValueError("INDEPENDENT_FULL_TRAJECTORY_TABLE_AUTHORITY_NOT_BOUND")
     if args.hand_gravity_mode != "current_off" and not args.full_trajectory_table:
         raise ValueError("HAND_GRAVITY_ABLATION_REQUIRES_FULL_TRAJECTORY_TABLE")
     if not args.artifact_label.replace("_", "").isalnum():
@@ -1055,23 +1073,41 @@ def main() -> int:
             ppo26d_cfg.configure_stage16d_ppo26d(
                 cfg, num_envs=evaluation_num_envs, clip=args.clip, rsi=False, critical_dr=False
             )
+            if args.reference is not None:
+                assert args.object_usd is not None
+                from toporetarget.rl.environments.isaaclab_backend import (
+                    world_wrist_direct_env_cfg,
+                )
+
+                world_wrist_direct_env_cfg.configure_independent_clip_runtime(
+                    cfg,
+                    clip_id=args.clip,
+                    reference_path=args.reference,
+                    object_usd_path=args.object_usd,
+                )
             if contact_mode is not None:
-                assert args.reference_kinematics_v2_root is not None
                 assert args.contact_reward_contract is not None
                 assert args.contact_mask_root is not None
                 ppo26d_cfg.configure_stage16d_contact_reward(
                     cfg,
                     mode=contact_mode,
-                    reference_root=args.reference_kinematics_v2_root,
+                    reference_root=(
+                        args.reference_kinematics_v2_root
+                        if args.reference_kinematics_v2_root is not None
+                        else args.reference.parent
+                    ),
                     contact_reward_contract=args.contact_reward_contract,
                     contact_mask_root=args.contact_mask_root,
                 )
             elif args.object_twist_reward_v2:
-                assert args.reference_kinematics_v2_root is not None
-                ppo26d_cfg.configure_stage16d_phase3_object_twist_reward(
-                    cfg, reference_root=args.reference_kinematics_v2_root
-                )
-            elif args.reference_kinematics_v2_root is not None:
+                if args.reference is not None:
+                    ppo26d_cfg.configure_independent_phase3_object_twist_reward(cfg)
+                else:
+                    assert args.reference_kinematics_v2_root is not None
+                    ppo26d_cfg.configure_stage16d_phase3_object_twist_reward(
+                        cfg, reference_root=args.reference_kinematics_v2_root
+                    )
+            elif args.reference_kinematics_v2_root is not None and args.reference is None:
                 ppo26d_cfg.configure_stage16d_reference_kinematics_v2(
                     cfg, reference_root=args.reference_kinematics_v2_root
                 )
