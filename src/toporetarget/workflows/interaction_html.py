@@ -38,6 +38,41 @@ from .mesh_visualization import (
 from .schema import read_json
 
 
+def _validate_primary_object_contract(
+    manifest: dict[str, Any], sequence: Any, final: Any
+) -> dict[str, str | None]:
+    """Bind HTML output to the same explicit object used by conversion/refinement."""
+
+    available = [str(item.object_id) for item in sequence.rigid_objects]
+    expected = manifest.get("primary_object_id")
+    authority_hash = manifest.get("primary_object_authority_sha256")
+    is_multi_hocap = sequence.metadata.dataset_name == "hocap" and len(available) > 1
+    if is_multi_hocap and (not isinstance(expected, str) or not authority_hash):
+        raise ValueError("HTML_PRIMARY_OBJECT_AUTHORITY_REQUIRED")
+    if expected is None and len(available) == 1:
+        expected = available[0]
+    if expected is None:
+        expected = final.metadata.get("object_id")
+    if expected not in available:
+        raise ValueError("HTML_PRIMARY_OBJECT_NOT_IN_CANONICAL_OBJECT_SET")
+    canonical = sequence.metadata.metadata.get("primary_object_id")
+    conversion = sequence.metadata.provenance.conversion_options.get("primary_object_id")
+    final_object = final.metadata.get("object_id")
+    for label, value in (
+        ("canonical", canonical),
+        ("conversion", conversion),
+        ("final", final_object),
+    ):
+        if value != expected:
+            raise ValueError(f"HTML_PRIMARY_OBJECT_MISMATCH:{label}:{value!r}:{expected!r}")
+    return {
+        "primary_object_id": str(expected),
+        "primary_object_authority_sha256": (
+            None if authority_hash is None else str(authority_hash)
+        ),
+    }
+
+
 def _html_document(payload: dict[str, Any]) -> str:
     data = json.dumps(payload, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
     return f'''<!doctype html>
@@ -210,6 +245,7 @@ def render_interaction_mesh_html(
     graph = load_interaction_graph(artifacts["graph"]["path"])
     evaluation = load_interaction_evaluation(artifacts["evaluation"]["path"])
     final = load_final_trajectory(artifacts["final"]["path"])
+    primary_object_contract = _validate_primary_object_contract(manifest, sequence, final)
     if not (warm.frame_count == graph.frame_count == evaluation.frame_count == final.frame_count):
         raise ValueError("source/warm/graph/evaluation/final frame counts differ")
     frame_count = final.frame_count
@@ -283,6 +319,7 @@ def render_interaction_mesh_html(
             "stage6_object_sample_identity_reused": True,
             "stage9_artifact_modified": False,
             "frame_range": [int(display_indices[0]), int(display_indices[-1]) + 1],
+            **primary_object_contract,
         },
         "bounds": _bounds(
             source_vertices,
@@ -314,6 +351,7 @@ def render_interaction_mesh_html(
         "graph_edges_frame0": int(len(interaction["frames"][0]["edges"])),
         "object_points": int(len(object_vertices)),
         "artifact_hashes": hashes,
+        **primary_object_contract,
         "opened_browser": bool(open_browser),
     }
 

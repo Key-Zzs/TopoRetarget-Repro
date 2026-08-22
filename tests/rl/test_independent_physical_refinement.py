@@ -60,6 +60,21 @@ def test_selection_is_deterministic_and_excludes_development() -> None:
     assert "hocap_170105" not in {item.clip_id for item in first}
 
 
+def test_multi_object_selection_requires_explicit_primary_authority(tmp_path: Path) -> None:
+    rows = [
+        HOCapCandidate(
+            **{
+                **_candidate(index).__dict__,
+                "object_ids": (f"G{index:02d}_1", f"G{index:02d}_2"),
+            }
+        )
+        for index in range(1, 6)
+    ]
+
+    with pytest.raises(BatchContractError, match="PRIMARY_OBJECT_AUTHORITY_REQUIRED"):
+        freeze_selection(candidates=rows, root=tmp_path)
+
+
 def test_freeze_manifest_hash_rejects_outcome_mutation(tmp_path: Path) -> None:
     manifest = freeze_selection(
         candidates=[_candidate(item) for item in range(1, 7)], root=tmp_path

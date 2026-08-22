@@ -6,7 +6,10 @@ from toporetarget.workflows.four_state_review import (
     _html_document as _four_state_html_document,
 )
 from toporetarget.workflows.four_state_review import build_review_keyframes
-from toporetarget.workflows.interaction_html import _html_document as _interaction_html_document
+from toporetarget.workflows.interaction_html import (
+    _html_document as _interaction_html_document,
+)
+from toporetarget.workflows.interaction_html import _validate_primary_object_contract
 from toporetarget.workflows.mesh_visualization import (
     _edge_category_codes,
     _filter_edge_indices,
@@ -95,6 +98,30 @@ def test_interaction_residual_summary_and_html_modes() -> None:
     assert "modeInput.value=DATA.initial_mode||'mesh'" in html
     assert "function drawMeshLayers()" in html
     assert "faces=DATA.object.faces||[]" in html
+
+
+def test_hocap_html_requires_and_checks_primary_object_authority() -> None:
+    sequence = SimpleNamespace(
+        metadata=SimpleNamespace(
+            dataset_name="hocap",
+            metadata={"primary_object_id": "G01_2"},
+            provenance=SimpleNamespace(conversion_options={"primary_object_id": "G01_2"}),
+        ),
+        rigid_objects=[SimpleNamespace(object_id="G01_1"), SimpleNamespace(object_id="G01_2")],
+    )
+    final = SimpleNamespace(metadata={"object_id": "G01_2"})
+
+    with np.testing.assert_raises_regex(ValueError, "AUTHORITY_REQUIRED"):
+        _validate_primary_object_contract({}, sequence, final)
+    result = _validate_primary_object_contract(
+        {
+            "primary_object_id": "G01_2",
+            "primary_object_authority_sha256": "authority-hash",
+        },
+        sequence,
+        final,
+    )
+    assert result["primary_object_id"] == "G01_2"
 
 
 def test_four_state_review_html_contains_all_acceptance_layers() -> None:

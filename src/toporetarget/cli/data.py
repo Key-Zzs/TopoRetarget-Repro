@@ -7,6 +7,10 @@ from pathlib import Path
 
 import typer
 
+from toporetarget.adapters.datasets.hocap_primary_object import (
+    load_primary_object_authority,
+    primary_object_from_authority,
+)
 from toporetarget.data.adapters.base import FrameRange
 from toporetarget.data.adapters.grab import GrabAdapterError, GrabDatasetAdapter, GrabLoadOptions
 from toporetarget.data.indexes.grab import GrabIndexError, build_grab_index, load_grab_index
@@ -84,6 +88,7 @@ def _load_raw(
     frame_range: FrameRange | None,
     data_root: Path | None = None,
     primary_object: str | None = None,
+    primary_object_authority: Path | None = None,
 ):
     if dataset == "synthetic":
         return _synthetic(sequence, frame_range)
@@ -102,9 +107,24 @@ def _load_raw(
         )
         return adapter.load_raw_renderable(sequence_path.name, frame_range=frame_range)
     if dataset == "hocap":
+        adapter = _hocap_adapter(data_root=data_root, mano_model_root=mano_model_root)
+        if primary_object_authority is not None:
+            row = adapter.describe_sequence(sequence)
+            resolved = primary_object_from_authority(
+                load_primary_object_authority(primary_object_authority),
+                sequence=row["sequence"],
+                available_object_ids=row["object_ids"],
+            )
+            if primary_object is not None and primary_object != resolved:
+                raise typer.BadParameter(
+                    "--primary-object conflicts with --primary-object-authority"
+                )
+            primary_object = resolved
         if primary_object is None:
-            raise typer.BadParameter("--primary-object is required for --dataset hocap")
-        return _hocap_adapter(data_root=data_root, mano_model_root=mano_model_root).load_sequence(
+            raise typer.BadParameter(
+                "--primary-object or --primary-object-authority is required for --dataset hocap"
+            )
+        return adapter.load_sequence(
             sequence,
             frame_range=frame_range,
             hand=hand,
@@ -205,6 +225,11 @@ def convert(
     primary_object: str | None = typer.Option(
         None, "--primary-object", help="Required manipulation object when converting HOCap."
     ),
+    primary_object_authority: Path | None = typer.Option(
+        None,
+        "--primary-object-authority",
+        help="Frozen HOCap primary-object authority; conflicts fail closed.",
+    ),
     include_table: bool = typer.Option(True, "--include-table/--no-table"),
     contact_mode: str = typer.Option("source", "--contact-mode"),
     include_mediapipe21: bool = typer.Option(True, "--include-mediapipe21/--no-mediapipe21"),
@@ -279,6 +304,7 @@ def convert(
             frame_range=_range(start_frame, end_frame),
             data_root=data_root,
             primary_object=primary_object,
+            primary_object_authority=primary_object_authority,
         )
         canonical = raw
         if output is not None:

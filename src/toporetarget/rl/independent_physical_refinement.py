@@ -18,13 +18,17 @@ import os
 import tempfile
 import time
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import yaml
 
+from toporetarget.adapters.datasets.hocap_primary_object import (
+    HOCapPrimaryObjectError,
+    primary_object_from_authority,
+)
 from toporetarget.utils.hashing import sha256_file
 
 SCHEMA_VERSION = "IndependentPhysicalRefinementBatchV1"
@@ -117,17 +121,33 @@ class HOCapCandidate:
     raw_hashes: Mapping[str, str]
     eligible: bool
     reasons: tuple[str, ...]
+    primary_object_id: str | None = None
 
     @property
     def object_id(self) -> str:
-        return self.object_ids[0] if self.object_ids else ""
+        if self.primary_object_id is not None:
+            if self.primary_object_id not in self.object_ids:
+                raise BatchContractError("PRIMARY_OBJECT_NOT_IN_DECLARED_OBJECT_SET")
+            return self.primary_object_id
+        if len(self.object_ids) == 1:
+            return self.object_ids[0]
+        raise BatchContractError(
+            f"PRIMARY_OBJECT_UNRESOLVED:{self.clip_id}:{list(self.object_ids)}"
+        )
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "clip_id": self.clip_id,
             "sequence": self.sequence,
             "subject": self.subject,
-            "object_id": self.object_id,
+            "object_id": (
+                self.primary_object_id
+                if self.primary_object_id is not None
+                else self.object_ids[0]
+                if len(self.object_ids) == 1
+                else None
+            ),
+            "primary_object_id": self.primary_object_id,
             "object_ids": list(self.object_ids),
             "raw_path": self.raw_path,
             "raw_frames": self.raw_frames,
@@ -227,7 +247,7 @@ def select_held_out_candidates(
 ) -> list[HOCapCandidate]:
     """Select a diverse, deterministic raw-only held-out set.
 
-    The first pass takes at most one clip per primary object and subject.  A
+    The first pass takes at most one clip per declared object set and subject.  A
     deterministic second pass fills any remaining places, so small datasets do
     not silently become ineligible merely because full diversity is impossible.
     """
@@ -238,13 +258,13 @@ def select_held_out_candidates(
     ordered = sorted(eligible, key=lambda item: selection_key(item, seed=seed))
     selected: list[HOCapCandidate] = []
     subjects: set[str] = set()
-    objects: set[str] = set()
+    object_sets: set[tuple[str, ...]] = set()
     for item in ordered:
-        if item.subject in subjects or item.object_id in objects:
+        if item.subject in subjects or item.object_ids in object_sets:
             continue
         selected.append(item)
         subjects.add(item.subject)
-        objects.add(item.object_id)
+        object_sets.add(item.object_ids)
         if len(selected) == count:
             return selected
     for item in ordered:
@@ -256,7 +276,12 @@ def select_held_out_candidates(
     raise BatchContractError(f"HELD_OUT_POOL_TOO_SMALL:{len(selected)}/{count}")
 
 
-def _manifest_core(selected: Iterable[HOCapCandidate], *, seed: int) -> dict[str, Any]:
+def _manifest_core(
+    selected: Iterable[HOCapCandidate],
+    *,
+    seed: int,
+    primary_object_authority_sha256: str | None = None,
+) -> dict[str, Any]:
     clips = []
     for rank, candidate in enumerate(selected, start=1):
         clip = candidate.as_dict()
@@ -271,19 +296,52 @@ def _manifest_core(selected: Iterable[HOCapCandidate], *, seed: int) -> dict[str
         "held_out_count": len(clips),
         "HELD_OUT_SET_FROZEN": "YES",
         "selection_basis": "static_raw_metadata_only",
+        "primary_object_contract": "explicit_fail_closed_authority_v1",
+        "primary_object_authority_sha256": primary_object_authority_sha256,
         "exclusions": sorted(DEVELOPMENT_CLIPS),
         "clips": clips,
     }
 
 
 def freeze_selection(
-    *, candidates: Iterable[HOCapCandidate], root: Path, seed: int = SELECTION_SEED
+    *,
+    candidates: Iterable[HOCapCandidate],
+    root: Path,
+    seed: int = SELECTION_SEED,
+    primary_object_authority: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Write deterministic candidate, exclusion, and immutable five-clip manifests."""
 
     all_candidates = list(candidates)
     selected = select_held_out_candidates(all_candidates, seed=seed)
-    core = _manifest_core(selected, seed=seed)
+    resolved: list[HOCapCandidate] = []
+    for candidate in selected:
+        primary = candidate.primary_object_id
+        if primary is None and len(candidate.object_ids) == 1:
+            primary = candidate.object_ids[0]
+        if primary is None:
+            if primary_object_authority is None:
+                raise BatchContractError(f"PRIMARY_OBJECT_AUTHORITY_REQUIRED:{candidate.clip_id}")
+            try:
+                primary = primary_object_from_authority(
+                    primary_object_authority,
+                    sequence=candidate.sequence,
+                    available_object_ids=candidate.object_ids,
+                )
+            except HOCapPrimaryObjectError as exc:
+                raise BatchContractError(str(exc)) from exc
+        resolved.append(replace(candidate, primary_object_id=primary))
+    selected = resolved
+    authority_hash = (
+        str(primary_object_authority.get("authority_sha256"))
+        if primary_object_authority is not None
+        else None
+    )
+    core = _manifest_core(
+        selected,
+        seed=seed,
+        primary_object_authority_sha256=authority_hash,
+    )
     core_hash = stable_hash(core)
     manifest = {**core, "manifest_sha256": core_hash}
     selection_root = root / "selection"
@@ -295,6 +353,7 @@ def freeze_selection(
             "sequence",
             "subject",
             "object_id",
+            "primary_object_id",
             "object_ids",
             "raw_path",
             "raw_frames",

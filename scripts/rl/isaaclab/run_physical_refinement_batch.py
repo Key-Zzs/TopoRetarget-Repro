@@ -49,6 +49,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--report-root", type=Path, default=DEFAULT_REPORT_ROOT)
     parser.add_argument("--run-root", type=Path, default=DEFAULT_RUN_ROOT)
     parser.add_argument("--authority-manifest", type=Path)
+    parser.add_argument(
+        "--primary-object-authority",
+        type=Path,
+        help="Required fail-closed primary-object authority for multi-object HOCap selection.",
+    )
     parser.add_argument("--resume", action="store_true")
     return parser
 
@@ -589,7 +594,16 @@ def _run(args: argparse.Namespace) -> int:
         if manifest_path.exists() and not args.resume:
             raise BatchContractError("SELECTION_NAMESPACE_EXISTS_USE_RESUME")
         candidates = scan_hocap_candidates(args.raw_root.resolve())
-        manifest = freeze_selection(candidates=candidates, root=root)
+        primary_authority = (
+            _load_manifest(args.primary_object_authority)
+            if args.primary_object_authority is not None
+            else None
+        )
+        manifest = freeze_selection(
+            candidates=candidates,
+            root=root,
+            primary_object_authority=primary_authority,
+        )
         _, method_hash = freeze_method_contract(root)
     else:
         if not manifest_path.is_file():
