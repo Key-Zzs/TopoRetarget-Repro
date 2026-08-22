@@ -130,16 +130,21 @@ def _object_payload(
 ) -> dict[str, Any]:
     object_id = str(final.metadata.get("object_id", ""))
     if not object_id:
-        return {"vertices": [], "poses": [], "object_id": None}
+        return {"vertices": [], "faces": [], "poses": [], "object_id": None}
     track = sequence.rigid_object(object_id)
     vertices = np.asarray(track.mesh.vertices_local, dtype=np.float64)
-    if len(vertices) > max_points:
+    faces = np.asarray(track.mesh.faces, dtype=np.int64)
+    # A vertex subsample cannot retain the original triangle indices.  Keep an
+    # exact visual mesh whenever faces exist; point-only tracks retain the
+    # bounded sampling fallback.
+    if not len(faces) and len(vertices) > max_points:
         selected = np.linspace(0, len(vertices) - 1, max_points, dtype=np.int64)
         vertices = vertices[selected]
     poses = np.asarray(track.pose_scene.pose_scene[source_indices], dtype=np.float64)
     return {
         "object_id": object_id,
         "vertices": _rounded(vertices),
+        "faces": faces.tolist(),
         "poses": _rounded(poses, digits=8),
     }
 
@@ -484,10 +489,11 @@ function drawRobot(payload, index, color, alpha, width, height) {{
   payload.parts.forEach((part, partIndex) => drawMesh(vertices[partIndex], part.faces, color, alpha, width, height));
 }}
 function drawObject(index, width, height) {{
-  const pose = DATA.object.poses[index], points = DATA.object.vertices;
+  const pose = DATA.object.poses[index], points = DATA.object.vertices, faces = DATA.object.faces || [];
+  const vertices = points.map(p => [pose[0][0]*p[0]+pose[0][1]*p[1]+pose[0][2]*p[2]+pose[0][3], pose[1][0]*p[0]+pose[1][1]*p[1]+pose[1][2]*p[2]+pose[1][3], pose[2][0]*p[0]+pose[2][1]*p[1]+pose[2][2]*p[2]+pose[2][3]]);
+  if (faces.length) {{ drawMesh(vertices, faces, '#64748b', 0.42, width, height); return; }}
   ctx.fillStyle = '#64748b'; ctx.globalAlpha = 0.45;
-  for (const p of points) {{
-    const q = [pose[0][0]*p[0]+pose[0][1]*p[1]+pose[0][2]*p[2]+pose[0][3], pose[1][0]*p[0]+pose[1][1]*p[1]+pose[1][2]*p[2]+pose[1][3], pose[2][0]*p[0]+pose[2][1]*p[1]+pose[2][2]*p[2]+pose[2][3]];
+  for (const q of vertices) {{
     const s = project(q,width,height); ctx.fillRect(s[0]-1,s[1]-1,2,2);
   }}
   ctx.globalAlpha = 1;

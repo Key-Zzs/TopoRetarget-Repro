@@ -26,7 +26,7 @@ def test_mesh_html_is_self_contained_and_has_three_mesh_layers() -> None:
         "source": {"vertices": [[[0, 0, 0]]], "faces": []},
         "warm": {"parts": []},
         "final": {"parts": []},
-        "object": {"object_id": None, "vertices": [], "poses": []},
+        "object": {"object_id": None, "vertices": [], "faces": [], "poses": []},
         "metrics": {"frames": [{"local_frame": 0, "source_frame": 0}]},
         "bounds": [[-1, -1, -1], [1, 1, 1]],
     }
@@ -36,6 +36,8 @@ def test_mesh_html_is_self_contained_and_has_three_mesh_layers() -> None:
     assert "Source MANO mesh" in html
     assert "Warm-start robot mesh" in html
     assert "Final robot mesh" in html
+    assert "DATA.object.faces || []" in html
+    assert "if (faces.length)" in html
     assert "https://" not in html
     assert "${item.local_frame}" in html
 
@@ -92,6 +94,7 @@ def test_interaction_residual_summary_and_html_modes() -> None:
     assert "handObjectOnly" in html
     assert "modeInput.value=DATA.initial_mode||'mesh'" in html
     assert "function drawMeshLayers()" in html
+    assert "faces=DATA.object.faces||[]" in html
 
 
 def test_four_state_review_html_contains_all_acceptance_layers() -> None:
