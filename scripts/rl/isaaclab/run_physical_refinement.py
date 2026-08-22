@@ -582,8 +582,35 @@ def _evaluate_first(
         "accepted": bool(confirm20 and confirm20.get("accepted") is True),
         "ppo_required": _requires_refinement(confirm20 or eval10),
         "ppo_optimizer_steps": 0,
+        "independent_input_hashes": (
+            None
+            if independent is None
+            else {name: _path_authority_hash(path) for name, path in independent.items()}
+        ),
     }
     _write_json(root / "decision.json", decision)
+    return decision
+
+
+def _load_evaluate_first(
+    source: dict[str, object], *, independent: dict[str, Path] | None = None
+) -> dict[str, object] | None:
+    path = REPORT_ROOT / "evaluate_first" / str(source["clip"]) / "decision.json"
+    if not path.is_file():
+        return None
+    decision = json.loads(path.read_text(encoding="utf-8"))
+    expected_hashes = (
+        None
+        if independent is None
+        else {name: _path_authority_hash(value) for name, value in independent.items()}
+    )
+    if (
+        decision.get("schema_version") != "PhysicalRefinementEvaluateFirstV1"
+        or decision.get("clip") != source["clip"]
+        or decision.get("source_checkpoint") != str(Path(str(source["checkpoint"])).resolve())
+        or decision.get("independent_input_hashes") != expected_hashes
+    ):
+        raise RuntimeError("PHYSICAL_REFINEMENT_EVALUATE_FIRST_RECEIPT_DRIFT")
     return decision
 
 
@@ -901,7 +928,9 @@ def main() -> int:
         print(json.dumps(result, sort_keys=True))
         return 0
     if args.mode == "train":
-        decision = _evaluate_first(source, independent=independent)
+        decision = _load_evaluate_first(source, independent=independent) or _evaluate_first(
+            source, independent=independent
+        )
         if decision["ppo_required"] is False:
             result = {
                 "schema_version": "PhysicalRefinementTrainingDecisionV1",
