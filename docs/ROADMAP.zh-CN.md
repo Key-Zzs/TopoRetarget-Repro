@@ -74,6 +74,14 @@ coupling。由于 immutable PhysX trace 缺少 actual contact points/normals 与
 profile](rl/HUMAN_OBJECT_COUPLING_CONTACT_PROFILE.md) 与 [generic refinement
 target](rl/GENERIC_PHYSICAL_REFINEMENT_TARGET.md)。
 
+## Stage16 SourceProfileTracking V1 离线硬门（CLOSED，未提升）
+
+第一次 object-agnostic V1 实现复用了冻结的人-物 profile，并采用全局归一化的 activity、object-local
+geometry 与 pose-derived coupling residual。目标数值有限，accepted 170650 positive control 也没有异常；但
+CONTACT-to-early-LIFT 的必需排序失败：170105 C4 failure 的 combined profile loss 反而更低。最终为
+`OFFLINE_OBJECTIVE_INVALID` / `PROFILE_OBJECTIVE_NOT_DISCRIMINATIVE`；没有加入 profile reward、没有 PPO
+update，也没有训练 170650。见 [SourceProfileTracking V1](rl/SOURCE_PROFILE_TRACKING_REFINEMENT.md)。
+
 ## Stage16-D 因果零重力里程碑（CLOSED）
 
 `CAUSAL_ZERO_G_MILESTONE_COMPLETE`

@@ -90,6 +90,18 @@ acceptance](rl/STAGE16_170650_ACCEPTANCE.md), [coupling contact
 profile](rl/HUMAN_OBJECT_COUPLING_CONTACT_PROFILE.md), and [generic refinement
 target](rl/GENERIC_PHYSICAL_REFINEMENT_TARGET.md).
 
+## Stage16 SourceProfileTracking V1 offline gate (CLOSED, NOT PROMOTED)
+
+The first object-agnostic V1 implementation reused the frozen human-object
+profile with globally normalized activity, object-local geometry, and
+pose-derived coupling residuals.  The objective was finite and the accepted
+170650 positive control was sensible, but the required CONTACT-to-early-LIFT
+ranking failed: 170105's failed C4 traces had lower combined profile loss.
+The result is `OFFLINE_OBJECTIVE_INVALID` /
+`PROFILE_OBJECTIVE_NOT_DISCRIMINATIVE`; no profile reward, PPO update, or
+170650 adaptation was authorized. See
+[SourceProfileTracking V1](rl/SOURCE_PROFILE_TRACKING_REFINEMENT.md).
+
 ## Stage16-D causal zero-g milestone (CLOSED)
 
 `CAUSAL_ZERO_G_MILESTONE_COMPLETE`

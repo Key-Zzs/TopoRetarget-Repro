@@ -95,3 +95,13 @@ implementation is
 `src/toporetarget/evaluation/human_object_interaction_profile.py`. Generated
 per-frame evidence remains ignored under
 `.local/reports/stage16_170650_closure_and_human_object_profile/profile/`.
+
+## First SourceProfileTracking V1 use
+
+The first physical-refinement implementation consumed this profile directly;
+it did not define a second source descriptor.  Its offline positive/negative
+hard gate failed because the combined CONTACT-to-early-LIFT loss was lower for
+the frozen 170105 failure than for accepted 170650.  Thus the profile remains
+valid as a partially validated descriptive authority, but it is not yet an
+authorized PPO reward.  See
+[`SOURCE_PROFILE_TRACKING_REFINEMENT.md`](SOURCE_PROFILE_TRACKING_REFINEMENT.md).
