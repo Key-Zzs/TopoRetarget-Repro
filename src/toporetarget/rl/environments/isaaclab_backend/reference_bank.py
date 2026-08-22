@@ -41,7 +41,16 @@ class WorldWristReferenceBankManifest:
 
 
 class WorldWristReferenceBank:
-    """Load both immutable references exactly once and copy them to CUDA once."""
+    """Load immutable world-wrist references once and copy them to the target device.
+
+    The original C2/C4 experiment happened to use two development clips.  That
+    is a property of its input manifest, not of the reference representation:
+    a production per-clip lineage must also be able to load exactly one
+    independently materialized reference.  All entries in a bank still have
+    to share the same kinematic schema and runtime time domain; callers that
+    need different durations create separate banks (which is precisely what
+    independent held-out lineages do).
+    """
 
     timestamps: torch.Tensor
     wrist_pose_translation_world_ref: torch.Tensor
@@ -74,8 +83,10 @@ class WorldWristReferenceBank:
     )
 
     def __init__(self, paths: Mapping[str, str | Path], *, device: torch.device | str) -> None:
-        if set(paths) != {"hocap_170105", "hocap_170650"}:
-            raise ValueError("the frozen bank contains exactly hocap_170105 and hocap_170650")
+        if not paths:
+            raise ValueError("reference bank requires at least one clip")
+        if len({str(clip_id) for clip_id in paths}) != len(paths):
+            raise ValueError("reference bank clip IDs must be unique")
         arrays: dict[str, list[np.ndarray]] = {field: [] for field in self.REQUIRED_FIELDS}
         self.hashes: dict[str, str] = {}
         joint_order: tuple[str, ...] | None = None
@@ -178,7 +189,9 @@ class WorldWristReferenceBank:
         self.frame_count = frame_count
         for field, values in arrays.items():
             setattr(self, field, torch.as_tensor(np.stack(values), device=self.device))
-        self.valid_mask = torch.ones((2, self.frame_count), dtype=torch.bool, device=self.device)
+        self.valid_mask = torch.ones(
+            (len(self.clip_ids), self.frame_count), dtype=torch.bool, device=self.device
+        )
         self.manifest = WorldWristReferenceBankManifest(
             identifier=identifier,
             frame_count=self.frame_count,
@@ -318,7 +331,9 @@ class WorldWristReferenceBank:
             / self.manifest.control_hz
         )
         self.frame_count = retimed_frames
-        self.valid_mask = torch.ones((2, retimed_frames), dtype=torch.bool, device=self.device)
+        self.valid_mask = torch.ones(
+            (len(self.clip_ids), retimed_frames), dtype=torch.bool, device=self.device
+        )
         self.manifest = WorldWristReferenceBankManifest(
             identifier="world_wrist_reference_bank_uniform_retimed_v1",
             frame_count=retimed_frames,

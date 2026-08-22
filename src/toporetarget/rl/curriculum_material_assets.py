@@ -34,6 +34,36 @@ def materialize_curriculum_object_assets(
     other source byte remain unchanged.
     """
 
+    asset_root = repo_root / ".local/generated_assets/isaaclab"
+    return {
+        clip: materialize_curriculum_object_asset(
+            repo_root=repo_root,
+            contract=contract,
+            stage=stage,
+            clip_id=clip,
+            source_usd=asset_root / clip / f"{clip}.usda",
+        )
+        for clip in ("hocap_170105", "hocap_170650")
+    }
+
+
+def materialize_curriculum_object_asset(
+    *,
+    repo_root: Path,
+    contract: Stage16GravityFrictionCurriculumV1,
+    stage: str,
+    clip_id: str,
+    source_usd: Path,
+) -> dict[str, object]:
+    """Materialize a friction-only variant for one independently bound object.
+
+    ``clip_id`` only names an immutable input/output lineage.  It never selects
+    a physical parameter: each numeric value comes solely from the frozen
+    curriculum contract, and the source USD remains otherwise byte-identical.
+    """
+
+    if not clip_id or "/" in clip_id or "\\" in clip_id:
+        raise ValueError("CURRICULUM_OBJECT_CLIP_ID_INVALID")
     physics = contract.physics(stage)
     roles = physics["material_roles"]
     if not isinstance(roles, dict):
@@ -45,42 +75,36 @@ def materialize_curriculum_object_assets(
     dynamic = _format_usda_float(float(object_role["dynamic_friction"]))
     if float(object_role["restitution"]) != 0.0:
         raise RuntimeError("CURRICULUM_ASSET_RESTITUTION_DRIFT")
+    source = source_usd.resolve()
+    if not source.is_file():
+        raise FileNotFoundError(f"CURRICULUM_OBJECT_SOURCE_USD_MISSING:{source}")
+    original = source.read_text(encoding="utf-8")
+    expected_static = "float physics:staticFriction = 1"
+    expected_dynamic = "float physics:dynamicFriction = 1"
+    if original.count(expected_static) != 1 or original.count(expected_dynamic) != 1:
+        raise RuntimeError(f"CURRICULUM_OBJECT_SOURCE_FRICTION_CONTRACT_DRIFT:{clip_id}")
+    derived = original.replace(expected_static, f"float physics:staticFriction = {static}")
+    derived = derived.replace(expected_dynamic, f"float physics:dynamicFriction = {dynamic}")
     asset_root = repo_root / ".local/generated_assets/isaaclab"
     output_root = asset_root / "stage16_gravity_friction_curriculum_v1" / stage
-    result: dict[str, dict[str, object]] = {}
-    for clip in ("hocap_170105", "hocap_170650"):
-        source = asset_root / clip / f"{clip}.usda"
-        if not source.is_file():
-            raise FileNotFoundError(f"CURRICULUM_OBJECT_SOURCE_USD_MISSING:{source}")
-        original = source.read_text(encoding="utf-8")
-        expected_static = "float physics:staticFriction = 1"
-        expected_dynamic = "float physics:dynamicFriction = 1"
-        if original.count(expected_static) != 1 or original.count(expected_dynamic) != 1:
-            raise RuntimeError(f"CURRICULUM_OBJECT_SOURCE_FRICTION_CONTRACT_DRIFT:{clip}")
-        derived = original.replace(expected_static, f"float physics:staticFriction = {static}")
-        derived = derived.replace(expected_dynamic, f"float physics:dynamicFriction = {dynamic}")
-        target = output_root / clip / f"{clip}.usda"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if not target.is_file() or target.read_text(encoding="utf-8") != derived:
-            target.write_text(derived, encoding="utf-8")
-        payload = {
-            "source_usd": str(source.resolve()),
-            "source_sha256": _sha256(source),
-            "derived_usd": str(target.resolve()),
-            "derived_sha256": _sha256(target),
-            "curriculum_stage": stage,
-            "static_friction": float(object_role["static_friction"]),
-            "dynamic_friction": float(object_role["dynamic_friction"]),
-            "restitution": 0.0,
-            "allowed_source_text_changes": [
-                "physics:staticFriction",
-                "physics:dynamicFriction",
-            ],
-        }
-        receipt = target.with_suffix(".material_receipt.json")
-        receipt.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        result[clip] = payload
-    return result
+    target = output_root / clip_id / f"{clip_id}.usda"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if not target.is_file() or target.read_text(encoding="utf-8") != derived:
+        target.write_text(derived, encoding="utf-8")
+    payload = {
+        "source_usd": str(source),
+        "source_sha256": _sha256(source),
+        "derived_usd": str(target.resolve()),
+        "derived_sha256": _sha256(target),
+        "curriculum_stage": stage,
+        "static_friction": float(object_role["static_friction"]),
+        "dynamic_friction": float(object_role["dynamic_friction"]),
+        "restitution": 0.0,
+        "allowed_source_text_changes": ["physics:staticFriction", "physics:dynamicFriction"],
+    }
+    receipt = target.with_suffix(".material_receipt.json")
+    receipt.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return payload
 
 
-__all__ = ["materialize_curriculum_object_assets"]
+__all__ = ["materialize_curriculum_object_asset", "materialize_curriculum_object_assets"]

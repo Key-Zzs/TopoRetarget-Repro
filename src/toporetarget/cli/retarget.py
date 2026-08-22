@@ -2195,9 +2195,31 @@ def _validation_payload(
     model = _load_robot(robot, asset_root)
     surface = load_robot_surface_samples(collision_samples or _default_collision_samples(robot))
     obj = _object_for_graph(sequence, str(final.metadata["object_id"]))
-    from toporetarget.geometry.signed_distance.reference import build_signed_distance_backend
+    final_backend = final.metadata.get("sdf_backend", {})
+    backend_id = str(final_backend.get("backend_id")) if isinstance(final_backend, dict) else ""
+    if backend_id == "hybrid_original_distance_proxy_sign_v1":
+        from toporetarget.geometry.signed_distance.derived_proxy import (
+            build_hybrid_signed_distance_backend,
+        )
 
-    sdf = build_signed_distance_backend(obj.mesh.vertices_local, obj.mesh.faces, sign_mode="strict")
+        sdf, geometry = build_hybrid_signed_distance_backend(
+            obj.mesh.vertices_local, obj.mesh.faces
+        )
+        expected_policy_hash = final_backend.get("policy_hash")
+        expected_proxy_hash = final_backend.get("proxy_mesh_hash")
+        if (
+            not isinstance(expected_policy_hash, str)
+            or expected_policy_hash != sdf.policy.policy_hash
+            or not isinstance(expected_proxy_hash, str)
+            or expected_proxy_hash != geometry.proxy_mesh_hash
+        ):
+            raise RuntimeError("final refinement hybrid SDF provenance drift")
+    else:
+        from toporetarget.geometry.signed_distance.reference import build_signed_distance_backend
+
+        sdf = build_signed_distance_backend(
+            obj.mesh.vertices_local, obj.mesh.faces, sign_mode="strict"
+        )
     reference_mesh_hash = sdf.mesh_hash
     lower, upper = model.joint_lower, model.joint_upper
     frame_results: list[dict[str, Any]] = []
@@ -2364,6 +2386,7 @@ def _validation_payload(
         "solver_profile_hash": final.metadata.get("solver_profile_hash"),
         "acceptance_policy_id": final.metadata.get("acceptance_policy_id"),
         "termination_contract": final.metadata.get("termination_contract"),
+        "validation_sdf_backend": backend_id or "strict_reference_signed_distance",
         "source_integrity_pass": bool(
             source_hash_match
             and warm_hash_match

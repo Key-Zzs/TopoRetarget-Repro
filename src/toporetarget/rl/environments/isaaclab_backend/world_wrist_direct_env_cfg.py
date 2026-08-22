@@ -156,12 +156,23 @@ class IsaacWorldWristFingerDirectRLEnvCfg(DirectRLEnvCfg):
             ),
         ),
     )
+    # An independent held-out lineage binds exactly one materialized reference
+    # and collision asset here before Isaac scene construction.  The legacy
+    # two-object fields remain untouched so existing C2--C4 evidence is
+    # replayable byte-for-byte at the public configuration boundary.
+    external_clip_id: str | None = None
+    external_object_name: str = "ObjectExternal"
+    external_scene_object_key: str = "object_external"
+    external_object: RigidObjectCfg | None = None
     reference_paths = {
         "hocap_170105": str(_REFERENCE_ROOT / "hocap_170105.world_wrist.stage16.npz"),
         "hocap_170650": str(_REFERENCE_ROOT / "hocap_170650.world_wrist.stage16.npz"),
     }
     balanced_clip_assignment = True
     alternate_clip_on_reset = False
+    # The name is retained for compatibility with the existing PPO config;
+    # its value is an arbitrary manifest clip ID, not a development-only enum.
+    stage16d_fixed_clip: str | None = None
     reset_reference_index = "frame0"
     # Evaluation-only explicit reset indices.  Training leaves this as None and
     # therefore retains the frozen frame-zero or uniform RSI distribution.
@@ -311,7 +322,10 @@ def configure_stage16_gravity_friction_curriculum(
     material's two friction attributes before cloning the source environment.
     """
 
-    from toporetarget.rl.curriculum_material_assets import materialize_curriculum_object_assets
+    from toporetarget.rl.curriculum_material_assets import (
+        materialize_curriculum_object_asset,
+        materialize_curriculum_object_assets,
+    )
     from toporetarget.rl.gravity_friction_curriculum import load_gravity_friction_curriculum
 
     contract = load_gravity_friction_curriculum(curriculum_contract_path)
@@ -344,13 +358,28 @@ def configure_stage16_gravity_friction_curriculum(
     cfg.sim.physics_material.static_friction = float(default["static_friction"])
     cfg.sim.physics_material.dynamic_friction = float(default["dynamic_friction"])
     cfg.sim.physics_material.restitution = 0.0
-    cfg.object_170105.spawn.rigid_props.disable_gravity = False
-    cfg.object_170650.spawn.rigid_props.disable_gravity = False
-    assets = materialize_curriculum_object_assets(
-        repo_root=REPO_ROOT, contract=contract, stage=stage
-    )
-    cfg.object_170105.spawn.usd_path = str(assets["hocap_170105"]["derived_usd"])
-    cfg.object_170650.spawn.usd_path = str(assets["hocap_170650"]["derived_usd"])
+    if cfg.external_object is not None:
+        if not cfg.external_clip_id:
+            raise ValueError("STAGE16_EXTERNAL_OBJECT_CLIP_ID_REQUIRED")
+        source_usd = Path(str(cfg.external_object.spawn.usd_path))
+        asset = materialize_curriculum_object_asset(
+            repo_root=REPO_ROOT,
+            contract=contract,
+            stage=stage,
+            clip_id=cfg.external_clip_id,
+            source_usd=source_usd,
+        )
+        cfg.external_object.spawn.rigid_props.disable_gravity = False
+        cfg.external_object.spawn.usd_path = str(asset["derived_usd"])
+        assets = {cfg.external_clip_id: asset}
+    else:
+        cfg.object_170105.spawn.rigid_props.disable_gravity = False
+        cfg.object_170650.spawn.rigid_props.disable_gravity = False
+        assets = materialize_curriculum_object_assets(
+            repo_root=REPO_ROOT, contract=contract, stage=stage
+        )
+        cfg.object_170105.spawn.usd_path = str(assets["hocap_170105"]["derived_usd"])
+        cfg.object_170650.spawn.usd_path = str(assets["hocap_170650"]["derived_usd"])
     cfg.stage16_gravity_friction_curriculum = str(curriculum_contract_path.resolve())
     cfg.stage16_curriculum_stage = stage
     gravity_scale = physics["gravity_scale"]
@@ -365,6 +394,55 @@ def configure_stage16_gravity_friction_curriculum(
     cfg.stage16_external_guidance = False
     cfg.stage16_support_mode = "none"
     cfg.stage16_frame_zero_full_gravity_authorized = False
+
+
+def configure_independent_clip_runtime(
+    cfg: IsaacWorldWristFingerDirectRLEnvCfg,
+    *,
+    clip_id: str,
+    reference_path: Path,
+    object_usd_path: Path,
+) -> None:
+    """Bind one raw-derived clip without borrowing a development scene input.
+
+    This config-only operation does not select a reward, policy, support, or
+    physical stage.  The caller must subsequently apply the same frozen
+    production contracts as every other clip.  It deliberately establishes a
+    one-reference/one-object scene, so reset, actor storage, and telemetry are
+    unambiguously per-lineage.
+    """
+
+    if not clip_id or any(token in clip_id for token in ("/", "\\", "..")):
+        raise ValueError("INDEPENDENT_CLIP_ID_INVALID")
+    reference = reference_path.resolve()
+    object_usd = object_usd_path.resolve()
+    if not reference.is_file():
+        raise FileNotFoundError(f"INDEPENDENT_REFERENCE_MISSING:{reference}")
+    if not object_usd.is_file():
+        raise FileNotFoundError(f"INDEPENDENT_OBJECT_USD_MISSING:{object_usd}")
+    cfg.reference_paths = {clip_id: str(reference)}
+    cfg.external_clip_id = clip_id
+    cfg.external_object_name = "ObjectExternal"
+    cfg.external_scene_object_key = "object_external"
+    cfg.external_object = RigidObjectCfg(
+        prim_path="/World/envs/env_.*/ObjectExternal",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=str(object_usd),
+            copy_from_source=False,
+            activate_contact_sensors=True,
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                disable_gravity=True,
+                linear_damping=0.0,
+                angular_damping=0.0,
+                max_depenetration_velocity=1.0,
+                solver_position_iteration_count=8,
+                solver_velocity_iteration_count=2,
+            ),
+        ),
+    )
+    cfg.balanced_clip_assignment = False
+    cfg.alternate_clip_on_reset = False
+    cfg.stage16d_fixed_clip = clip_id
 
 
 def configure_full_articulation_computed_torque_wrist(
@@ -473,6 +551,7 @@ __all__ = [
     "configure_explicit_virtual_wrist",
     "configure_uniform_reference_retiming",
     "configure_stage16_gravity_friction_curriculum",
+    "configure_independent_clip_runtime",
     "configure_full_articulation_computed_torque_wrist",
     "configure_bounded_tvlqr_wrist",
     "configure_bounded_mpc_wrist",

@@ -103,9 +103,20 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         self.scene_frame_contract = Stage16CSceneFrameContractV1()
         self.reference_bank = WorldWristReferenceBank(cfg.reference_paths, device=self.device)
         self.reference_bank.apply_uniform_time_scale(cfg.reference_time_scale)
+        self._object_specs = self._configured_object_specs(cfg)
+        clip_ids = tuple(item[0] for item in self._object_specs)
+        if tuple(self.reference_bank.clip_ids) != clip_ids:
+            raise RuntimeError(
+                "C3_RUNTIME_OBJECT_REFERENCE_MISMATCH: "
+                f"references={self.reference_bank.clip_ids} objects={clip_ids}"
+            )
+        self._objects_by_clip = {
+            clip_id: getattr(self, attribute)
+            for clip_id, _object_name, _scene_key, _sensor_name, attribute in self._object_specs
+        }
         self._object_contact_sensors = {
-            "Object170105": self.scene["object_170105_hand_contact"],
-            "Object170650": self.scene["object_170650_hand_contact"],
+            object_name: self.scene[sensor_name]
+            for _clip_id, object_name, _scene_key, sensor_name, _attribute in self._object_specs
         }
         for object_name, sensor in self._object_contact_sensors.items():
             if sensor.num_bodies != 1 or sensor.body_names != [object_name]:
@@ -435,6 +446,46 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         self._last_reward_terms: dict[str, torch.Tensor] = {}
 
     @staticmethod
+    def _configured_object_specs(
+        cfg: IsaacWorldWristFingerDirectRLEnvCfg,
+    ) -> tuple[tuple[str, str, str, str, str], ...]:
+        """Return the scene/telemetry bindings without encoding development IDs.
+
+        A single external binding is the production representation for an
+        independent held-out lineage.  Keeping the legacy pair as the default
+        preserves all existing C2--C4 callers.
+        """
+
+        if cfg.external_object is not None:
+            if not cfg.external_clip_id:
+                raise ValueError("C3_EXTERNAL_OBJECT_CLIP_ID_REQUIRED")
+            return (
+                (
+                    cfg.external_clip_id,
+                    cfg.external_object_name,
+                    cfg.external_scene_object_key,
+                    "object_external_hand_contact",
+                    "_object_external",
+                ),
+            )
+        return (
+            (
+                "hocap_170105",
+                "Object170105",
+                "object_170105",
+                "object_170105_hand_contact",
+                "_object_170105",
+            ),
+            (
+                "hocap_170650",
+                "Object170650",
+                "object_170650",
+                "object_170650_hand_contact",
+                "_object_170650",
+            ),
+        )
+
+    @staticmethod
     def _install_object_centric_contact_sensor(cfg: IsaacWorldWristFingerDirectRLEnvCfg) -> None:
         """Install one object-side filtered view for all hand collision bodies.
 
@@ -457,10 +508,13 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         filter_prim_paths = [
             f"{{ENV_REGEX_NS}}/{hand_prefix}/{body_name}" for body_name in HAND_COLLISION_BODY_NAMES
         ]
-        for object_name, sensor_name in (
-            ("Object170105", "object_170105_hand_contact"),
-            ("Object170650", "object_170650_hand_contact"),
-        ):
+        for (
+            _clip_id,
+            object_name,
+            _scene_key,
+            sensor_name,
+            _attribute,
+        ) in IsaacWorldWristFingerDirectRLEnv._configured_object_specs(cfg):
             if getattr(cfg.scene, sensor_name, None) is not None:
                 continue
             # Isaac Lab's ContactSensorCfg explicitly supports filtered force
@@ -492,11 +546,24 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
 
     def _setup_scene(self) -> None:
         self._robot = Articulation(self.cfg.robot)
-        self._object_170105 = RigidObject(self.cfg.object_170105)
-        self._object_170650 = RigidObject(self.cfg.object_170650)
         self.scene.articulations["robot"] = self._robot
-        self.scene.rigid_objects["object_170105"] = self._object_170105
-        self.scene.rigid_objects["object_170650"] = self._object_170650
+        for (
+            _clip_id,
+            _object_name,
+            scene_key,
+            _sensor_name,
+            attribute,
+        ) in self._configured_object_specs(self.cfg):
+            object_cfg = (
+                self.cfg.external_object
+                if self.cfg.external_object is not None
+                else getattr(self.cfg, scene_key)
+            )
+            if object_cfg is None:
+                raise RuntimeError(f"C3_EXTERNAL_OBJECT_CONFIG_MISSING:{scene_key}")
+            object_actor = RigidObject(object_cfg)
+            setattr(self, attribute, object_actor)
+            self.scene.rigid_objects[scene_key] = object_actor
         self.scene.clone_environments(copy_from_source=False)
         if self.device == "cpu":
             self.scene.filter_collisions(global_prim_paths=[])
@@ -1173,36 +1240,37 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         object_before = pending["object_state_before"]
         assert isinstance(object_before, torch.Tensor)
         object_after = self._active_object_state().clone()
-        object_names = ("Object170105", "Object170650")
-        object_masses = torch.where(
-            self._clip_index == 0,
-            self._object_170105.data.default_mass[:, 0].to(self.device),
-            self._object_170650.data.default_mass[:, 0].to(self.device),
+        object_names = tuple(item[1] for item in self._object_specs)
+        object_masses_by_clip = torch.stack(
+            [
+                self._objects_by_clip[clip_id].data.default_mass[:, 0].to(self.device)
+                for clip_id in self.reference_bank.clip_ids
+            ]
         )
-        first_force_matrix = self._object_contact_sensors["Object170105"].data.force_matrix_w
-        second_force_matrix = self._object_contact_sensors["Object170650"].data.force_matrix_w
-        if (
-            first_force_matrix is None
-            or second_force_matrix is None
-            or first_force_matrix.ndim != 4
-            or second_force_matrix.ndim != 4
-        ):
+        object_masses = object_masses_by_clip.transpose(0, 1).gather(1, self._clip_index[:, None])[
+            :, 0
+        ]
+        force_matrices = [
+            self._object_contact_sensors[object_name].data.force_matrix_w
+            for object_name in object_names
+        ]
+        if any(value is None or value.ndim != 4 for value in force_matrices):
             raise RuntimeError(
                 "C3_OBJECT_CENTRIC_CONTACT_DATA_UNAVAILABLE: "
                 "shapes="
-                f"{None if first_force_matrix is None else tuple(first_force_matrix.shape)},"
-                f"{None if second_force_matrix is None else tuple(second_force_matrix.shape)}"
+                + ",".join(
+                    "None" if value is None else str(tuple(value.shape)) for value in force_matrices
+                )
             )
         # force_matrix is the raw force on the object sensor body from each
         # filter body.  Sum it only for the object-net signal; do not split the
         # resultant across fingers or construct point forces.
-        pair_force_on_object = torch.where(
-            (self._clip_index == 0)[:, None, None],
-            first_force_matrix[:, 0],
-            second_force_matrix[:, 0],
-        )
+        pair_force_by_clip = torch.stack([value[:, 0] for value in force_matrices])
+        pair_force_on_object = pair_force_by_clip.permute(1, 0, 2, 3)[
+            torch.arange(self.num_envs, device=self.device), self._clip_index
+        ]
         pair_presence = torch.linalg.vector_norm(pair_force_on_object, dim=-1) > (
-            self._object_contact_sensors["Object170105"].cfg.force_threshold
+            next(iter(self._object_contact_sensors.values())).cfg.force_threshold
         )
         aggregate_force_on_object = pair_force_on_object.sum(dim=1)
         for env_id in range(self.num_envs):
@@ -1315,14 +1383,14 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
                 for object_name, sensor in self._object_contact_sensors.items()
             },
             "filter_prim_paths": list(
-                self._object_contact_sensors["Object170105"].cfg.filter_prim_paths_expr
+                next(iter(self._object_contact_sensors.values())).cfg.filter_prim_paths_expr
             ),
         }
 
     def contact_sensor_contract(self) -> dict[str, object]:
         return {
             "api": "isaaclab.sensors.ContactSensorCfg one-object-per-view force_matrix_w",
-            "update_period_s": self._object_contact_sensors["Object170105"].cfg.update_period,
+            "update_period_s": next(iter(self._object_contact_sensors.values())).cfg.update_period,
             "force_frame": "world; force_matrix_w is force on object sensor body",
             "force_matrix_shapes": {
                 object_name: list(sensor.data.force_matrix_w.shape)
@@ -1331,9 +1399,9 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             "telemetry_mode": self.cfg.contact_telemetry,
             "optional_point_and_tangent_fields": "UNAVAILABLE; no fake point force",
             "body_sensor_count": len(self._object_contact_sensors),
-            "max_contact_data_per_body": self._object_contact_sensors[
-                "Object170105"
-            ].cfg.max_contact_data_count_per_prim,
+            "max_contact_data_per_body": next(
+                iter(self._object_contact_sensors.values())
+            ).cfg.max_contact_data_count_per_prim,
             "pair_filtering": (
                 "each HOCap object uses one object-side sensor filtered to all "
                 "21 hand collision bodies"
@@ -1390,30 +1458,27 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             ),
             dim=-1,
         )
-        active_first = self._clip_index == 0
-        self._object_170105.write_root_state_to_sim(
-            torch.where(active_first[:, None], active_state, inactive_state), env_ids=env_ids
-        )
-        self._object_170650.write_root_state_to_sim(
-            torch.where(active_first[:, None], inactive_state, active_state), env_ids=env_ids
-        )
+        for index, clip_id in enumerate(self.reference_bank.clip_ids):
+            self._objects_by_clip[clip_id].write_root_state_to_sim(
+                torch.where(self._clip_index[:, None] == index, active_state, inactive_state),
+                env_ids=env_ids,
+            )
         self._diagnostic_object_state_write_count += 1
 
     def _active_object_state(self) -> torch.Tensor:
-        select_first = self._clip_index == 0
-        return torch.where(
-            select_first[:, None],
-            self._object_170105.data.root_state_w,
-            self._object_170650.data.root_state_w,
+        values = torch.stack(
+            [
+                self._objects_by_clip[clip_id].data.root_state_w
+                for clip_id in self.reference_bank.clip_ids
+            ]
         )
+        return values.permute(1, 0, 2)[
+            torch.arange(self.num_envs, device=self.device), self._clip_index
+        ]
 
     def _object_axis_points_scene(self, object_state: torch.Tensor) -> torch.Tensor:
         rotation = quaternion_to_matrix_wxyz(object_state[:, 3:7])
-        axis_local = torch.where(
-            (self._clip_index == 0)[:, None, None],
-            self.reference_bank.object_axis_points_local[0].expand(self.num_envs, -1, -1),
-            self.reference_bank.object_axis_points_local[1].expand(self.num_envs, -1, -1),
-        )
+        axis_local = self.reference_bank.object_axis_points_local[self._clip_index]
         global_points = object_state[:, None, :3] + torch.matmul(
             rotation[:, None], axis_local.unsqueeze(-1)
         ).squeeze(-1)
@@ -1728,16 +1793,18 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             env_ids = self._robot._ALL_INDICES
         env_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
         self._robot.reset(env_ids)
-        self._object_170105.reset(env_ids)
-        self._object_170650.reset(env_ids)
+        for object_actor in self._objects_by_clip.values():
+            object_actor.reset(env_ids)
         super()._reset_idx(env_ids)
         fixed_clip = getattr(self.cfg, "stage16d_fixed_clip", None)
         if fixed_clip is not None:
             self._clip_index[env_ids] = self.reference_bank.clip_index(fixed_clip)
         elif self.cfg.alternate_clip_on_reset:
-            self._clip_index[env_ids] = 1 - self._clip_index[env_ids]
+            self._clip_index[env_ids] = (self._clip_index[env_ids] + 1) % len(
+                self.reference_bank.clip_ids
+            )
         elif self.cfg.balanced_clip_assignment:
-            self._clip_index[env_ids] = env_ids % 2
+            self._clip_index[env_ids] = env_ids % len(self.reference_bank.clip_ids)
         if self.cfg.reset_reference_index == "frame0":
             self._reference_index[env_ids] = 0
         elif self.cfg.reset_reference_index == "uniform":
@@ -1859,13 +1926,10 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             ),
             dim=-1,
         )
-        first_active = clips == 0
-        self._object_170105.write_root_state_to_sim(
-            torch.where(first_active[:, None], active_state, inactive_state), env_ids=env_ids
-        )
-        self._object_170650.write_root_state_to_sim(
-            torch.where(first_active[:, None], inactive_state, active_state), env_ids=env_ids
-        )
+        for index, clip_id in enumerate(self.reference_bank.clip_ids):
+            self._objects_by_clip[clip_id].write_root_state_to_sim(
+                torch.where(clips[:, None] == index, active_state, inactive_state), env_ids=env_ids
+            )
         self._object_state_write_count[env_ids] += 1
 
     def contract_report(self) -> dict[str, object]:
