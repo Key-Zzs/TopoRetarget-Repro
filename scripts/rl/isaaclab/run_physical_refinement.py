@@ -286,7 +286,7 @@ def _source(clip: str, *, independent: dict[str, Path] | None = None) -> dict[st
             result.get("schema_version") != "Stage16DStrictPerFingerV4TrainingResultV1"
             or result.get("status") != "STRICT_V4_TRAINING_SEGMENT_COMPLETE"
             or result.get("clip") != clip
-            or int(result.get("reward_v4_samples_start", -1)) != 1_024_000
+            or int(result.get("reward_v4_samples_start", -1)) != 0
             or int(result.get("reward_v4_samples", -1)) != 1_064_960
             or int(result.get("target_reward_v4_samples", -1)) != 1_064_960
             or not checkpoint.is_file()

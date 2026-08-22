@@ -334,7 +334,7 @@ def main() -> int:
         int(l0.get("cumulative_samples", -1)) != L0_SAMPLES
         or int(l0.get("seed", -1)) != lineage_seed
         or v4.get("status") != "STRICT_V4_TRAINING_SEGMENT_COMPLETE"
-        or int(v4.get("reward_v4_samples_start", -1)) != L0_SAMPLES
+        or int(v4.get("reward_v4_samples_start", -1)) != 0
         or int(v4.get("reward_v4_samples", -1)) != STRICT_V4_SAMPLES
         or int(v4.get("seed", -1)) != lineage_seed
         or contact.get("status") != "PASS"
