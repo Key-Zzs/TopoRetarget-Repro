@@ -219,7 +219,6 @@ def main() -> int:
                 clip_id=args.clip,
                 reference_path=args.reference,
                 object_usd_path=args.object_usd,
-                reference_time_scale=8,
             )
         env = IsaacPPO26DReferenceTrackingEnv(cfg)
         active_clip_indices = sorted(set(env._clip_index.detach().cpu().tolist()))

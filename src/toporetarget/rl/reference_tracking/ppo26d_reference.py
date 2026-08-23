@@ -190,7 +190,10 @@ def export_factor8_reference(source: Path, destination: Path) -> dict[str, Any]:
         metadata = json.loads(str(archive["metadata"].item()))
     payload = {
         **arrays,
-        "timestamps": np.arange(runtime_frames, dtype=np.float32) / CONTROL_HZ,
+        # Keep the control clock in float64.  Float32 loses enough precision on
+        # variable-length held-out clips to violate the exact 20 Hz runtime
+        # contract even though poses/actions intentionally remain float32.
+        "timestamps": np.arange(runtime_frames, dtype=np.float64) / CONTROL_HZ,
         "metadata": np.asarray(
             json.dumps(
                 {

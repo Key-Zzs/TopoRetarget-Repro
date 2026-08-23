@@ -53,3 +53,13 @@ def test_run_step_pass_requires_declared_artifact(tmp_path: Path) -> None:
 
     assert receipt["status"] == "PASS"
     assert receipt["missing_artifacts"] == []
+
+
+def test_l0_uses_materialized_reference_time_scale() -> None:
+    trainer = (
+        REPO_ROOT / "scripts/rl/isaaclab/train_stage16d_ppo26d.py"
+    ).read_text(encoding="utf-8")
+    binding = trainer[trainer.index("configure_independent_clip_runtime(") :]
+    binding = binding[: binding.index(")")]
+
+    assert "reference_time_scale=" not in binding

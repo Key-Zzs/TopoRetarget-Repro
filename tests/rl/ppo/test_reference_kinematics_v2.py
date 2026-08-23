@@ -109,7 +109,15 @@ def test_v2_rebuilds_bad_terminal_tangent_preserves_keys_and_loads_bank(tmp_path
     assert report["v1_audit"]["pose_rebuild_required"] is True
     assert report["v1_to_v2_pose_change"]["pose_changed"] is True
     assert report["checks"]["source_key_preservation"] is True
-    with np.load(source, allow_pickle=False) as native, np.load(v2, allow_pickle=False) as repaired:
+    with (
+        np.load(source, allow_pickle=False) as native,
+        np.load(v1, allow_pickle=False) as exported_v1,
+        np.load(v2, allow_pickle=False) as repaired,
+    ):
+        assert exported_v1["timestamps"].dtype == np.float64
+        assert np.array_equal(
+            exported_v1["timestamps"], np.arange(321, dtype=np.float64) / 20.0
+        )
         np.testing.assert_allclose(
             repaired["object_pose_translation_world_ref"][::8],
             native["object_pose_translation_world_ref"],
