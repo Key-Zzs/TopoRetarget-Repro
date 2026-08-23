@@ -311,19 +311,15 @@ def main() -> int:
         raise
     finally:
         active_error = sys.exc_info()[1]
-        if env is not None:
-            try:
+        # SimulationApp shutdown may spin indefinitely after a constructor or
+        # runtime failure.  Let process teardown release Isaac/PhysX resources
+        # so the original exception reaches the fail-closed parent promptly.
+        if active_error is None:
+            if env is not None:
                 env.close()
                 env.sim.clear_all_callbacks()
                 env.sim.clear_instance()
-            except BaseException:
-                if active_error is None:
-                    raise
-        try:
             app.close(wait_for_replicator=False)
-        except BaseException:
-            if active_error is None:
-                raise
 
 
 if __name__ == "__main__":

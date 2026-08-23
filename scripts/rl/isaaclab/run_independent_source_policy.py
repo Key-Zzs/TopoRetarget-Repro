@@ -283,7 +283,7 @@ def main() -> int:
                     "--clip",
                     args.clip_id,
                     "--reference",
-                    str(reference_v1),
+                    str(reference_v2),
                     "--object-usd",
                     str(object_usd),
                     "--output-root",

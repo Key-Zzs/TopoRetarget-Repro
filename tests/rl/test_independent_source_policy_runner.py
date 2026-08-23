@@ -63,3 +63,30 @@ def test_l0_uses_materialized_reference_time_scale() -> None:
     binding = binding[: binding.index(")")]
 
     assert "reference_time_scale=" not in binding
+
+
+def test_l0_uses_qualified_reference_kinematics_v2() -> None:
+    runner = (
+        REPO_ROOT / "scripts/rl/isaaclab/run_independent_source_policy.py"
+    ).read_text(encoding="utf-8")
+    l0_step = runner[runner.index('"train_l0"') : runner.index('"train_strict_v4"')]
+
+    assert "str(reference_v2)" in l0_step
+    assert "str(reference_v1)" not in l0_step
+
+
+@pytest.mark.parametrize(
+    "script_name",
+    ["train_stage16d_ppo26d.py", "train_stage16d_ppo26d_object_twist.py"],
+)
+def test_training_failure_skips_potentially_hanging_simulation_cleanup(
+    script_name: str,
+) -> None:
+    trainer = (REPO_ROOT / "scripts/rl/isaaclab" / script_name).read_text(
+        encoding="utf-8"
+    )
+    cleanup = trainer[trainer.rindex("finally:") : trainer.rindex('if __name__ == "__main__":')]
+
+    assert "if active_error is None:" in cleanup
+    guarded = cleanup[cleanup.index("if active_error is None:") :]
+    assert guarded.index("env.close()") < guarded.index("app.close(")
