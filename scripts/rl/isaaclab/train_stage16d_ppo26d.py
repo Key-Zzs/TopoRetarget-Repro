@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -298,12 +299,32 @@ def main() -> int:
         write_json(output / "l0_training.json", result)
         print(json.dumps(result, sort_keys=True))
         return 0
+    except BaseException as error:
+        write_json(
+            output / "l0_training_failure.json",
+            {
+                "schema_version": "Stage16DPPO26DL0TrainingFailureV1",
+                "exception_type": type(error).__name__,
+                "message": str(error),
+                "traceback": traceback.format_exc(),
+            },
+        )
+        raise
     finally:
+        active_error = sys.exc_info()[1]
         if env is not None:
-            env.close()
-            env.sim.clear_all_callbacks()
-            env.sim.clear_instance()
-        app.close(wait_for_replicator=False)
+            try:
+                env.close()
+                env.sim.clear_all_callbacks()
+                env.sim.clear_instance()
+            except BaseException:
+                if active_error is None:
+                    raise
+        try:
+            app.close(wait_for_replicator=False)
+        except BaseException:
+            if active_error is None:
+                raise
 
 
 if __name__ == "__main__":

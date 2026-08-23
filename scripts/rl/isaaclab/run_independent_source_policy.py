@@ -59,11 +59,21 @@ def _artifact(path: Path) -> dict[str, str]:
     return {"path": str(resolved), "sha256": sha256_file(resolved)}
 
 
-def _run_step(name: str, command: list[str], *, log_root: Path) -> dict[str, Any]:
+def _run_step(
+    name: str,
+    command: list[str],
+    *,
+    log_root: Path,
+    expected_artifacts: tuple[Path, ...] = (),
+) -> dict[str, Any]:
     receipt_path = log_root / f"{name}.receipt.json"
     if receipt_path.is_file():
         previous = _json(receipt_path)
-        if previous.get("status") == "PASS" and previous.get("command") == command:
+        if (
+            previous.get("status") == "PASS"
+            and previous.get("command") == command
+            and all(path.is_file() for path in expected_artifacts)
+        ):
             return {**previous, "resumed_from_pass_receipt": True}
     log_root.mkdir(parents=True, exist_ok=True)
     started = _utc()
@@ -82,10 +92,16 @@ def _run_step(name: str, command: list[str], *, log_root: Path) -> dict[str, Any
     )
     log_path = log_root / f"{name}.log"
     log_path.write_text(result.stdout, encoding="utf-8")
+    missing_artifacts = [
+        str(path.resolve()) for path in expected_artifacts if not path.is_file()
+    ]
+    passed = result.returncode == 0 and not missing_artifacts
     receipt = {
         "stage": name,
-        "status": "PASS" if result.returncode == 0 else "FAIL",
+        "status": "PASS" if passed else "FAIL",
         "command": command,
+        "expected_artifacts": [str(path.resolve()) for path in expected_artifacts],
+        "missing_artifacts": missing_artifacts,
         "started_utc": started,
         "ended_utc": _utc(),
         "wall_seconds": time.perf_counter() - tick,
@@ -94,7 +110,7 @@ def _run_step(name: str, command: list[str], *, log_root: Path) -> dict[str, Any
         "log_sha256": sha256_file(log_path),
     }
     atomic_write_json(receipt_path, receipt)
-    if result.returncode != 0:
+    if not passed:
         raise RuntimeError(f"INDEPENDENT_SOURCE_POLICY_STAGE_FAILED:{name}:{log_path}")
     return receipt
 
@@ -194,6 +210,13 @@ def main() -> int:
                     str(reference_report),
                 ],
                 log_root=log_root,
+                expected_artifacts=(
+                    world_reference,
+                    object_mesh,
+                    reference_v1,
+                    reference_v2,
+                    reference_report,
+                ),
             )
         )
         steps.append(
@@ -218,6 +241,7 @@ def main() -> int:
                     "--accept-eula",
                 ],
                 log_root=log_root,
+                expected_artifacts=(object_usd, object_usd_report),
             )
         )
         steps.append(
@@ -242,6 +266,7 @@ def main() -> int:
                     str(contact_root),
                 ],
                 log_root=log_root,
+                expected_artifacts=(source_contact_receipt,),
             )
         )
         steps.append(
@@ -270,6 +295,7 @@ def main() -> int:
                     "--accept-eula",
                 ],
                 log_root=log_root,
+                expected_artifacts=(l0_checkpoint, l0_result),
             )
         )
         steps.append(
@@ -311,8 +337,12 @@ def main() -> int:
                     "--accept-eula",
                 ],
                 log_root=log_root,
+                expected_artifacts=(v4_result,),
             )
         )
+        l0 = _json(l0_result)
+        v4 = _json(v4_result)
+        contact = _json(source_contact_receipt)
     except BaseException as error:
         atomic_write_json(
             report_root / "source_policy_failure.json",
@@ -326,10 +356,6 @@ def main() -> int:
             },
         )
         raise
-
-    l0 = _json(l0_result)
-    v4 = _json(v4_result)
-    contact = _json(source_contact_receipt)
     if (
         int(l0.get("cumulative_samples", -1)) != L0_SAMPLES
         or int(l0.get("seed", -1)) != lineage_seed
