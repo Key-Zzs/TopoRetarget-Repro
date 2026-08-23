@@ -433,19 +433,38 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         palm-only aggregation, and scene/support contacts by construction.
         """
 
-        first_force = self._object_contact_sensors["Object170105"].data.force_matrix_w
-        second_force = self._object_contact_sensors["Object170650"].data.force_matrix_w
-        if first_force is None or second_force is None:
+        object_names = tuple(item[1] for item in self._object_specs)
+        force_matrices = [
+            self._object_contact_sensors[object_name].data.force_matrix_w
+            for object_name in object_names
+        ]
+        if any(force is None for force in force_matrices):
             raise RuntimeError("PPO26D reward requires object contact force matrices")
         expected = (self.num_envs, 1, len(HAND_COLLISION_BODY_NAMES), 3)
-        if tuple(first_force.shape) != expected or tuple(second_force.shape) != expected:
+        invalid_shapes = [
+            None if force is None else tuple(force.shape)
+            for force in force_matrices
+            if force is None or tuple(force.shape) != expected
+        ]
+        if invalid_shapes:
             raise RuntimeError(
                 "PPO26D_CONTACT_PAIR_FORCE_SHAPE_INVALID:"
-                f"first={tuple(first_force.shape)} second={tuple(second_force.shape)}"
+                f"objects={object_names} invalid_shapes={invalid_shapes}"
             )
-        pair_force = torch.where(
-            (self._clip_index == 0)[:, None, None], first_force[:, 0], second_force[:, 0]
+        force_by_clip = torch.stack(
+            [force[:, 0] for force in force_matrices if force is not None], dim=1
         )
+        pair_force = force_by_clip[
+            torch.arange(self.num_envs, device=self.device), self._clip_index
+        ]
+        if pair_force.shape != (
+            self.num_envs,
+            len(HAND_COLLISION_BODY_NAMES),
+            3,
+        ):
+            raise RuntimeError(
+                f"PPO26D_ACTIVE_CONTACT_PAIR_FORCE_SHAPE_INVALID:{tuple(pair_force.shape)}"
+            )
         if not bool(torch.isfinite(pair_force).all()):
             raise FloatingPointError("PPO26D_CONTACT_PAIR_FORCE_NONFINITE")
         return pair_force
