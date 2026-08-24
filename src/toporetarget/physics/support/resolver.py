@@ -8,6 +8,7 @@ from collections.abc import Mapping, Sequence
 import numpy as np
 
 from .planar_inference import (
+    audit_candidate_support_intervals,
     detect_stable_pre_contact_interval,
     infer_planar_support,
 )
@@ -93,7 +94,7 @@ def resolve_support(
     extent_contract: SupportExtentContractV1 | None = None,
     geometry_gate: SupportPlaneConsistencyGateV1 | None = None,
 ) -> SupportResolutionResult:
-    """Resolve support in the fixed order explicit -> recovered -> inferred -> unknown."""
+    """Resolve explicit -> reconstructed -> inferred -> unresolved, in that order."""
 
     selected_mode = SupportResolutionMode(mode)
     visual = np.asarray(object_visual_vertices_local, dtype=np.float64)
@@ -109,6 +110,11 @@ def resolve_support(
         "collision_mesh": _hash_array(collision) if collision is not None else "NOT_PROVIDED",
         "object_pose_translation": _hash_array(translation),
         "object_pose_quaternion": _hash_array(quaternion),
+        "contact_mask": (
+            _hash_array(np.asarray(contact_mask, dtype=bool))
+            if contact_mask is not None
+            else "NOT_PROVIDED"
+        ),
     }
     if source_adapter is not None:
         source_raw = call_support_evidence_adapter(source_adapter, sequence)
@@ -140,6 +146,16 @@ def resolve_support(
         object_twist_world=object_twist_world,
         contract=detection_contract,
     )
+    candidate_interval_audit = audit_candidate_support_intervals(
+        visual_vertices_local=visual,
+        collision_vertices_local=collision,
+        object_translation_world=translation,
+        object_quaternion_world_wxyz=quaternion,
+        gravity=gravity_world_mps2,
+        candidates=stable.candidate_intervals,
+        extent_contract=extent_contract,
+        detection_contract=detection_contract,
+    )
     if stable.interval is None:
         return _unknown_result(
             dataset=dataset,
@@ -148,6 +164,13 @@ def resolve_support(
             source=source,
             reason=stable.reason or "PLANAR_SUPPORT_INFERENCE_NOT_AUTHORIZED",
             stable=stable,
+            diagnostics={
+                "candidate_interval_audit": candidate_interval_audit,
+                "candidate_interval_policy": (
+                    "stable_pre_manipulation_geometry_authorizes_inference;_"
+                    "hand_contact_timing_is_separate_provenance"
+                ),
+            },
         )
     try:
         plane_fit, proxy, plane_evidence = infer_planar_support(
@@ -212,7 +235,14 @@ def resolve_support(
         stable_interval=stable,
         plane_fit=plane_fit,
         table_proxy=proxy,
-        diagnostics={"plane_evidence": plane_evidence},
+        diagnostics={
+            "plane_evidence": plane_evidence,
+            "candidate_interval_audit": candidate_interval_audit,
+            "candidate_interval_policy": (
+                "stable_pre_manipulation_geometry_authorizes_inference;_"
+                "hand_contact_timing_is_separate_provenance"
+            ),
+        },
     )
 
 
@@ -233,7 +263,7 @@ def validate_and_finalize_resolution(
     )
     if result.support_type in {
         SupportType.SOURCE_EXPLICIT_SUPPORT,
-        SupportType.SOURCE_RECOVERED_SUPPORT,
+        SupportType.SOURCE_RECONSTRUCTED_SUPPORT,
     }:
         status = SupportResolutionStatus.SOURCE_SUPPORT_VALIDATED.value
     elif result.support_type is SupportType.INFERRED_PLANAR_SUPPORT:
@@ -268,10 +298,11 @@ def _unknown_result(
     source: NormalizedSourceEvidence,
     reason: str,
     stable: StableIntervalResult | None = None,
+    diagnostics: Mapping[str, object] | None = None,
 ) -> SupportResolutionResult:
     return SupportResolutionResult(
-        status=SupportResolutionStatus.SUPPORT_UNKNOWN.value,
-        support_type=SupportType.UNKNOWN,
+        status=SupportResolutionStatus.SUPPORT_UNRESOLVED.value,
+        support_type=SupportType.UNRESOLVED,
         support_source="none",
         source_explicit=source.explicit,
         source_recovered=source.recovered,
@@ -294,7 +325,7 @@ def _unknown_result(
         },
         hashes=dict(hashes),
         stable_interval=stable,
-        diagnostics={"reason": reason},
+        diagnostics={"reason": reason, **dict(diagnostics or {})},
     )
 
 

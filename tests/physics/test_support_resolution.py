@@ -12,7 +12,11 @@ from toporetarget.physics.support import (
     infer_planar_support,
     resolve_support,
     summarize_static_support_test,
+    support_collision_policy,
+    table_top_corners,
     validate_and_finalize_resolution,
+    validate_hand_table_geometry,
+    validate_object_table_geometry,
     write_finite_planar_support_usda,
 )
 from toporetarget.physics.support.types import FinitePlanarSupportProxy, SupportInterval
@@ -55,7 +59,7 @@ def test_explicit_source_support_wins_over_inference() -> None:
     assert result.support_inferred is False
 
 
-def test_recovered_source_support_is_distinct() -> None:
+def test_reconstructed_source_support_is_distinct() -> None:
     vertices, timestamps, translation, quaternion = _cube_trajectory()
     result = resolve_support(
         dataset="fake",
@@ -72,7 +76,7 @@ def test_recovered_source_support_is_distinct() -> None:
             "validation": {"recovered": True},
         },
     )
-    assert result.support_type is SupportType.SOURCE_RECOVERED_SUPPORT
+    assert result.support_type is SupportType.SOURCE_RECONSTRUCTED_SUPPORT
     assert result.source_recovered is True
     assert result.source_explicit is False
 
@@ -90,7 +94,7 @@ def test_source_rejection_does_not_silently_fallback_in_source_only_mode() -> No
         source_support={"explicit": True, "validation": {"explicit": False}},
         mode=SupportResolutionMode.SOURCE_ONLY,
     )
-    assert result.support_type is SupportType.UNKNOWN
+    assert result.support_type is SupportType.UNRESOLVED
     assert result.support_inferred is False
     assert "SOURCE_ONLY" in result.diagnostics["reason"]
 
@@ -115,6 +119,139 @@ def test_auto_mode_falls_back_to_inferred_planar_support_with_provenance() -> No
     assert result.plane_normal == pytest.approx((0.0, 0.0, 1.0))
     assert result.table_proxy is not None
     assert result.status == SupportResolutionStatus.SUPPORT_RECONSTRUCTION_BLOCKED.value
+    assert result.hashes["contact_mask"] == "NOT_PROVIDED"
+
+
+def test_contact_mask_is_hashed_and_bound_to_stable_interval() -> None:
+    vertices, timestamps, translation, quaternion = _cube_trajectory()
+    contact = np.zeros(len(timestamps), dtype=bool)
+    contact[8:] = True
+    result = resolve_support(
+        dataset="fake",
+        sequence="contact-bound",
+        object_visual_vertices_local=vertices,
+        object_collision_vertices_local=vertices,
+        object_pose_translation_world=translation,
+        object_pose_quaternion_world_wxyz=quaternion,
+        timestamps=timestamps,
+        gravity_world_mps2=(0.0, 0.0, -9.81),
+        contact_mask=contact,
+    )
+    assert result.hashes["contact_mask"] != "NOT_PROVIDED"
+    assert result.stable_interval is not None
+    assert result.stable_interval.contact_mask_used is True
+    assert result.support_interval == SupportInterval(0, 9, "stable_kinematic_pre_manipulation")
+
+
+def test_later_area_interval_is_audited_but_does_not_replace_earliest() -> None:
+    vertices = np.asarray(
+        [
+            [-0.02, -0.02, 0.0],
+            [0.02, -0.02, 0.0],
+            [-0.02, 0.02, 0.0],
+            [0.02, 0.02, 0.0],
+            [0.0, 0.0, 0.04],
+        ],
+        dtype=np.float64,
+    )
+    frames = 20
+    translation = np.zeros((frames, 3), dtype=np.float64)
+    quaternion = np.zeros((frames, 4), dtype=np.float64)
+    quaternion[:, 0] = 1.0
+    angle = np.deg2rad(30.0)
+    quaternion[:8] = np.asarray([np.cos(angle / 2.0), np.sin(angle / 2.0), 0.0, 0.0])
+    contact = np.zeros(frames, dtype=bool)
+    contact[8:12] = True
+
+    result = resolve_support(
+        dataset="synthetic",
+        sequence="later_area",
+        object_visual_vertices_local=vertices,
+        object_pose_translation_world=translation,
+        object_pose_quaternion_world_wxyz=quaternion,
+        timestamps=np.arange(frames, dtype=np.float64) / 20.0,
+        gravity_world_mps2=(0.0, 0.0, -9.81),
+        contact_mask=contact,
+    )
+
+    assert result.support_interval is not None
+    assert result.support_interval.start_frame == 0
+    rows = result.diagnostics["candidate_interval_audit"]
+    assert len(rows) == 2
+    assert rows[0]["support_inference_authorized"] is True
+    assert rows[1]["support_patch_type"] == "AREA_SUPPORT"
+    assert rows[1]["support_inference_authorized"] is False
+
+
+def test_post_manipulation_stable_interval_cannot_authorize_support() -> None:
+    vertices, timestamps, translation, quaternion = _cube_trajectory()
+    timestamps = np.arange(20, dtype=np.float64) * 0.05
+    translation = np.zeros((20, 3), dtype=np.float64)
+    quaternion = np.zeros((20, 4), dtype=np.float64)
+    quaternion[:, 0] = 1.0
+    translation[:8, 0] = np.arange(8, dtype=np.float64) * 0.02
+    translation[8:, 0] = translation[7, 0]
+    contact = np.zeros(len(timestamps), dtype=bool)
+    contact[4:8] = True
+
+    result = resolve_support(
+        dataset="synthetic",
+        sequence="post_contact_only",
+        object_visual_vertices_local=vertices,
+        object_pose_translation_world=translation,
+        object_pose_quaternion_world_wxyz=quaternion,
+        timestamps=timestamps,
+        gravity_world_mps2=(0.0, 0.0, -9.81),
+        contact_mask=contact,
+    )
+
+    assert result.support_type is SupportType.UNRESOLVED
+    assert result.support_interval is None
+    assert result.diagnostics["reason"] == "no_stable_interval_before_manipulation"
+    rows = result.diagnostics["candidate_interval_audit"]
+    assert len(rows) == 1
+    assert rows[0]["support_patch_type"] == "AREA_SUPPORT"
+    assert rows[0]["support_inference_authorized"] is False
+
+
+def test_early_hand_contact_does_not_override_stable_support_geometry() -> None:
+    vertices, timestamps, translation, quaternion = _cube_trajectory()
+    contact = np.ones(len(timestamps), dtype=bool)
+
+    result = resolve_support(
+        dataset="synthetic",
+        sequence="contact_from_frame_zero",
+        object_visual_vertices_local=vertices,
+        object_pose_translation_world=translation,
+        object_pose_quaternion_world_wxyz=quaternion,
+        timestamps=timestamps,
+        gravity_world_mps2=(0.0, 0.0, -9.81),
+        contact_mask=contact,
+    )
+
+    assert result.support_type is SupportType.INFERRED_PLANAR_SUPPORT
+    assert result.support_interval == SupportInterval(0, 9, "stable_kinematic_pre_manipulation")
+    assert result.stable_interval is not None
+    assert result.stable_interval.contact_mask_used is True
+
+
+@pytest.mark.parametrize(
+    ("support_type", "object_collision", "hand_collision"),
+    [
+        (SupportType.SOURCE_EXPLICIT_SUPPORT, True, True),
+        (SupportType.SOURCE_RECONSTRUCTED_SUPPORT, True, True),
+        (SupportType.INFERRED_PLANAR_SUPPORT, True, False),
+        (SupportType.UNRESOLVED, False, False),
+    ],
+)
+def test_support_collision_contract_matrix(
+    support_type: SupportType, object_collision: bool, hand_collision: bool
+) -> None:
+    policy = support_collision_policy(support_type)
+
+    assert policy["object_support_collision"] is object_collision
+    assert policy["hand_support_collision"] is hand_collision
+    assert policy["global_support_collision_disabled"] is False
 
 
 def test_no_stable_interval_blocks_inference() -> None:
@@ -145,6 +282,83 @@ def test_gravity_axis_independence_uses_upward_normal() -> None:
         stable_interval=interval,
     )
     assert fit.plane_normal == pytest.approx((0.0, 1.0, 0.0))
+
+
+def test_inferred_box_top_and_extent_share_the_audited_support_frame() -> None:
+    vertices, _, translation, quaternion = _cube_trajectory()
+    fit, proxy, _ = infer_planar_support(
+        visual_vertices_local=vertices,
+        collision_vertices_local=vertices,
+        object_translation_world=translation,
+        object_quaternion_world_wxyz=quaternion,
+        gravity=(0.0, 0.0, -9.81),
+        stable_interval=SupportInterval(0, 8, "test"),
+    )
+
+    corners = table_top_corners(proxy)
+    assert corners @ np.asarray(proxy.plane_normal) == pytest.approx(np.full(4, proxy.plane_offset))
+    assert proxy.table_pose[2] == pytest.approx(proxy.plane_offset)
+
+    geometry = validate_object_table_geometry(
+        visual_vertices_local=vertices,
+        collision_vertices_local=vertices,
+        object_translation_world=translation,
+        object_quaternion_world_wxyz=quaternion,
+        plane_normal=fit.plane_normal,
+        plane_offset=fit.plane_offset,
+        table_extent=proxy.table_extent,
+        table_pose=proxy.table_pose,
+        relevant_interval=(0, 8),
+    )
+    assert geometry["visual"]["out_of_extent_frames"] == 0
+    assert geometry["collision"]["out_of_extent_frames"] == 0
+
+
+def test_hand_table_gate_uses_finite_footprint_not_infinite_plane() -> None:
+    points = np.asarray([[[0.0, 0.0, -0.003], [0.20, 0.20, -0.050]]], dtype=np.float64)
+    result = validate_hand_table_geometry(
+        hand_points_world=points,
+        plane_normal=(0.0, 0.0, 1.0),
+        plane_offset=0.0,
+        table_extent=(0.10, 0.10),
+        table_pose=(0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
+    )
+    assert result["status"] == "FAIL"
+    assert result["metrics"]["max_penetration_m"] == pytest.approx(0.003)
+    assert result["infinite_plane_diagnostic"]["max_penetration_m"] == pytest.approx(0.05)
+    assert result["diagnostics"]["authority"] == "DIAGNOSTIC_ONLY"
+    assert result["diagnostics"]["hand_support_min_distance"] == pytest.approx(-0.05)
+    assert result["diagnostics"]["hand_below_support_plane_depth"] == pytest.approx(0.05)
+    assert result["diagnostics"]["fraction_hand_vertices_or_links_below_proxy"] == pytest.approx(
+        1.0
+    )
+
+
+def test_hand_below_plane_outside_finite_footprint_passes() -> None:
+    points = np.asarray([[[0.20, 0.20, -0.050]]], dtype=np.float64)
+    result = validate_hand_table_geometry(
+        hand_points_world=points,
+        plane_normal=(0.0, 0.0, 1.0),
+        plane_offset=0.0,
+        table_extent=(0.10, 0.10),
+        table_pose=(0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
+    )
+    assert result["status"] == "PASS"
+    assert result["metrics"]["max_penetration_m"] == pytest.approx(0.0)
+
+
+def test_inferred_hand_proxy_geometry_is_diagnostic_not_pf_gate() -> None:
+    from toporetarget.physics.support import qualify_geometry
+
+    result = qualify_geometry(
+        object_table={"status": "PASS"},
+        hand_table={"status": "FAIL", "diagnostics": {"authority": "DIAGNOSTIC_ONLY"}},
+        visual_collision_consistent=True,
+        hand_table_is_diagnostic_only=True,
+    )
+
+    assert result.status == "PASS"
+    assert result.hand_table_diagnostic_only is True
 
 
 def test_visual_collision_discrepancy_is_reported() -> None:

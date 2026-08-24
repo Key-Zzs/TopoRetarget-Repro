@@ -152,6 +152,32 @@ def _source_evidence(clip: str, source_root: Path, source_sequence_dir: Path | N
         }
 
 
+def _native_contact_mask(path: Path | None, *, frame_count: int) -> np.ndarray | None:
+    if path is None:
+        return None
+    with np.load(path, allow_pickle=False) as archive:
+        if "combined_support_exclusion_mask" in archive.files:
+            combined = np.asarray(archive["combined_support_exclusion_mask"], dtype=bool)
+            if combined.shape != (frame_count,):
+                raise ValueError("INDEPENDENT_SUPPORT_COMBINED_CONTACT_SHAPE_INVALID")
+            return combined
+        required = {"confirmed_contact", "probable_contact", "transition"}
+        if not required.issubset(archive.files):
+            raise ValueError("INDEPENDENT_SUPPORT_NATIVE_CONTACT_KEYS_MISSING")
+        confirmed = np.asarray(archive["confirmed_contact"], dtype=bool)
+        probable = np.asarray(archive["probable_contact"], dtype=bool)
+        transition = np.asarray(archive["transition"], dtype=bool)
+    if confirmed.shape != probable.shape or confirmed.shape != transition.shape:
+        raise ValueError("INDEPENDENT_SUPPORT_NATIVE_CONTACT_SHAPE_INVALID")
+    if confirmed.ndim != 2:
+        raise ValueError("INDEPENDENT_SUPPORT_NATIVE_CONTACT_SHAPE_INVALID")
+    if confirmed.shape[0] != frame_count:
+        raise ValueError("INDEPENDENT_SUPPORT_NATIVE_CONTACT_FRAME_COUNT_MISMATCH")
+    # A transition frame is deliberately excluded from a plane-fit interval:
+    # it is a contact-boundary observation, not clean pre-contact evidence.
+    return np.any(confirmed | probable | transition, axis=1)
+
+
 def _plot_clip(
     *,
     clip: str,
@@ -240,6 +266,7 @@ def _resolve_clip(
     static: bool,
     replay: bool,
     runtime_geometry_manifest: Path | None,
+    source_contact_native: Path | None,
 ) -> dict[str, object]:
     reference_path = reference_root / f"{clip}.world_wrist.stage16.npz"
     object_path = object_root / f"{clip}.obj"
@@ -248,6 +275,9 @@ def _resolve_clip(
     visual = _load_obj_vertices(object_path)
     collision, collision_evidence = _collision_vertices(object_path)
     source = _source_evidence(clip, source_root, source_sequence_dir)
+    contact_mask = _native_contact_mask(
+        source_contact_native, frame_count=len(reference["timestamps"])
+    )
     result = resolve_support(
         dataset="hocap",
         sequence=clip,
@@ -258,6 +288,7 @@ def _resolve_clip(
         timestamps=reference["timestamps"],
         gravity_world_mps2=(0.0, 0.0, -9.81),
         source_support=source,
+        contact_mask=contact_mask,
         object_twist_world=reference.get("object_twist_world_ref"),
         mode=mode,
         source_reference_kind="stage16_retargeted_runtime_object_pose",
@@ -321,9 +352,9 @@ def _resolve_clip(
             table_pose=result.table_proxy.table_pose,
             relevant_interval=interval,
         )
-        # Tracked link points are diagnostic hand geometry, not a substitute for
-        # the full hand collision mesh.  Keep the formal hand/table gate
-        # deferred instead of mislabeling sparse link points as a mesh audit.
+        # Inferred support restores object support only.  Hand/proxy geometry is
+        # retained as a diagnostic even when full runtime collision proxies are
+        # available; pairwise runtime filtering keeps it out of PF acceptance.
         tracked_links = reference.get("tracked_link_positions_world_ref")
         link_diagnostic: dict[str, object] = {"status": "NOT_AVAILABLE"}
         if tracked_links is not None:
@@ -346,6 +377,8 @@ def _resolve_clip(
             hand_points_world=hand_points,
             plane_normal=result.plane_fit.plane_normal,
             plane_offset=result.plane_fit.plane_offset,
+            table_extent=result.table_proxy.table_extent,
+            table_pose=result.table_proxy.table_pose,
             source=(
                 "tracked_16_link_points_only; full hand mesh not supplied"
                 if hand_points is None
@@ -357,6 +390,7 @@ def _resolve_clip(
             object_table=object_geometry,
             hand_table=hand_geometry,
             visual_collision_consistent=abs(result.plane_fit.delta_support_geometry) <= 0.005,
+            hand_table_is_diagnostic_only=True,
         )
         _write_json(clip_root / "object_table_geometry.json", object_geometry)
         _write_json(clip_root / "hand_table_geometry.json", hand_geometry)
@@ -430,6 +464,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Frozen authored hand collision proxies for formal hand/table clearance.",
     )
+    parser.add_argument(
+        "--source-contact-native",
+        type=Path,
+        help="Hash-validated native source-contact authority supplied by the production runner.",
+    )
     parser.add_argument("--static", action="store_true", help="write a static support overlay")
     parser.add_argument("--replay", action="store_true", help="write representative replay frames")
     return parser
@@ -464,6 +503,11 @@ def main() -> int:
                     None
                     if args.runtime_geometry_manifest is None
                     else args.runtime_geometry_manifest.resolve()
+                ),
+                source_contact_native=(
+                    None
+                    if args.source_contact_native is None
+                    else args.source_contact_native.resolve()
                 ),
             )
         )

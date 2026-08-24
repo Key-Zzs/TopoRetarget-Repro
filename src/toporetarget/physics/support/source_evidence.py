@@ -40,7 +40,7 @@ class NormalizedSourceEvidence:
         if self.explicit_validated:
             return SupportType.SOURCE_EXPLICIT_SUPPORT
         if self.recovered_validated:
-            return SupportType.SOURCE_RECOVERED_SUPPORT
+            return SupportType.SOURCE_RECONSTRUCTED_SUPPORT
         return None
 
     def as_dict(self) -> dict[str, object]:

@@ -10,7 +10,64 @@ from pathlib import Path
 
 import numpy as np
 
-from .types import FinitePlanarSupportProxy
+from .planar_inference import quaternion_to_rotation_matrix
+from .types import (
+    FinitePlanarSupportProxy,
+    SupportCollisionContractV1,
+    SupportType,
+)
+
+
+def support_collision_policy(support_type: SupportType | str) -> dict[str, object]:
+    """Return the frozen pairwise collision matrix for one support type."""
+
+    return SupportCollisionContractV1().policy(support_type).as_dict()
+
+
+def apply_hand_support_pair_filter(
+    stage: object,
+    *,
+    hand_prim_paths: tuple[str, ...],
+    support_prim_paths: tuple[str, ...],
+    support_type: SupportType | str,
+) -> dict[str, object]:
+    """Author USD filtered-pair relationships without disabling support globally.
+
+    Object/support collision is never touched.  For inferred proxies only, the
+    hand articulation root is filtered against the proxy rigid-body root in
+    each environment.
+    """
+
+    policy = SupportCollisionContractV1().policy(support_type)
+    if len(hand_prim_paths) != len(support_prim_paths) or not hand_prim_paths:
+        raise ValueError("SUPPORT_COLLISION_PAIR_PATH_CARDINALITY_INVALID")
+    if policy.hand_support_collision:
+        return {
+            **policy.as_dict(),
+            "status": "NO_FILTER_REQUIRED_REAL_SUPPORT_COLLISION_ACTIVE",
+            "filtered_pairs": [],
+        }
+    if not policy.object_support_collision:
+        raise ValueError("SUPPORT_COLLISION_UNRESOLVED_CANNOT_ENTER_RUNTIME")
+    from pxr import Sdf, UsdPhysics
+
+    filtered_pairs: list[dict[str, str]] = []
+    for hand_path, support_path in zip(hand_prim_paths, support_prim_paths, strict=True):
+        hand = stage.GetPrimAtPath(hand_path)  # type: ignore[attr-defined]
+        support = stage.GetPrimAtPath(support_path)  # type: ignore[attr-defined]
+        if not hand.IsValid() or not support.IsValid():
+            raise RuntimeError(f"SUPPORT_COLLISION_FILTER_PRIM_MISSING:{hand_path}:{support_path}")
+        relationship = UsdPhysics.FilteredPairsAPI.Apply(hand).CreateFilteredPairsRel()
+        relationship.AddTarget(Sdf.Path(support_path))
+        targets = {str(path) for path in relationship.GetTargets()}
+        if support_path not in targets:
+            raise RuntimeError("SUPPORT_COLLISION_FILTER_RELATIONSHIP_NOT_AUTHORED")
+        filtered_pairs.append({"hand": hand_path, "support": support_path})
+    return {
+        **policy.as_dict(),
+        "status": "PAIRWISE_HAND_SUPPORT_FILTER_AUTHORED",
+        "filtered_pairs": filtered_pairs,
+    }
 
 
 def write_finite_planar_support_usda(
@@ -80,14 +137,16 @@ def Xform "{prim_name}" (
 def table_top_corners(proxy: FinitePlanarSupportProxy) -> np.ndarray:
     """Return top-plane corners for visualization and geometry overlays."""
 
-    center = np.asarray(proxy.table_pose[:3], dtype=np.float64)
-    normal = np.asarray(proxy.plane_normal, dtype=np.float64)
-    normal /= np.linalg.norm(normal)
-    tangent_u = np.cross(normal, np.array([0.0, 0.0, 1.0]))
-    if np.linalg.norm(tangent_u) < 1.0e-8:
-        tangent_u = np.cross(normal, np.array([0.0, 1.0, 0.0]))
-    tangent_u /= np.linalg.norm(tangent_u)
-    tangent_v = np.cross(normal, tangent_u)
+    pose = np.asarray(proxy.table_pose, dtype=np.float64)
+    rotation = quaternion_to_rotation_matrix(pose[None, 3:])[0]
+    tangent_u, tangent_v, normal = rotation.T
+    declared_normal = np.asarray(proxy.plane_normal, dtype=np.float64)
+    declared_normal /= np.linalg.norm(declared_normal)
+    if float(np.dot(normal, declared_normal)) < 1.0 - 1.0e-6:
+        raise ValueError("SUPPORT_TABLE_POSE_NORMAL_MISMATCH")
+    center = pose[:3]
+    if abs(float(np.dot(center, declared_normal)) - proxy.plane_offset) > 1.0e-6:
+        raise ValueError("SUPPORT_TABLE_TOP_PLANE_MISMATCH")
     return np.asarray(
         [
             center
@@ -113,7 +172,9 @@ def isaac_rigid_object_config_kwargs(proxy_asset: Path, prim_path: str) -> dict[
 
 
 __all__ = [
+    "apply_hand_support_pair_filter",
     "isaac_rigid_object_config_kwargs",
+    "support_collision_policy",
     "table_top_corners",
     "write_finite_planar_support_usda",
 ]

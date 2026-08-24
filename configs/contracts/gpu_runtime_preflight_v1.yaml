@@ -1,0 +1,34 @@
+schema_version: GPURuntimePreflightV1
+status: CURRENT
+required_before:
+  - SourcePolicyContractV1_L0
+  - Isaac_PhysX_production_rollout
+  - PhysicalPPORefinementV1
+authority_layers:
+  host:
+    command: nvidia-smi -L
+  visibility:
+    fields: [CUDA_VISIBLE_DEVICES, nvidia_device_nodes]
+  exact_target_environment:
+    conda_environment: toporetarget-isaaclab
+    checks: [torch_cuda_available, torch_device_count, torch_device_names]
+  isaac_bootstrap:
+    required: true
+execution_context:
+  authoritative: HOST_UNSANDBOXED
+  sandbox_cuda_failure_is_host_authority: false
+failure:
+  status: GPU_REQUIRED_UNAVAILABLE
+  stop_gpu_required_stage: true
+  automatic_cpu_fallback: false
+receipt:
+  required_fields:
+    - host
+    - driver
+    - gpu_names
+    - cuda_visible_devices
+    - torch_version
+    - torch_cuda_available
+    - torch_device_count
+    - isaac_bootstrap
+    - timestamp

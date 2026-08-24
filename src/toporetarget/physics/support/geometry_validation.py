@@ -7,7 +7,7 @@ from typing import Any, cast
 
 import numpy as np
 
-from .planar_inference import transform_mesh_trajectory
+from .planar_inference import quaternion_to_rotation_matrix, transform_mesh_trajectory
 from .types import GeometryValidation, SupportPlaneConsistencyGateV1
 
 
@@ -25,6 +25,7 @@ def _surface_metrics(
     plane_offset: float,
     extent: tuple[float, float] | None = None,
     table_center: np.ndarray | None = None,
+    table_rotation: np.ndarray | None = None,
 ) -> dict[str, object]:
     coordinates = np.einsum("tvi,i->tv", points_world, normal) - plane_offset
     minimum = np.min(coordinates, axis=1)
@@ -40,12 +41,12 @@ def _surface_metrics(
         "per_frame_minimum_signed_distance_m": minimum.tolist(),
         "finite": bool(np.isfinite(coordinates).all()),
     }
-    if extent is not None and table_center is not None:
-        tangent_u = np.cross(normal, np.array([0.0, 0.0, 1.0]))
-        if np.linalg.norm(tangent_u) < 1.0e-8:
-            tangent_u = np.cross(normal, np.array([0.0, 1.0, 0.0]))
-        tangent_u /= np.linalg.norm(tangent_u)
-        tangent_v = np.cross(normal, tangent_u)
+    if extent is not None and table_center is not None and table_rotation is not None:
+        # The proxy extents are expressed in the table actor's local X/Y axes.
+        # Reconstructing an arbitrary basis from the normal can swap those axes
+        # for non-square tables, so the audited actor quaternion is authoritative.
+        tangent_u = table_rotation[:, 0]
+        tangent_v = table_rotation[:, 1]
         relative = points_world - table_center[None, None, :]
         u = np.einsum("tvi,i->tv", relative, tangent_u)
         v = np.einsum("tvi,i->tv", relative, tangent_v)
@@ -93,12 +94,16 @@ def validate_object_table_geometry(
     if pose.shape != (7,):
         raise ValueError("SUPPORT_TABLE_POSE_INVALID")
     center = pose[:3]
+    rotation = quaternion_to_rotation_matrix(pose[None, 3:])[0]
+    if float(np.dot(rotation[:, 2], normal)) < 1.0 - 1.0e-6:
+        raise ValueError("SUPPORT_TABLE_POSE_NORMAL_MISMATCH")
     visual_metrics = _surface_metrics(
         visual,
         normal=normal,
         plane_offset=plane_offset,
         extent=table_extent,
         table_center=center,
+        table_rotation=rotation,
     )
     collision_metrics = _surface_metrics(
         collision,
@@ -106,6 +111,7 @@ def validate_object_table_geometry(
         plane_offset=plane_offset,
         extent=table_extent,
         table_center=center,
+        table_rotation=rotation,
     )
     return {
         "status": "PASS"
@@ -133,10 +139,12 @@ def validate_hand_table_geometry(
     hand_points_world: np.ndarray | None,
     plane_normal: Sequence[float],
     plane_offset: float,
+    table_extent: tuple[float, float] | None = None,
+    table_pose: Sequence[float] | None = None,
     gate: SupportPlaneConsistencyGateV1 | None = None,
     source: str = "not_provided",
 ) -> dict[str, object]:
-    """Validate hand geometry if available; never infer a full hand from links."""
+    """Validate hand geometry against the finite support top footprint."""
 
     active_gate = gate or SupportPlaneConsistencyGateV1()
     if hand_points_world is None:
@@ -150,13 +158,57 @@ def validate_hand_table_geometry(
     normal = np.asarray(plane_normal, dtype=np.float64)
     normal /= np.linalg.norm(normal)
     metrics = _surface_metrics(points, normal=normal, plane_offset=plane_offset)
+    signed_all = np.einsum("tvi,i->tv", points, normal) - plane_offset
+    diagnostics = {
+        "authority": "DIAGNOSTIC_ONLY",
+        "hand_support_min_distance": float(np.min(signed_all)),
+        "hand_below_support_plane_depth": float(np.max(np.maximum(0.0, -signed_all))),
+        "fraction_hand_vertices_or_links_below_proxy": float(np.mean(signed_all < 0.0)),
+        "distance_semantics": "signed_normal_distance_to_proxy_top_plane_m",
+    }
+    if table_extent is None or table_pose is None:
+        return {
+            "status": "DEFERRED",
+            "source": source,
+            "reason": "finite_table_footprint_not_provided",
+            "diagnostics": diagnostics,
+            "infinite_plane_diagnostic": metrics,
+            "gate": active_gate.as_dict(),
+        }
+    pose = np.asarray(table_pose, dtype=np.float64)
+    if pose.shape != (7,):
+        raise ValueError("SUPPORT_TABLE_POSE_INVALID")
+    rotation = quaternion_to_rotation_matrix(pose[None, 3:])[0]
+    if float(np.dot(rotation[:, 2], normal)) < 1.0 - 1.0e-6:
+        raise ValueError("SUPPORT_TABLE_POSE_NORMAL_MISMATCH")
+    relative = points - pose[None, None, :3]
+    u = np.einsum("tvi,i->tv", relative, rotation[:, 0])
+    v = np.einsum("tvi,i->tv", relative, rotation[:, 1])
+    signed = np.einsum("tvi,i->tv", points, normal) - plane_offset
+    inside = (np.abs(u) <= table_extent[0] / 2.0) & (np.abs(v) <= table_extent[1] / 2.0)
+    penetrating_inside = inside & (signed < 0.0)
+    per_frame = np.max(np.where(penetrating_inside, -signed, 0.0), axis=1)
+    finite_metrics = {
+        "frame_count": int(len(points)),
+        "inside_footprint_point_count": int(np.count_nonzero(inside)),
+        "penetrating_inside_footprint_point_count": int(np.count_nonzero(penetrating_inside)),
+        "penetrating_inside_footprint_frames": int(
+            np.count_nonzero(np.any(penetrating_inside, axis=1))
+        ),
+        "max_penetration_m": float(np.max(per_frame)),
+        "p95_penetration_m": float(np.percentile(per_frame, 95.0)),
+        "per_frame_max_penetration_m": per_frame.tolist(),
+        "finite": bool(np.isfinite(signed).all()),
+    }
     return {
         "status": "PASS"
-        if float(cast(Any, metrics["max_penetration_m"]))
+        if float(cast(Any, finite_metrics["max_penetration_m"]))
         <= active_gate.max_hand_table_penetration_m
         else "FAIL",
         "source": source,
-        "metrics": metrics,
+        "metrics": finite_metrics,
+        "diagnostics": diagnostics,
+        "infinite_plane_diagnostic": metrics,
         "gate": active_gate.as_dict(),
     }
 
@@ -166,15 +218,20 @@ def qualify_geometry(
     object_table: dict[str, object],
     hand_table: dict[str, object],
     visual_collision_consistent: bool,
+    hand_table_is_diagnostic_only: bool = False,
 ) -> GeometryValidation:
     object_pass = object_table.get("status") == "PASS"
-    hand_pass = hand_table.get("status") in {"PASS", "DEFERRED"}
+    hand_pass = hand_table_is_diagnostic_only or hand_table.get("status") in {
+        "PASS",
+        "DEFERRED",
+    }
     status = "PASS" if object_pass and hand_pass and visual_collision_consistent else "FAIL"
     return GeometryValidation(
         object_table=object_table,
         hand_table=hand_table,
         visual_collision_consistent=visual_collision_consistent,
         status=status,
+        hand_table_diagnostic_only=hand_table_is_diagnostic_only,
     )
 
 

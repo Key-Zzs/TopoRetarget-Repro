@@ -19,7 +19,9 @@ from .planar_inference import (
 )
 from .resolver import resolve_support, validate_and_finalize_resolution
 from .runtime_support import (
+    apply_hand_support_pair_filter,
     isaac_rigid_object_config_kwargs,
+    support_collision_policy,
     table_top_corners,
     write_finite_planar_support_usda,
 )
@@ -36,6 +38,8 @@ from .types import (
     PhysicsValidation,
     StableIntervalResult,
     StablePreContactDetectionContractV1,
+    SupportCollisionContractV1,
+    SupportCollisionPolicyV1,
     SupportExtentContractV1,
     SupportInterval,
     SupportPatchType,
@@ -56,6 +60,8 @@ __all__ = [
     "StableIntervalResult",
     "StablePreContactDetectionContractV1",
     "SupportEvidenceAdapter",
+    "SupportCollisionContractV1",
+    "SupportCollisionPolicyV1",
     "SupportExtentContractV1",
     "SupportInterval",
     "SupportPatchType",
@@ -66,6 +72,7 @@ __all__ = [
     "SupportResolutionStatus",
     "SupportType",
     "build_physics_validation",
+    "apply_hand_support_pair_filter",
     "compare_support_counterfactuals",
     "detect_stable_pre_contact_interval",
     "evidence_from_sequence_directory",
@@ -76,6 +83,7 @@ __all__ = [
     "qualify_geometry",
     "resolve_support",
     "summarize_static_support_test",
+    "support_collision_policy",
     "support_normal_from_gravity",
     "table_top_corners",
     "transform_mesh_trajectory",

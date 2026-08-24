@@ -17,11 +17,15 @@ import numpy as np
 
 class SupportType(str, Enum):
     SOURCE_EXPLICIT_SUPPORT = "SOURCE_EXPLICIT_SUPPORT"
-    SOURCE_RECOVERED_SUPPORT = "SOURCE_RECOVERED_SUPPORT"
+    SOURCE_RECONSTRUCTED_SUPPORT = "SOURCE_RECONSTRUCTED_SUPPORT"
+    # Historical source name retained as a library alias, never emitted by the
+    # current production resolver.
+    SOURCE_RECOVERED_SUPPORT = "SOURCE_RECONSTRUCTED_SUPPORT"
     INFERRED_PLANAR_SUPPORT = "INFERRED_PLANAR_SUPPORT"
     HAND_SUPPORTED_ONLY = "HAND_SUPPORTED_ONLY"
     UNSUPPORTED = "UNSUPPORTED"
-    UNKNOWN = "UNKNOWN"
+    UNRESOLVED = "UNRESOLVED"
+    UNKNOWN = "UNRESOLVED"
 
 
 class SupportResolutionStatus(str, Enum):
@@ -29,7 +33,8 @@ class SupportResolutionStatus(str, Enum):
     INFERRED_SUPPORT_VALIDATED = "INFERRED_SUPPORT_VALIDATED"
     INFERRED_SUPPORT_VALIDATED_TRANSFER_DEFERRED = "INFERRED_SUPPORT_VALIDATED_TRANSFER_DEFERRED"
     SUPPORT_RECONSTRUCTION_BLOCKED = "SUPPORT_RECONSTRUCTION_BLOCKED"
-    SUPPORT_UNKNOWN = "SUPPORT_UNKNOWN"
+    SUPPORT_UNRESOLVED = "SUPPORT_UNRESOLVED"
+    SUPPORT_UNKNOWN = "SUPPORT_UNRESOLVED"
 
 
 class SupportResolutionMode(str, Enum):
@@ -43,6 +48,55 @@ class SupportPatchType(str, Enum):
     EDGE_SUPPORT = "EDGE_SUPPORT"
     AREA_SUPPORT = "AREA_SUPPORT"
     UNSTABLE_SUPPORT_PATCH = "UNSTABLE_SUPPORT_PATCH"
+
+
+@dataclass(frozen=True)
+class SupportCollisionPolicyV1:
+    """Pairwise collision behavior for one resolved support authority."""
+
+    schema_version: str
+    support_type: SupportType
+    object_support_collision: bool
+    hand_support_collision: bool
+    hand_support_geometry_diagnostics: str = "DIAGNOSTIC_ONLY"
+    global_support_collision_disabled: bool = False
+
+    def as_dict(self) -> dict[str, object]:
+        value = asdict(self)
+        value["support_type"] = self.support_type.value
+        return value
+
+
+@dataclass(frozen=True)
+class SupportCollisionContractV1:
+    schema_version: str = "SupportCollisionContractV1"
+    implementation: str = "pairwise_collision_filtering"
+
+    def policy(self, support_type: SupportType | str) -> SupportCollisionPolicyV1:
+        selected = SupportType(support_type)
+        if selected in {
+            SupportType.SOURCE_EXPLICIT_SUPPORT,
+            SupportType.SOURCE_RECONSTRUCTED_SUPPORT,
+        }:
+            return SupportCollisionPolicyV1(
+                schema_version=self.schema_version,
+                support_type=selected,
+                object_support_collision=True,
+                hand_support_collision=True,
+            )
+        if selected is SupportType.INFERRED_PLANAR_SUPPORT:
+            return SupportCollisionPolicyV1(
+                schema_version=self.schema_version,
+                support_type=selected,
+                object_support_collision=True,
+                hand_support_collision=False,
+            )
+        return SupportCollisionPolicyV1(
+            schema_version=self.schema_version,
+            support_type=selected,
+            object_support_collision=False,
+            hand_support_collision=False,
+        )
 
 
 @dataclass(frozen=True)
@@ -231,6 +285,7 @@ class GeometryValidation:
     hand_table: dict[str, object]
     visual_collision_consistent: bool
     status: str
+    hand_table_diagnostic_only: bool = False
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -316,6 +371,8 @@ __all__ = [
     "StableIntervalResult",
     "StablePreContactDetectionContractV1",
     "SupportExtentContractV1",
+    "SupportCollisionContractV1",
+    "SupportCollisionPolicyV1",
     "SupportInterval",
     "SupportPatchType",
     "SupportPlaneConsistencyGateV1",

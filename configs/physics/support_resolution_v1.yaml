@@ -1,13 +1,15 @@
 # Tracked support-resolution algorithm contract.  Sequence-specific assets and
 # reports remain under .local/support_assets and .local/reports.
 schema_version: SupportResolutionContractV1
+status: CURRENT
+authority_name: SupportResolutionV1
 support:
   mode: auto
   priority:
-    - source_explicit
-    - source_recovered
-    - inferred_planar
-    - unsupported
+    - SOURCE_EXPLICIT_SUPPORT
+    - SOURCE_RECONSTRUCTED_SUPPORT
+    - INFERRED_PLANAR_SUPPORT
+    - UNRESOLVED
   allow_inference_after_source_rejection: true
   source_support_failure: SOURCE_SUPPORT_REJECTED
 stable_pre_contact:
@@ -42,3 +44,23 @@ runtime:
   object_rollout_state_writes: 0
   hidden_attachment: false
   kinematic_support_force: false
+collision:
+  implementation: pairwise_collision_filtering
+  global_support_collision_disable: false
+  SOURCE_EXPLICIT_SUPPORT:
+    object_support: true
+    hand_support: true
+  SOURCE_RECONSTRUCTED_SUPPORT:
+    object_support: true
+    hand_support: true
+    geometry_uncertainty_must_be_declared: true
+  INFERRED_PLANAR_SUPPORT:
+    object_support: true
+    hand_support: false
+    purpose: restore_missing_target_object_support_only
+  UNRESOLVED:
+    full_gravity_production_ppo: false
+diagnostics:
+  hand_support_min_distance: DIAGNOSTIC_ONLY
+  hand_below_support_plane_depth: DIAGNOSTIC_ONLY
+  fraction_hand_vertices_or_links_below_proxy: DIAGNOSTIC_ONLY

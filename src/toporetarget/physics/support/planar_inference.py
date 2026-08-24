@@ -94,6 +94,14 @@ def _runs(mask: np.ndarray) -> list[tuple[int, int]]:
     return result
 
 
+def _persistent_motion(mask: np.ndarray, *, minimum_frames: int) -> np.ndarray:
+    result = np.zeros_like(np.asarray(mask, dtype=bool))
+    for start, stop in _runs(np.asarray(mask, dtype=bool)):
+        if stop - start >= minimum_frames:
+            result[start:stop] = True
+    return result
+
+
 def detect_stable_pre_contact_interval(
     *,
     timestamps: Sequence[float],
@@ -104,7 +112,7 @@ def detect_stable_pre_contact_interval(
     object_twist_world: np.ndarray | None = None,
     contract: StablePreContactDetectionContractV1 | None = None,
 ) -> StableIntervalResult:
-    """Find the earliest consecutive stable interval before contact/lift."""
+    """Find stable pre-manipulation geometry; contact timing is diagnostic."""
 
     del gravity  # The interval is kinematic; gravity enters plane inference.
     thresholds = contract or StablePreContactDetectionContractV1()
@@ -146,42 +154,69 @@ def detect_stable_pre_contact_interval(
         if contact.shape != (len(time),):
             raise ValueError("SUPPORT_CONTACT_MASK_SHAPE_INVALID")
         contact_used = True
-    eligible = (
+    kinematically_stable = (
         (linear_speed <= thresholds.max_linear_speed_mps)
         & (angular_speed <= thresholds.max_angular_speed_radps)
         & (translation_step <= thresholds.max_translation_step_m)
         & (rotation_step <= thresholds.max_rotation_step_rad)
-        & ~contact
     )
-    candidates = [
-        SupportInterval(start, stop, "stable_kinematic_pre_contact")
+    eligible = kinematically_stable
+    eligible_runs = [
+        (start, stop)
         for start, stop in _runs(eligible)
         if stop - start >= thresholds.min_consecutive_frames
     ]
-    if not candidates:
+    manipulation = _persistent_motion(~kinematically_stable, minimum_frames=1)
+    first_manipulation = (
+        int(np.flatnonzero(manipulation)[0]) if np.any(manipulation) else len(contact)
+    )
+    candidates = tuple(
+        SupportInterval(
+            start,
+            stop,
+            (
+                "stable_kinematic_pre_manipulation"
+                if stop <= first_manipulation
+                else "stable_kinematic_post_manipulation_diagnostic"
+            ),
+        )
+        for start, stop in eligible_runs
+    )
+    authoritative = tuple(
+        interval
+        for interval in candidates
+        if interval.reason == "stable_kinematic_pre_manipulation"
+    )
+    if not authoritative:
         return StableIntervalResult(
             status="PLANAR_SUPPORT_INFERENCE_NOT_AUTHORIZED",
             interval=None,
+            candidate_intervals=candidates,
             linear_speed_mps=tuple(float(v) for v in linear_speed),
             angular_speed_radps=tuple(float(v) for v in angular_speed),
             translation_step_m=tuple(float(v) for v in translation_step),
             rotation_step_rad=tuple(float(v) for v in rotation_step),
             contact_mask_used=contact_used,
-            reason="no_stable_pre_contact_interval",
+            reason=(
+                "no_stable_interval_before_manipulation"
+                if candidates
+                else "no_stable_pre_contact_interval"
+            ),
         )
-    # The first stable run is authoritative: a later stable segment could be a
-    # post-lift rest and must never be used to invent a support surface.
-    selected = candidates[0]
+    selected = authoritative[0]
     return StableIntervalResult(
         status="STABLE_PRE_CONTACT_INTERVAL_FOUND",
         interval=selected,
-        candidate_intervals=tuple(candidates),
+        candidate_intervals=candidates,
         linear_speed_mps=tuple(float(v) for v in linear_speed),
         angular_speed_radps=tuple(float(v) for v in angular_speed),
         translation_step_m=tuple(float(v) for v in translation_step),
         rotation_step_rad=tuple(float(v) for v in rotation_step),
         contact_mask_used=contact_used,
-        reason="earliest qualifying run selected before manipulation/lift",
+        reason=(
+            "earliest stable pre-manipulation geometry selected; "
+            "hand contact timing retained as separate provenance"
+        ),
     )
 
 
@@ -277,6 +312,8 @@ def infer_planar_support(
     )
     center_u = float((bounds[0] + bounds[1]) / 2.0)
     center_v = float((bounds[2] + bounds[3]) / 2.0)
+    # ``table_pose`` is the audited top-surface pose. Runtime scene builders
+    # subtract half the box thickness when deriving the rigid actor centre.
     center_world = normal * plane_offset + tangent_u * center_u + tangent_v * center_v
     patch_vertices = visual_world[stable]
     patch_coordinates = np.einsum("tvi,i->tv", patch_vertices, normal)
@@ -322,6 +359,63 @@ def infer_planar_support(
     return fit, proxy, evidence
 
 
+def audit_candidate_support_intervals(
+    *,
+    visual_vertices_local: np.ndarray,
+    collision_vertices_local: np.ndarray | None,
+    object_translation_world: np.ndarray,
+    object_quaternion_world_wxyz: np.ndarray,
+    gravity: Sequence[float],
+    candidates: Sequence[SupportInterval],
+    extent_contract: SupportExtentContractV1 | None = None,
+    detection_contract: StablePreContactDetectionContractV1 | None = None,
+) -> list[dict[str, object]]:
+    """Audit every eligible interval without changing frame-zero authority.
+
+    A later AREA-support placement is useful diagnostic evidence, but it cannot
+    silently replace an initially POINT/EDGE-supported reset.
+    """
+
+    rows: list[dict[str, object]] = []
+    for interval in candidates:
+        try:
+            fit, _proxy, _evidence = infer_planar_support(
+                visual_vertices_local=visual_vertices_local,
+                collision_vertices_local=collision_vertices_local,
+                object_translation_world=object_translation_world,
+                object_quaternion_world_wxyz=object_quaternion_world_wxyz,
+                gravity=gravity,
+                stable_interval=interval,
+                extent_contract=extent_contract,
+                detection_contract=detection_contract,
+            )
+        except ValueError as error:
+            rows.append(
+                {
+                    "interval": interval.as_dict(),
+                    "status": "INELIGIBLE",
+                    "reason": str(error),
+                }
+            )
+            continue
+        rows.append(
+            {
+                "interval": interval.as_dict(),
+                "status": "ELIGIBLE",
+                "support_patch_type": fit.support_patch_type.value,
+                "support_patch_projected_area_m2": fit.support_patch_projected_area_m2,
+                "plane_offset": fit.plane_offset,
+                "height_mad_m": fit.h_visual_stats["mad"],
+                "height_range_m": fit.h_visual_stats["range"],
+                "support_inference_authorized": (
+                    interval.reason == "stable_kinematic_pre_manipulation"
+                ),
+                "frame_zero_observed": interval.start_frame == 0,
+            }
+        )
+    return rows
+
+
 def _rotation_matrix_to_quaternion(matrix: np.ndarray) -> np.ndarray:
     """Return an active wxyz quaternion for a proper rotation matrix."""
 
@@ -359,6 +453,7 @@ def _rotation_matrix_to_quaternion(matrix: np.ndarray) -> np.ndarray:
 
 
 __all__ = [
+    "audit_candidate_support_intervals",
     "detect_stable_pre_contact_interval",
     "infer_planar_support",
     "normalize_gravity",
