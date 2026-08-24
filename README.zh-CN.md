@@ -127,7 +127,195 @@ export TOPORETARGET_OUTPUT=/path/to/toporetarget-output
 "$TOPORETARGET_PYTHON" -m toporetarget geometry --help
 ```
 
-### 4. 因果物理 PPO 精炼
+### 4. 人类 HOCap Episode 到物理机器人示范
+
+当前权威为
+[`HOCapPhysicalizationProtocolV1`](configs/contracts/hocap_physicalization_v1.yaml)。
+production unit 是一条完整的 `HOCapSingleHandObjectEpisodeV1`，不是 raw sequence，
+也不是局部 primary-object window。HOCap/MANO 原始输入只读。先设置彼此独立的输出目录，
+并在执行前检查各入口的 `--help`：
+
+```bash
+export HOCAP_ROOT=/path/to/HOCap
+export MANO_MODEL_ROOT=/path/to/mano
+export EPISODE_ROOT=/path/to/reports/episodes
+export PHYS_RUN_ROOT=/path/to/runs/physicalization_v1
+export PHYS_REPORT_ROOT=/path/to/reports/physicalization_v1
+export EPISODE_ID=<frozen-episode-id>
+```
+
+1. 解析 raw sequence。`auto` 会解析 HOCap 官方的两个 hand slot；target object 由
+   whole-MANO-surface 到精确 object triangle mesh 的完整生命周期证据确定。`--hand left/right`
+   只用于显式诊断过滤。
+
+   ```bash
+   conda run -n topo-retarget python scripts/data/parse_hocap_episodes.py \
+     --data-root "$HOCAP_ROOT" --mano-model-root "$MANO_MODEL_ROOT" \
+     --output-root "$EPISODE_ROOT" --hand auto --resume
+   ```
+
+2. 人工检查 active hand、target object，以及 approach、pickup、place、release、retreat：
+
+   ```bash
+   conda run -n topo-retarget python scripts/visualize_hocap_episode.py \
+     --episode-index "$EPISODE_ROOT/all_hocap_episodes.json" \
+     --episode-id "$EPISODE_ID" --data-root "$HOCAP_ROOT" \
+     --mano-model-root "$MANO_MODEL_ROOT" \
+     --output "$PHYS_REPORT_ROOT/episode.html" \
+     --sanity-output "$PHYS_REPORT_ROOT/episode_sanity.json"
+   ```
+
+3. 使用数学不变的 `fast_exact_v2` execution profile 执行几何重定向。production 不使用
+   `--benchmark-first-frames` 或 `--skip-html`。
+
+   ```bash
+   conda run -n topo-retarget python scripts/run_hocap_episode_geometric_retarget.py \
+     --episode-index "$EPISODE_ROOT/all_hocap_episodes.json" \
+     --episode-id "$EPISODE_ID" --data-root "$HOCAP_ROOT" \
+     --mano-model-root "$MANO_MODEL_ROOT" \
+     --selection-manifest <frozen-episode-manifest.json> \
+     --execution-profile wuji_continuous_sequential_fast_exact_v2 \
+     --run-root "$PHYS_RUN_ROOT/geometric" \
+     --report-root "$PHYS_REPORT_ROOT/geometric"
+   ```
+
+4. 打开输出的 `continuous_refinement_visualization.html`。若要从相同、receipt-bound
+   artifact 重新生成 HTML：
+
+   ```bash
+   conda run -n topo-retarget python -m toporetarget workflow visualize-mesh \
+     --run <html_visualization_manifest.json> --mode combined \
+     --max-object-points 50000 --output <retarget.html>
+   ```
+
+5. 从通过验证的 final trajectory 与 checkpoint manifest 构建 physical reference：
+
+   ```bash
+   conda run -n toporetarget-rl python scripts/rl/prepare_independent_source_reference.py \
+     --clip-id "$EPISODE_ID" --final-trajectory <final_continuous.zarr> \
+     --canonical <canonical_episode.zarr> \
+     --checkpoint-manifest <continuous_checkpoints/manifest.json> \
+     --wuji-mjcf third_party/robot_hands/wuji_hand2_beta1/mjcf/right.xml \
+     --world-reference-output <world_reference.npz> --object-mesh-output <object.obj> \
+     --reference-v1-output <reference_v1.npz> \
+     --reference-v2-output <reference_kinematics_v2.npz> --report <reference.json>
+   ```
+
+6. 在精确 Isaac 环境中冻结 host GPU authority。sandbox 中 CUDA 失败只是一条诊断，
+   不等价于 host GPU 不可用；禁止 CPU fallback。
+
+   ```bash
+   nvidia-smi -L
+   conda run --no-capture-output -n toporetarget-isaaclab \
+     python scripts/runtime/gpu_preflight.py \
+     --execution-context host-unsandboxed --isaac-bootstrap --accept-eula \
+     --output <gpu_preflight_receipt.json>
+   ```
+
+7. 物化 source authority 并训练精确 L0（`1,024,000` samples）。PASS 输出为
+   `source_policy_receipt.v3.json`；禁止独立 Strict-V4 final PPO。EpisodeV1 解析和几何
+   重定向支持左右手，但当前 physical backend 是 Wuji right-hand runtime。
+
+   ```bash
+   conda run -n topo-retarget python scripts/rl/isaaclab/run_independent_source_policy.py \
+     --manifest <frozen-episode-manifest.json> \
+     --primary-object-authority <episode_object_authority.json> \
+     --clip-id "$EPISODE_ID" --geometric-receipt <geometric_retarget_receipt.json> \
+     --run-root "$PHYS_RUN_ROOT" --report-root "$PHYS_REPORT_ROOT" \
+     --wuji-mjcf third_party/robot_hands/wuji_hand2_beta1/mjcf/right.xml \
+     --interaction-contact-contract <interaction_contact_contract.json> \
+     --source-policy-profile l0_then_physical_grouped_rse_v1 --num-envs 1024 \
+     --gpu-preflight-receipt <gpu_preflight_receipt.json> --accept-eula
+   ```
+
+8. 按 `SOURCE_EXPLICIT_SUPPORT -> SOURCE_RECONSTRUCTED_SUPPORT ->
+   INFERRED_PLANAR_SUPPORT -> UNRESOLVED` 解析 support。source table 参数存在时必须恢复，
+   不得再推断第二张 table。source/reconstructed support 的 hand/object collision 都为 ON；
+   inferred proxy 仅用 pairwise filter 将 hand/support collision 设为 OFF，object collision 保持 ON。
+
+   ```bash
+   conda run -n topo-retarget python scripts/physics/run_independent_physical_support.py \
+     --manifest <frozen-episode-manifest.json> --clip-id "$EPISODE_ID" \
+     --source-policy-receipt <source_policy_receipt.v3.json> \
+     --run-root "$PHYS_RUN_ROOT" --report-root "$PHYS_REPORT_ROOT" \
+     --base-runtime-geometry-manifest <runtime_collision_geometry_manifest.json> \
+     --gpu-preflight-receipt <gpu_preflight_receipt.json> --accept-eula
+   ```
+
+9. 在任何 physical update 前执行冻结的 full-gravity Eval10：
+
+   ```bash
+   conda run -n topo-retarget python scripts/evaluation/run_independent_frozen_physical_evaluation.py \
+     --manifest <frozen-episode-manifest.json> --clip-id "$EPISODE_ID" \
+     --source-policy-receipt <source_policy_receipt.v3.json> \
+     --support-receipt <support_receipt.json> \
+     --gpu-preflight-receipt <gpu_preflight_receipt.json> \
+     --interaction-contact-contract <interaction_contact_contract.json> \
+     --run-root "$PHYS_RUN_ROOT" --report-root "$PHYS_REPORT_ROOT" --accept-eula
+   ```
+
+10. 只按 PF V2 决策：Eval10 10/10 PASS 进入 Confirm20，Confirm20 PASS 后以 0 次 PPO
+    update 接受；PF V2 FAIL 才允许 physical PPO。其他状态均不授权训练。
+
+11. 获得授权后，固定 `grouped_multiplicative_v1`、RSE、runtime reference 有效 index
+    域上的 uniform sampling，最多 15 个新 update。15 是上限；Confirm20 接受后立即停止。
+
+    ```bash
+    conda run --no-capture-output -n toporetarget-isaaclab \
+      python scripts/rl/isaaclab/run_physical_refinement.py train \
+      --clip "$EPISODE_ID" --num-envs 1024 --max-new-updates 15 \
+      --report-root "$PHYS_REPORT_ROOT/ppo" --run-root "$PHYS_RUN_ROOT/ppo" \
+      --source-training-result <l0_training.json> --reference <reference_v2.npz> \
+      --object-usd <object.usda> --support-proxy <table_proxy.json> \
+      --support-asset <support_proxy.usda> --contact-contract <contact_contract.json> \
+      --contact-mask-root <contact_mask_root> \
+      --reference-distance-root <reference_distance_root> \
+      --object-mesh-root <object_mesh_root> \
+      --runtime-geometry-manifest <runtime_collision_geometry_manifest.json> \
+      --frozen-evaluation-gates <frozen_evaluation_gates.json> \
+      --seed-manifest <seed_manifest.json> \
+      --gpu-preflight-receipt <gpu_preflight_receipt.json> --accept-eula
+    ```
+
+12. qualification 分别报告 PF V2，以及 DF pose、linear、pose-derived angular authority；
+    不得把 PF failure 改写为 DF success。
+
+    ```bash
+    conda run --no-capture-output -n toporetarget-isaaclab \
+      python scripts/evaluation/qualify_physical_hoi.py --accept-eula \
+      --clip "$EPISODE_ID" --checkpoint <checkpoint.pt> --output <qualification_dir> \
+      --episodes 10 --update <update> --samples <samples> \
+      --reference <reference_v2.npz> --object-usd <object.usda> \
+      --support-proxy <table_proxy.json> --support-asset <support_proxy.usda> \
+      --contact-contract <contact_contract.json> --contact-mask-root <contact_mask_root> \
+      --reference-distance-root <reference_distance_root> \
+      --object-mesh-root <object_mesh_root> \
+      --runtime-geometry-manifest <runtime_collision_geometry_manifest.json> \
+      --frozen-evaluation-gates <frozen_evaluation_gates.json> \
+      --seed-manifest <seed_manifest.json>
+    ```
+
+13. replay 使用不可变 trace。相同入口支持完整 trajectory、window、raw MANO/object overlay、
+    reference 开关和确定性的 low-poly raw object。
+
+    ```bash
+    conda run --no-capture-output -n toporetarget-isaaclab \
+      python scripts/rl/isaaclab/replay_physical_hoi_trace.py --accept-eula \
+      --trace <episode_000.npz> --object "$EPISODE_ID" --loop
+    conda run --no-capture-output -n toporetarget-isaaclab \
+      python scripts/rl/isaaclab/replay_physical_hoi_trace.py --accept-eula \
+      --trace <episode_000.npz> --object "$EPISODE_ID" \
+      --start-frame <start> --end-frame <end> --no-reference-ghost \
+      --mocap-ghost --mocap-object-low-poly --loop
+    ```
+
+PF V2 是 physical functionality authority；interaction timing 是独立诊断。replay 不会
+训练 PPO，也不会生成科学验收。
+
+<details>
+<summary>历史 two-clip 开发记录（不是当前 authority）</summary>
+
+下列材料只为保留 provenance。不得用它选择 production unit 或冻结新 held-out manifest。
 
 该 production workflow 从已验证的几何重定向输出开始，到已接受的 physical-HOI trace 结束。当前证据
 仅覆盖物理 runner 支持的两条 HOCap clip。旧开发记录可能称其为 Stage16-D；production 命令不使用该名称。
@@ -209,23 +397,14 @@ replay 支持 full/windowed trajectory、raw MANO/object overlay、no-reference-
 low-poly raw object。详细 reward 语义见 [Grouped reward and RSE](docs/rl/DEXPLORE_STYLE_MULTIPLICATIVE_REWARD_RSE.md)，
 support authority 见 [Support resolution](docs/physics/SUPPORT_RESOLUTION.zh-CN.md)。
 
-### 5. 独立多 Clip 物理精炼
+</details>
 
-`run_physical_refinement_batch.py` 仅按 raw metadata 冻结五条 HOCap clip，并为每条分配独立的
-actor、critic、optimizer、normalizer 和 RNG lineage；它会原子持久化每条的 timing/status receipt。
-流程遵循 evaluate-first、failure-only PPO 和 Confirm20 acceptance 后立即停止；`--resume` 不会重跑
-durable completed stage。
+### 5. 历史 Raw-Sequence 多 Clip Pilot
 
-该 batch runner 不会把只用于开发的 physical CLI 偷换为 held-out authority。任何 retarget/PPO 前都会先
-检查 authority。当前 production physical runner 只支持两条开发 clip，因此下列命令只会冻结 manifest 并报告
-`PIPELINE_INVALID` 与 0 次 PPO update，不会伪造 held-out outcome：
+本节及链接文档均为 `CURRENT_AUTHORITY=NO` 的历史记录；旧 manifest 不得继续用于 GPU 工作。
 
-```bash
-PYTHONPATH=src conda run -n toporetarget-rl \
-  python scripts/rl/isaaclab/run_physical_refinement_batch.py prepare
-PYTHONPATH=src conda run -n toporetarget-rl \
-  python scripts/rl/isaaclab/run_physical_refinement_batch.py validate-config
-```
+旧 raw-sequence batch 入口已删除，因此不能再生成新的 production manifest。历史 receipt 与链接文档
+只作为不可变 provenance 保留。请使用上方 EpisodeV1 工作流；不得把历史命令翻译成当前运行。
 
 详见 [独立多 clip 物理精炼](docs/rl/INDEPENDENT_MULTI_CLIP_PHYSICAL_REFINEMENT.md)，其中定义了 authority
 manifest、receipt、timing scope 和可执行 promotion 条件。

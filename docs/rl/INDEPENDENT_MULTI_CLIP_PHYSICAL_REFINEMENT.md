@@ -1,5 +1,13 @@
 # Independent Multi-Clip Physical Refinement
 
+> **HISTORICAL RECORD — CURRENT_AUTHORITY=NO.** This document describes the
+> superseded raw-sequence/primary-object-window pilot and is retained only for
+> provenance. Do not reuse its manifest for GPU work. The current production
+> unit and commands are the EpisodeV1 workflow in the repository README and
+> `configs/contracts/hocap_physicalization_v1.yaml`.
+> The batch entrypoint named below has been removed; all commands in this file
+> are non-executable historical descriptions.
+
 `scripts/rl/isaaclab/run_physical_refinement_batch.py` is the batch-facing
 entrypoint for a five-clip HOCap pilot.  Its role is deliberately narrow: it
 freezes a held-out selection before outcomes, binds one shared method contract,

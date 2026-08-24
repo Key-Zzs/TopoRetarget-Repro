@@ -139,7 +139,208 @@ workflow is resumable and does not scan or mutate unrelated source data.
 "$TOPORETARGET_PYTHON" -m toporetarget geometry --help
 ```
 
-### 4. Causal Physical PPO Refinement
+### 4. Human HOCap Episode to Physical Robot Demonstration
+
+The current authority is
+[`HOCapPhysicalizationProtocolV1`](configs/contracts/hocap_physicalization_v1.yaml).
+Its unit is one complete `HOCapSingleHandObjectEpisodeV1`, not a raw sequence
+or a locally chosen primary-object window. HOCap and MANO inputs are read-only.
+Set distinct output roots and inspect each command's `--help` before running:
+
+```bash
+export HOCAP_ROOT=/path/to/HOCap
+export MANO_MODEL_ROOT=/path/to/mano
+export EPISODE_ROOT=/path/to/reports/episodes
+export PHYS_RUN_ROOT=/path/to/runs/physicalization_v1
+export PHYS_REPORT_ROOT=/path/to/reports/physicalization_v1
+export EPISODE_ID=<frozen-episode-id>
+```
+
+1. Parse raw sequences. `auto` parses both official HOCap hand slots and the
+   target object is fixed by whole-MANO-surface to exact object-triangle
+   lifecycle evidence. Use `--hand left` or `--hand right` only as an explicit
+   diagnostic filter.
+
+   ```bash
+   conda run -n topo-retarget python scripts/data/parse_hocap_episodes.py \
+     --data-root "$HOCAP_ROOT" --mano-model-root "$MANO_MODEL_ROOT" \
+     --output-root "$EPISODE_ROOT" --hand auto --resume
+   ```
+
+2. Inspect the selected hand, object, and the approach, pickup, place, release,
+   and retreat events before accepting the episode identity.
+
+   ```bash
+   conda run -n topo-retarget python scripts/visualize_hocap_episode.py \
+     --episode-index "$EPISODE_ROOT/all_hocap_episodes.json" \
+     --episode-id "$EPISODE_ID" --data-root "$HOCAP_ROOT" \
+     --mano-model-root "$MANO_MODEL_ROOT" \
+     --output "$PHYS_REPORT_ROOT/episode.html" \
+     --sanity-output "$PHYS_REPORT_ROOT/episode_sanity.json"
+   ```
+
+3. Run the unchanged geometric solver with the math-equivalent
+   `fast_exact_v2` execution profile. Do not use `--benchmark-first-frames` or
+   `--skip-html` in production.
+
+   ```bash
+   conda run -n topo-retarget python scripts/run_hocap_episode_geometric_retarget.py \
+     --episode-index "$EPISODE_ROOT/all_hocap_episodes.json" \
+     --episode-id "$EPISODE_ID" --data-root "$HOCAP_ROOT" \
+     --mano-model-root "$MANO_MODEL_ROOT" \
+     --selection-manifest <frozen-episode-manifest.json> \
+     --execution-profile wuji_continuous_sequential_fast_exact_v2 \
+     --run-root "$PHYS_RUN_ROOT/geometric" \
+     --report-root "$PHYS_REPORT_ROOT/geometric"
+   ```
+
+4. Open the emitted `continuous_refinement_visualization.html`. To rerender the
+   same receipt-bound artifacts, use the existing viewer:
+
+   ```bash
+   conda run -n topo-retarget python -m toporetarget workflow visualize-mesh \
+     --run <html_visualization_manifest.json> --mode combined \
+     --max-object-points 50000 --output <retarget.html>
+   ```
+
+5. Build the physical reference from the validated final trajectory and its
+   checkpoint manifest:
+
+   ```bash
+   conda run -n toporetarget-rl python scripts/rl/prepare_independent_source_reference.py \
+     --clip-id "$EPISODE_ID" --final-trajectory <final_continuous.zarr> \
+     --canonical <canonical_episode.zarr> \
+     --checkpoint-manifest <continuous_checkpoints/manifest.json> \
+     --wuji-mjcf third_party/robot_hands/wuji_hand2_beta1/mjcf/right.xml \
+     --world-reference-output <world_reference.npz> --object-mesh-output <object.obj> \
+     --reference-v1-output <reference_v1.npz> \
+     --reference-v2-output <reference_kinematics_v2.npz> --report <reference.json>
+   ```
+
+6. Establish host GPU authority in the exact Isaac environment. A sandbox CUDA
+   failure is diagnostic and is not evidence that the host GPU is unavailable;
+   CPU fallback is forbidden.
+
+   ```bash
+   nvidia-smi -L
+   conda run --no-capture-output -n toporetarget-isaaclab \
+     python scripts/runtime/gpu_preflight.py \
+     --execution-context host-unsandboxed --isaac-bootstrap --accept-eula \
+     --output <gpu_preflight_receipt.json>
+   ```
+
+7. Materialize the source authorities and train exactly L0 (`1,024,000`
+   samples). The PASS output is `source_policy_receipt.v3.json`; standalone
+   Strict-V4 final PPO is forbidden. The current physical backend is the Wuji
+   right-hand runtime, although EpisodeV1 parsing and geometric retargeting
+   support both hands.
+
+   ```bash
+   conda run -n topo-retarget python scripts/rl/isaaclab/run_independent_source_policy.py \
+     --manifest <frozen-episode-manifest.json> \
+     --primary-object-authority <episode_object_authority.json> \
+     --clip-id "$EPISODE_ID" --geometric-receipt <geometric_retarget_receipt.json> \
+     --run-root "$PHYS_RUN_ROOT" --report-root "$PHYS_REPORT_ROOT" \
+     --wuji-mjcf third_party/robot_hands/wuji_hand2_beta1/mjcf/right.xml \
+     --interaction-contact-contract <interaction_contact_contract.json> \
+     --source-policy-profile l0_then_physical_grouped_rse_v1 --num-envs 1024 \
+     --gpu-preflight-receipt <gpu_preflight_receipt.json> --accept-eula
+   ```
+
+8. Resolve support with the frozen priority
+   `SOURCE_EXPLICIT_SUPPORT -> SOURCE_RECONSTRUCTED_SUPPORT ->
+   INFERRED_PLANAR_SUPPORT -> UNRESOLVED`. If source table parameters exist,
+   restore them; never infer a second table. Source/reconstructed support keeps
+   hand and object collision ON. An inferred proxy keeps object collision ON
+   and filters only hand/support collision OFF.
+
+   ```bash
+   conda run -n topo-retarget python scripts/physics/run_independent_physical_support.py \
+     --manifest <frozen-episode-manifest.json> --clip-id "$EPISODE_ID" \
+     --source-policy-receipt <source_policy_receipt.v3.json> \
+     --run-root "$PHYS_RUN_ROOT" --report-root "$PHYS_REPORT_ROOT" \
+     --base-runtime-geometry-manifest <runtime_collision_geometry_manifest.json> \
+     --gpu-preflight-receipt <gpu_preflight_receipt.json> --accept-eula
+   ```
+
+9. Run the immutable full-gravity Eval10 before any physical update:
+
+   ```bash
+   conda run -n topo-retarget python scripts/evaluation/run_independent_frozen_physical_evaluation.py \
+     --manifest <frozen-episode-manifest.json> --clip-id "$EPISODE_ID" \
+     --source-policy-receipt <source_policy_receipt.v3.json> \
+     --support-receipt <support_receipt.json> \
+     --gpu-preflight-receipt <gpu_preflight_receipt.json> \
+     --interaction-contact-contract <interaction_contact_contract.json> \
+     --run-root "$PHYS_RUN_ROOT" --report-root "$PHYS_REPORT_ROOT" --accept-eula
+   ```
+
+10. Decide from PF V2: a 10/10 Eval10 PASS triggers Confirm20 and acceptance
+    with zero PPO updates. A PF V2 failure permits physical PPO; no other result
+    authorizes training.
+
+11. If authorized, use `grouped_multiplicative_v1`, RSE, uniform sampling over
+    the runtime reference's valid index domain, and at most 15 new updates.
+    `15` is an upper bound; Confirm20 acceptance stops immediately.
+
+    ```bash
+    conda run --no-capture-output -n toporetarget-isaaclab \
+      python scripts/rl/isaaclab/run_physical_refinement.py train \
+      --clip "$EPISODE_ID" --num-envs 1024 --max-new-updates 15 \
+      --report-root "$PHYS_REPORT_ROOT/ppo" --run-root "$PHYS_RUN_ROOT/ppo" \
+      --source-training-result <l0_training.json> --reference <reference_v2.npz> \
+      --object-usd <object.usda> --support-proxy <table_proxy.json> \
+      --support-asset <support_proxy.usda> --contact-contract <contact_contract.json> \
+      --contact-mask-root <contact_mask_root> \
+      --reference-distance-root <reference_distance_root> \
+      --object-mesh-root <object_mesh_root> \
+      --runtime-geometry-manifest <runtime_collision_geometry_manifest.json> \
+      --frozen-evaluation-gates <frozen_evaluation_gates.json> \
+      --seed-manifest <seed_manifest.json> \
+      --gpu-preflight-receipt <gpu_preflight_receipt.json> --accept-eula
+    ```
+
+12. Qualification reports PF V2 and the separate DF pose, linear, and
+    pose-derived angular authorities. Do not relabel a PF failure as DF success.
+
+    ```bash
+    conda run --no-capture-output -n toporetarget-isaaclab \
+      python scripts/evaluation/qualify_physical_hoi.py --accept-eula \
+      --clip "$EPISODE_ID" --checkpoint <checkpoint.pt> --output <qualification_dir> \
+      --episodes 10 --update <update> --samples <samples> \
+      --reference <reference_v2.npz> --object-usd <object.usda> \
+      --support-proxy <table_proxy.json> --support-asset <support_proxy.usda> \
+      --contact-contract <contact_contract.json> --contact-mask-root <contact_mask_root> \
+      --reference-distance-root <reference_distance_root> \
+      --object-mesh-root <object_mesh_root> \
+      --runtime-geometry-manifest <runtime_collision_geometry_manifest.json> \
+      --frozen-evaluation-gates <frozen_evaluation_gates.json> \
+      --seed-manifest <seed_manifest.json>
+    ```
+
+13. Replay the immutable trace. The same entrypoint supports the full
+    trajectory, a window, raw MANO/object overlays, reference toggling, and the
+    deterministic low-poly raw object.
+
+    ```bash
+    conda run --no-capture-output -n toporetarget-isaaclab \
+      python scripts/rl/isaaclab/replay_physical_hoi_trace.py --accept-eula \
+      --trace <episode_000.npz> --object "$EPISODE_ID" --loop
+    conda run --no-capture-output -n toporetarget-isaaclab \
+      python scripts/rl/isaaclab/replay_physical_hoi_trace.py --accept-eula \
+      --trace <episode_000.npz> --object "$EPISODE_ID" \
+      --start-frame <start> --end-frame <end> --no-reference-ghost \
+      --mocap-ghost --mocap-object-low-poly --loop
+    ```
+
+PF V2 is the physical-functionality authority; interaction timing remains a
+separate diagnostic. Replay never retrains PPO or creates scientific acceptance.
+
+<details>
+<summary>Historical two-clip development notes (not current authority)</summary>
+
+The material below is retained for provenance only. Do not use it to select a
+production unit or to build a new held-out manifest.
 
 This production workflow starts from a validated geometric retarget output and
 ends with an accepted physical-HOI trace. It is currently evidenced only for
@@ -236,26 +437,17 @@ no-reference-ghost mode, and a deterministic low-poly raw object. Detailed
 reward semantics are in [Grouped reward and RSE](docs/rl/DEXPLORE_STYLE_MULTIPLICATIVE_REWARD_RSE.md);
 support authority is in [Support resolution](docs/physics/SUPPORT_RESOLUTION.md).
 
-### 5. Independent Multi-Clip Physical Refinement
+</details>
 
-`run_physical_refinement_batch.py` freezes a five-clip HOCap selection using
-raw metadata only, allocates separate actor/critic/optimizer/normalizer/RNG
-lineages, and records atomic per-clip timing and status receipts. It is
-evaluate-first, uses failure-only PPO, and stops a clip on Confirm20 acceptance.
-Resume never repeats a durable completed stage.
+### 5. Historical Raw-Sequence Multi-Clip Pilot
 
-The batch runner deliberately does not reinterpret a development-only physical
-CLI as held-out authority. It performs an explicit authority preflight before
-any retargeting or PPO. With the current two-clip production physical runner,
-the commands below freeze the manifest and report `PIPELINE_INVALID` with zero
-PPO updates; they do not create synthetic held-out outcomes.
+This section and its linked document are historical records with
+`CURRENT_AUTHORITY=NO`; the old manifest must not be reused for GPU work.
 
-```bash
-PYTHONPATH=src conda run -n toporetarget-rl \
-  python scripts/rl/isaaclab/run_physical_refinement_batch.py prepare
-PYTHONPATH=src conda run -n toporetarget-rl \
-  python scripts/rl/isaaclab/run_physical_refinement_batch.py validate-config
-```
+The superseded raw-sequence batch entrypoint has been removed so it cannot
+create a new production manifest. Its receipts and the linked documentation
+remain as immutable provenance only. Use the EpisodeV1 workflow above; do not
+translate the historical commands into a current run.
 
 See [Independent multi-clip physical refinement](docs/rl/INDEPENDENT_MULTI_CLIP_PHYSICAL_REFINEMENT.md)
 for the authority manifest, receipts, timing boundary, and promotion criteria.
