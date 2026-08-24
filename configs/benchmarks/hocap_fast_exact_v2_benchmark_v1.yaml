@@ -1,0 +1,39 @@
+schema_version: HOCapFastExactV2BenchmarkV1
+repeats: 3
+conda_environment: topo-retarget
+solver_profile: wuji_continuous_sequential_v1
+execution_profile: wuji_continuous_sequential_fast_exact_v2
+thread_environment:
+  OMP_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+  OPENBLAS_NUM_THREADS: "1"
+  NUMEXPR_NUM_THREADS: "1"
+  BLIS_NUM_THREADS: "1"
+  VECLIB_MAXIMUM_THREADS: "1"
+cases:
+  - case_id: historical_170650_60f
+    case_role: A_historical_60_frames
+    authority: immutable_stage12_prepared_inputs
+    sequence: hocap:subject_1/20231025_170650
+    frames: 60
+    hand: right
+    robot: wuji_hand2_beta1_rh
+    object_id: G04_1
+    prepared_root: .local/experiments/stage12_dataset_validation/hocap/hocap_subject_1_20231025_170650
+  - case_id: episode_v1_physical_backend_first60
+    case_role: B_new_episode_first_60_frames
+    authority: HOCapSingleHandObjectEpisodeV1
+    episode_id: hocap_subject_2_20231022_201316__right__G05_1__ep00
+    frames: 60
+    benchmark_first_frames: 60
+  - case_id: episode_v1_physical_backend_full
+    case_role: C_same_new_episode_full_trajectory
+    authority: HOCapSingleHandObjectEpisodeV1
+    episode_id: hocap_subject_2_20231022_201316__right__G05_1__ep00
+    frames: 162
+historical_regression_baseline:
+  status: UNAVAILABLE
+  reason: >-
+    No accepted 170650 result with the exact fast_exact_v2 execution profile was
+    frozen. The existing accepted 170650 completion is fast_exact_v4 and is
+    diagnostics-only for this v2 regression question.

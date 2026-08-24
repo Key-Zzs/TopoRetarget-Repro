@@ -1,0 +1,45 @@
+schema_version: HOCapSingleHandObjectEpisodeV1
+status: CURRENT
+production_unit: one_active_hand_x_one_target_object_x_one_complete_lifecycle
+geometry:
+  authority: MANO_whole_surface_to_exact_object_triangle_mesh
+  contact_surface_distance_m: 0.010
+  semantic_contact_distance_m: 0.005
+  semantic_contact_min_vertices: 3
+  keypoints_21_under_5cm_final_authority: false
+motion:
+  angular_kinematics: pose_derived_SO3_relative_rotation
+  stable_linear_speed_mps: 0.030
+  stable_angular_speed_radps: 0.150
+  manipulation_linear_speed_mps: 0.025
+  manipulation_angular_speed_radps: 0.250
+  pickup_height_m: 0.010
+lifecycle:
+  - IDLE_PRE
+  - APPROACH
+  - CONTACT_ACQUISITION
+  - PICKUP
+  - TRANSPORT
+  - PLACE
+  - RELEASE
+  - RETREAT
+  - IDLE_POST
+boundaries:
+  fixed_event_padding: false
+  start: last_sustained_stable_non_interacting_idle_before_approach
+  end: first_sustained_stable_non_interacting_idle_after_release
+  frame_range: start_inclusive_end_exclusive
+  return_semantics: RETURN_TO_NON_INTERACTING_IDLE
+classification:
+  different_object_simultaneous_left_right: two_overlapping_eligible_episodes
+  bimanual_same_object: preserve_and_exclude
+  handover: preserve_and_exclude
+eligibility:
+  episode_type: SINGLE_HAND_PICK_PLACE
+  exactly_one_active_hand: true
+  exactly_one_target_object: true
+  complete_lifecycle_required: true
+  other_hand_same_target_interaction: false
+identity:
+  format: hocap_<subject>_<sequence>__<left_or_right>__<object_id>__epNN
+segmentation_is_ppo_reward_phase_gate: false

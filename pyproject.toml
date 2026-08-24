@@ -34,6 +34,7 @@ cache = [
 viz = [
   "matplotlib>=3.8",
   "Pillow>=10.0",
+  "plotly>=5.18",
 ]
 grab = [
   "smplx>=0.1.28",

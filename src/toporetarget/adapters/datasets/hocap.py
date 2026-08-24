@@ -26,6 +26,15 @@ from .stage12_base import (
 )
 
 
+def hocap_mano_storage_index(side: str) -> int:
+    """Return the fixed HOCap poses_m storage slot for an official side."""
+
+    normalized = side.lower()
+    if normalized not in {"left", "right"}:
+        raise Stage12AdapterError(f"HOCap MANO side is invalid: {side!r}")
+    return 0 if normalized == "right" else 1
+
+
 class HOCapAdapterV1(Stage12AdapterBase):
     """Load one HOCap subject/timestamp and its declared object parts."""
 
@@ -156,10 +165,9 @@ class HOCapAdapterV1(Stage12AdapterBase):
         **kwargs: Any,
     ) -> HOISequence:
         del kwargs
-        if hand != "right":
-            raise Stage12AdapterError(
-                "Stage 12 is frozen to wuji_hand2_beta1_rh; HOCap hand must be right"
-            )
+        selected_hand = str(hand).lower()
+        if selected_hand not in {"left", "right"}:
+            raise Stage12AdapterError("HOCap hand must be left or right")
         row = self._row(sequence)
         sequence_dir = self.sequence_root / row["sequence"]
         meta_path = sequence_dir / "meta.yaml"
@@ -186,20 +194,26 @@ class HOCapAdapterV1(Stage12AdapterBase):
         sides = [str(item).lower() for item in (meta.get("mano_sides") or [])]
         if not sides:
             sides = ["right"]
-        if "right" not in sides:
-            raise Stage12AdapterError(f"HOCap sequence has no right hand: {row['sequence']}")
-        hand_index = 0 if sides[0] == "right" else 1
+        if selected_hand not in sides:
+            raise Stage12AdapterError(
+                f"HOCap sequence has no {selected_hand} hand: {row['sequence']}"
+            )
+        hand_index = hocap_mano_storage_index(selected_hand)
+        if poses_m.shape[0] <= hand_index:
+            raise Stage12AdapterError(
+                f"HOCap poses_m is missing fixed {selected_hand} slot {hand_index}: {poses_m.shape}"
+            )
         pose_values = np.asarray(poses_m[hand_index, start:stop], dtype=np.float64)
         valid = np.asarray(np.isfinite(pose_values).all(axis=1), dtype=bool)
         if not valid.all():
             raise Stage12AdapterError(
-                "HOCap selected clip contains invalid right MANO frames: "
+                f"HOCap selected clip contains invalid {selected_hand} MANO frames: "
                 f"{np.flatnonzero(~valid).tolist()}"
             )
         mano_source_hash = sha256_paths([meta_path, poses_m_path, calibration_path])
         render = render_mano_pca45(
             pose_values,
-            side="right",
+            side=selected_hand,
             mano_model_root=self.mano_model_root,
             betas=subject_betas,
             dataset_name="hocap",
@@ -214,8 +228,8 @@ class HOCapAdapterV1(Stage12AdapterBase):
             model_profile="hocap_poses_m_pca45_explicit_contract_v2",
         )
         hand_track = make_hand(
-            hand_id="right_hand",
-            side="right",
+            hand_id=f"{selected_hand}_hand",
+            side=selected_hand,
             vertices_scene=render.vertices,
             faces=render.faces,
             wrist_pose_scene=render.wrist_pose_scene,
@@ -292,7 +306,7 @@ class HOCapAdapterV1(Stage12AdapterBase):
             ),
             conversion_options={
                 "selected_frame_range": [start, stop],
-                "selected_hand": "right",
+                "selected_hand": selected_hand,
                 "object_ids": object_ids,
                 "primary_object_id": primary_object_id,
                 "rgb_depth_read": False,
