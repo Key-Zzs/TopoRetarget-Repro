@@ -28,6 +28,7 @@ from toporetarget.rl.ppo.checkpoint import load_checkpoint, restore_rng_state, s
 from toporetarget.rl.ppo.policy_preservation import state_hash
 from toporetarget.rl.ppo.ppo26d_trainer import PPO26DTrainer, parameter_hash
 from toporetarget.rl.reference_tracking.contact_reward_mode import ContactRewardMode
+from toporetarget.runtime.gpu_preflight import validate_gpu_preflight_receipt
 
 REPORT_ROOT = REPO_ROOT / ".local/reports/stage16_pf_v2_causal_lift_and_symmetric_ppo"
 RUN_ROOT = REPO_ROOT / ".local/runs/stage16_pf_v2_causal_lift_and_symmetric_ppo"
@@ -79,6 +80,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--frozen-evaluation-gates", type=Path)
     parser.add_argument("--seed-manifest", type=Path)
     parser.add_argument("--max-new-updates", type=int)
+    parser.add_argument("--gpu-preflight-receipt", type=Path, required=True)
     return parser
 
 
@@ -280,6 +282,38 @@ def _source(clip: str, *, independent: dict[str, Path] | None = None) -> dict[st
     if independent is not None:
         result_path = independent["source_training_result"]
         result = json.loads(result_path.read_text(encoding="utf-8"))
+        if result.get("schema_version") == "Stage16DPPO26DL0TrainingV1":
+            checkpoint = Path(str(result.get("l0_checkpoint", ""))).resolve()
+            if (
+                result.get("status") != "STAGE16D_PPO26D_L0_COMPLETE_NOT_YET_QUALIFIED"
+                or result.get("clip") != clip
+                or int(result.get("cumulative_samples", -1)) != 1_024_000
+                or int(result.get("target_l0_samples", -1)) != 1_024_000
+                or not checkpoint.is_file()
+            ):
+                raise RuntimeError("INDEPENDENT_PHYSICAL_REFINEMENT_L0_RESULT_INVALID")
+            payload = load_checkpoint(checkpoint, map_location="cpu")
+            reward = payload.get("environment_contract", {}).get("ppo26d", {}).get("reward", {})
+            if (
+                payload.get("schema_version") != "Stage16DPPO26DCheckpointV1"
+                or payload.get("clip") != clip
+                or int(payload.get("cumulative_samples", -1)) != 1_024_000
+                or reward.get("identifier") != "TopoRetargetReferenceTrackingReward26DV1"
+            ):
+                raise RuntimeError("INDEPENDENT_PHYSICAL_REFINEMENT_L0_CHECKPOINT_INVALID")
+            return {
+                "kind": "independent_l0_before_physical_grouped_rse",
+                "clip": clip,
+                "checkpoint": str(checkpoint),
+                "checkpoint_sha256": _sha256(checkpoint),
+                "initial_update": 0,
+                "initial_stage_samples": 0,
+                "initial_cumulative_samples": 1_024_000,
+                "source_training_result": str(result_path),
+                "source_training_result_sha256": _sha256(result_path),
+                "l0_samples": 1_024_000,
+                "strict_v4_samples": 0,
+            }
         checkpoint = Path(str(result.get("checkpoint", ""))).resolve()
         checkpoint_hash = str(result.get("checkpoint_sha256", ""))
         if (
@@ -453,6 +487,26 @@ def _restore_source(env: Any, source: dict[str, object]) -> tuple[PPO26DTrainer,
         )
         initialization["rse_state"] = "fresh_initial_counts_1_1"
         return trainer, initialization
+    if source["kind"] == "independent_l0_before_physical_grouped_rse":
+        payload = load_checkpoint(checkpoint, map_location=env.device)
+        trainer.model.load_state_dict(payload["actor_critic"])
+        trainer.trainer.optimizer.load_state_dict(payload["optimizer"])
+        trainer.trainer.normalizer.load_state_dict(payload["observation_normalization"])
+        trainer.trainer.normalizer.training = True
+        trainer.cumulative_samples = int(payload["cumulative_samples"])
+        restore_rng_state(payload["rng"])
+        env.restore_rse_state(fail_count=1, total_count=1)
+        return trainer, {
+            "kind": "L0_TO_GROUPED_RSE_FULL_PPO_STATE",
+            "checkpoint": str(checkpoint.resolve()),
+            "checkpoint_sha256": _sha256(checkpoint),
+            "optimizer_restored": True,
+            "critic_restored": True,
+            "normalizer_restored": True,
+            "rng_restored": True,
+            "rse_state": "fresh_initial_counts_1_1",
+            "strict_v4_training_used": False,
+        }
     payload = load_checkpoint(checkpoint, map_location=env.device)
     trainer.model.load_state_dict(payload["actor_critic"])
     trainer.trainer.optimizer.load_state_dict(payload["optimizer"])
@@ -900,6 +954,8 @@ def _train(
 def main() -> int:
     global MAX_NEW_UPDATES, REPORT_ROOT, RUN_ROOT
     args = _parser().parse_args()
+    gpu_preflight_path = args.gpu_preflight_receipt.resolve()
+    validate_gpu_preflight_receipt(gpu_preflight_path)
     if not args.clip or any(token in args.clip for token in ("/", "\\", "..")):
         raise ValueError("INDEPENDENT_PHYSICAL_REFINEMENT_CLIP_ID_INVALID")
     if not args.accept_eula or args.num_envs != NUM_ENVS:
@@ -963,6 +1019,10 @@ def main() -> int:
             "reward_rse_mode": "grouped_multiplicative_v1_with_rse_v1",
             "max_new_updates": MAX_NEW_UPDATES,
             "samples_per_update": SAMPLES_PER_UPDATE,
+            "gpu_preflight_receipt": {
+                "path": str(gpu_preflight_path),
+                "sha256": _path_authority_hash(gpu_preflight_path),
+            },
             "independent_input_hashes": (
                 None
                 if independent is None

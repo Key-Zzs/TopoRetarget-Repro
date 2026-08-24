@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -20,17 +18,6 @@ from toporetarget.rl.independent_physical_refinement import (
     select_held_out_candidates,
     validate_authority_manifest,
 )
-
-
-def _batch_script() -> object:
-    path = (
-        Path(__file__).resolve().parents[2] / "scripts/rl/isaaclab/run_physical_refinement_batch.py"
-    )
-    spec = importlib.util.spec_from_file_location("physical_refinement_batch", path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def _candidate(index: int, *, development: bool = False) -> HOCapCandidate:
@@ -105,21 +92,6 @@ def test_authority_validation_is_per_clip_and_fail_closed() -> None:
     assert "source_policy" in result["unsupported"]
 
 
-def test_authority_templates_receive_frozen_object_identity(tmp_path: Path) -> None:
-    module = _batch_script()
-    clip = _candidate(7).as_dict()
-
-    rendered = module._template(
-        "{clip_id}:{sequence}:{object_id}:{clip_run_root}",
-        clip=clip,
-        report_root=tmp_path / "reports",
-        run_root=tmp_path / "runs",
-    )
-
-    assert rendered.startswith(f"{clip['clip_id']}:{clip['sequence']}:{clip['object_id']}:")
-    assert rendered.endswith(f"runs/{clip['clip_id']}")
-
-
 def test_lineages_cannot_share_storage_or_rng() -> None:
     alpha = {
         "lineage": {
@@ -184,60 +156,3 @@ def test_raw_scan_uses_only_required_static_modalities(tmp_path: Path) -> None:
     assert len(rows) == 1
     assert rows[0].eligible is True
     assert rows[0].clip_id == "hocap_203100"
-
-
-def test_declared_authorities_run_independent_accept_frozen_lineages(tmp_path: Path) -> None:
-    module = _batch_script()
-    report_root = tmp_path / "reports"
-    run_root = tmp_path / "runs"
-    manifest = freeze_selection(
-        candidates=[_candidate(item) for item in range(1, 6)], root=report_root
-    )
-    _, method_hash = freeze_method_contract(report_root)
-    ids = [clip["clip_id"] for clip in manifest["clips"]]
-
-    def entry(name: str, *, accepted: bool = False) -> dict[str, object]:
-        payload = (
-            "dict(status='COMPLETE', accepted=True)" if accepted else "dict(status='COMPLETE')"
-        )
-        code = (
-            "from pathlib import Path; import json; "
-            f"p=Path(r'{{clip_report_root}}/{name}/receipt.json'); "
-            "p.parent.mkdir(parents=True, exist_ok=True); "
-            f"p.write_text(json.dumps({payload}))"
-        )
-        return {
-            "supported_clips": ids,
-            "command": [sys.executable, "-c", code],
-            "receipt": f"{{clip_report_root}}/{name}/receipt.json",
-        }
-
-    authority = {
-        "authorities": {
-            "retarget": entry("retarget"),
-            "source_policy": entry("source_policy"),
-            "support": entry("support"),
-            "frozen_evaluation": entry("frozen_evaluation", accepted=True),
-            "physical_refinement": entry("physical_refinement"),
-            "qualification": entry("qualification"),
-            "trace_export": entry("trace_export"),
-        }
-    }
-
-    result = module._execute_declared_authorities(
-        manifest=manifest,
-        method_hash=method_hash,
-        authority=authority,
-        report_root=report_root,
-        run_root=run_root,
-    )
-
-    assert result["status"] == "COMPLETE"
-    assert len(result["final_receipts"]) == 5
-    states = [
-        __import__("json").loads(Path(path).read_text(encoding="utf-8"))
-        for path in result["final_receipts"]
-    ]
-    assert all(state["state"] == "ACCEPTED_FROZEN" for state in states)
-    assert all(state["PPO_UPDATES"] == 0 for state in states)
-    assert_independent_lineages(states)

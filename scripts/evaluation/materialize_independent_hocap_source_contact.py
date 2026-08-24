@@ -31,6 +31,7 @@ from toporetarget.adapters.datasets.hocap_primary_object import (  # noqa: E402
     load_primary_object_authority,
     primary_object_from_authority,
 )
+from toporetarget.adapters.datasets.stage12_base import render_mano_pca45  # noqa: E402
 from toporetarget.evaluation.source_contact_semantics import (  # noqa: E402
     FINGER_ORDER,
     REGION_ORDER,
@@ -46,6 +47,7 @@ from toporetarget.geometry.signed_distance.closest_point import ObjectLocalBVH  
 from toporetarget.rl.geometry_audit.raw_mocap_overlay import (  # noqa: E402
     RAW_ALIGNMENT_ROTATION_TOLERANCE_RAD,
     RAW_ALIGNMENT_TRANSLATION_TOLERANCE_M,
+    interpolate_mano_pca_pose,
     pose_wxyz_to_matrix,
     resolve_raw_mocap_overlay,
 )
@@ -74,7 +76,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--clip-id", required=True)
     parser.add_argument("--world-reference", type=Path, required=True)
     parser.add_argument("--reference-v2", type=Path, required=True)
-    parser.add_argument("--strict-v4-contract", type=Path, required=True)
+    parser.add_argument("--interaction-contact-contract", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
     return parser
 
@@ -126,7 +128,7 @@ def _load_reference_contract(path: Path) -> tuple[np.ndarray, int]:
 
 
 def _load_mano_topology(
-    mano_root: Path, betas: np.ndarray
+    mano_root: Path, betas: np.ndarray, *, side: str
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     # MANO v1.2 pickles can import legacy chumpy code.  Apply the same narrow
     # compatibility shim as the project's reconstruction backend immediately
@@ -150,10 +152,14 @@ def _load_mano_topology(
     }.items():
         if name not in np.__dict__:
             setattr(np, name, value)
+    normalized_side = str(side).lower()
+    if normalized_side not in {"right", "left"}:
+        raise ValueError(f"INDEPENDENT_SOURCE_CONTACT_MANO_SIDE_INVALID:{side}")
+    is_right = normalized_side == "right"
     model = smplx.create(
-        model_path=str(mano_root / "MANO_RIGHT.pkl"),
+        model_path=str(mano_root / ("MANO_RIGHT.pkl" if is_right else "MANO_LEFT.pkl")),
         model_type="mano",
-        is_rhand=True,
+        is_rhand=is_right,
         use_pca=False,
         flat_hand_mean=True,
         batch_size=1,
@@ -178,6 +184,13 @@ def _load_mano_topology(
     rest_vertices = template + np.tensordot(shapedirs, betas, axes=([2], [0]))
     rest_joints = regressor @ rest_vertices
     return weights, faces, rest_vertices, rest_joints
+
+
+def _first_last(mask: np.ndarray) -> tuple[int | None, int | None]:
+    indices = np.flatnonzero(np.asarray(mask, dtype=bool))
+    if not len(indices):
+        return None, None
+    return int(indices[0]), int(indices[-1])
 
 
 def _reference_v2_alignment(
@@ -322,7 +335,7 @@ def main() -> int:
 
     world_reference = args.world_reference.resolve()
     reference_v2 = args.reference_v2.resolve()
-    strict_contract_path = args.strict_v4_contract.resolve()
+    strict_contract_path = args.interaction_contact_contract.resolve()
     world_timestamps, native_frames = _load_reference_contract(world_reference)
     runtime_frames = (native_frames - 1) * 8 + 1
     strict_payload = _json(strict_contract_path)
@@ -359,33 +372,107 @@ def main() -> int:
     betas = np.asarray(betas_payload.get("betas"), dtype=np.float64)
     if betas.shape != (10,) or not np.isfinite(betas).all():
         raise ValueError("INDEPENDENT_SOURCE_CONTACT_MANO_BETAS_INVALID")
-    weights, mano_faces, rest_vertices, rest_joints = _load_mano_topology(mano_root, betas)
-    if not np.array_equal(mano_faces, geometry.raw_mano_faces):
-        raise ValueError("INDEPENDENT_SOURCE_CONTACT_MANO_FACE_TOPOLOGY_MISMATCH")
     threshold_contract = SourceContactThresholdContractV1()
-    region_map = build_mano_surface_region_map(
-        weights,
-        mano_faces,
-        rest_vertices,
-        rest_joints,
-        contract=threshold_contract,
-    )
     triangles = geometry.raw_object_vertices_local[geometry.raw_object_faces]
     bvh = ObjectLocalBVH(triangles)
-    distances = np.empty((native_frames, geometry.raw_mano_vertices_world.shape[1]))
-    for frame in range(native_frames):
-        rotation = object_pose[frame, :3, :3]
-        translation = object_pose[frame, :3, 3]
-        object_local = (geometry.raw_mano_vertices_world[frame] - translation) @ rotation
-        _nearest, _face, _barycentric, distance = bvh.query(object_local)
-        distances[frame] = distance
+    sides = [str(value).lower() for value in meta.get("mano_sides", [])]
+    if not sides or len(sides) != len(set(sides)) or "right" not in sides:
+        raise ValueError("INDEPENDENT_SOURCE_CONTACT_MANO_SIDES_INVALID")
+    raw_mano_path = Path(str(geometry.source_provenance["raw_mano_pose"]))
+    raw_mano = np.asarray(np.load(raw_mano_path, mmap_mode="r"), dtype=np.float64)
+    if (
+        raw_mano.ndim != 3
+        or raw_mano.shape[0] < len(sides)
+        or raw_mano.shape[1] != int(meta.get("num_frames", -1))
+        or raw_mano.shape[2] != 51
+    ):
+        raise ValueError("INDEPENDENT_SOURCE_CONTACT_RAW_MANO_SHAPE_INVALID")
 
-    surface = per_region_surface_statistics(distances, region_map, mano_faces)
-    nearest_segment, nearest_segment_distance = source_contact_localization(distances, region_map)
-    classes = classify_source_contact(
-        surface["minimum_surface_distance_m"][:, :5],
-        surface["largest_component_vertices_at_5mm"][:, :5],
-        contract=threshold_contract,
+    hand_evidence: dict[str, dict[str, Any]] = {}
+    source_hash = _sha256(raw_mano_path)
+    for hand_index, side in enumerate(sides):
+        weights, mano_faces, rest_vertices, rest_joints = _load_mano_topology(
+            mano_root, betas, side=side
+        )
+        if side == "right":
+            vertices = geometry.raw_mano_vertices_world
+            rendered_faces = geometry.raw_mano_faces
+        else:
+            pose = interpolate_mano_pca_pose(
+                np.arange(raw_mano.shape[1], dtype=np.float64),
+                raw_mano[hand_index],
+                geometry.raw_frame_float,
+            )
+            rendered = render_mano_pca45(
+                pose,
+                side=side,
+                mano_model_root=mano_root,
+                betas=betas,
+                dataset_name="hocap",
+                source_annotation_path=raw_mano_path,
+                source_annotation_hash=source_hash,
+            )
+            vertices = np.asarray(rendered.vertices, dtype=np.float64)
+            rendered_faces = np.asarray(rendered.faces, dtype=np.int64)
+        if vertices.shape != (native_frames, 778, 3):
+            raise ValueError(f"INDEPENDENT_SOURCE_CONTACT_MANO_VERTICES_INVALID:{side}")
+        if not np.array_equal(mano_faces, rendered_faces):
+            raise ValueError(f"INDEPENDENT_SOURCE_CONTACT_MANO_FACE_TOPOLOGY_MISMATCH:{side}")
+        region_map = build_mano_surface_region_map(
+            weights,
+            mano_faces,
+            rest_vertices,
+            rest_joints,
+            contract=threshold_contract,
+        )
+        distances = np.empty((native_frames, vertices.shape[1]), dtype=np.float64)
+        for frame in range(native_frames):
+            rotation = object_pose[frame, :3, :3]
+            translation = object_pose[frame, :3, 3]
+            object_local = (vertices[frame] - translation) @ rotation
+            _nearest, _face, _barycentric, distance = bvh.query(object_local)
+            distances[frame] = distance
+        surface = per_region_surface_statistics(distances, region_map, mano_faces)
+        nearest_segment, nearest_segment_distance = source_contact_localization(
+            distances, region_map
+        )
+        region_classes = classify_source_contact(
+            surface["minimum_surface_distance_m"][:, :6],
+            surface["largest_component_vertices_at_5mm"][:, :6],
+            contract=threshold_contract,
+        )
+        semantic_contact = np.any(
+            region_classes["confirmed_contact"]
+            | region_classes["probable_contact"]
+            | region_classes["transition"],
+            axis=1,
+        )
+        # Support inference is deliberately more conservative than the reward
+        # mask: any source-hand surface entering the frozen 5 mm component band
+        # excludes that frame from a purported no-hand-contact interval.  This
+        # covers palm and boundary vertices without promoting them to a reward.
+        surface_proximity = np.min(distances, axis=1) <= threshold_contract.component_distance_m
+        support_exclusion = semantic_contact | surface_proximity
+        hand_evidence[side] = {
+            "faces": mano_faces,
+            "distances": distances,
+            "surface": surface,
+            "classes": region_classes,
+            "nearest_segment": nearest_segment,
+            "nearest_segment_distance": nearest_segment_distance,
+            "semantic_contact": semantic_contact,
+            "surface_proximity": surface_proximity,
+            "support_exclusion": support_exclusion,
+        }
+
+    target = hand_evidence["right"]
+    surface = target["surface"]
+    classes = {key: np.asarray(value)[:, :5] for key, value in target["classes"].items()}
+    nearest_segment = target["nearest_segment"]
+    nearest_segment_distance = target["nearest_segment_distance"]
+    all_hand_support_mask = np.any(
+        np.stack([hand_evidence[side]["support_exclusion"] for side in sides], axis=0),
+        axis=0,
     )
     runtime = map_native_contact_to_control(classes["class"], factor=8)
     mask = strict_source_contact_mask(runtime["class"])
@@ -400,6 +487,7 @@ def main() -> int:
     output = args.output_root.resolve()
     clip_output = output / args.clip_id
     reference_distance_path = output / f"reference_contact_mask_{args.clip_id}.npz"
+    support_native_path = clip_output / "all_hands_support_contact_native.npz"
     if (
         clip_output.exists()
         or (output / f"strict_source_contact_mask_{args.clip_id}.npz").exists()
@@ -435,6 +523,40 @@ def main() -> int:
         nearest_segment_distance_m=nearest_segment_distance,
     )
     np.savez_compressed(
+        support_native_path,
+        source_frame_indices=geometry.raw_frame_float,
+        native_timestamp_s=world_timestamps,
+        side_order=np.asarray(sides),
+        region_order=np.asarray(REGION_ORDER[:6]),
+        class_label=np.stack([hand_evidence[side]["classes"]["class"] for side in sides], axis=0),
+        confirmed_contact=np.stack(
+            [hand_evidence[side]["classes"]["confirmed_contact"] for side in sides], axis=0
+        ),
+        probable_contact=np.stack(
+            [hand_evidence[side]["classes"]["probable_contact"] for side in sides], axis=0
+        ),
+        transition=np.stack(
+            [hand_evidence[side]["classes"]["transition"] for side in sides], axis=0
+        ),
+        minimum_surface_distance_m=np.stack(
+            [hand_evidence[side]["surface"]["minimum_surface_distance_m"] for side in sides],
+            axis=0,
+        ),
+        minimum_whole_hand_surface_distance_m=np.stack(
+            [np.min(hand_evidence[side]["distances"], axis=1) for side in sides], axis=0
+        ),
+        semantic_contact_mask=np.stack(
+            [hand_evidence[side]["semantic_contact"] for side in sides], axis=0
+        ),
+        surface_proximity_5mm_mask=np.stack(
+            [hand_evidence[side]["surface_proximity"] for side in sides], axis=0
+        ),
+        per_hand_support_exclusion_mask=np.stack(
+            [hand_evidence[side]["support_exclusion"] for side in sides], axis=0
+        ),
+        combined_support_exclusion_mask=all_hand_support_mask,
+    )
+    np.savez_compressed(
         runtime_path,
         control_index=np.arange(runtime_frames, dtype=np.int64),
         native_to_control_index=runtime["native_to_control_index"],
@@ -461,16 +583,35 @@ def main() -> int:
         "primary_object_authority": _artifact(args.primary_object_authority.resolve()),
         "world_reference": _artifact(world_reference),
         "reference_v2": _artifact(reference_v2),
-        "strict_v4_development_contract": _artifact(strict_contract_path),
+        "u10_interaction_contact_primitive_contract": _artifact(strict_contract_path),
         "raw_meta": _artifact(raw_meta),
         "raw_mano_pose": _artifact(Path(str(geometry.source_provenance["raw_mano_pose"]))),
         "raw_object_pose": _artifact(Path(str(geometry.source_provenance["raw_object_pose"]))),
         "raw_object_mesh": _artifact(Path(str(geometry.source_provenance["raw_object_mesh"]))),
         "mano_betas": _artifact(betas_path),
-        "mano_model": _artifact(mano_root / "MANO_RIGHT.pkl"),
+        "mano_models": {
+            side: _artifact(mano_root / ("MANO_RIGHT.pkl" if side == "right" else "MANO_LEFT.pkl"))
+            for side in sides
+        },
     }
+    per_hand_summary: dict[str, Any] = {}
+    for side in sides:
+        evidence = hand_evidence[side]
+        first, last = _first_last(evidence["support_exclusion"])
+        semantic_first, semantic_last = _first_last(evidence["semantic_contact"])
+        per_hand_summary[side] = {
+            "modeled_by_target_robot": side == "right",
+            "support_exclusion_frame_count": int(evidence["support_exclusion"].sum()),
+            "support_exclusion_first_native_frame": first,
+            "support_exclusion_last_native_frame": last,
+            "semantic_contact_frame_count": int(evidence["semantic_contact"].sum()),
+            "semantic_contact_first_native_frame": semantic_first,
+            "semantic_contact_last_native_frame": semantic_last,
+            "contact_or_proximity_at_window_start": bool(evidence["support_exclusion"][0]),
+            "minimum_whole_hand_surface_distance_m": _stats(np.min(evidence["distances"], axis=1)),
+        }
     receipt = {
-        "schema_version": "IndependentHOCapSourceContactAuthorityV1",
+        "schema_version": "IndependentHOCapSourceContactAuthorityV2",
         "status": "PASS",
         "clip_id": args.clip_id,
         "sequence": row["sequence"],
@@ -481,12 +622,30 @@ def main() -> int:
         "runtime_frame_count": runtime_frames,
         "runtime_mapping": "manifest_bound_native_keys_to_factor8_control",
         "source_geometry": "raw_HOCap_MANO_surface_to_primary_object_triangle_mesh_exact",
+        "source_hand_sides": sides,
+        "target_robot_hand_side": "right",
+        "unmodeled_source_hand_sides": [side for side in sides if side != "right"],
+        "support_contact_authority": {
+            "scope": "all_annotated_source_hands",
+            "semantic_regions": list(REGION_ORDER[:6]),
+            "support_exclusion_rule": (
+                "confirmed_or_probable_or_transition_contact_OR_"
+                "whole_hand_surface_distance_le_0.005m"
+            ),
+            "reward_mask_unchanged": "right_five_finger_strict_v4_only",
+            "combined_support_exclusion_frame_count": int(all_hand_support_mask.sum()),
+            "first_combined_support_exclusion_native_frame": _first_last(all_hand_support_mask)[0],
+            "last_combined_support_exclusion_native_frame": _first_last(all_hand_support_mask)[1],
+            "per_hand": per_hand_summary,
+        },
         "threshold_contract": threshold_contract.as_dict(),
-        "strict_v4_method_parameters": {
+        "grouped_multiplicative_r_int_contact_primitive": {
             "lambda_tip_n": float(strict_parameters["lambda_tip_n"]),
             "numerical_floor_n": float(strict_parameters["numerical_floor_n"]),
             "source_required_classes": list(SOURCE_CONTACT_REQUIRED_CLASSES),
             "heldout_scale_recalibration": False,
+            "standalone_strict_v4_ppo": False,
+            "usage": "R_int_subterm_only_in_grouped_multiplicative_v1",
         },
         "coordinate_alignment": geometry.coordinate_alignment,
         "reference_v2_alignment": v2_alignment,
@@ -508,6 +667,10 @@ def main() -> int:
         },
         "artifacts": {
             "native": {"path": str(native_path), "sha256": _sha256(native_path)},
+            "support_native": {
+                "path": str(support_native_path),
+                "sha256": _sha256(support_native_path),
+            },
             "runtime": {"path": str(runtime_path), "sha256": _sha256(runtime_path)},
             "strict_mask": {"path": str(mask_path), "sha256": _sha256(mask_path)},
             "reference_distance": {

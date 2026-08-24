@@ -116,9 +116,7 @@ def _make_table_env(
     if any(value is not None for value in independent_inputs) and not all(
         value is not None for value in independent_inputs
     ):
-        raise ValueError(
-            "INDEPENDENT_TABLE_ENV_REQUIRES_REFERENCE_OBJECT_SUPPORT_PROXY_AND_ASSET"
-        )
+        raise ValueError("INDEPENDENT_TABLE_ENV_REQUIRES_REFERENCE_OBJECT_SUPPORT_PROXY_AND_ASSET")
     independent = reference_path is not None
 
     def support_cfg(
@@ -190,6 +188,7 @@ def _make_table_env(
         def _setup_scene(self) -> None:
             self._robot = Articulation(self.cfg.robot)
             self.scene.articulations["robot"] = self._robot
+            support_prim_names: list[str] = []
             for (
                 _clip_id,
                 _object_name,
@@ -218,7 +217,28 @@ def _make_table_env(
                 support_actor = RigidObject(support_actor_cfg)
                 setattr(self, f"_{support_key}", support_actor)
                 self.scene.rigid_objects[support_key] = support_actor
+                support_prim_names.append(str(support_actor_cfg.prim_path).rsplit("/", 1)[-1])
             self.scene.clone_environments(copy_from_source=False)
+            import omni.usd
+
+            from toporetarget.physics.support.runtime_support import (
+                apply_hand_support_pair_filter,
+            )
+
+            stage = omni.usd.get_context().get_stage()
+            self._support_collision_filter_receipts = [
+                apply_hand_support_pair_filter(
+                    stage,
+                    hand_prim_paths=tuple(
+                        f"/World/envs/env_{index}/Robot" for index in range(self.num_envs)
+                    ),
+                    support_prim_paths=tuple(
+                        f"/World/envs/env_{index}/{support_name}" for index in range(self.num_envs)
+                    ),
+                    support_type="INFERRED_PLANAR_SUPPORT",
+                )
+                for support_name in support_prim_names
+            ]
             if self.device == "cpu":
                 self.scene.filter_collisions(global_prim_paths=[])
             light = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
@@ -255,6 +275,15 @@ def _make_table_env(
                 "uniform_runtime_reference_valid_index_domain" if training_rsi else "disabled"
             )
             physical["table_resting_reset_semantics"] = "TABLE_RESTING_RESET_SEMANTICS_V1"
+            physical["support_collision_contract"] = {
+                "schema_version": "SupportCollisionContractV1",
+                "support_type": "INFERRED_PLANAR_SUPPORT",
+                "object_support_collision": True,
+                "hand_support_collision": False,
+                "implementation": "pairwise_collision_filtering",
+                "global_support_collision_disabled": False,
+                "runtime_receipts": self._support_collision_filter_receipts,
+            }
             return report
 
         def stage16_saturation_telemetry(self) -> dict[str, Any]:

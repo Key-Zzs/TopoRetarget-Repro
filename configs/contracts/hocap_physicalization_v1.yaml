@@ -1,0 +1,96 @@
+schema_version: HOCapPhysicalizationProtocolV1
+status: CURRENT
+current_authorities:
+  episode:
+    name: HOCapSingleHandObjectEpisodeV1
+    status: CURRENT
+    config: configs/contracts/hocap_single_hand_object_episode_v1.yaml
+  canonical_episode:
+    name: CanonicalHOIEpisodeV1
+    status: CURRENT
+    materializer: scripts/data/materialize_hocap_episode.py
+  canonical_hoi:
+    name: CanonicalHOIv2
+    status: CURRENT
+    config: configs/contracts/canonical_hoi_v2.yaml
+  geometric_retarget:
+    name: GeometricRetargetContractV1
+    status: CURRENT
+    solver: wuji_continuous_sequential_v1
+    execution: wuji_continuous_sequential_fast_exact_v2
+    math_equivalent: true
+  source_policy:
+    name: SourcePolicyContractV1
+    status: CURRENT
+    l0_samples: 1024000
+    current_physical_backend_hand: right
+    episode_and_geometric_supported_hands: [left, right]
+    standalone_strict_v4_final_ppo: NOT_PRODUCTION
+  support:
+    name: SupportResolutionV1
+    status: CURRENT
+    config: configs/physics/support_resolution_v1.yaml
+  gpu:
+    name: GPURuntimePreflightV1
+    status: CURRENT
+    config: configs/contracts/gpu_runtime_preflight_v1.yaml
+    entrypoint: scripts/runtime/gpu_preflight.py
+  physical_evaluation:
+    name: FrozenPhysicalEvaluationV1
+    status: CURRENT
+    sequence: [Eval10, Confirm20_if_PF_V2_10_of_10]
+  physical_ppo:
+    name: PhysicalPPORefinementV1
+    status: CURRENT
+    config: configs/rl/physical_refinement.yaml
+  physical_functionality:
+    name: PhysicalFunctionalityV2
+    status: CURRENT
+    interaction_timing: DIAGNOSTIC_SEPARATE
+  demonstration_fidelity:
+    name: DemonstrationFidelityCurrentAuthorities
+    status: CURRENT
+    dimensions: [DF_pose, DF_linear, DF_angular_v2]
+workflow:
+  - RAW_HOCAP_SEQUENCE
+  - HOCapSingleHandObjectEpisodeV1
+  - CanonicalHOIEpisodeV1
+  - EPISODE_VALIDATION
+  - GeometricRetargetContractV1
+  - RETARGET_VALIDATION_AND_HTML
+  - REFERENCE_CONSTRUCTION
+  - GPURuntimePreflightV1
+  - SourcePolicyContractV1_L0
+  - SupportResolutionV1
+  - PHYSICAL_SCENE_QUALIFICATION
+  - FrozenPhysicalEvaluationV1
+  - PhysicalPPORefinementV1_if_needed
+  - PhysicalFunctionalityV2_and_DemonstrationFidelity
+  - FINAL_PHYSX_TRACE
+  - REPLAY_EXPORT
+invariants:
+  evaluate_first: true
+  accepted_frozen_ppo_updates: 0
+  confirm20_before_acceptance: true
+  immediate_success_stop: true
+  full_gravity: true
+  nominal_friction: true
+  deterministic_frame0_evaluation: true
+  full_trajectory_evaluation: true
+  grouped_multiplicative_v1: true
+  rse_enabled: true
+  training_rsi: uniform_valid_reference_index_domain
+  fixed_rsi_range_algorithm_definition: false
+  pf_df_orthogonal: true
+  geometric_retarget_math_changed: false
+  friction_changed: false
+  mass_changed: false
+  gpu_required_cpu_fallback: false
+  sandbox_gpu_failure_is_host_authority: false
+  held_out_selection_metadata_only: true
+  held_out_outcome_fields_observed: false
+supersedes:
+  - hocap_primary_object_first_raw_manipulation_v2_as_production_slicing
+  - raw_sequence_primary_object_local_window_as_held_out_unit
+  - IndependentPhysicalRefinementProductionAuthorityV6_as_current_authority
+  - versioned_local_v14_v15_resume_guides_as_current_authority

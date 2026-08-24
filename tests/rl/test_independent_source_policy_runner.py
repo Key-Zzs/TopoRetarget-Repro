@@ -55,10 +55,29 @@ def test_run_step_pass_requires_declared_artifact(tmp_path: Path) -> None:
     assert receipt["missing_artifacts"] == []
 
 
+def test_run_step_refuses_to_overwrite_failed_receipt(tmp_path: Path) -> None:
+    runner = _load_runner()
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    runner.atomic_write_json(
+        logs / "failed.receipt.json",
+        {"status": "FAIL", "command": [sys.executable, "-c", "pass"]},
+    )
+
+    with pytest.raises(
+        FileExistsError, match="INDEPENDENT_SOURCE_POLICY_REFUSES_RECEIPT_OVERWRITE"
+    ):
+        runner._run_step(
+            "failed",
+            [sys.executable, "-c", "pass"],
+            log_root=logs,
+        )
+
+
 def test_l0_uses_materialized_reference_time_scale() -> None:
-    trainer = (
-        REPO_ROOT / "scripts/rl/isaaclab/train_stage16d_ppo26d.py"
-    ).read_text(encoding="utf-8")
+    trainer = (REPO_ROOT / "scripts/rl/isaaclab/train_stage16d_ppo26d.py").read_text(
+        encoding="utf-8"
+    )
     binding = trainer[trainer.index("configure_independent_clip_runtime(") :]
     binding = binding[: binding.index(")")]
 
@@ -66,13 +85,66 @@ def test_l0_uses_materialized_reference_time_scale() -> None:
 
 
 def test_l0_uses_qualified_reference_kinematics_v2() -> None:
-    runner = (
-        REPO_ROOT / "scripts/rl/isaaclab/run_independent_source_policy.py"
-    ).read_text(encoding="utf-8")
-    l0_step = runner[runner.index('"train_l0"') : runner.index('"train_strict_v4"')]
+    runner = (REPO_ROOT / "scripts/rl/isaaclab/run_independent_source_policy.py").read_text(
+        encoding="utf-8"
+    )
+    start = runner.index('"train_l0"')
+    l0_step = runner[start : runner.index("l0 = _json(l0_result)", start)]
 
     assert "str(reference_v2)" in l0_step
     assert "str(reference_v1)" not in l0_step
+
+
+def test_source_policy_runner_contains_no_standalone_strict_v4_training_route() -> None:
+    runner = (REPO_ROOT / "scripts/rl/isaaclab/run_independent_source_policy.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert '"train_strict_v4"' not in runner
+    assert '"--strict-per-finger-contact-reward-v4"' not in runner
+    assert '"target-reward-v4-samples"' not in runner
+
+
+def test_l0_physical_profile_forbids_standalone_strict_v4_and_freezes_grouped_rse() -> None:
+    runner = (REPO_ROOT / "scripts/rl/isaaclab/run_independent_source_policy.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert '"IndependentSourcePolicyReceiptV3"' in runner
+    assert '"status": "FORBIDDEN_NOT_RUN"' in runner
+    assert '"reward_aggregation": "grouped_multiplicative_v1"' in runner
+    assert '"interaction_term": "u10_per_finger_pair_contact_primitive_v1"' in runner
+    assert '"rse_enabled": True' in runner
+    assert '"standalone_strict_v4_ppo": False' in runner
+
+
+def test_l0_physical_profile_is_the_fail_safe_default() -> None:
+    parser = _load_runner()._parser()
+    action = next(item for item in parser._actions if item.dest == "source_policy_profile")
+
+    assert action.default == "l0_then_physical_grouped_rse_v1"
+    assert tuple(action.choices) == ("l0_then_physical_grouped_rse_v1",)
+
+
+def test_cpu_authorities_precede_gpu_object_import() -> None:
+    runner = (REPO_ROOT / "scripts/rl/isaaclab/run_independent_source_policy.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert runner.index('"prepare_reference"') < runner.index('"materialize_source_contact"')
+    assert runner.index('"materialize_source_contact"') < runner.index('"import_object_usd"')
+
+
+def test_cpu_only_checkpoint_is_explicitly_non_ppo_and_resumable() -> None:
+    runner = (REPO_ROOT / "scripts/rl/isaaclab/run_independent_source_policy.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert '"IndependentSourcePolicyPrerequisitesReceiptV2"' in runner
+    assert '"standalone_strict_v4_training": "FORBIDDEN_NOT_RUN"' in runner
+    assert '"terminal_scope": "CPU_AUTHORITIES_ONLY"' in runner
+    assert '"ppo_optimizer_steps": 0' in runner
+    assert runner.index("if args.stop_after_cpu_authorities:") < runner.index('"import_object_usd"')
 
 
 @pytest.mark.parametrize(
@@ -82,9 +154,7 @@ def test_l0_uses_qualified_reference_kinematics_v2() -> None:
 def test_training_failure_skips_potentially_hanging_simulation_cleanup(
     script_name: str,
 ) -> None:
-    trainer = (REPO_ROOT / "scripts/rl/isaaclab" / script_name).read_text(
-        encoding="utf-8"
-    )
+    trainer = (REPO_ROOT / "scripts/rl/isaaclab" / script_name).read_text(encoding="utf-8")
     cleanup = trainer[trainer.rindex("finally:") : trainer.rindex('if __name__ == "__main__":')]
 
     assert "if active_error is None:" in cleanup

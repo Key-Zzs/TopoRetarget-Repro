@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Build one independent geometry-to-Strict-V4 source-policy lineage."""
+"""Build one independent geometry-to-source-policy lineage.
+
+Production stops at L0 and delegates all further optimization to the
+finite-support, grouped-multiplicative, full-physics route. Standalone
+Strict-V4 PPO is forbidden by this runner.
+"""
 
 from __future__ import annotations
 
@@ -20,10 +25,12 @@ from toporetarget.rl.independent_physical_refinement import (  # noqa: E402
     assert_frozen_manifest,
     atomic_write_json,
 )
+from toporetarget.runtime.gpu_preflight import (  # noqa: E402
+    validate_gpu_preflight_receipt,
+)
 from toporetarget.utils.hashing import sha256_file  # noqa: E402
 
 L0_SAMPLES = 1_024_000
-STRICT_V4_SAMPLES = 1_064_960
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -35,8 +42,26 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-root", type=Path, required=True)
     parser.add_argument("--report-root", type=Path, required=True)
     parser.add_argument("--wuji-mjcf", type=Path, required=True)
-    parser.add_argument("--strict-v4-contract", type=Path, required=True)
+    parser.add_argument("--interaction-contact-contract", type=Path, required=True)
+    parser.add_argument(
+        "--source-policy-profile",
+        choices=("l0_then_physical_grouped_rse_v1",),
+        default="l0_then_physical_grouped_rse_v1",
+    )
+    parser.add_argument(
+        "--stop-after-cpu-authorities",
+        action="store_true",
+        help=(
+            "Freeze reference and source-contact prerequisites without launching Isaac or PPO; "
+            "a later invocation in the same roots resumes from their PASS receipts."
+        ),
+    )
     parser.add_argument("--num-envs", type=int, default=1024)
+    parser.add_argument(
+        "--gpu-preflight-receipt",
+        type=Path,
+        help="Required before Isaac import or L0; omitted only for CPU-authorities stop.",
+    )
     parser.add_argument("--accept-eula", action="store_true")
     return parser
 
@@ -75,6 +100,9 @@ def _run_step(
             and all(path.is_file() for path in expected_artifacts)
         ):
             return {**previous, "resumed_from_pass_receipt": True}
+        raise FileExistsError(
+            f"INDEPENDENT_SOURCE_POLICY_REFUSES_RECEIPT_OVERWRITE:{receipt_path.resolve()}"
+        )
     log_root.mkdir(parents=True, exist_ok=True)
     started = _utc()
     tick = time.perf_counter()
@@ -92,9 +120,7 @@ def _run_step(
     )
     log_path = log_root / f"{name}.log"
     log_path.write_text(result.stdout, encoding="utf-8")
-    missing_artifacts = [
-        str(path.resolve()) for path in expected_artifacts if not path.is_file()
-    ]
+    missing_artifacts = [str(path.resolve()) for path in expected_artifacts if not path.is_file()]
     passed = result.returncode == 0 and not missing_artifacts
     receipt = {
         "stage": name,
@@ -163,9 +189,7 @@ def main() -> int:
         l0_root / args.clip_id / f"stage16d_ppo26d_{args.clip_id.removeprefix('hocap_')}_l0.pt"
     )
     l0_result = l0_root / args.clip_id / "l0_training.json"
-    v4_root = run_root / "strict_v4"
-    v4_result = v4_root / "ppo_v4" / args.clip_id / "training_result.json"
-    final_receipt = report_root / "source_policy_receipt.json"
+    final_receipt = report_root / "source_policy_receipt.v3.json"
     if final_receipt.exists():
         raise FileExistsError(f"INDEPENDENT_SOURCE_POLICY_REFUSES_OVERWRITE:{final_receipt}")
 
@@ -173,7 +197,7 @@ def main() -> int:
     canonical = Path(str(geometry["artifacts"]["canonical"]["path"])).resolve()
     checkpoint_manifest = final.parent / "continuous_checkpoints" / "manifest.json"
     mjcf = args.wuji_mjcf.resolve()
-    strict_contract = args.strict_v4_contract.resolve()
+    strict_contract = args.interaction_contact_contract.resolve()
     steps: list[dict[str, Any]] = []
     started = time.perf_counter()
     try:
@@ -221,6 +245,78 @@ def main() -> int:
         )
         steps.append(
             _run_step(
+                "materialize_source_contact",
+                [
+                    sys.executable,
+                    "scripts/evaluation/materialize_independent_hocap_source_contact.py",
+                    "--manifest",
+                    str(manifest_path),
+                    "--primary-object-authority",
+                    str(authority_path),
+                    "--clip-id",
+                    args.clip_id,
+                    "--world-reference",
+                    str(world_reference),
+                    "--reference-v2",
+                    str(reference_v2),
+                    "--interaction-contact-contract",
+                    str(strict_contract),
+                    "--output-root",
+                    str(contact_root),
+                ],
+                log_root=log_root,
+                expected_artifacts=(source_contact_receipt,),
+            )
+        )
+        if args.stop_after_cpu_authorities:
+            prerequisite_receipt = report_root / "source_policy_prerequisites_receipt.json"
+            if prerequisite_receipt.exists():
+                raise FileExistsError(
+                    "INDEPENDENT_SOURCE_POLICY_REFUSES_PREREQUISITE_OVERWRITE:"
+                    f"{prerequisite_receipt}"
+                )
+            contact = _json(source_contact_receipt)
+            if (
+                contact.get("schema_version") != "IndependentHOCapSourceContactAuthorityV2"
+                or contact.get("status") != "PASS"
+                or contact.get("support_contact_authority", {}).get("scope")
+                != "all_annotated_source_hands"
+            ):
+                raise RuntimeError("INDEPENDENT_SOURCE_POLICY_CONTACT_PREREQUISITE_INVALID")
+            prerequisite = {
+                "schema_version": "IndependentSourcePolicyPrerequisitesReceiptV2",
+                "status": "PASS",
+                "clip_id": args.clip_id,
+                "selection_manifest_sha256": manifest["manifest_sha256"],
+                "primary_object_authority_sha256": authority["authority_sha256"],
+                "source_policy_profile": args.source_policy_profile,
+                "terminal_scope": "CPU_AUTHORITIES_ONLY",
+                "isaac_object_import": "NOT_RUN",
+                "l0_training": "NOT_RUN",
+                "standalone_strict_v4_training": "FORBIDDEN_NOT_RUN",
+                "ppo_optimizer_steps": 0,
+                "artifacts": {
+                    "world_reference": _artifact(world_reference),
+                    "reference_v1": _artifact(reference_v1),
+                    "reference_v2": _artifact(reference_v2),
+                    "object_mesh": _artifact(object_mesh),
+                    "source_contact": _artifact(source_contact_receipt),
+                },
+                "stages": steps,
+                "productive_run_seconds": time.perf_counter() - started,
+                "technical_retry_seconds": 0.0,
+                "retry_count": 0,
+                "cache_hit": False,
+            }
+            atomic_write_json(prerequisite_receipt, prerequisite)
+            print(json.dumps(prerequisite, indent=2, sort_keys=True))
+            return 0
+        if args.gpu_preflight_receipt is None:
+            raise ValueError("GPU_PREFLIGHT_RECEIPT_REQUIRED_BEFORE_SOURCE_POLICY_L0")
+        gpu_preflight_path = args.gpu_preflight_receipt.resolve()
+        validate_gpu_preflight_receipt(gpu_preflight_path)
+        steps.append(
+            _run_step(
                 "import_object_usd",
                 [
                     "conda",
@@ -242,31 +338,6 @@ def main() -> int:
                 ],
                 log_root=log_root,
                 expected_artifacts=(object_usd, object_usd_report),
-            )
-        )
-        steps.append(
-            _run_step(
-                "materialize_source_contact",
-                [
-                    sys.executable,
-                    "scripts/evaluation/materialize_independent_hocap_source_contact.py",
-                    "--manifest",
-                    str(manifest_path),
-                    "--primary-object-authority",
-                    str(authority_path),
-                    "--clip-id",
-                    args.clip_id,
-                    "--world-reference",
-                    str(world_reference),
-                    "--reference-v2",
-                    str(reference_v2),
-                    "--strict-v4-contract",
-                    str(strict_contract),
-                    "--output-root",
-                    str(contact_root),
-                ],
-                log_root=log_root,
-                expected_artifacts=(source_contact_receipt,),
             )
         )
         steps.append(
@@ -298,51 +369,74 @@ def main() -> int:
                 expected_artifacts=(l0_checkpoint, l0_result),
             )
         )
-        steps.append(
-            _run_step(
-                "train_strict_v4",
-                [
-                    "conda",
-                    "run",
-                    "--no-capture-output",
-                    "-n",
-                    "toporetarget-isaaclab",
-                    "python",
-                    "scripts/rl/isaaclab/train_stage16d_ppo26d_object_twist.py",
-                    "--clip",
-                    args.clip_id,
-                    "--reference",
-                    str(reference_v2),
-                    "--object-usd",
-                    str(object_usd),
-                    "--reference-root",
-                    str(reference_root),
-                    "--initialization-checkpoint",
-                    str(l0_checkpoint),
-                    "--strict-per-finger-contact-reward-v4",
-                    "--strict-v4-contract",
-                    str(strict_contract),
-                    "--strict-v4-source-mask-root",
-                    str(contact_root),
-                    "--target-reward-v4-samples",
-                    str(STRICT_V4_SAMPLES),
-                    "--checkpoint-targets",
-                    str(STRICT_V4_SAMPLES),
-                    "--output-root",
-                    str(v4_root),
-                    "--num-envs",
-                    str(args.num_envs),
-                    "--seed",
-                    str(lineage_seed),
-                    "--accept-eula",
-                ],
-                log_root=log_root,
-                expected_artifacts=(v4_result,),
-            )
-        )
         l0 = _json(l0_result)
-        v4 = _json(v4_result)
         contact = _json(source_contact_receipt)
+        if (
+            l0.get("status") != "STAGE16D_PPO26D_L0_COMPLETE_NOT_YET_QUALIFIED"
+            or int(l0.get("cumulative_samples", -1)) != L0_SAMPLES
+            or int(l0.get("target_l0_samples", -1)) != L0_SAMPLES
+            or int(l0.get("seed", -1)) != lineage_seed
+            or contact.get("schema_version") != "IndependentHOCapSourceContactAuthorityV2"
+            or contact.get("status") != "PASS"
+            or contact.get("support_contact_authority", {}).get("scope")
+            != "all_annotated_source_hands"
+        ):
+            raise RuntimeError("INDEPENDENT_SOURCE_POLICY_L0_FINAL_CONTRACT_INVALID")
+        receipt = {
+            "schema_version": "IndependentSourcePolicyReceiptV3",
+            "status": "PASS",
+            "clip_id": args.clip_id,
+            "primary_object_id": rows[0]["primary_object_id"],
+            "selection_manifest_sha256": manifest["manifest_sha256"],
+            "primary_object_authority_sha256": authority["authority_sha256"],
+            "source_policy_profile": "l0_then_physical_grouped_rse_v1",
+            "l0_samples": L0_SAMPLES,
+            "standalone_strict_v4_samples": 0,
+            "checkpoint": str(l0_checkpoint),
+            "checkpoint_sha256": sha256_file(l0_checkpoint),
+            "source_training_result": _artifact(l0_result),
+            "standalone_strict_v4_training": {
+                "status": "FORBIDDEN_NOT_RUN",
+                "samples": 0,
+                "ppo_optimizer_steps": 0,
+            },
+            "required_downstream_contract": {
+                "support": "finite_inferred_table_proxy_v1",
+                "gravity_scale": 1.0,
+                "friction_scale": 1.0,
+                "reward_aggregation": "grouped_multiplicative_v1",
+                "interaction_term": "u10_per_finger_pair_contact_primitive_v1",
+                "rse_enabled": True,
+                "standalone_strict_v4_ppo": False,
+                "evaluation_first": True,
+                "ppo_only_on_frozen_failure": True,
+            },
+            "lineage": {
+                "actor_root": str((l0_root / args.clip_id).resolve()),
+                "critic_root": str((l0_root / args.clip_id).resolve()),
+                "optimizer_root": str((l0_root / args.clip_id).resolve()),
+                "normalizer_root": str((l0_root / args.clip_id).resolve()),
+                "rng_seed": lineage_seed,
+            },
+            "artifacts": {
+                "gpu_preflight": _artifact(gpu_preflight_path),
+                "world_reference": _artifact(world_reference),
+                "reference_v1": _artifact(reference_v1),
+                "reference_v2": _artifact(reference_v2),
+                "object_mesh": _artifact(object_mesh),
+                "object_usd": _artifact(object_usd),
+                "source_contact": _artifact(source_contact_receipt),
+                "l0_result": _artifact(l0_result),
+            },
+            "stages": steps,
+            "productive_run_seconds": time.perf_counter() - started,
+            "technical_retry_seconds": 0.0,
+            "retry_count": 0,
+            "cache_hit": False,
+        }
+        atomic_write_json(final_receipt, receipt)
+        print(json.dumps(receipt, indent=2, sort_keys=True))
+        return 0
     except BaseException as error:
         atomic_write_json(
             report_root / "source_policy_failure.json",
@@ -356,55 +450,6 @@ def main() -> int:
             },
         )
         raise
-    if (
-        int(l0.get("cumulative_samples", -1)) != L0_SAMPLES
-        or int(l0.get("seed", -1)) != lineage_seed
-        or v4.get("status") != "STRICT_V4_TRAINING_SEGMENT_COMPLETE"
-        or int(v4.get("reward_v4_samples_start", -1)) != 0
-        or int(v4.get("reward_v4_samples", -1)) != STRICT_V4_SAMPLES
-        or int(v4.get("seed", -1)) != lineage_seed
-        or contact.get("status") != "PASS"
-    ):
-        raise RuntimeError("INDEPENDENT_SOURCE_POLICY_FINAL_CONTRACT_INVALID")
-    v4_checkpoint = Path(str(v4["checkpoint"])).resolve()
-    receipt = {
-        "schema_version": "IndependentSourcePolicyReceiptV1",
-        "status": "PASS",
-        "clip_id": args.clip_id,
-        "primary_object_id": rows[0]["primary_object_id"],
-        "selection_manifest_sha256": manifest["manifest_sha256"],
-        "primary_object_authority_sha256": authority["authority_sha256"],
-        "l0_samples": L0_SAMPLES,
-        "strict_v4_samples": STRICT_V4_SAMPLES,
-        "checkpoint": str(v4_checkpoint),
-        "checkpoint_sha256": sha256_file(v4_checkpoint),
-        "source_training_result": _artifact(v4_result),
-        "lineage": {
-            "actor_root": str((v4_root / "ppo_v4" / args.clip_id).resolve()),
-            "critic_root": str((v4_root / "ppo_v4" / args.clip_id).resolve()),
-            "optimizer_root": str((v4_root / "ppo_v4" / args.clip_id).resolve()),
-            "normalizer_root": str((v4_root / "ppo_v4" / args.clip_id).resolve()),
-            "rng_seed": lineage_seed,
-        },
-        "artifacts": {
-            "world_reference": _artifact(world_reference),
-            "reference_v1": _artifact(reference_v1),
-            "reference_v2": _artifact(reference_v2),
-            "object_mesh": _artifact(object_mesh),
-            "object_usd": _artifact(object_usd),
-            "source_contact": _artifact(source_contact_receipt),
-            "l0_result": _artifact(l0_result),
-            "strict_v4_result": _artifact(v4_result),
-        },
-        "stages": steps,
-        "productive_run_seconds": time.perf_counter() - started,
-        "technical_retry_seconds": 0.0,
-        "retry_count": 0,
-        "cache_hit": False,
-    }
-    atomic_write_json(final_receipt, receipt)
-    print(json.dumps(receipt, indent=2, sort_keys=True))
-    return 0
 
 
 if __name__ == "__main__":

@@ -19,6 +19,9 @@ from toporetarget.rl.independent_physical_refinement import (  # noqa: E402
     assert_frozen_manifest,
     atomic_write_json,
 )
+from toporetarget.runtime.gpu_preflight import (  # noqa: E402
+    validate_gpu_preflight_receipt,
+)
 from toporetarget.utils.hashing import sha256_file  # noqa: E402
 
 
@@ -28,7 +31,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--clip-id", required=True)
     parser.add_argument("--source-policy-receipt", type=Path, required=True)
     parser.add_argument("--support-receipt", type=Path, required=True)
-    parser.add_argument("--strict-v4-contract", type=Path, required=True)
+    parser.add_argument("--gpu-preflight-receipt", type=Path, required=True)
+    parser.add_argument("--interaction-contact-contract", type=Path, required=True)
     parser.add_argument("--run-root", type=Path, required=True)
     parser.add_argument("--report-root", type=Path, required=True)
     parser.add_argument("--accept-eula", action="store_true")
@@ -62,6 +66,8 @@ def main() -> int:
         raise ValueError("INDEPENDENT_FROZEN_EVALUATION_REQUIRES_EULA")
     if not args.clip_id or any(token in args.clip_id for token in ("/", "\\", "..")):
         raise ValueError("INDEPENDENT_FROZEN_EVALUATION_CLIP_ID_INVALID")
+    gpu_preflight_path = args.gpu_preflight_receipt.resolve()
+    validate_gpu_preflight_receipt(gpu_preflight_path)
     manifest_path = args.manifest.resolve()
     manifest = _json(manifest_path)
     assert_frozen_manifest(manifest)
@@ -97,7 +103,7 @@ def main() -> int:
     runtime_geometry = _receipt_path(contract_artifacts["runtime_geometry"])
     evaluation_gates = _receipt_path(contract_artifacts["evaluation_gates"])
     seed_manifest = _receipt_path(contract_artifacts["seed_manifest"])
-    strict_contract = args.strict_v4_contract.resolve()
+    strict_contract = args.interaction_contact_contract.resolve()
     _artifact(strict_contract)
 
     report_root = args.report_root.resolve() / "clips" / args.clip_id / "physical_refinement"
@@ -147,6 +153,8 @@ def main() -> int:
         "--run-root",
         str(run_root),
         "--accept-eula",
+        "--gpu-preflight-receipt",
+        str(gpu_preflight_path),
     ]
     environment = dict(os.environ)
     environment["PYTHONPATH"] = f"{REPO_ROOT / 'src'}:{REPO_ROOT}"
@@ -187,6 +195,7 @@ def main() -> int:
         "decision": _artifact(decision_path),
         "source_policy_receipt": _artifact(source_path),
         "support_receipt": _artifact(support_path),
+        "gpu_preflight_receipt": _artifact(gpu_preflight_path),
         "command": command,
         "log": _artifact(log),
         "productive_run_seconds": time.perf_counter() - tick,

@@ -36,6 +36,8 @@ SELECTION_SEED = 20260822
 DEVELOPMENT_CLIPS = frozenset({"hocap_170105", "hocap_170650"})
 REQUIRED_AUTHORITIES = (
     "retarget",
+    "source_policy_prerequisites",
+    "support_preflight",
     "source_policy",
     "support",
     "frozen_evaluation",
@@ -48,6 +50,7 @@ TERMINAL_STATES = frozenset(
         "ACCEPTED_FROZEN",
         "ACCEPTED_AFTER_REFINEMENT",
         "PPO_BUDGET_EXHAUSTED",
+        "SUPPORT_PREFLIGHT_BLOCKED",
         "RETARGET_FAILED",
         "SOURCE_POLICY_FAILED",
         "SUPPORT_FAILED",

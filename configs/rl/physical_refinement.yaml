@@ -1,5 +1,12 @@
 schema_version: PhysicalRefinementGroupedMultiplicativeRSEV1
 status: preregistered_global_contract
+authority_name: PhysicalPPORefinementV1
+budget:
+  max_updates: 15
+  upper_bound_not_target: true
+  eval10_each_update: true
+  confirm20_on_pf_v2_10_of_10: true
+  immediate_success_stop: true
 reward:
   mode: grouped_multiplicative_v1
   legacy_mode: legacy_additive
@@ -17,7 +24,9 @@ rse:
   distance_scope_m: 0.20
   kappa_min: 0.50
   initial_counts: {fail: 1, total: 1}
-  training_reset: uniform_reference_index_0_320
+  training_reset: uniform_valid_reference_index_domain
+  trajectory_321_natural_indices: 0..320
+  fixed_0_320_algorithm_definition: false
   base_thresholds:
     object_position_m: 0.05
     object_axis_m: 0.05
