@@ -64,9 +64,7 @@ def main() -> int:
     try:
         import mujoco
     except ImportError as exc:
-        raise RuntimeError(
-            "INDEPENDENT_SOURCE_REFERENCE_REQUIRES_MUJOCO_ENVIRONMENT"
-        ) from exc
+        raise RuntimeError("INDEPENDENT_SOURCE_REFERENCE_REQUIRES_MUJOCO_ENVIRONMENT") from exc
     final = args.final_trajectory.resolve()
     canonical = args.canonical.resolve()
     checkpoint_manifest = args.checkpoint_manifest.resolve()

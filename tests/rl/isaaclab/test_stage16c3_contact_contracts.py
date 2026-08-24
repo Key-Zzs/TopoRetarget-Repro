@@ -12,8 +12,7 @@ ENV_CONFIG_SOURCE = (
     REPO_ROOT / "src/toporetarget/rl/environments/isaaclab_backend/world_wrist_direct_env_cfg.py"
 )
 PPO_ENV_SOURCE = (
-    REPO_ROOT
-    / "src/toporetarget/rl/environments/isaaclab_backend/ppo26d_reference_tracking_env.py"
+    REPO_ROOT / "src/toporetarget/rl/environments/isaaclab_backend/ppo26d_reference_tracking_env.py"
 )
 CONTACT_CONFIG = REPO_ROOT / "configs/rl/stage16/isaaclab_contact_telemetry.yaml"
 
@@ -53,8 +52,9 @@ def test_contact_profile_uses_usd_clone_for_128_env_contact_views() -> None:
 def test_ppo_contact_reward_selects_configured_objects_without_development_ids() -> None:
     source = PPO_ENV_SOURCE.read_text(encoding="utf-8")
     method = source[
-        source.index("def _active_object_pair_force_matrix") :
-        source.index("def _reference_expected_contact_mask")
+        source.index("def _active_object_pair_force_matrix") : source.index(
+            "def _reference_expected_contact_mask"
+        )
     ]
 
     assert "self._object_specs" in method

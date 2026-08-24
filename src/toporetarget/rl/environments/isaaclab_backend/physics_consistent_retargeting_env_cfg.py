@@ -48,9 +48,7 @@ def configure_stage16d_nominal(
 ) -> None:
     if num_envs < 1:
         raise ValueError("Stage16D needs at least one environment")
-    if clip is not None and (
-        not clip or any(token in clip for token in ("/", "\\", ".."))
-    ):
+    if clip is not None and (not clip or any(token in clip for token in ("/", "\\", ".."))):
         raise ValueError("invalid Stage16D clip")
     cfg.scene.num_envs = num_envs
     cfg.balanced_clip_assignment = clip is None

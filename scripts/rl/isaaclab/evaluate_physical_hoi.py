@@ -974,10 +974,14 @@ def main() -> int:
             contact_mode is ContactRewardMode.STRICT_PER_FINGER_V4
         )
     if (
-        args.object_twist_reward_v2
-        or args.reference_gated_contact_reward_v3
-        or args.strict_per_finger_contact_reward_v4
-    ) and args.reference_kinematics_v2_root is None and args.reference is None:
+        (
+            args.object_twist_reward_v2
+            or args.reference_gated_contact_reward_v3
+            or args.strict_per_finger_contact_reward_v4
+        )
+        and args.reference_kinematics_v2_root is None
+        and args.reference is None
+    ):
         raise ValueError("PPO26D_REWARD_V2_REQUIRES_REFERENCE_KINEMATICS_V2")
     if (
         sum(
@@ -1010,8 +1014,10 @@ def main() -> int:
         contact_mode is None or args.rsi_replicas != 0 or args.curriculum_stage != "C4"
     ):
         raise ValueError("FULL_TRAJECTORY_C4_EVALUATION_REQUIRES_CONTACT_MODE_AND_NO_RSI")
-    if args.full_trajectory_table and args.reference is not None and (
-        args.support_proxy is None or args.support_asset is None
+    if (
+        args.full_trajectory_table
+        and args.reference is not None
+        and (args.support_proxy is None or args.support_asset is None)
     ):
         raise ValueError(
             "independent full-trajectory evaluation requires --support-proxy and --support-asset"

@@ -12,7 +12,7 @@ import shutil
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import typer
@@ -93,6 +93,10 @@ from toporetarget.retarget.refinement_performance import RefinementExecutionProf
 from toporetarget.retarget.solver import WarmStartSolveError, load_solver_profile
 from toporetarget.robots.registry import get_robot_registry
 from toporetarget.utils.hashing import sha256_file, sha256_tree
+
+if TYPE_CHECKING:
+    from toporetarget.geometry.signed_distance.derived_proxy import HybridSignedDistanceBackend
+    from toporetarget.geometry.signed_distance.reference import ReferenceSignedDistanceBackend
 
 app = typer.Typer(help="Stage 7-9 retargeting tools.")
 
@@ -2197,6 +2201,7 @@ def _validation_payload(
     obj = _object_for_graph(sequence, str(final.metadata["object_id"]))
     final_backend = final.metadata.get("sdf_backend", {})
     backend_id = str(final_backend.get("backend_id")) if isinstance(final_backend, dict) else ""
+    sdf: HybridSignedDistanceBackend | ReferenceSignedDistanceBackend
     if backend_id == "hybrid_original_distance_proxy_sign_v1":
         from toporetarget.geometry.signed_distance.derived_proxy import (
             build_hybrid_signed_distance_backend,

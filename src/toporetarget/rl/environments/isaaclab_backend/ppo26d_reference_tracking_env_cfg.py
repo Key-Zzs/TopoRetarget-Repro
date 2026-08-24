@@ -299,10 +299,7 @@ def configure_stage16d_grouped_multiplicative_rse(
         clip: reference_distance_root.resolve() / f"reference_contact_mask_{clip}.npz"
         for clip in clips
     }
-    mesh_paths = {
-        clip: object_mesh_root.resolve() / f"{clip}.obj"
-        for clip in clips
-    }
+    mesh_paths = {clip: object_mesh_root.resolve() / f"{clip}.obj" for clip in clips}
     missing = [
         str(path)
         for path in (*reference_paths.values(), *mesh_paths.values())

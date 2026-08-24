@@ -53,10 +53,7 @@ class StrictPerFingerContactRewardV4:
             raise ValueError("STRICT_V4_WEIGHT_OR_EPSILON_DRIFT")
         if self.numerical_floor_n <= 0.0:
             raise ValueError("STRICT_V4_NUMERICAL_FLOOR_INVALID")
-        if (
-            self.expected_runtime_frames < 17
-            or (self.expected_runtime_frames - 1) % 8 != 0
-        ):
+        if self.expected_runtime_frames < 17 or (self.expected_runtime_frames - 1) % 8 != 0:
             raise ValueError("STRICT_V4_RUNTIME_FRAME_DOMAIN_INVALID")
         if self.aggregation != "mean_over_source_required_fingers_only":
             raise ValueError("STRICT_V4_NORMALIZATION_DRIFT")

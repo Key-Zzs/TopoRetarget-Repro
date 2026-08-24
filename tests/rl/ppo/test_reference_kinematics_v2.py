@@ -115,9 +115,7 @@ def test_v2_rebuilds_bad_terminal_tangent_preserves_keys_and_loads_bank(tmp_path
         np.load(v2, allow_pickle=False) as repaired,
     ):
         assert exported_v1["timestamps"].dtype == np.float64
-        assert np.array_equal(
-            exported_v1["timestamps"], np.arange(321, dtype=np.float64) / 20.0
-        )
+        assert np.array_equal(exported_v1["timestamps"], np.arange(321, dtype=np.float64) / 20.0)
         np.testing.assert_allclose(
             repaired["object_pose_translation_world_ref"][::8],
             native["object_pose_translation_world_ref"],
