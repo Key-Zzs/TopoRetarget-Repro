@@ -1,0 +1,60 @@
+{
+  "schema_version": "HOCapPhysicalizationHardeningProtocolV2",
+  "dataset": "hocap",
+  "episode_authority": "HOCapSingleHandObjectEpisodeV1",
+  "retarget": {
+    "input_quality_contract": "RetargetInputQualityV1",
+    "input_quality_position": "before_expensive_solver",
+    "execution_contract": "wuji_continuous_sequential_fast_exact_v2",
+    "math_changed": false,
+    "selected_branch": "CURRENT_FAST_EXACT_V2_EXACT_SOLVER_PLUS_INPUT_QUALITY_V1_FAIL_CLOSED",
+    "conservative_fallback": true,
+    "fast_exact_v2_authorized": true,
+    "throughput_claim": "NONE_P1_PARTIAL_FALLBACK"
+  },
+  "source_controller": {
+    "mode": "AUTO",
+    "route": [
+      "ZERO_RESIDUAL_EVAL10",
+      "CORRECTED_L0_IF_ZERO_RESIDUAL_FAILS",
+      "SOURCE_CONTROLLER_FAILED_IF_CORRECTED_L0_FAILS"
+    ],
+    "angle_authority": "CONTINUOUS_EQUIVALENT_VIRTUAL_WRIST_V1",
+    "virtual_wrist_position_limits": false,
+    "real_finger_joint_position_limits": true,
+    "actuator_limits": true,
+    "corrected_l0_samples": 1024000,
+    "unbounded_l0_profile": "EXPERIMENTAL_DIAGNOSTIC_ONLY_CURRENT_AUTHORITY_NO"
+  },
+  "ppo": {
+    "budget_branch": "FIXED_HISTORICAL_HARDENING_FALLBACK",
+    "max_updates": 15,
+    "samples_per_update": 40960,
+    "global_sample_cap": 614400,
+    "length_generalization_status": "NOT_ESTABLISHED",
+    "rsi_contract": "UniformEventBalancedRSIV1",
+    "rsi_formula": "0.5*U(T_valid)+0.5*U(EpisodeV1_CONTACT_through_RELEASE)",
+    "uniform_component_preserved": true,
+    "frame0_only_training": false,
+    "object_scale_contract": "DimensionlessObjectScaleV1",
+    "characteristic_length": "object_bbox_diagonal_m",
+    "global_anchor_bbox_diagonal_m": 0.21802421230553728,
+    "per_episode_tuning": false
+  },
+  "physical": {
+    "support": "SupportResolutionV1",
+    "reward": "Stage16GroupedMultiplicativeRewardV1",
+    "rse": "Stage16ReferenceScopedExplorationV1",
+    "angular_authority": "AngularAuthorityV2",
+    "pf": "PhysicalFunctionalityV2",
+    "pf_full_cycle": "PhysicalFunctionalityFullCycleV1",
+    "friction_per_episode_tuning": false,
+    "mass_per_episode_tuning": false
+  },
+  "execution": {
+    "gpu_serialization": 1,
+    "protocol_mutation_after_first_p5_result": false,
+    "p5_dataset_role": "PIPELINE_HARDENING_SET_V1",
+    "p5_held_out_rate_denominator": false
+  }
+}
