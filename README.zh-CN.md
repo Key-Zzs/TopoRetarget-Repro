@@ -130,17 +130,18 @@ export TOPORETARGET_OUTPUT=/path/to/toporetarget-output
 ### 4. 人类 HOCap Episode 到物理机器人示范
 
 当前权威为
-[`HOCapPhysicalizationProtocolV1`](configs/contracts/hocap_physicalization_v1.yaml)。
-production unit 是一条完整的 `HOCapSingleHandObjectEpisodeV1`，不是 raw sequence，
-也不是局部 primary-object window。HOCap/MANO 原始输入只读。先设置彼此独立的输出目录，
+[`HOCapPhysicalizationHardeningProtocolV2`](configs/contracts/hocap_physicalization_hardening_v2.json)。
+production unit 是一条从 approach、pick、place、release 到 retreat 的完整
+`HOCapSingleHandObjectEpisodeV1`；raw-sequence/primary-object window 仅为历史诊断。
+HOCap/MANO 原始输入只读。先设置彼此独立的输出目录，
 并在执行前检查各入口的 `--help`：
 
 ```bash
 export HOCAP_ROOT=/path/to/HOCap
 export MANO_MODEL_ROOT=/path/to/mano
 export EPISODE_ROOT=/path/to/reports/episodes
-export PHYS_RUN_ROOT=/path/to/runs/physicalization_v1
-export PHYS_REPORT_ROOT=/path/to/reports/physicalization_v1
+export PHYS_RUN_ROOT=/path/to/runs/physicalization_v2
+export PHYS_REPORT_ROOT=/path/to/reports/physicalization_v2
 export EPISODE_ID=<frozen-episode-id>
 ```
 
@@ -165,7 +166,20 @@ export EPISODE_ID=<frozen-episode-id>
      --sanity-output "$PHYS_REPORT_ROOT/episode_sanity.json"
    ```
 
-3. 使用数学不变的 `fast_exact_v2` execution profile 执行几何重定向。production 不使用
+3. 在昂贵 solver 前执行 `RetargetInputQualityV1`。输入被拒绝时停止该 episode；PASS receipt
+   会绑定原输入或只修复短 gap 后的输入。
+
+   ```bash
+   conda run -n topo-retarget python scripts/retarget/scan_hocap_retarget_input_quality.py \
+     --episode-index "$EPISODE_ROOT/all_hocap_episodes.json" \
+     --episode-id "$EPISODE_ID" --data-root "$HOCAP_ROOT" \
+     --mano-model-root "$MANO_MODEL_ROOT" \
+     --report "$PHYS_REPORT_ROOT/retarget_input_quality.json" \
+     --per-frame-csv "$PHYS_REPORT_ROOT/retarget_input_quality_per_frame.csv" \
+     --repaired-output "$PHYS_RUN_ROOT/retarget_input_quality_repaired.npz"
+   ```
+
+4. 使用数学不变的 `fast_exact_v2` execution profile 执行几何重定向。production 不使用
    `--benchmark-first-frames` 或 `--skip-html`。
 
    ```bash
@@ -179,7 +193,7 @@ export EPISODE_ID=<frozen-episode-id>
      --report-root "$PHYS_REPORT_ROOT/geometric"
    ```
 
-4. 打开输出的 `continuous_refinement_visualization.html`。若要从相同、receipt-bound
+5. 打开输出的 `continuous_refinement_visualization.html`。若要从相同、receipt-bound
    artifact 重新生成 HTML：
 
    ```bash
@@ -188,7 +202,7 @@ export EPISODE_ID=<frozen-episode-id>
      --max-object-points 50000 --output <retarget.html>
    ```
 
-5. 从通过验证的 final trajectory 与 checkpoint manifest 构建 physical reference：
+6. 从通过验证的 final trajectory 与 checkpoint manifest 构建 physical reference：
 
    ```bash
    conda run -n toporetarget-rl python scripts/rl/prepare_independent_source_reference.py \
@@ -201,7 +215,7 @@ export EPISODE_ID=<frozen-episode-id>
      --reference-v2-output <reference_kinematics_v2.npz> --report <reference.json>
    ```
 
-6. 在精确 Isaac 环境中冻结 host GPU authority。sandbox 中 CUDA 失败只是一条诊断，
+7. 在精确 Isaac 环境中冻结 host GPU authority。sandbox 中 CUDA 失败只是一条诊断，
    不等价于 host GPU 不可用；禁止 CPU fallback。
 
    ```bash
@@ -212,23 +226,52 @@ export EPISODE_ID=<frozen-episode-id>
      --output <gpu_preflight_receipt.json>
    ```
 
-7. 物化 source authority 并训练精确 L0（`1,024,000` samples）。PASS 输出为
-   `source_policy_receipt.v3.json`；禁止独立 Strict-V4 final PPO。EpisodeV1 解析和几何
-   重定向支持左右手，但当前 physical backend 是 Wuji right-hand runtime。
+8. 先运行 zero-residual deterministic source controller，并使用 continuous equivalent-angle
+   virtual wrist 与真实 finger limits。L0 是条件 fallback，不是每条 episode 自动必需。
 
    ```bash
-   conda run -n topo-retarget python scripts/rl/isaaclab/run_independent_source_policy.py \
-     --manifest <frozen-episode-manifest.json> \
-     --primary-object-authority <episode_object_authority.json> \
-     --clip-id "$EPISODE_ID" --geometric-receipt <geometric_retarget_receipt.json> \
-     --run-root "$PHYS_RUN_ROOT" --report-root "$PHYS_REPORT_ROOT" \
-     --wuji-mjcf third_party/robot_hands/wuji_hand2_beta1/mjcf/right.xml \
-     --interaction-contact-contract <interaction_contact_contract.json> \
-     --source-policy-profile l0_then_physical_grouped_rse_v1 --num-envs 1024 \
-     --gpu-preflight-receipt <gpu_preflight_receipt.json> --accept-eula
+   conda run --no-capture-output -n toporetarget-isaaclab \
+     python scripts/rl/isaaclab/qualify_zero_residual_source_controller.py \
+     --accept-eula --clip "$EPISODE_ID" --episodes 10 \
+     --output "$PHYS_REPORT_ROOT/source_controller/zero_residual" \
+     --reference <reference_kinematics_v2.npz> --object-usd <object.usda> \
+     --support-proxy <table_proxy.json> --support-asset <support_proxy.usda> \
+     --contact-contract <contact_contract.json> --contact-mask-root <contact_mask_root> \
+     --reference-distance-root <reference_distance_root> \
+     --object-mesh-root <object_mesh_root> \
+     --runtime-geometry-manifest <runtime_collision_geometry_manifest.json> \
+     --frozen-evaluation-gates <frozen_evaluation_gates.json> \
+     --seed-manifest <seed_manifest.json>
    ```
 
-8. 按 `SOURCE_EXPLICIT_SUPPORT -> SOURCE_RECONSTRUCTED_SUPPORT ->
+9. 仅当步骤 8 FAIL 时，训练恰好 `1,024,000` samples 的 corrected L0 actor，并用相同
+   Eval10 qualification。`--continuous-virtual-wrist-angles` 只消除表示 wrapping failure，
+   不移除真实 finger、action、effort、velocity、singularity、collision 或 actuator limit。
+
+   ```bash
+   conda run --no-capture-output -n toporetarget-isaaclab \
+     python scripts/rl/isaaclab/train_stage16d_ppo26d.py --accept-eula \
+     --clip "$EPISODE_ID" --reference <reference_kinematics_v2.npz> \
+     --object-usd <object.usda> --output-root "$PHYS_RUN_ROOT/source_controller/corrected_l0" \
+     --num-envs 1024 --iterations 25 --seed <frozen-seed> \
+     --continuous-virtual-wrist-angles
+   conda run --no-capture-output -n toporetarget-isaaclab \
+     python scripts/rl/isaaclab/qualify_zero_residual_source_controller.py \
+     --accept-eula --clip "$EPISODE_ID" --episodes 10 \
+     --checkpoint <corrected_l0_checkpoint.pt> --optimizer-steps 25 \
+     --training-samples 1024000 \
+     --output "$PHYS_REPORT_ROOT/source_controller/corrected_l0" \
+     --reference <reference_kinematics_v2.npz> --object-usd <object.usda> \
+     --support-proxy <table_proxy.json> --support-asset <support_proxy.usda> \
+     --contact-contract <contact_contract.json> --contact-mask-root <contact_mask_root> \
+     --reference-distance-root <reference_distance_root> \
+     --object-mesh-root <object_mesh_root> \
+     --runtime-geometry-manifest <runtime_collision_geometry_manifest.json> \
+     --frozen-evaluation-gates <frozen_evaluation_gates.json> \
+     --seed-manifest <seed_manifest.json>
+   ```
+
+10. 按 `SOURCE_EXPLICIT_SUPPORT -> SOURCE_RECONSTRUCTED_SUPPORT ->
    INFERRED_PLANAR_SUPPORT -> UNRESOLVED` 解析 support。source table 参数存在时必须恢复，
    不得再推断第二张 table。source/reconstructed support 的 hand/object collision 都为 ON；
    inferred proxy 仅用 pairwise filter 将 hand/support collision 设为 OFF，object collision 保持 ON。
@@ -242,7 +285,7 @@ export EPISODE_ID=<frozen-episode-id>
      --gpu-preflight-receipt <gpu_preflight_receipt.json> --accept-eula
    ```
 
-9. 在任何 physical update 前执行冻结的 full-gravity Eval10：
+11. 在任何 physical update 前执行冻结的 full-gravity Eval10：
 
    ```bash
    conda run -n topo-retarget python scripts/evaluation/run_independent_frozen_physical_evaluation.py \
@@ -254,48 +297,49 @@ export EPISODE_ID=<frozen-episode-id>
      --run-root "$PHYS_RUN_ROOT" --report-root "$PHYS_REPORT_ROOT" --accept-eula
    ```
 
-10. 只按 PF V2 决策：Eval10 10/10 PASS 进入 Confirm20，Confirm20 PASS 后以 0 次 PPO
-    update 接受；PF V2 FAIL 才允许 physical PPO。其他状态均不授权训练。
-
-11. 获得授权后，固定 `grouped_multiplicative_v1`、RSE、runtime reference 有效 index
-    域上的 uniform sampling，最多 15 个新 update。15 是上限；Confirm20 接受后立即停止。
-
-    ```bash
-    conda run --no-capture-output -n toporetarget-isaaclab \
-      python scripts/rl/isaaclab/run_physical_refinement.py train \
-      --clip "$EPISODE_ID" --num-envs 1024 --max-new-updates 15 \
-      --report-root "$PHYS_REPORT_ROOT/ppo" --run-root "$PHYS_RUN_ROOT/ppo" \
-      --source-training-result <l0_training.json> --reference <reference_v2.npz> \
-      --object-usd <object.usda> --support-proxy <table_proxy.json> \
-      --support-asset <support_proxy.usda> --contact-contract <contact_contract.json> \
-      --contact-mask-root <contact_mask_root> \
-      --reference-distance-root <reference_distance_root> \
-      --object-mesh-root <object_mesh_root> \
-      --runtime-geometry-manifest <runtime_collision_geometry_manifest.json> \
-      --frozen-evaluation-gates <frozen_evaluation_gates.json> \
-      --seed-manifest <seed_manifest.json> \
-      --gpu-preflight-receipt <gpu_preflight_receipt.json> --accept-eula
-    ```
-
-12. qualification 分别报告 PF V2，以及 DF pose、linear、pose-derived angular authority；
-    不得把 PF failure 改写为 DF success。
+12. 只按 PF V2 决策：PASS 以 0 次 PPO update 接受 frozen policy；只有 FAIL 才授权
+    physical PPO。获得授权后按顺序执行三个 fail-closed mode。V2 的 P5 冻结 fallback 最多
+    15 updates（`614,400` samples），并明确标记 `LENGTH_GENERALIZATION_NOT_ESTABLISHED`。
+    RSI 为 `0.5*U(T_valid)+0.5*U(EpisodeV1 CONTACT through RELEASE)`，保留 uniform component；
+    Confirm20 接受后提前停止。
 
     ```bash
-    conda run --no-capture-output -n toporetarget-isaaclab \
-      python scripts/evaluation/qualify_physical_hoi.py --accept-eula \
-      --clip "$EPISODE_ID" --checkpoint <checkpoint.pt> --output <qualification_dir> \
-      --episodes 10 --update <update> --samples <samples> \
-      --reference <reference_v2.npz> --object-usd <object.usda> \
-      --support-proxy <table_proxy.json> --support-asset <support_proxy.usda> \
-      --contact-contract <contact_contract.json> --contact-mask-root <contact_mask_root> \
-      --reference-distance-root <reference_distance_root> \
-      --object-mesh-root <object_mesh_root> \
-      --runtime-geometry-manifest <runtime_collision_geometry_manifest.json> \
-      --frozen-evaluation-gates <frozen_evaluation_gates.json> \
+    PPO_ARGS=(
+      --clip "$EPISODE_ID" --num-envs 1024 --max-new-updates 15 --accept-eula
+      --report-root "$PHYS_REPORT_ROOT/ppo" --run-root "$PHYS_RUN_ROOT/ppo"
+      --source-training-result <l0_training.json> --reference <reference_v2.npz>
+      --object-usd <object.usda> --support-proxy <table_proxy.json>
+      --support-asset <support_proxy.usda> --contact-contract <contact_contract.json>
+      --contact-mask-root <contact_mask_root> --reference-distance-root <reference_distance_root>
+      --object-mesh-root <object_mesh_root>
+      --runtime-geometry-manifest <runtime_collision_geometry_manifest.json>
+      --frozen-evaluation-gates <frozen_evaluation_gates.json>
       --seed-manifest <seed_manifest.json>
+      --hardening-v2-runtime-events <hardening_v2_runtime_events.json>
+      --continuous-virtual-wrist-angles
+      --gpu-preflight-receipt <gpu_preflight_receipt.json>
+    )
+    conda run --no-capture-output -n toporetarget-isaaclab \
+      python scripts/rl/isaaclab/run_physical_refinement.py evaluate-first "${PPO_ARGS[@]}"
+    conda run --no-capture-output -n toporetarget-isaaclab \
+      python scripts/rl/isaaclab/run_physical_refinement.py runtime-sanity "${PPO_ARGS[@]}"
+    conda run --no-capture-output -n toporetarget-isaaclab \
+      python scripts/rl/isaaclab/run_physical_refinement.py train "${PPO_ARGS[@]}"
     ```
 
-13. replay 使用不可变 trace。相同入口支持完整 trajectory、window、raw MANO/object overlay、
+13. 对不可变 trace 执行 `PhysicalFunctionalityFullCycleV1`。PF V2 仍只负责 pick/lift；
+    FullCycle V1 分别测量 pick、transport、place、release、retreat。没有记录 destination-region
+    或 destination-support signal 时必须报 `NOT_IDENTIFIABLE`，不得用 source-table contact 代替。
+
+    ```bash
+    PYTHONPATH=src:. conda run -n topo-retarget \
+      python scripts/evaluation/qualify_physical_functionality_full_cycle.py \
+      --trace-root <qualification_dir/traces> \
+      --runtime-events <hardening_v2_runtime_events.json> \
+      --output <qualification_dir/full_cycle> --geometry-safe
+    ```
+
+14. replay 使用不可变 trace。相同入口支持完整 trajectory、window、raw MANO/object overlay、
     reference 开关和确定性的 low-poly raw object。
 
     ```bash
@@ -309,8 +353,8 @@ export EPISODE_ID=<frozen-episode-id>
       --mocap-ghost --mocap-object-low-poly --loop
     ```
 
-PF V2 是 physical functionality authority；interaction timing 是独立诊断。replay 不会
-训练 PPO，也不会生成科学验收。
+PF V2 测量 pick/lift；PF FullCycle V1 测量完整 manipulation。DF pose、linear、angular
+保持独立，interaction timing 仅为诊断。replay 不训练 PPO，也不生成科学验收。
 
 <details>
 <summary>历史 two-clip 开发记录（不是当前 authority）</summary>

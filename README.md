@@ -142,17 +142,18 @@ workflow is resumable and does not scan or mutate unrelated source data.
 ### 4. Human HOCap Episode to Physical Robot Demonstration
 
 The current authority is
-[`HOCapPhysicalizationProtocolV1`](configs/contracts/hocap_physicalization_v1.yaml).
-Its unit is one complete `HOCapSingleHandObjectEpisodeV1`, not a raw sequence
-or a locally chosen primary-object window. HOCap and MANO inputs are read-only.
+[`HOCapPhysicalizationHardeningProtocolV2`](configs/contracts/hocap_physicalization_hardening_v2.json).
+Its unit is one complete `HOCapSingleHandObjectEpisodeV1`, from approach through
+pick, place, release, and retreat. Raw-sequence and primary-object windows are
+historical diagnostics only. HOCap and MANO inputs are read-only.
 Set distinct output roots and inspect each command's `--help` before running:
 
 ```bash
 export HOCAP_ROOT=/path/to/HOCap
 export MANO_MODEL_ROOT=/path/to/mano
 export EPISODE_ROOT=/path/to/reports/episodes
-export PHYS_RUN_ROOT=/path/to/runs/physicalization_v1
-export PHYS_REPORT_ROOT=/path/to/reports/physicalization_v1
+export PHYS_RUN_ROOT=/path/to/runs/physicalization_v2
+export PHYS_REPORT_ROOT=/path/to/reports/physicalization_v2
 export EPISODE_ID=<frozen-episode-id>
 ```
 
@@ -179,7 +180,21 @@ export EPISODE_ID=<frozen-episode-id>
      --sanity-output "$PHYS_REPORT_ROOT/episode_sanity.json"
    ```
 
-3. Run the unchanged geometric solver with the math-equivalent
+3. Run `RetargetInputQualityV1` before any expensive solver. A rejected input
+   stops this episode; a PASS receipt binds either the original input or the
+   narrowly repaired short gap.
+
+   ```bash
+   conda run -n topo-retarget python scripts/retarget/scan_hocap_retarget_input_quality.py \
+     --episode-index "$EPISODE_ROOT/all_hocap_episodes.json" \
+     --episode-id "$EPISODE_ID" --data-root "$HOCAP_ROOT" \
+     --mano-model-root "$MANO_MODEL_ROOT" \
+     --report "$PHYS_REPORT_ROOT/retarget_input_quality.json" \
+     --per-frame-csv "$PHYS_REPORT_ROOT/retarget_input_quality_per_frame.csv" \
+     --repaired-output "$PHYS_RUN_ROOT/retarget_input_quality_repaired.npz"
+   ```
+
+4. Run the unchanged geometric solver with the math-equivalent
    `fast_exact_v2` execution profile. Do not use `--benchmark-first-frames` or
    `--skip-html` in production.
 
@@ -194,7 +209,7 @@ export EPISODE_ID=<frozen-episode-id>
      --report-root "$PHYS_REPORT_ROOT/geometric"
    ```
 
-4. Open the emitted `continuous_refinement_visualization.html`. To rerender the
+5. Open the emitted `continuous_refinement_visualization.html`. To rerender the
    same receipt-bound artifacts, use the existing viewer:
 
    ```bash
@@ -203,7 +218,7 @@ export EPISODE_ID=<frozen-episode-id>
      --max-object-points 50000 --output <retarget.html>
    ```
 
-5. Build the physical reference from the validated final trajectory and its
+6. Build the physical reference from the validated final trajectory and its
    checkpoint manifest:
 
    ```bash
@@ -217,7 +232,7 @@ export EPISODE_ID=<frozen-episode-id>
      --reference-v2-output <reference_kinematics_v2.npz> --report <reference.json>
    ```
 
-6. Establish host GPU authority in the exact Isaac environment. A sandbox CUDA
+7. Establish host GPU authority in the exact Isaac environment. A sandbox CUDA
    failure is diagnostic and is not evidence that the host GPU is unavailable;
    CPU fallback is forbidden.
 
@@ -229,25 +244,54 @@ export EPISODE_ID=<frozen-episode-id>
      --output <gpu_preflight_receipt.json>
    ```
 
-7. Materialize the source authorities and train exactly L0 (`1,024,000`
-   samples). The PASS output is `source_policy_receipt.v3.json`; standalone
-   Strict-V4 final PPO is forbidden. The current physical backend is the Wuji
-   right-hand runtime, although EpisodeV1 parsing and geometric retargeting
-   support both hands.
+8. Run the zero-residual deterministic source controller first, with the
+   continuous equivalent-angle virtual wrist and real finger limits. L0 is
+   conditional, not automatically required for every episode.
 
    ```bash
-   conda run -n topo-retarget python scripts/rl/isaaclab/run_independent_source_policy.py \
-     --manifest <frozen-episode-manifest.json> \
-     --primary-object-authority <episode_object_authority.json> \
-     --clip-id "$EPISODE_ID" --geometric-receipt <geometric_retarget_receipt.json> \
-     --run-root "$PHYS_RUN_ROOT" --report-root "$PHYS_REPORT_ROOT" \
-     --wuji-mjcf third_party/robot_hands/wuji_hand2_beta1/mjcf/right.xml \
-     --interaction-contact-contract <interaction_contact_contract.json> \
-     --source-policy-profile l0_then_physical_grouped_rse_v1 --num-envs 1024 \
-     --gpu-preflight-receipt <gpu_preflight_receipt.json> --accept-eula
+   conda run --no-capture-output -n toporetarget-isaaclab \
+     python scripts/rl/isaaclab/qualify_zero_residual_source_controller.py \
+     --accept-eula --clip "$EPISODE_ID" --episodes 10 \
+     --output "$PHYS_REPORT_ROOT/source_controller/zero_residual" \
+     --reference <reference_kinematics_v2.npz> --object-usd <object.usda> \
+     --support-proxy <table_proxy.json> --support-asset <support_proxy.usda> \
+     --contact-contract <contact_contract.json> --contact-mask-root <contact_mask_root> \
+     --reference-distance-root <reference_distance_root> \
+     --object-mesh-root <object_mesh_root> \
+     --runtime-geometry-manifest <runtime_collision_geometry_manifest.json> \
+     --frozen-evaluation-gates <frozen_evaluation_gates.json> \
+     --seed-manifest <seed_manifest.json>
    ```
 
-8. Resolve support with the frozen priority
+9. Only if step 8 fails, train the corrected L0 actor for exactly `1,024,000`
+   samples and qualify it with the same Eval10. `--continuous-virtual-wrist-angles`
+   removes representation wrapping as a failure without removing real finger,
+   action, effort, velocity, singularity, collision, or actuator limits.
+
+   ```bash
+   conda run --no-capture-output -n toporetarget-isaaclab \
+     python scripts/rl/isaaclab/train_stage16d_ppo26d.py --accept-eula \
+     --clip "$EPISODE_ID" --reference <reference_kinematics_v2.npz> \
+     --object-usd <object.usda> --output-root "$PHYS_RUN_ROOT/source_controller/corrected_l0" \
+     --num-envs 1024 --iterations 25 --seed <frozen-seed> \
+     --continuous-virtual-wrist-angles
+   conda run --no-capture-output -n toporetarget-isaaclab \
+     python scripts/rl/isaaclab/qualify_zero_residual_source_controller.py \
+     --accept-eula --clip "$EPISODE_ID" --episodes 10 \
+     --checkpoint <corrected_l0_checkpoint.pt> --optimizer-steps 25 \
+     --training-samples 1024000 \
+     --output "$PHYS_REPORT_ROOT/source_controller/corrected_l0" \
+     --reference <reference_kinematics_v2.npz> --object-usd <object.usda> \
+     --support-proxy <table_proxy.json> --support-asset <support_proxy.usda> \
+     --contact-contract <contact_contract.json> --contact-mask-root <contact_mask_root> \
+     --reference-distance-root <reference_distance_root> \
+     --object-mesh-root <object_mesh_root> \
+     --runtime-geometry-manifest <runtime_collision_geometry_manifest.json> \
+     --frozen-evaluation-gates <frozen_evaluation_gates.json> \
+     --seed-manifest <seed_manifest.json>
+   ```
+
+10. Resolve support with the frozen priority
    `SOURCE_EXPLICIT_SUPPORT -> SOURCE_RECONSTRUCTED_SUPPORT ->
    INFERRED_PLANAR_SUPPORT -> UNRESOLVED`. If source table parameters exist,
    restore them; never infer a second table. Source/reconstructed support keeps
@@ -263,7 +307,7 @@ export EPISODE_ID=<frozen-episode-id>
      --gpu-preflight-receipt <gpu_preflight_receipt.json> --accept-eula
    ```
 
-9. Run the immutable full-gravity Eval10 before any physical update:
+11. Run the immutable full-gravity Eval10 before any physical update:
 
    ```bash
    conda run -n topo-retarget python scripts/evaluation/run_independent_frozen_physical_evaluation.py \
@@ -275,50 +319,53 @@ export EPISODE_ID=<frozen-episode-id>
      --run-root "$PHYS_RUN_ROOT" --report-root "$PHYS_REPORT_ROOT" --accept-eula
    ```
 
-10. Decide from PF V2: a 10/10 Eval10 PASS triggers Confirm20 and acceptance
-    with zero PPO updates. A PF V2 failure permits physical PPO; no other result
-    authorizes training.
-
-11. If authorized, use `grouped_multiplicative_v1`, RSE, uniform sampling over
-    the runtime reference's valid index domain, and at most 15 new updates.
-    `15` is an upper bound; Confirm20 acceptance stops immediately.
-
-    ```bash
-    conda run --no-capture-output -n toporetarget-isaaclab \
-      python scripts/rl/isaaclab/run_physical_refinement.py train \
-      --clip "$EPISODE_ID" --num-envs 1024 --max-new-updates 15 \
-      --report-root "$PHYS_REPORT_ROOT/ppo" --run-root "$PHYS_RUN_ROOT/ppo" \
-      --source-training-result <l0_training.json> --reference <reference_v2.npz> \
-      --object-usd <object.usda> --support-proxy <table_proxy.json> \
-      --support-asset <support_proxy.usda> --contact-contract <contact_contract.json> \
-      --contact-mask-root <contact_mask_root> \
-      --reference-distance-root <reference_distance_root> \
-      --object-mesh-root <object_mesh_root> \
-      --runtime-geometry-manifest <runtime_collision_geometry_manifest.json> \
-      --frozen-evaluation-gates <frozen_evaluation_gates.json> \
-      --seed-manifest <seed_manifest.json> \
-      --gpu-preflight-receipt <gpu_preflight_receipt.json> --accept-eula
-    ```
-
-12. Qualification reports PF V2 and the separate DF pose, linear, and
-    pose-derived angular authorities. Do not relabel a PF failure as DF success.
+12. Decide from PF V2: a PASS accepts the frozen policy with zero PPO updates;
+    a failure alone permits physical PPO. When authorized, run the three
+    fail-closed modes in order. V2's frozen P5 fallback is at most 15 updates
+    (`614,400` samples); this is explicitly
+    `LENGTH_GENERALIZATION_NOT_ESTABLISHED`. RSI is
+    `0.5*U(T_valid)+0.5*U(EpisodeV1 CONTACT through RELEASE)`, so its uniform
+    component remains. Confirm20 acceptance stops early.
 
     ```bash
-    conda run --no-capture-output -n toporetarget-isaaclab \
-      python scripts/evaluation/qualify_physical_hoi.py --accept-eula \
-      --clip "$EPISODE_ID" --checkpoint <checkpoint.pt> --output <qualification_dir> \
-      --episodes 10 --update <update> --samples <samples> \
-      --reference <reference_v2.npz> --object-usd <object.usda> \
-      --support-proxy <table_proxy.json> --support-asset <support_proxy.usda> \
-      --contact-contract <contact_contract.json> --contact-mask-root <contact_mask_root> \
-      --reference-distance-root <reference_distance_root> \
-      --object-mesh-root <object_mesh_root> \
-      --runtime-geometry-manifest <runtime_collision_geometry_manifest.json> \
-      --frozen-evaluation-gates <frozen_evaluation_gates.json> \
+    PPO_ARGS=(
+      --clip "$EPISODE_ID" --num-envs 1024 --max-new-updates 15 --accept-eula
+      --report-root "$PHYS_REPORT_ROOT/ppo" --run-root "$PHYS_RUN_ROOT/ppo"
+      --source-training-result <l0_training.json> --reference <reference_v2.npz>
+      --object-usd <object.usda> --support-proxy <table_proxy.json>
+      --support-asset <support_proxy.usda> --contact-contract <contact_contract.json>
+      --contact-mask-root <contact_mask_root> --reference-distance-root <reference_distance_root>
+      --object-mesh-root <object_mesh_root>
+      --runtime-geometry-manifest <runtime_collision_geometry_manifest.json>
+      --frozen-evaluation-gates <frozen_evaluation_gates.json>
       --seed-manifest <seed_manifest.json>
+      --hardening-v2-runtime-events <hardening_v2_runtime_events.json>
+      --continuous-virtual-wrist-angles
+      --gpu-preflight-receipt <gpu_preflight_receipt.json>
+    )
+    conda run --no-capture-output -n toporetarget-isaaclab \
+      python scripts/rl/isaaclab/run_physical_refinement.py evaluate-first "${PPO_ARGS[@]}"
+    conda run --no-capture-output -n toporetarget-isaaclab \
+      python scripts/rl/isaaclab/run_physical_refinement.py runtime-sanity "${PPO_ARGS[@]}"
+    conda run --no-capture-output -n toporetarget-isaaclab \
+      python scripts/rl/isaaclab/run_physical_refinement.py train "${PPO_ARGS[@]}"
     ```
 
-13. Replay the immutable trace. The same entrypoint supports the full
+13. Apply `PhysicalFunctionalityFullCycleV1` to the immutable traces. PF V2
+    remains the pick/lift authority; FullCycle V1 separately measures pick,
+    transport, place, release, and retreat. If destination-region or
+    destination-support signals were not recorded, those phases are
+    `NOT_IDENTIFIABLE`; source-table contact is never substituted.
+
+    ```bash
+    PYTHONPATH=src:. conda run -n topo-retarget \
+      python scripts/evaluation/qualify_physical_functionality_full_cycle.py \
+      --trace-root <qualification_dir/traces> \
+      --runtime-events <hardening_v2_runtime_events.json> \
+      --output <qualification_dir/full_cycle> --geometry-safe
+    ```
+
+14. Replay the immutable trace. The same entrypoint supports the full
     trajectory, a window, raw MANO/object overlays, reference toggling, and the
     deterministic low-poly raw object.
 
@@ -333,8 +380,9 @@ export EPISODE_ID=<frozen-episode-id>
       --mocap-ghost --mocap-object-low-poly --loop
     ```
 
-PF V2 is the physical-functionality authority; interaction timing remains a
-separate diagnostic. Replay never retrains PPO or creates scientific acceptance.
+PF V2 measures pick/lift; PF FullCycle V1 measures the complete manipulation.
+DF pose, linear, and angular results remain separate, and interaction timing is
+diagnostic. Replay never retrains PPO or creates scientific acceptance.
 
 <details>
 <summary>Historical two-clip development notes (not current authority)</summary>
