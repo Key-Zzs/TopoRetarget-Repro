@@ -1829,9 +1829,7 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
                 int(start), int(end) + 1, (len(env_ids),), device=self.device
             )
             choose_uniform = torch.rand(len(env_ids), device=self.device) < alpha
-            self._reference_index[env_ids] = torch.where(
-                choose_uniform, uniform, interaction
-            )
+            self._reference_index[env_ids] = torch.where(choose_uniform, uniform, interaction)
         elif self.cfg.reset_reference_index == "curriculum":
             indices = getattr(self.cfg, "curriculum_reference_indices", None)
             probabilities = getattr(self.cfg, "curriculum_reference_probabilities", None)

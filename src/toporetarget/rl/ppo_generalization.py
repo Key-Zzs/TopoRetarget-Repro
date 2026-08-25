@@ -13,6 +13,13 @@ from itertools import pairwise
 from pathlib import Path
 from typing import Final
 
+from toporetarget.rl.reference_tracking.grouped_multiplicative_reward import (
+    GroupedMultiplicativeRewardV1,
+)
+from toporetarget.rl.reference_tracking.reference_scoped_exploration import (
+    ReferenceScopedExplorationV1,
+)
+
 PHASES: Final[tuple[str, ...]] = (
     "PRE/IDLE",
     "APPROACH",
@@ -227,8 +234,8 @@ class DimensionlessObjectScaleV1:
         }
 
 
-@dataclass(frozen=True)
-class DimensionlessScaledGroupedRewardV1:
+@dataclass(frozen=True, kw_only=True)
+class DimensionlessScaledGroupedRewardV1(GroupedMultiplicativeRewardV1):
     """Grouped Multiplicative Reward V1 with P3's automatic object scale."""
 
     identifier: str
@@ -279,8 +286,8 @@ class DimensionlessScaledGroupedRewardV1:
         return asdict(self)
 
 
-@dataclass(frozen=True)
-class DimensionlessScaledReferenceScopedExplorationV1:
+@dataclass(frozen=True, kw_only=True)
+class DimensionlessScaledReferenceScopedExplorationV1(ReferenceScopedExplorationV1):
     """RSE V1 with only P3-approved object-relative metric scales changed."""
 
     identifier: str

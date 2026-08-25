@@ -80,6 +80,12 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             | TopoRetargetReferenceTrackingReward26DV3
             | TopoRetargetReferenceTrackingReward26DV4
         )
+        self._grouped_reward_contract: (
+            GroupedMultiplicativeRewardV1 | DimensionlessScaledGroupedRewardV1
+        )
+        self._rse_contract: (
+            ReferenceScopedExplorationV1 | DimensionlessScaledReferenceScopedExplorationV1
+        )
         self._reference_contact_mask_by_clip: torch.Tensor | None = None
         self._fingertip_force_sensor_indices: torch.Tensor | None = None
         self._ppo26d_trace_capture_exact_pair_force = False
@@ -96,6 +102,13 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             )
             if any(value is None for value in required_scale):
                 raise RuntimeError("HARDENING_V2_OBJECT_SCALE_CONTRACT_INCOMPLETE")
+            assert cfg.ppo26d_object_bbox_diagonal_m is not None
+            assert cfg.ppo26d_scaled_proximity_tolerance_m is not None
+            assert cfg.ppo26d_scaled_distance_scope_m is not None
+            assert cfg.ppo26d_scaled_object_tracking_sigma_m is not None
+            assert cfg.ppo26d_scaled_object_velocity_sigma_mps is not None
+            assert cfg.ppo26d_scaled_object_position_base_m is not None
+            assert cfg.ppo26d_scaled_object_axis_base_m is not None
             object_diagonal = float(cfg.ppo26d_object_bbox_diagonal_m)
             proximity = float(cfg.ppo26d_scaled_proximity_tolerance_m)
             distance_scope = float(cfg.ppo26d_scaled_distance_scope_m)
@@ -157,11 +170,33 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         else:
             raise ValueError(f"unknown PPO26D reward contract: {cfg.ppo26d_reward_contract}")
         if cfg.ppo26d_hardening_v2_enabled:
-            self._reward_contract = replace(
-                self._reward_contract,
-                object_sigma_m=float(cfg.ppo26d_scaled_object_tracking_sigma_m),
-                object_velocity_sigma_mps=float(cfg.ppo26d_scaled_object_velocity_sigma_mps),
-            )
+            assert cfg.ppo26d_scaled_object_tracking_sigma_m is not None
+            assert cfg.ppo26d_scaled_object_velocity_sigma_mps is not None
+            object_sigma_m = float(cfg.ppo26d_scaled_object_tracking_sigma_m)
+            object_velocity_sigma_mps = float(cfg.ppo26d_scaled_object_velocity_sigma_mps)
+            if isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV4):
+                self._reward_contract = replace(
+                    self._reward_contract,
+                    object_sigma_m=object_sigma_m,
+                    object_velocity_sigma_mps=object_velocity_sigma_mps,
+                )
+            elif isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV3):
+                self._reward_contract = replace(
+                    self._reward_contract,
+                    object_sigma_m=object_sigma_m,
+                    object_velocity_sigma_mps=object_velocity_sigma_mps,
+                )
+            elif isinstance(self._reward_contract, TopoRetargetReferenceTrackingReward26DV2):
+                self._reward_contract = replace(
+                    self._reward_contract,
+                    object_sigma_m=object_sigma_m,
+                    object_velocity_sigma_mps=object_velocity_sigma_mps,
+                )
+            else:
+                self._reward_contract = replace(
+                    self._reward_contract,
+                    object_sigma_m=object_sigma_m,
+                )
         self._rsi_start_counts: torch.Tensor | None = None
         self._ppo26d_safety_counts: dict[str, int] = {}
         self._ppo26d_object_write_baseline: torch.Tensor | None = None
