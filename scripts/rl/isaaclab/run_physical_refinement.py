@@ -79,7 +79,20 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--runtime-geometry-manifest", type=Path)
     parser.add_argument("--frozen-evaluation-gates", type=Path)
     parser.add_argument("--seed-manifest", type=Path)
+    parser.add_argument(
+        "--hardening-v2-runtime-events",
+        type=Path,
+        help="Frozen EpisodeV1-to-runtime event receipt enabling the P3 V2 branch.",
+    )
     parser.add_argument("--max-new-updates", type=int)
+    parser.add_argument(
+        "--continuous-virtual-wrist-angles",
+        action="store_true",
+        help=(
+            "Carry the production continuous equivalent-angle virtual-wrist authority into "
+            "frozen evaluation and physical PPO while retaining real finger limits."
+        ),
+    )
     parser.add_argument("--gpu-preflight-receipt", type=Path, required=True)
     return parser
 
@@ -108,6 +121,11 @@ def _independent_inputs(args: argparse.Namespace) -> dict[str, Path] | None:
     missing_paths = sorted(str(path) for path in resolved.values() if not path.exists())
     if missing_paths:
         raise FileNotFoundError(f"INDEPENDENT_PHYSICAL_REFINEMENT_INPUT_MISSING:{missing_paths}")
+    if args.hardening_v2_runtime_events is not None:
+        events_path = args.hardening_v2_runtime_events.resolve()
+        if not events_path.is_file():
+            raise FileNotFoundError(f"HARDENING_V2_RUNTIME_EVENTS_MISSING:{events_path}")
+        resolved["hardening_v2_runtime_events"] = events_path
     return resolved
 
 
@@ -400,8 +418,39 @@ def _source(clip: str, *, independent: dict[str, Path] | None = None) -> dict[st
     }
 
 
-def _make_env(clip: str, *, independent: dict[str, Path] | None = None) -> Any:
+def _make_env(
+    clip: str,
+    *,
+    independent: dict[str, Path] | None = None,
+    continuous_virtual_wrist_angles: bool = False,
+) -> Any:
     from scripts.rl.isaaclab.smoke_stage16_full_trajectory_ppo import _make_table_env
+    from toporetarget.rl.ppo_generalization import EpisodeV1RuntimeEvents
+
+    runtime_events = None
+    hardening_v2 = independent is not None and "hardening_v2_runtime_events" in independent
+    if hardening_v2:
+        assert independent is not None
+        payload = json.loads(independent["hardening_v2_runtime_events"].read_text(encoding="utf-8"))
+        if (
+            payload.get("schema_version") != "HardeningV2RuntimeEventsV1"
+            or payload.get("clip_id") != clip
+        ):
+            raise ValueError("HARDENING_V2_RUNTIME_EVENTS_RECEIPT_INVALID")
+        runtime_events = EpisodeV1RuntimeEvents(
+            **{
+                name: int(payload[name])
+                for name in (
+                    "reference_length",
+                    "approach",
+                    "contact",
+                    "pickup",
+                    "place",
+                    "release",
+                    "retreat",
+                )
+            }
+        )
 
     return _make_table_env(
         clip=clip,
@@ -422,22 +471,33 @@ def _make_env(clip: str, *, independent: dict[str, Path] | None = None) -> Any:
             None if independent is None else independent["reference_distance_root"]
         ),
         object_mesh_root=None if independent is None else independent["object_mesh_root"],
+        continuous_virtual_wrist_angles=continuous_virtual_wrist_angles,
+        hardening_v2_generalization=hardening_v2,
+        hardening_v2_runtime_events=runtime_events,
     )
 
 
-def _runtime_contract(env: Any, *, clip: str) -> dict[str, object]:
+def _runtime_contract(
+    env: Any, *, clip: str, continuous_virtual_wrist_angles: bool = False
+) -> dict[str, object]:
     report = env.contract_report()
     physics = report["gravity_friction_curriculum"]
     ppo = report["ppo26d"]
     wrist = report["finite_virtual_6d_wrist_actuator"]
     hand_gravity_off = bool(env.cfg.robot.spawn.rigid_props.disable_gravity)
+    reset_mode = ppo.get("rse", {}).get("reset_reference_index")
+    expected_mid_trajectory_rsi = (
+        "uniform_plus_episodev1_contact_through_release_v1"
+        if reset_mode == "uniform_event_balanced_v1"
+        else "uniform_runtime_reference_valid_index_domain"
+    )
     if (
         physics.get("stage") != "C4"
         or physics.get("gravity_scale") != 1.0
         or physics.get("friction_scale") != 1.0
         or physics.get("support") != "finite_inferred_table_proxy_v1"
         or physics.get("table_actor_active") is not True
-        or physics.get("mid_trajectory_rsi") != "uniform_runtime_reference_valid_index_domain"
+        or physics.get("mid_trajectory_rsi") != expected_mid_trajectory_rsi
         or ppo.get("fixed_clip") != clip
         or ppo.get("reward", {}).get("identifier") != "TopoRetargetReferenceTrackingReward26DV4"
         or ppo.get("reward_aggregation", {}).get("mode") != "grouped_multiplicative_v1"
@@ -445,6 +505,7 @@ def _runtime_contract(env: Any, *, clip: str) -> dict[str, object]:
         or ppo.get("rse", {}).get("uniform_rsi_preserved") is not True
         or wrist.get("identifier") != "finite_virtual_6d_wrist_actuator_v1"
         or wrist.get("authority_enabled") is not True
+        or wrist.get("continuous_angle_branch") is not continuous_virtual_wrist_angles
         or not hand_gravity_off
     ):
         raise RuntimeError("PF_V2_SYMMETRIC_RUNTIME_CONTRACT_DRIFT")
@@ -470,6 +531,7 @@ def _runtime_contract(env: Any, *, clip: str) -> dict[str, object]:
         "controller": {
             "identifier": wrist["identifier"],
             "authority_enabled": wrist["authority_enabled"],
+            "continuous_angle_branch": wrist["continuous_angle_branch"],
         },
     }
     return {"environment": report, "static": static, "static_sha256": _stable_hash(static)}
@@ -537,6 +599,7 @@ def _run_evaluation(
     stage_samples: int,
     episodes: int,
     independent: dict[str, Path] | None = None,
+    continuous_virtual_wrist_angles: bool = False,
 ) -> dict[str, object]:
     command = [
         sys.executable,
@@ -570,6 +633,15 @@ def _run_evaluation(
             ("--seed-manifest", "seed_manifest"),
         ):
             command.extend((flag, str(independent[name])))
+        if "hardening_v2_runtime_events" in independent:
+            command.extend(
+                (
+                    "--hardening-v2-runtime-events",
+                    str(independent["hardening_v2_runtime_events"]),
+                )
+            )
+    if continuous_virtual_wrist_angles:
+        command.append("--continuous-virtual-wrist-angles")
     environment = dict(os.environ)
     environment["OMNI_KIT_ACCEPT_EULA"] = "YES"
     completed = subprocess.run(
@@ -596,7 +668,10 @@ def _requires_refinement(qualification: dict[str, object]) -> bool:
 
 
 def _evaluate_first(
-    source: dict[str, object], *, independent: dict[str, Path] | None = None
+    source: dict[str, object],
+    *,
+    independent: dict[str, Path] | None = None,
+    continuous_virtual_wrist_angles: bool = False,
 ) -> dict[str, object]:
     """Run Eval10 and, only for a candidate pass, Confirm20 before PPO starts."""
 
@@ -615,6 +690,7 @@ def _evaluate_first(
         stage_samples=stage_samples,
         episodes=10,
         independent=independent,
+        continuous_virtual_wrist_angles=continuous_virtual_wrist_angles,
     )
     confirm20: dict[str, object] | None = None
     if int(eval10["counts"]["PF_V2"]) == 10:
@@ -626,6 +702,7 @@ def _evaluate_first(
             stage_samples=stage_samples,
             episodes=20,
             independent=independent,
+            continuous_virtual_wrist_angles=continuous_virtual_wrist_angles,
         )
     decision = {
         "schema_version": "PhysicalRefinementEvaluateFirstV1",
@@ -797,6 +874,7 @@ def _train(
     source: dict[str, object],
     runtime: dict[str, object],
     independent: dict[str, Path] | None = None,
+    continuous_virtual_wrist_angles: bool = False,
 ) -> dict[str, object]:
     clip = str(source["clip"])
     run_lineage = RUN_ROOT / clip
@@ -861,6 +939,7 @@ def _train(
             stage_samples=stage_samples,
             episodes=10,
             independent=independent,
+            continuous_virtual_wrist_angles=continuous_virtual_wrist_angles,
         )
         row = _progress_row(
             update=update,
@@ -925,6 +1004,7 @@ def _train(
                 stage_samples=stage_samples,
                 episodes=20,
                 independent=independent,
+                continuous_virtual_wrist_angles=continuous_virtual_wrist_angles,
             )
             receipt["confirm20"] = confirm
             _write_json(report_update / "receipt.json", receipt)
@@ -980,12 +1060,18 @@ def main() -> int:
     REPORT_ROOT.mkdir(parents=True, exist_ok=True)
     RUN_ROOT.mkdir(parents=True, exist_ok=True)
     if args.mode == "evaluate-first":
-        result = _evaluate_first(source, independent=independent)
+        result = _evaluate_first(
+            source,
+            independent=independent,
+            continuous_virtual_wrist_angles=args.continuous_virtual_wrist_angles,
+        )
         print(json.dumps(result, sort_keys=True))
         return 0
     if args.mode == "train":
         decision = _load_evaluate_first(source, independent=independent) or _evaluate_first(
-            source, independent=independent
+            source,
+            independent=independent,
+            continuous_virtual_wrist_angles=args.continuous_virtual_wrist_angles,
         )
         if decision["ppo_required"] is False:
             result = {
@@ -1005,9 +1091,17 @@ def main() -> int:
     app = AppLauncher(headless=True).app
     env = None
     try:
-        env = _make_env(args.clip, independent=independent)
+        env = _make_env(
+            args.clip,
+            independent=independent,
+            continuous_virtual_wrist_angles=args.continuous_virtual_wrist_angles,
+        )
         env.reset(seed=20260822)
-        runtime = _runtime_contract(env, clip=args.clip)
+        runtime = _runtime_contract(
+            env,
+            clip=args.clip,
+            continuous_virtual_wrist_angles=args.continuous_virtual_wrist_angles,
+        )
         trainer, initialization = _restore_source(env, source)
         static_contract = {
             "clip": args.clip,
@@ -1017,6 +1111,8 @@ def main() -> int:
             "ppo_hyperparameters": asdict(trainer.training_contract),
             "ppo_hyperparameters_sha256": _stable_hash(asdict(trainer.training_contract)),
             "reward_rse_mode": "grouped_multiplicative_v1_with_rse_v1",
+            "joint_position_limits_enforced": True,
+            "continuous_virtual_wrist_angles": args.continuous_virtual_wrist_angles,
             "max_new_updates": MAX_NEW_UPDATES,
             "samples_per_update": SAMPLES_PER_UPDATE,
             "gpu_preflight_receipt": {
@@ -1050,6 +1146,7 @@ def main() -> int:
                 source=source,
                 runtime=runtime,
                 independent=independent,
+                continuous_virtual_wrist_angles=args.continuous_virtual_wrist_angles,
             )
         print(json.dumps(result, sort_keys=True))
         return 0

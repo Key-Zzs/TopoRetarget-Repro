@@ -3,15 +3,43 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import torch
 
 from scripts.rl.isaaclab.run_physical_refinement import (
     _requires_refinement,
+    _run_evaluation,
     _source,
     assert_symmetric_static_contracts,
 )
+
+
+def test_evaluation_binds_continuous_virtual_wrist_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "eval10"
+
+    def fake_run(command: list[str], **_: object) -> SimpleNamespace:
+        assert "--continuous-virtual-wrist-angles" in command
+        assert "--disable-l0-joint-position-limits" not in command
+        output.mkdir()
+        (output / "summary.json").write_text('{"accepted": false}', encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("scripts.rl.isaaclab.run_physical_refinement.subprocess.run", fake_run)
+    result = _run_evaluation(
+        clip="hocap_hardening",
+        checkpoint=tmp_path / "checkpoint.pt",
+        output=output,
+        update=25,
+        stage_samples=1_024_000,
+        episodes=10,
+        continuous_virtual_wrist_angles=True,
+    )
+
+    assert result["accepted"] is False
 
 
 def _contract() -> dict[str, object]:
