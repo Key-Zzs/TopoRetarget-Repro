@@ -1,0 +1,29 @@
+schema_version: SourceControllerAutoContractV1
+mode: AUTO
+angle_authority: continuous_equivalent_branch_v1
+zero_residual_eval:
+  episodes: 10
+  optimizer_steps: 0
+  action: zero_26d_reference_residual
+  qualification:
+    minimum_pass_fraction: 0.8
+    wrist_command_to_actual_position_mean_m_max: 0.05
+    wrist_command_to_actual_rotation_mean_deg_max: 30.0
+    finger_command_to_actual_mean_rad_max: 0.35
+    minimum_contact_fraction: 0.01
+    reference_end_required: true
+fallback:
+  mode: CORRECTED_L0
+  samples: 1024000
+  wrapped_principal_angle_gate: forbidden
+safety_invariants:
+  real_wuji_finger_joint_limits: true
+  actuator_effort_limits: true
+  actuator_velocity_limits: true
+  action_bounds: true
+  controller_stability: true
+  singularity_detection: true
+  collision_safety: true
+  finite_state_checks: true
+diagnostic_only_profiles:
+  - l0_unbounded_joint_targets_then_physical_grouped_rse_v1

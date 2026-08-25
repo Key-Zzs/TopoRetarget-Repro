@@ -25,11 +25,35 @@ EXPLICIT_VIRTUAL_WRIST_TRANSLATION_JOINTS = EXPLICIT_VIRTUAL_WRIST_JOINT_ORDER[:
 EXPLICIT_VIRTUAL_WRIST_ROTATION_JOINTS = EXPLICIT_VIRTUAL_WRIST_JOINT_ORDER[3:]
 
 
-def _nearest_equivalent_angle(angle: torch.Tensor, previous: torch.Tensor) -> torch.Tensor:
-    """Choose the 2-pi-equivalent joint angle nearest the previous target."""
+def nearest_equivalent_angle(angle: torch.Tensor, previous: torch.Tensor) -> torch.Tensor:
+    """Choose the 2-pi-equivalent angle nearest the previous physical target.
 
+    The returned value can lie outside the principal ``[-pi, pi]`` interval.
+    That is a representation choice, not a request to remove any physical
+    joint, actuator, velocity, action, singularity, or collision limit.
+    """
+
+    if angle.shape != previous.shape:
+        raise ValueError("continuous angle branch requires matching tensor shapes")
+    if not bool(torch.isfinite(angle).all() and torch.isfinite(previous).all()):
+        raise ValueError("continuous angle branch requires finite inputs")
     delta = torch.remainder(angle - previous + math.pi, 2.0 * math.pi) - math.pi
     return previous + delta
+
+
+def continuous_angle_branch(principal_angles: torch.Tensor) -> torch.Tensor:
+    """Unwrap a finite ``[..., time, dof]`` principal-angle trajectory."""
+
+    if principal_angles.ndim < 2:
+        raise ValueError("continuous angle trajectory must have [..., time, dof] shape")
+    if principal_angles.shape[-2] < 1:
+        raise ValueError("continuous angle trajectory cannot be empty")
+    if not bool(torch.isfinite(principal_angles).all()):
+        raise ValueError("continuous angle trajectory requires finite inputs")
+    values = [principal_angles[..., 0, :]]
+    for index in range(1, principal_angles.shape[-2]):
+        values.append(nearest_equivalent_angle(principal_angles[..., index, :], values[-1]))
+    return torch.stack(values, dim=-2)
 
 
 def quaternion_to_serial_xyz_wxyz(
@@ -54,7 +78,7 @@ def quaternion_to_serial_xyz_wxyz(
     z = torch.atan2(-rotation[..., 0, 1], rotation[..., 0, 0])
     xyz = torch.stack((x, y, z), dim=-1)
     if previous_xyz is not None:
-        xyz = _nearest_equivalent_angle(xyz, previous_xyz)
+        xyz = nearest_equivalent_angle(xyz, previous_xyz)
     return xyz
 
 
@@ -99,7 +123,9 @@ __all__ = [
     "EXPLICIT_VIRTUAL_WRIST_JOINT_ORDER",
     "EXPLICIT_VIRTUAL_WRIST_ROTATION_JOINTS",
     "EXPLICIT_VIRTUAL_WRIST_TRANSLATION_JOINTS",
+    "continuous_angle_branch",
     "explicit_3p3r_rotation_matrix",
+    "nearest_equivalent_angle",
     "quaternion_to_serial_xyz_wxyz",
     "se3_target_to_explicit_3p3r",
     "serial_xyz_singularity_margin_deg",
