@@ -29,6 +29,11 @@ _EXPLICIT_VIRTUAL_WRIST_USD = (
     / "wuji_hand2_beta1_explicit_virtual_wrist"
     / "wujihand2_explicit_virtual_wrist.usda"
 )
+_CONTINUOUS_ANGLE_EXPLICIT_VIRTUAL_WRIST_USD = (
+    _ASSET_ROOT
+    / "wuji_hand2_beta1_explicit_virtual_wrist_continuous_angles"
+    / "wujihand2_explicit_virtual_wrist.usda"
+)
 
 _JOINT_ORDER = (
     "r_thumb_cmc_flex",
@@ -92,6 +97,7 @@ class IsaacWorldWristFingerDirectRLEnvCfg(DirectRLEnvCfg):
     stage16_external_guidance = False
     stage16_support_mode = "none"
     stage16_frame_zero_full_gravity_authorized = False
+    continuous_virtual_wrist_angles = False
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
         num_envs=1,
         env_spacing=0.75,
@@ -257,14 +263,17 @@ def configure_explicit_virtual_wrist(
     if profile is None:
         valid = ", ".join(candidate.identifier for candidate in D6_WRIST_PROFILES)
         raise ValueError(f"unknown explicit wrist profile {profile_identifier!r}; expected {valid}")
-    if not _EXPLICIT_VIRTUAL_WRIST_USD.is_file():
-        raise FileNotFoundError(
-            f"C3_EXPLICIT_VIRTUAL_WRIST_ASSET_MISSING: {_EXPLICIT_VIRTUAL_WRIST_USD}"
-        )
+    wrist_asset = (
+        _CONTINUOUS_ANGLE_EXPLICIT_VIRTUAL_WRIST_USD
+        if cfg.continuous_virtual_wrist_angles
+        else _EXPLICIT_VIRTUAL_WRIST_USD
+    )
+    if not wrist_asset.is_file():
+        raise FileNotFoundError(f"C3_EXPLICIT_VIRTUAL_WRIST_ASSET_MISSING: {wrist_asset}")
     cfg.wrist_controller_mode = "finite_virtual_6d_wrist_actuator_v1"
     cfg.finite_virtual_wrist_profile = profile.identifier
     cfg.finite_virtual_wrist_authority_enabled = authority_enabled
-    cfg.robot.spawn.usd_path = str(_EXPLICIT_VIRTUAL_WRIST_USD)
+    cfg.robot.spawn.usd_path = str(wrist_asset)
     # The composed USD already carries per-body disableGravity opinions, but
     # PhysX articulation import does not reliably honor those opinions as an
     # effective reduced-coordinate gravity exclusion.  Apply the equivalent

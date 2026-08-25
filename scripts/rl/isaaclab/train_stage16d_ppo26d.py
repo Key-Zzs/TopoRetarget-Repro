@@ -33,6 +33,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--iterations", type=int)
     parser.add_argument("--seed", type=int)
     parser.add_argument("--no-critical-dr", action="store_false", dest="critical_dr")
+    parser.add_argument(
+        "--continuous-virtual-wrist-angles",
+        action="store_true",
+        help=(
+            "Use the production continuous virtual-wrist representation while retaining "
+            "real finger, actuator, velocity, action, singularity, and collision limits."
+        ),
+    )
     parser.set_defaults(critical_dr=True)
     return parser.parse_args()
 
@@ -205,6 +213,7 @@ def main() -> int:
         )
 
         cfg = ppo26d_cfg.IsaacPPO26DReferenceTrackingEnvCfg()
+        cfg.continuous_virtual_wrist_angles = bool(args.continuous_virtual_wrist_angles)
         ppo26d_cfg.configure_stage16d_ppo26d(
             cfg,
             num_envs=num_envs,
@@ -246,6 +255,7 @@ def main() -> int:
                 "target_l0_samples": L0_SAMPLES,
                 "seed": args.seed,
                 "critical_dr": args.critical_dr,
+                "continuous_virtual_wrist_angles": args.continuous_virtual_wrist_angles,
                 "contract": contract.as_dict(),
                 "environment": env.contract_report(),
             },

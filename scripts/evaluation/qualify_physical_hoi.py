@@ -72,6 +72,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--runtime-geometry-manifest", type=Path)
     parser.add_argument("--frozen-evaluation-gates", type=Path)
     parser.add_argument("--seed-manifest", type=Path)
+    parser.add_argument("--hardening-v2-runtime-events", type=Path)
+    parser.add_argument(
+        "--continuous-virtual-wrist-angles",
+        action="store_true",
+        help=(
+            "Use the production continuous virtual-wrist angle representation while "
+            "retaining real finger joint-position limits."
+        ),
+    )
     return parser
 
 
@@ -331,6 +340,17 @@ def main() -> int:
     ):
         raise ValueError("INDEPENDENT_PHYSICAL_QUALIFICATION_INPUT_SET_INCOMPLETE")
     independent = args.reference is not None
+    if args.hardening_v2_runtime_events is not None:
+        if not independent or not args.hardening_v2_runtime_events.resolve().is_file():
+            raise ValueError("HARDENING_V2_EVALUATION_EVENTS_AUTHORITY_INVALID")
+        events_payload = json.loads(
+            args.hardening_v2_runtime_events.resolve().read_text(encoding="utf-8")
+        )
+        if (
+            events_payload.get("schema_version") != "HardeningV2RuntimeEventsV1"
+            or events_payload.get("clip_id") != args.clip
+        ):
+            raise ValueError("HARDENING_V2_EVALUATION_EVENTS_RECEIPT_INVALID")
     checkpoint = args.checkpoint.resolve()
     output = args.output.resolve()
     if output.exists():
@@ -380,6 +400,9 @@ def main() -> int:
             contact_mask_root=args.contact_mask_root,
             reference_distance_root=args.reference_distance_root,
             object_mesh_root=args.object_mesh_root,
+            continuous_virtual_wrist_angles=args.continuous_virtual_wrist_angles,
+            hardening_v2_generalization=args.hardening_v2_runtime_events is not None,
+            hardening_v2_runtime_events=None,
         )
         trainer, payload = model_from_checkpoint(
             checkpoint, str(env.device), expected_clip=args.clip
@@ -462,6 +485,8 @@ def main() -> int:
             "checkpoint_schema": payload["schema_version"],
             "evaluation_reset": "FRAME0_DETERMINISTIC_FULL_TRAJECTORY",
             "optimizer_steps": 0,
+            "continuous_virtual_wrist_angles": args.continuous_virtual_wrist_angles,
+            "real_finger_joint_limits_enforced": True,
             "counts": counts,
             "acceptance_required": required,
             "accepted": counts["PHYSICAL_HOI_ACCEPTED"] >= required,

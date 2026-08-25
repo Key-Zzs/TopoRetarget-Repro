@@ -22,7 +22,9 @@ _INTERMEDIATE_LINK_MASS_KG = 1.0e-3
 _INTERMEDIATE_LINK_INERTIA_KGM2 = 1.0e-6
 
 
-def explicit_virtual_wrist_recipe(profile_identifier: str = "nominal") -> dict[str, Any]:
+def explicit_virtual_wrist_recipe(
+    profile_identifier: str = "nominal", *, continuous_virtual_wrist_angles: bool = False
+) -> dict[str, Any]:
     """Return the no-Isaac recipe for the six serial articulation joints."""
 
     profile = next(
@@ -64,8 +66,15 @@ def explicit_virtual_wrist_recipe(profile_identifier: str = "nominal") -> dict[s
                 strict=True,
             )
         },
+        "joint_position_limits_enforced": True,
+        "finger_joint_position_limits_enforced": True,
+        "virtual_wrist_translation_limits_enforced": True,
+        "virtual_wrist_rotation_limits_enforced": not continuous_virtual_wrist_angles,
+        "continuous_virtual_wrist_angles": bool(continuous_virtual_wrist_angles),
         "translation_limits_m": [-_TRANSLATION_LIMIT_M, _TRANSLATION_LIMIT_M],
-        "rotation_limits_deg": [-_ROTATION_LIMIT_DEG, _ROTATION_LIMIT_DEG],
+        "rotation_limits_deg": (
+            None if continuous_virtual_wrist_angles else [-_ROTATION_LIMIT_DEG, _ROTATION_LIMIT_DEG]
+        ),
         "target_conversion": "SE3_target_to_serial_xyz_inverse_kinematics",
         "policy_rotation_residual": "rotation_vector_then_quaternion_not_euler",
         "rotation_singularity": "serial_xyz_pitch_at_plus_or_minus_90_deg",
@@ -117,6 +126,7 @@ def _define_joint(
     body0: Any,
     body1: Any,
     profile: dict[str, Any],
+    continuous_virtual_wrist_angles: bool,
 ) -> Any:
     from pxr import Gf, PhysxSchema, UsdPhysics
 
@@ -140,8 +150,9 @@ def _define_joint(
         effort = profile["translation_effort_limit_n"]
         velocity = profile["translation_velocity_limit_mps"]
     else:
-        joint.CreateLowerLimitAttr(-_ROTATION_LIMIT_DEG)
-        joint.CreateUpperLimitAttr(_ROTATION_LIMIT_DEG)
+        if not continuous_virtual_wrist_angles:
+            joint.CreateLowerLimitAttr(-_ROTATION_LIMIT_DEG)
+            joint.CreateUpperLimitAttr(_ROTATION_LIMIT_DEG)
         drive_name = "angular"
         # USD angular drive gains are stored per degree; Isaac Lab's runtime
         # actuator configuration converts the same SI/radian values again.
@@ -165,12 +176,16 @@ def write_explicit_virtual_wrist_wrapper(
     base_asset: Path,
     output_usda: Path,
     profile_identifier: str = "nominal",
+    continuous_virtual_wrist_angles: bool = False,
 ) -> dict[str, Any]:
     """Compose the frozen hand below six explicit articulation joints."""
 
     from pxr import PhysxSchema, Usd, UsdGeom, UsdPhysics
 
-    recipe = explicit_virtual_wrist_recipe(profile_identifier)
+    recipe = explicit_virtual_wrist_recipe(
+        profile_identifier,
+        continuous_virtual_wrist_angles=continuous_virtual_wrist_angles,
+    )
     if not base_asset.is_file():
         raise FileNotFoundError(f"C3_EXPLICIT_WRIST_BASE_ASSET_MISSING: {base_asset}")
     output_usda.parent.mkdir(parents=True, exist_ok=True)
@@ -231,6 +246,7 @@ def write_explicit_virtual_wrist_wrapper(
                 body0=body0,
                 body1=body1,
                 profile=recipe["profile"],
+                continuous_virtual_wrist_angles=continuous_virtual_wrist_angles,
             )
         )
     stage.GetRootLayer().Save()

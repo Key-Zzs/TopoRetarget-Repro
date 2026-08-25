@@ -88,6 +88,9 @@ def _make_table_env(
     contact_mask_root: Path | None = None,
     reference_distance_root: Path | None = None,
     object_mesh_root: Path | None = None,
+    continuous_virtual_wrist_angles: bool = False,
+    hardening_v2_generalization: bool = False,
+    hardening_v2_runtime_events: Any = None,
 ) -> Any:
     """Construct the production PPO environment with fixed finite supports."""
 
@@ -272,7 +275,13 @@ def _make_table_env(
             physical["support"] = "finite_inferred_table_proxy_v1"
             physical["table_actor_active"] = True
             physical["mid_trajectory_rsi"] = (
-                "uniform_runtime_reference_valid_index_domain" if training_rsi else "disabled"
+                (
+                    "uniform_plus_episodev1_contact_through_release_v1"
+                    if hardening_v2_generalization
+                    else "uniform_runtime_reference_valid_index_domain"
+                )
+                if training_rsi
+                else "disabled"
             )
             physical["table_resting_reset_semantics"] = "TABLE_RESTING_RESET_SEMANTICS_V1"
             physical["support_collision_contract"] = {
@@ -321,6 +330,7 @@ def _make_table_env(
             capture["table_object_contact_valid"][self._ppo26d_trace_length - 1].fill_(True)
 
     cfg = ppo_cfg.IsaacPPO26DReferenceTrackingEnvCfg()
+    cfg.continuous_virtual_wrist_angles = bool(continuous_virtual_wrist_angles)
     ppo_cfg.configure_stage16d_ppo26d(
         cfg, num_envs=num_envs, clip=clip, rsi=training_rsi, critical_dr=False
     )
@@ -373,6 +383,15 @@ def _make_table_env(
             adaptive_termination=rse_enabled,
             reference_distance_root=reference_distance_root or REFERENCE_DISTANCE_ROOT,
             object_mesh_root=object_mesh_root or OBJECT_VISUAL_MESH_ROOT,
+        )
+    if hardening_v2_generalization:
+        if not independent or object_mesh_root is None:
+            raise ValueError("HARDENING_V2_REQUIRES_INDEPENDENT_OBJECT_MESH_AUTHORITY")
+        ppo_cfg.configure_hardening_v2_generalization(
+            cfg,
+            object_mesh_path=object_mesh_root.resolve() / f"{clip}.obj",
+            runtime_events=hardening_v2_runtime_events,
+            training=training_rsi,
         )
     if robot_usd_path is not None:
         resolved_robot_asset = robot_usd_path.resolve()

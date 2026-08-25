@@ -19,8 +19,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=(
-            REPO_ROOT / ".local/generated_assets/isaaclab/wuji_hand2_beta1_explicit_virtual_wrist"
+        default=None,
+    )
+    parser.add_argument(
+        "--continuous-virtual-wrist-angles",
+        action="store_true",
+        help=(
+            "Remove only the abstract virtual wrist revolute representation bounds; "
+            "real finger joint limits and virtual translation limits remain active."
         ),
     )
     parser.add_argument(
@@ -44,7 +50,16 @@ def main() -> int:
             write_explicit_virtual_wrist_wrapper,
         )
 
-        output_dir = args.output_dir.resolve()
+        output_dir = (
+            args.output_dir
+            or REPO_ROOT
+            / ".local/generated_assets/isaaclab"
+            / (
+                "wuji_hand2_beta1_explicit_virtual_wrist_continuous_angles"
+                if args.continuous_virtual_wrist_angles
+                else "wuji_hand2_beta1_explicit_virtual_wrist"
+            )
+        ).resolve()
         base_asset = (
             REPO_ROOT
             / ".local/generated_assets/isaaclab/wuji_hand2_beta1"
@@ -54,6 +69,7 @@ def main() -> int:
             base_asset=base_asset,
             output_usda=output_dir / "wujihand2_explicit_virtual_wrist.usda",
             profile_identifier=args.profile,
+            continuous_virtual_wrist_angles=args.continuous_virtual_wrist_angles,
         )
         (output_dir / "manifest.json").write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"

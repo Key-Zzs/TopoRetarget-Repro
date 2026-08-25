@@ -798,7 +798,7 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
                 f"minimum_deg={float(singularity_margin.min().item())}"
             )
         limits = self._robot.data.joint_pos_limits[0, self._virtual_wrist_joint_ids]
-        if bool(
+        if not self.cfg.continuous_virtual_wrist_angles and bool(
             ((target_joint_position < limits[:, 0]) | (target_joint_position > limits[:, 1])).any()
         ):
             raise RuntimeError("C3_EXPLICIT_WRIST_TARGET_OUTSIDE_AUTHORED_LIMITS")
@@ -892,7 +892,7 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         if bool((singularity_margin <= 5.0).any()):
             raise RuntimeError("C3_EXPLICIT_WRIST_XYZ_SINGULARITY_MARGIN_FAILURE")
         wrist_limits = self._robot.data.joint_pos_limits[0, self._virtual_wrist_joint_ids]
-        if bool(
+        if not self.cfg.continuous_virtual_wrist_angles and bool(
             (
                 (residual_joint_target < wrist_limits[:, 0])
                 | (residual_joint_target > wrist_limits[:, 1])
@@ -980,7 +980,9 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         if bool((singularity_margin <= 5.0).any()):
             raise RuntimeError("C3_EXPLICIT_WRIST_XYZ_SINGULARITY_MARGIN_FAILURE")
         wrist_limits = self._robot.data.joint_pos_limits[0, self._virtual_wrist_joint_ids]
-        if bool(((q_reference < wrist_limits[:, 0]) | (q_reference > wrist_limits[:, 1])).any()):
+        if not self.cfg.continuous_virtual_wrist_angles and bool(
+            ((q_reference < wrist_limits[:, 0]) | (q_reference > wrist_limits[:, 1])).any()
+        ):
             raise RuntimeError("C3_EXPLICIT_WRIST_TARGET_OUTSIDE_AUTHORED_LIMITS")
         mass = generalized_mass_matrix(self._robot)
         wrist_ids = torch.tensor(self._virtual_wrist_joint_ids, device=self.device)
@@ -1098,7 +1100,9 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
         if bool((singularity_margin <= 5.0).any()):
             raise RuntimeError("C3_EXPLICIT_WRIST_XYZ_SINGULARITY_MARGIN_FAILURE")
         wrist_limits = self._robot.data.joint_pos_limits[0, self._virtual_wrist_joint_ids]
-        if bool(((q_reference < wrist_limits[:, 0]) | (q_reference > wrist_limits[:, 1])).any()):
+        if not self.cfg.continuous_virtual_wrist_angles and bool(
+            ((q_reference < wrist_limits[:, 0]) | (q_reference > wrist_limits[:, 1])).any()
+        ):
             raise RuntimeError("C3_EXPLICIT_WRIST_TARGET_OUTSIDE_AUTHORED_LIMITS")
         mass = generalized_mass_matrix(self._robot)
         wrist_ids = torch.tensor(self._virtual_wrist_joint_ids, device=self.device)
@@ -2054,6 +2058,10 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
                         self._explicit_wrist_singularity_margin_deg.min().item()
                     ),
                     "authority_enabled": bool(self.cfg.finite_virtual_wrist_authority_enabled),
+                    "joint_position_limits_enforced": not bool(
+                        self.cfg.continuous_virtual_wrist_angles
+                    ),
+                    "continuous_angle_branch": bool(self.cfg.continuous_virtual_wrist_angles),
                     "external_wrench_fallback": False,
                     "real_arm": False,
                     "state_writes_during_step": 0,
