@@ -49,6 +49,14 @@ def _parser() -> argparse.ArgumentParser:
             "never changes the frozen EpisodeV1 row."
         ),
     )
+    parser.add_argument(
+        "--retarget-input-quality-receipt",
+        type=Path,
+        help=(
+            "RetargetInputQualityV1 PASS receipt. When supplied, its bound repaired "
+            "input is used for canonical materialization."
+        ),
+    )
     return parser
 
 
@@ -109,6 +117,24 @@ def main() -> int:
         if (requested_data_root / "data").is_dir()
         else requested_data_root
     )
+    repaired_input: Path | None = None
+    quality_receipt: dict[str, Any] | None = None
+    if args.retarget_input_quality_receipt is not None:
+        quality_path = args.retarget_input_quality_receipt.resolve()
+        quality_receipt = json.loads(quality_path.read_text(encoding="utf-8"))
+        if (
+            quality_receipt.get("schema_version") != "RetargetInputQualityV1"
+            or quality_receipt.get("status") not in {"PASS", "PASS_WITH_WARNINGS"}
+            or quality_receipt.get("episode_id") != args.episode_id
+            or quality_receipt.get("source_frame_range") != [start, source_episode_end]
+        ):
+            raise ValueError("HOCAP_RETARGET_INPUT_QUALITY_RECEIPT_INVALID")
+        repaired_input = Path(
+            str(quality_receipt.get("artifacts", {}).get("repaired_input", ""))
+        ).resolve()
+        expected_repair_hash = quality_receipt.get("artifacts", {}).get("repaired_input_sha256")
+        if not repaired_input.is_file() or _sha256(repaired_input) != expected_repair_hash:
+            raise ValueError("HOCAP_RETARGET_INPUT_QUALITY_REPAIR_HASH_MISMATCH")
     adapter = HOCapAdapterV1(
         data_root=storage_root,
         mano_model_root=args.mano_model_root.resolve(),
@@ -118,6 +144,7 @@ def main() -> int:
         frame_range=FrameRange(start=start, end=end),
         hand=hand,
         primary_object_id=str(row["target_object"]),
+        retarget_input_repair=repaired_input,
     )
     save_hoi_sequence(sequence, output)
     tree_hashes = sha256_tree(output)
@@ -159,6 +186,17 @@ def main() -> int:
             )
         },
         "raw_mano_provenance": source.get("raw_mano"),
+        "retarget_input_quality": (
+            None
+            if quality_receipt is None
+            else {
+                "receipt": str(args.retarget_input_quality_receipt.resolve()),
+                "receipt_sha256": _sha256(args.retarget_input_quality_receipt.resolve()),
+                "contract_sha256": quality_receipt["contract_sha256"],
+                "wrist_orientation_authority": quality_receipt["wrist_orientation_authority"],
+                "repaired_input_sha256": quality_receipt["artifacts"]["repaired_input_sha256"],
+            }
+        ),
         "object_pose_provenance": source.get("raw_object"),
         "object_mesh_provenance": source.get("object_mesh"),
         "source_support_metadata": row.get("source_support_metadata"),

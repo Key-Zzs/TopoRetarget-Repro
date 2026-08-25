@@ -274,9 +274,15 @@ def solve_sequence(
     side: str,
     lambda_warm: float,
     lambda_smooth: float,
+    source_frame_transforms: np.ndarray | None = None,
 ) -> SequenceSolveResult:
     source_features = extract_bone_features(
-        source_keypoints, frame_profile, bone_profile, side=side, strict=True
+        source_keypoints,
+        frame_profile,
+        bone_profile,
+        side=side,
+        frame_transform=source_frame_transforms,
+        strict=True,
     )
     frame_count = int(source_keypoints.shape[0])
     q_values: list[np.ndarray] = []

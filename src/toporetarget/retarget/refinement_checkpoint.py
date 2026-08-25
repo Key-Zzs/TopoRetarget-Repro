@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
@@ -80,6 +80,27 @@ def _atomic_npz(path: Path, arrays: dict[str, np.ndarray]) -> None:
     except Exception:
         temporary.unlink(missing_ok=True)
         raise
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _append_fsync_jsonl(path: Path, value: dict[str, Any]) -> None:
+    """Append one crash-durable journal event without rewriting history."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str) + "\n"
+    descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o644)
+    try:
+        os.write(descriptor, payload.encode("utf-8"))
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _decode(value: Any) -> Any:
@@ -270,6 +291,7 @@ def _strict_metadata_pass(metadata: dict[str, Any], arrays: dict[str, np.ndarray
 class CheckpointStore:
     root: Path
     manifest: dict[str, Any] | None = None
+    _scan_cache: dict[str, Any] | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.root = Path(self.root).expanduser()
@@ -359,6 +381,8 @@ class CheckpointStore:
         )
         clean.setdefault("artifact_metadata", dict(clean.get("final_artifact_metadata", {})))
         _atomic_json(path / "manifest.json", clean)
+        (path / "append_events.jsonl").touch(exist_ok=True)
+        _fsync_directory(path)
         store = cls(path, clean)
         store.update_progress(status="created")
         return store
@@ -372,7 +396,7 @@ class CheckpointStore:
     ) -> dict[str, Any]:
         assert self.manifest is not None
         manifest = self.manifest
-        scan = self.scan()
+        scan = self.scan(refresh=False)
         progress = {
             "schema_version": CHECKPOINT_SCHEMA_VERSION,
             "run_id": manifest.get("run_id"),
@@ -430,8 +454,82 @@ class CheckpointStore:
         stored = dict(arrays)
         stored["metadata_json"] = np.asarray(json.dumps(metadata, sort_keys=True, default=str))
         _atomic_npz(destination, stored)
-        self.update_progress(status="paused")
+        _fsync_directory(self.frames_dir)
+        _append_fsync_jsonl(
+            self.root / "append_events.jsonl",
+            {
+                "event": "FRAME_APPENDED",
+                "local_frame_index": local,
+                "per_frame_checkpoint_hash": expected,
+                "previous_checkpoint_hash": metadata.get("previous_checkpoint_hash"),
+            },
+        )
+        self._record_saved_frame(local)
+        assert self.manifest is not None
+        interval = int(self.manifest.get("durable_checkpoint_interval_frames", 1))
+        start = int(self.manifest.get("frame_range", [0, 0])[0])
+        if (local - start + 1) % interval == 0:
+            self.commit_durable_checkpoint(status="running")
         return expected
+
+    def _record_saved_frame(self, local: int) -> None:
+        scan = self.scan(refresh=False)
+        found = sorted(set(scan["found_frames"]) | {int(local)})
+        assert self.manifest is not None
+        start, end = [int(value) for value in self.manifest.get("frame_range", [0, 0])]
+        contiguous: list[int] = []
+        for value in range(start, end):
+            if value not in found:
+                break
+            contiguous.append(value)
+        self._scan_cache = {
+            "found_frames": found,
+            "contiguous_frames": contiguous,
+            "orphan_frames": sorted(set(found) - set(contiguous)),
+            "invalid_frames": list(scan["invalid_frames"]),
+            "last_contiguous_frame": contiguous[-1] if contiguous else None,
+            "next_frame": contiguous[-1] + 1 if contiguous else start,
+            "complete": len(contiguous) == end - start,
+        }
+
+    def commit_durable_checkpoint(self, *, status: str) -> dict[str, Any]:
+        """Atomically publish the latest full-chain resume point every K frames."""
+
+        assert self.manifest is not None
+        scan = self.scan(refresh=False)
+        last = scan["last_contiguous_frame"]
+        last_hash: str | None = None
+        if last is not None:
+            metadata, _ = self.load_frame(int(last))
+            last_hash = str(metadata["per_frame_checkpoint_hash"])
+        marker = {
+            "schema_version": "toporetarget.durable_retarget_checkpoint.v1",
+            "status": status,
+            "run_id": self.manifest.get("run_id"),
+            "input_signature": self.manifest.get("input_signature"),
+            "frame_range": self.manifest.get("frame_range"),
+            "durable_checkpoint_interval_frames": int(
+                self.manifest.get("durable_checkpoint_interval_frames", 1)
+            ),
+            "accepted_frame_count": len(scan["contiguous_frames"]),
+            "last_accepted_frame": last,
+            "last_checkpoint_hash": last_hash,
+            "next_frame": scan["next_frame"],
+            "append_only": True,
+            "historical_sequence_rewrite": False,
+        }
+        _atomic_json(self.root / "durable_checkpoint.json", marker)
+        _fsync_directory(self.root)
+        _append_fsync_jsonl(
+            self.root / "append_events.jsonl",
+            {
+                "event": "DURABLE_CHECKPOINT_COMMITTED",
+                "status": status,
+                "last_accepted_frame": last,
+                "last_checkpoint_hash": last_hash,
+            },
+        )
+        return marker
 
     def write_frame(
         self, metadata: dict[str, Any], arrays: dict[str, np.ndarray]
@@ -460,7 +558,9 @@ class CheckpointStore:
         metadata, arrays = self.load_frame(local_index)
         return {"metadata": metadata, "arrays": arrays}
 
-    def scan(self) -> dict[str, Any]:
+    def scan(self, *, refresh: bool = True) -> dict[str, Any]:
+        if self._scan_cache is not None and not refresh:
+            return dict(self._scan_cache)
         assert self.manifest is not None
         manifest = self.manifest
         found: list[int] = []
@@ -483,7 +583,7 @@ class CheckpointStore:
             if local not in found:
                 break
             contiguous.append(local)
-        return {
+        result = {
             "found_frames": sorted(found),
             "contiguous_frames": contiguous,
             "orphan_frames": sorted(set(found) - set(contiguous)),
@@ -492,9 +592,11 @@ class CheckpointStore:
             "next_frame": contiguous[-1] + 1 if contiguous else start,
             "complete": len(contiguous) == len(expected_local),
         }
+        self._scan_cache = result
+        return dict(result)
 
     def validate_chain(self, allow_incomplete: bool = False) -> dict[str, Any]:
-        scan = self.scan()
+        scan = self.scan(refresh=True)
         errors: list[str] = []
         previous: str | None = None
         for local in scan["contiguous_frames"]:

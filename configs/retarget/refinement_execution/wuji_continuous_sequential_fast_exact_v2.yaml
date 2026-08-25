@@ -6,6 +6,9 @@ device: cpu
 dtype: float64
 cache_mode: exact_x_common_forward
 checkpoint_schema: toporetarget.final_retarget_checkpoint.v1
+durable_checkpoint_interval_frames: 10
+intermediate_checkpoint_mode: append_only_frame_payload_plus_fsync_jsonl
+historical_sequence_rewrite: false
 initialization_profile: stage7_seed_v1
 full_audit_mode: outer_round_and_final
 variable_scaling: seed_delta_normalized_v1

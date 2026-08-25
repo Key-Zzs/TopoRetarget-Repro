@@ -162,6 +162,7 @@ class HOCapAdapterV1(Stage12AdapterBase):
         frame_range: FrameRange | None = None,
         hand: str = "right",
         primary_object_id: str | None = None,
+        retarget_input_repair: str | Path | None = None,
         **kwargs: Any,
     ) -> HOISequence:
         del kwargs
@@ -203,7 +204,56 @@ class HOCapAdapterV1(Stage12AdapterBase):
             raise Stage12AdapterError(
                 f"HOCap poses_m is missing fixed {selected_hand} slot {hand_index}: {poses_m.shape}"
             )
-        pose_values = np.asarray(poses_m[hand_index, start:stop], dtype=np.float64)
+        repaired_object_values: np.ndarray | None = None
+        repair_metadata: dict[str, Any] | None = None
+        if retarget_input_repair is None:
+            pose_values = np.asarray(poses_m[hand_index, start:stop], dtype=np.float64)
+        else:
+            repair_path = Path(retarget_input_repair).resolve()
+            with np.load(repair_path, allow_pickle=False) as repaired:
+                required = {
+                    "mano_pose_51",
+                    "object_pose_qxyzw",
+                    "source_frame_range",
+                    "wrist_authority",
+                }
+                if not required.issubset(repaired.files):
+                    raise Stage12AdapterError("HOCAP_RETARGET_INPUT_REPAIR_ARTIFACT_INCOMPLETE")
+                repaired_range = np.asarray(repaired["source_frame_range"], dtype=np.int64).tolist()
+                if (
+                    len(repaired_range) != 2
+                    or repaired_range[0] != start
+                    or repaired_range[1] < stop
+                ):
+                    raise Stage12AdapterError("HOCAP_RETARGET_INPUT_REPAIR_FRAME_RANGE_MISMATCH")
+                requested_count = stop - start
+                pose_values = np.asarray(
+                    repaired["mano_pose_51"][:requested_count], dtype=np.float64
+                )
+                repaired_object_values = np.asarray(
+                    repaired["object_pose_qxyzw"][:requested_count], dtype=np.float64
+                )
+                wrist_authority = [
+                    bytes(value).decode("utf-8", errors="strict").rstrip("\x00")
+                    for value in np.asarray(repaired["wrist_authority"])[:requested_count].reshape(
+                        -1
+                    )
+                ]
+            if pose_values.shape != (stop - start, 51):
+                raise Stage12AdapterError("HOCAP_RETARGET_INPUT_REPAIR_MANO_SHAPE_INVALID")
+            if repaired_object_values.shape != (stop - start, poses_o.shape[1], 7):
+                raise Stage12AdapterError("HOCAP_RETARGET_INPUT_REPAIR_OBJECT_SHAPE_INVALID")
+            if any(value != "MANO_GLOBAL_WRIST_ORIENTATION" for value in wrist_authority):
+                raise Stage12AdapterError(
+                    "HOCAP_RETARGET_INPUT_REPAIR_WRIST_AUTHORITY_NOT_PRODUCTION"
+                )
+            repair_metadata = {
+                "schema_version": "RetargetInputQualityV1",
+                "artifact_path": str(repair_path),
+                "artifact_source_frame_range": repaired_range,
+                "wrist_orientation_authority": "MANO_GLOBAL_WRIST_ORIENTATION",
+                "canonical_keypoint_wrist_production_authority": False,
+            }
         valid = np.asarray(np.isfinite(pose_values).all(axis=1), dtype=bool)
         if not valid.all():
             raise Stage12AdapterError(
@@ -246,13 +296,18 @@ class HOCapAdapterV1(Stage12AdapterBase):
                 "mano_reconstruction": render.reconstruction_manifest,
                 "calibration_path": str(calibration_path),
                 "calibration_hash": sha256_paths([calibration_path]),
+                "retarget_input_quality": repair_metadata,
             },
             native_joint_track=backend_posed_joint_track(render, valid=valid),
         )
         object_ids = self._object_ids(meta, poses_o.shape[1])
         primary_object_id = self._primary_object_id(object_ids, primary_object_id)
         objects = []
-        object_pose_values = np.asarray(poses_o[start:stop], dtype=np.float64)
+        object_pose_values = (
+            np.asarray(poses_o[start:stop], dtype=np.float64)
+            if repaired_object_values is None
+            else repaired_object_values
+        )
         for object_index, object_id in enumerate(object_ids):
             mesh_path = self.dataset_dir / "data" / "models" / object_id / "textured_mesh.obj"
             if not mesh_path.is_file():
@@ -319,6 +374,7 @@ class HOCapAdapterV1(Stage12AdapterBase):
                 "mano_calibration_hash": sha256_paths([calibration_path]),
                 "contact_annotation_available": False,
                 "articulated_object_parts": True,
+                "retarget_input_quality": repair_metadata,
             },
         )
         result = HOISequence(metadata=metadata, hands=[hand_track], rigid_objects=objects)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 
@@ -170,6 +172,66 @@ def test_checkpoint_store_rejects_non_strict_and_corrupt_frames(tmp_path) -> Non
     path.write_bytes(payload)
     scan = store.scan()
     assert scan["invalid_frames"] == [0]
+
+
+def test_checkpoint_store_append_journal_durable_cadence_and_resume(tmp_path) -> None:
+    manifest = {
+        "run_id": "durable",
+        "input_signature": "input",
+        "solver_profile_hash": "solver",
+        "execution_profile_hash": "execution",
+        "query_profile_hash": "query",
+        "frame_range": [0, 3],
+        "durable_checkpoint_interval_frames": 2,
+    }
+    store = CheckpointStore.open(tmp_path / "run", manifest=manifest)
+    previous = None
+    first_mtime = None
+    for local in range(3):
+        metadata = {
+            "schema_version": "toporetarget.final_retarget_checkpoint.v1",
+            "local_frame_index": local,
+            "optimizer_status_code": 0,
+            "optimizer_converged": True,
+            "qpos_bounds_pass": True,
+            "slack_bounds_pass": True,
+            "active_constraints_feasible": True,
+            "full_surface_hard_audit_pass": True,
+            "full_surface_soft_audit_pass": True,
+            "active_set_converged": True,
+            "all_values_finite": True,
+            "previous_checkpoint_hash": previous,
+            "per_frame_checkpoint_hash": "",
+        }
+        arrays = {
+            "full_signed_distance": np.asarray([1.0]),
+            "hard_residual": np.asarray([1.0]),
+            "soft_residual": np.asarray([1.0]),
+        }
+        from toporetarget.retarget.refinement_checkpoint import _checkpoint_hash
+
+        metadata["per_frame_checkpoint_hash"] = _checkpoint_hash(metadata, arrays)
+        previous = store.save_frame(metadata, arrays)
+        first_path = store.frames_dir / "frame_000000.npz"
+        if local == 0:
+            first_mtime = first_path.stat().st_mtime_ns
+        else:
+            assert first_path.stat().st_mtime_ns == first_mtime
+        if local == 1:
+            marker = json.loads(
+                (store.root / "durable_checkpoint.json").read_text(encoding="utf-8")
+            )
+            assert marker["accepted_frame_count"] == 2
+            assert marker["last_accepted_frame"] == 1
+
+    events = [
+        json.loads(line)
+        for line in (store.root / "append_events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [event["event"] for event in events].count("FRAME_APPENDED") == 3
+    resumed = CheckpointStore.open(store.root, manifest=manifest, resume=True)
+    assert resumed.validate_chain()["chain_pass"]
+    assert resumed.validate_chain()["next_frame"] == 3
 
 
 def test_checkpoint_assembly_preserves_final_artifact_shapes() -> None:

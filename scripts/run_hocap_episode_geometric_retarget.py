@@ -140,6 +140,7 @@ def _timing_summary(
     return {
         "schema_version": "FastExactV2SeparatedTimingV1",
         "frames": int(len(solve_times)),
+        "input_quality_scan_seconds": float(by_name["input_quality_precheck"]["wall_seconds"]),
         "raw_loading_seconds": float(by_name["raw_conversion"]["wall_seconds"]),
         "solver_seconds": solver_seconds,
         "solver_ms_per_frame": 1000.0 * solver_seconds / len(solve_times),
@@ -235,6 +236,9 @@ def main() -> int:
     logs = report_root / "logs"
     canonical = raw_root / "canonical_episode.zarr"
     canonical_receipt = raw_root / "canonical_episode.receipt.json"
+    quality_receipt = reports / "retarget_input_quality.json"
+    quality_csv = reports / "retarget_input_quality_per_frame.csv"
+    repaired_input = raw_root / "retarget_input_quality_repaired.npz"
     warm = retarget / "warm_start.npz"
     samples = retarget / "object_samples.npz"
     graph = retarget / "interaction_graph.npz"
@@ -257,10 +261,33 @@ def main() -> int:
         str(canonical),
         "--receipt",
         str(canonical_receipt),
+        "--retarget-input-quality-receipt",
+        str(quality_receipt),
     ]
     if args.benchmark_first_frames is not None:
         materialize.extend(["--benchmark-first-frames", str(args.benchmark_first_frames)])
     steps: list[tuple[str, list[str]]] = [
+        (
+            "input_quality_precheck",
+            [
+                python,
+                "scripts/retarget/scan_hocap_retarget_input_quality.py",
+                "--episode-index",
+                str(index_path),
+                "--episode-id",
+                args.episode_id,
+                "--data-root",
+                str(args.data_root.resolve()),
+                "--mano-model-root",
+                str(args.mano_model_root.resolve()),
+                "--report",
+                str(quality_receipt),
+                "--per-frame-csv",
+                str(quality_csv),
+                "--repaired-output",
+                str(repaired_input),
+            ],
+        ),
         ("raw_conversion", materialize),
         (
             "warm_start",
@@ -496,6 +523,9 @@ def main() -> int:
         raise
 
     artifacts = {
+        "retarget_input_quality": {"path": str(quality_receipt)},
+        "retarget_input_quality_per_frame": {"path": str(quality_csv)},
+        "retarget_input_repair": {"path": str(repaired_input)},
         "canonical": {"path": str(canonical)},
         "canonical_receipt": {"path": str(canonical_receipt)},
         "warm_start": {"path": str(warm)},

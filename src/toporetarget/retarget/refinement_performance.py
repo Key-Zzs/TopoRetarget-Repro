@@ -139,6 +139,9 @@ class RefinementExecutionProfile:
     dtype: str
     cache_mode: str
     checkpoint_schema: str
+    durable_checkpoint_interval_frames: int
+    intermediate_checkpoint_mode: str
+    historical_sequence_rewrite: bool
     full_audit_mode: str
     initialization_profile: str
     variable_scaling: str
@@ -182,6 +185,13 @@ class RefinementExecutionProfile:
             checkpoint_schema=str(
                 values.get("checkpoint_schema", "toporetarget.final_retarget_checkpoint.v1")
             ),
+            durable_checkpoint_interval_frames=int(
+                values.get("durable_checkpoint_interval_frames", 1)
+            ),
+            intermediate_checkpoint_mode=str(
+                values.get("intermediate_checkpoint_mode", "atomic_per_frame")
+            ),
+            historical_sequence_rewrite=bool(values.get("historical_sequence_rewrite", False)),
             full_audit_mode=str(
                 values.get(
                     "full_audit_mode",
@@ -256,6 +266,10 @@ class RefinementExecutionProfile:
             raise ValueError("unsupported exact closest-point backend")
         if result.sdf_tree_leaf_size <= 0:
             raise ValueError("refinement SDF tree leaf size must be positive")
+        if result.durable_checkpoint_interval_frames <= 0:
+            raise ValueError("durable checkpoint interval must be positive")
+        if result.historical_sequence_rewrite:
+            raise ValueError("refinement checkpoints may not rewrite historical sequence output")
         if result.role == "performance_candidate" and (
             result.recommended or result.stage12_default
         ):
@@ -273,6 +287,9 @@ class RefinementExecutionProfile:
             "cache_mode": self.cache_mode,
             "cache": f"{self.cache_mode}_v1",
             "checkpoint_schema": self.checkpoint_schema,
+            "durable_checkpoint_interval_frames": self.durable_checkpoint_interval_frames,
+            "intermediate_checkpoint_mode": self.intermediate_checkpoint_mode,
+            "historical_sequence_rewrite": self.historical_sequence_rewrite,
             "full_audit_mode": self.full_audit_mode,
             "full_audit_policy": f"{self.full_audit_mode}_independent_v1",
             "initialization_profile": self.initialization_profile,

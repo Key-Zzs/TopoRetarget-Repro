@@ -1099,6 +1099,9 @@ def _checkpoint_manifest(
         "solver_profile_hash": solver.profile_hash,
         "execution_profile_id": execution.profile_id,
         "execution_profile_hash": execution.profile_hash,
+        "durable_checkpoint_interval_frames": execution.durable_checkpoint_interval_frames,
+        "intermediate_checkpoint_mode": execution.intermediate_checkpoint_mode,
+        "historical_sequence_rewrite": execution.historical_sequence_rewrite,
         "query_profile_id": query.profile_id,
         "query_profile_hash": query.profile_hash,
         "frame_range": [int(start_frame), int(end_frame)],
@@ -1141,6 +1144,9 @@ def _checkpoint_manifest(
             "solver_profile_hash": solver.profile_hash,
             "execution_profile_id": execution.profile_id,
             "execution_profile_hash": execution.profile_hash,
+            "durable_checkpoint_interval_frames": execution.durable_checkpoint_interval_frames,
+            "intermediate_checkpoint_mode": execution.intermediate_checkpoint_mode,
+            "historical_sequence_rewrite": execution.historical_sequence_rewrite,
             "execution_profile": execution.as_dict(),
             "point_jacobian_backend": execution.point_jacobian_backend,
             "strict_recovery": execution.strict_recovery,
@@ -1458,6 +1464,7 @@ def _run_checkpoint_refinement(
                 _json_write(status, progress_json)
             return status
 
+    store.commit_durable_checkpoint(status="complete")
     status = store.update_progress(status="complete", elapsed_s=time.perf_counter() - started)
     status.update(_checkpoint_status_payload(store))
     status["frame_rows"] = frame_rows

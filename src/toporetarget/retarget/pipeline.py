@@ -66,6 +66,22 @@ def build_warm_start_trajectory(
         raise ValueError(f"hand {hand_id!r} has no {bone_profile.layout_name!r} track")
     if track.positions_scene.shape[1:] != (21, 3):
         raise ValueError(f"MediaPipe-21 track has invalid shape: {track.positions_scene.shape}")
+    quality = hand.metadata.get("retarget_input_quality")
+    mano_primary = (
+        isinstance(quality, dict)
+        and quality.get("wrist_orientation_authority") == "MANO_GLOBAL_WRIST_ORIENTATION"
+    )
+    source_frame_transforms: np.ndarray | None = None
+    if mano_primary:
+        wrist = hand.wrist_pose_scene
+        if not wrist.orientation_available:
+            raise ValueError("RETARGET_MANO_PRIMARY_WRIST_ORIENTATION_REQUIRED")
+        source_frame_transforms = np.asarray(wrist.pose_scene, dtype=np.float64)
+        if (
+            source_frame_transforms.shape != (sequence.num_frames, 4, 4)
+            or not np.isfinite(source_frame_transforms).all()
+        ):
+            raise ValueError("RETARGET_MANO_PRIMARY_WRIST_FRAME_INVALID")
     root = Path(__file__).resolve().parents[3]
     paper_warm, paper_smooth, paper_path = load_paper_weights(root)
     warm = paper_warm if lambda_warm is None else float(lambda_warm)
@@ -79,6 +95,7 @@ def build_warm_start_trajectory(
         side=hand.side,
         lambda_warm=warm,
         lambda_smooth=smooth,
+        source_frame_transforms=source_frame_transforms,
     )
     source_frames = np.asarray(solved.source_features.frame_transform, dtype=np.float64)
     robot_frames = np.stack(
@@ -123,6 +140,12 @@ def build_warm_start_trajectory(
         "anchor_profile_hash": robot_model.anchor_profile.sha256,
         "frame_profile_id": frame_profile.profile_id,
         "frame_profile_hash": frame_profile.sha256,
+        "source_wrist_orientation_authority": (
+            "MANO_GLOBAL_WRIST_ORIENTATION"
+            if mano_primary
+            else "CANONICAL_KEYPOINT_WRIST_LEGACY_OR_NON_HOCAP"
+        ),
+        "source_keypoint_wrist_frame_production_authority": not mano_primary,
         "bone_profile_id": bone_profile.profile_id,
         "bone_profile_hash": bone_profile.sha256,
         "solver_profile_id": solver_profile.profile_id,

@@ -1940,8 +1940,16 @@ def _make_source_features(
     frame_profile: BoneDirectionFrameProfile,
     bone_profile: BoneDirectionProfile,
     side: str,
+    frame_transform: np.ndarray | None = None,
 ) -> BoneFeatures:
-    return extract_bone_features(keypoints, frame_profile, bone_profile, side=side, strict=True)
+    return extract_bone_features(
+        keypoints,
+        frame_profile,
+        bone_profile,
+        side=side,
+        frame_transform=frame_transform,
+        strict=True,
+    )
 
 
 def _solver_call(
@@ -2718,14 +2726,20 @@ def _make_context(
 ) -> _FrameContext:
     frame = graph.frames[local_index]
     global_frame = int(graph.frame_indices[local_index])
-    source_track = sequence.hand(str(warm.metadata["source_hand_id"])).keypoint_tracks[
-        "mediapipe21"
-    ]
+    source_hand = sequence.hand(str(warm.metadata["source_hand_id"]))
+    source_track = source_hand.keypoint_tracks["mediapipe21"]
+    source_frame_transform: np.ndarray | None = None
+    if warm.metadata.get("source_wrist_orientation_authority") == ("MANO_GLOBAL_WRIST_ORIENTATION"):
+        source_wrist = source_hand.wrist_pose_scene
+        if not source_wrist.orientation_available:
+            raise ValueError("RETARGET_MANO_PRIMARY_WRIST_ORIENTATION_REQUIRED")
+        source_frame_transform = np.asarray(source_wrist.pose_scene[global_frame], dtype=np.float64)
     source_features = _make_source_features(
         source_track.positions_scene[global_frame],
         frame_profile,
         bone_profile,
         str(warm.metadata["source_side"]),
+        source_frame_transform,
     )
     obj = sequence.rigid_object(str(graph.metadata["object_id"]))
     object_pose = np.asarray(obj.pose_scene.pose_scene[global_frame], dtype=np.float64)
