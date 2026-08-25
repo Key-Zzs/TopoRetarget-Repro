@@ -1811,6 +1811,27 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             self._reference_index[env_ids] = torch.randint(
                 self.reference_bank.frame_count, (len(env_ids),), device=self.device
             )
+        elif self.cfg.reset_reference_index == "uniform_event_balanced_v1":
+            alpha = float(getattr(self.cfg, "ppo26d_event_rsi_uniform_alpha", 0.0))
+            start = getattr(self.cfg, "ppo26d_event_rsi_interaction_start", None)
+            end = getattr(self.cfg, "ppo26d_event_rsi_interaction_end", None)
+            if (
+                alpha != 0.50
+                or start is None
+                or end is None
+                or not 0 <= int(start) <= int(end) < self.reference_bank.frame_count
+            ):
+                raise ValueError("HARDENING_V2_EVENT_RSI_CONTRACT_INVALID")
+            uniform = torch.randint(
+                self.reference_bank.frame_count, (len(env_ids),), device=self.device
+            )
+            interaction = torch.randint(
+                int(start), int(end) + 1, (len(env_ids),), device=self.device
+            )
+            choose_uniform = torch.rand(len(env_ids), device=self.device) < alpha
+            self._reference_index[env_ids] = torch.where(
+                choose_uniform, uniform, interaction
+            )
         elif self.cfg.reset_reference_index == "curriculum":
             indices = getattr(self.cfg, "curriculum_reference_indices", None)
             probabilities = getattr(self.cfg, "curriculum_reference_probabilities", None)
@@ -1831,7 +1852,10 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             sampled = torch.multinomial(weights, len(env_ids), replacement=True)
             self._reference_index[env_ids] = values[sampled]
         else:
-            raise ValueError("reset_reference_index must be frame0, uniform, or curriculum")
+            raise ValueError(
+                "reset_reference_index must be frame0, uniform, "
+                "uniform_event_balanced_v1, or curriculum"
+            )
         evaluation_indices = getattr(self.cfg, "evaluation_reset_reference_indices", None)
         if evaluation_indices is not None:
             if len(evaluation_indices) != self.num_envs:

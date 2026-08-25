@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,10 @@ import torch
 
 from toporetarget.rl.geometry_audit.hand_collision_reconstruction import HAND_COLLISION_BODY_NAMES
 from toporetarget.rl.ppo.ppo26d_contract import Stage16DPPO26DObservationV2
+from toporetarget.rl.ppo_generalization import (
+    DimensionlessScaledGroupedRewardV1,
+    DimensionlessScaledReferenceScopedExplorationV1,
+)
 from toporetarget.rl.reference_tracking.contact_reward_mode import (
     build_contact_reward,
     resolve_contact_mode,
@@ -79,14 +84,50 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
         self._fingertip_force_sensor_indices: torch.Tensor | None = None
         self._ppo26d_trace_capture_exact_pair_force = False
         self._contact_reward_receipt: dict[str, object] | None = None
-        self._grouped_reward_contract = GroupedMultiplicativeRewardV1()
-        self._rse_contract = ReferenceScopedExplorationV1(
-            enabled=cfg.ppo26d_rse_enabled,
-            distance_relaxation=cfg.ppo26d_rse_distance_relaxation,
-            adaptive_termination=cfg.ppo26d_rse_adaptive_termination,
-            distance_scope_m=cfg.ppo26d_rse_distance_scope_m,
-            kappa_min=cfg.ppo26d_rse_kappa_min,
-        )
+        if cfg.ppo26d_hardening_v2_enabled:
+            required_scale = (
+                cfg.ppo26d_object_bbox_diagonal_m,
+                cfg.ppo26d_scaled_proximity_tolerance_m,
+                cfg.ppo26d_scaled_distance_scope_m,
+                cfg.ppo26d_scaled_object_tracking_sigma_m,
+                cfg.ppo26d_scaled_object_velocity_sigma_mps,
+                cfg.ppo26d_scaled_object_position_base_m,
+                cfg.ppo26d_scaled_object_axis_base_m,
+            )
+            if any(value is None for value in required_scale):
+                raise RuntimeError("HARDENING_V2_OBJECT_SCALE_CONTRACT_INCOMPLETE")
+            object_diagonal = float(cfg.ppo26d_object_bbox_diagonal_m)
+            proximity = float(cfg.ppo26d_scaled_proximity_tolerance_m)
+            distance_scope = float(cfg.ppo26d_scaled_distance_scope_m)
+            self._grouped_reward_contract = DimensionlessScaledGroupedRewardV1(
+                identifier="Stage16GroupedMultiplicativeRewardV1+P3ObjectScaleV1",
+                distance_scope_m=distance_scope,
+                proximity_tolerance_m=proximity,
+                object_bbox_diagonal_m=object_diagonal,
+                anchor_bbox_diagonal_m=cfg.ppo26d_object_scale_anchor_bbox_diagonal_m,
+                proximity_scale_per_m=1.0 / proximity,
+            )
+            self._rse_contract = DimensionlessScaledReferenceScopedExplorationV1(
+                identifier="Stage16ReferenceScopedExplorationV1+P3ObjectScaleV1",
+                enabled=cfg.ppo26d_rse_enabled,
+                distance_relaxation=cfg.ppo26d_rse_distance_relaxation,
+                adaptive_termination=cfg.ppo26d_rse_adaptive_termination,
+                distance_scope_m=distance_scope,
+                object_position_base_m=float(cfg.ppo26d_scaled_object_position_base_m),
+                object_axis_base_m=float(cfg.ppo26d_scaled_object_axis_base_m),
+                proximity_tolerance_m=proximity,
+                object_bbox_diagonal_m=object_diagonal,
+                anchor_bbox_diagonal_m=cfg.ppo26d_object_scale_anchor_bbox_diagonal_m,
+            )
+        else:
+            self._grouped_reward_contract = GroupedMultiplicativeRewardV1()
+            self._rse_contract = ReferenceScopedExplorationV1(
+                enabled=cfg.ppo26d_rse_enabled,
+                distance_relaxation=cfg.ppo26d_rse_distance_relaxation,
+                adaptive_termination=cfg.ppo26d_rse_adaptive_termination,
+                distance_scope_m=cfg.ppo26d_rse_distance_scope_m,
+                kappa_min=cfg.ppo26d_rse_kappa_min,
+            )
         self._rse_state = AdaptiveScopeStateV1(kappa_min=cfg.ppo26d_rse_kappa_min)
         self._reference_surface_distance_by_clip: torch.Tensor | None = None
         self._object_surface_triangles_by_clip: tuple[torch.Tensor, ...] | None = None
@@ -115,6 +156,12 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             self._reward_contract = TopoRetargetReferenceTrackingReward26DV1()
         else:
             raise ValueError(f"unknown PPO26D reward contract: {cfg.ppo26d_reward_contract}")
+        if cfg.ppo26d_hardening_v2_enabled:
+            self._reward_contract = replace(
+                self._reward_contract,
+                object_sigma_m=float(cfg.ppo26d_scaled_object_tracking_sigma_m),
+                object_velocity_sigma_mps=float(cfg.ppo26d_scaled_object_velocity_sigma_mps),
+            )
         self._rsi_start_counts: torch.Tensor | None = None
         self._ppo26d_safety_counts: dict[str, int] = {}
         self._ppo26d_object_write_baseline: torch.Tensor | None = None
@@ -916,7 +963,8 @@ class IsaacPPO26DReferenceTrackingEnv(IsaacWorldWristFingerDirectRLEnv):
             **self._rse_contract.as_dict(),
             **self._rse_state.as_dict(),
             "reset_reference_index": self.cfg.reset_reference_index,
-            "uniform_rsi_preserved": self.cfg.reset_reference_index == "uniform",
+            "uniform_rsi_preserved": self.cfg.reset_reference_index
+            in {"uniform", "uniform_event_balanced_v1"},
         }
 
     def restore_rse_state(self, *, fail_count: int, total_count: int) -> None:

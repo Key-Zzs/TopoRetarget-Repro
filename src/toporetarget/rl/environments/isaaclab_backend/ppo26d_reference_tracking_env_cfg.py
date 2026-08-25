@@ -7,6 +7,12 @@ from pathlib import Path
 
 from isaaclab.utils import configclass
 
+from toporetarget.rl.ppo_generalization import (
+    DimensionlessObjectScaleV1,
+    EpisodeV1RuntimeEvents,
+    UniformEventBalancedRSIV1,
+    object_bbox_diagonal_m,
+)
 from toporetarget.rl.reference_tracking.contact_reward_mode import (
     ContactRewardMode,
     validate_frozen_contact_contract,
@@ -46,6 +52,18 @@ class IsaacPPO26DReferenceTrackingEnvCfg(IsaacPhysicsConsistentRetargetingEnvCfg
     ppo26d_rse_adaptive_termination = False
     ppo26d_rse_distance_scope_m = 0.20
     ppo26d_rse_kappa_min = 0.50
+    ppo26d_hardening_v2_enabled = False
+    ppo26d_event_rsi_uniform_alpha = 0.50
+    ppo26d_event_rsi_interaction_start: int | None = None
+    ppo26d_event_rsi_interaction_end: int | None = None
+    ppo26d_object_scale_anchor_bbox_diagonal_m = 0.21802421230553728
+    ppo26d_object_bbox_diagonal_m: float | None = None
+    ppo26d_scaled_proximity_tolerance_m: float | None = None
+    ppo26d_scaled_distance_scope_m: float | None = None
+    ppo26d_scaled_object_tracking_sigma_m: float | None = None
+    ppo26d_scaled_object_velocity_sigma_mps: float | None = None
+    ppo26d_scaled_object_position_base_m: float | None = None
+    ppo26d_scaled_object_axis_base_m: float | None = None
     reference_kinematics_version = 1
     ppo26d_workspace_radius_m = 0.75
     ppo26d_object_linear_speed_max_mps = 10.0
@@ -284,7 +302,10 @@ def configure_stage16d_grouped_multiplicative_rse(
         raise ValueError(f"PPO26D_REWARD_AGGREGATION_MODE_INVALID:{reward_mode}")
     if cfg.ppo26d_reward_contract != "TopoRetargetReferenceTrackingReward26DV4":
         raise ValueError("GROUPED_MULTIPLICATIVE_RSE_REQUIRES_STRICT_V4")
-    training_uniform_rsi = cfg.reset_reference_index == "uniform" and cfg.ppo26d_rsi_enabled
+    training_uniform_rsi = (
+        cfg.reset_reference_index in {"uniform", "uniform_event_balanced_v1"}
+        and cfg.ppo26d_rsi_enabled
+    )
     frame0_full_horizon_evaluation = (
         cfg.reset_reference_index == "frame0"
         and not cfg.ppo26d_rsi_enabled
@@ -319,6 +340,52 @@ def configure_stage16d_grouped_multiplicative_rse(
     cfg.ppo26d_rse_kappa_min = kappa_min
 
 
+def configure_hardening_v2_generalization(
+    cfg: IsaacPPO26DReferenceTrackingEnvCfg,
+    *,
+    object_mesh_path: Path,
+    runtime_events: EpisodeV1RuntimeEvents | None,
+    training: bool,
+) -> None:
+    """Bind P3's global RSI and object-scale branches without clip knobs."""
+
+    if cfg.ppo26d_reward_contract != "TopoRetargetReferenceTrackingReward26DV4":
+        raise ValueError("HARDENING_V2_GENERALIZATION_REQUIRES_STRICT_V4")
+    if (
+        cfg.ppo26d_reward_aggregation_mode != GROUPED_MULTIPLICATIVE_V1
+        or not cfg.ppo26d_rse_enabled
+    ):
+        raise ValueError("HARDENING_V2_GENERALIZATION_REQUIRES_GROUPED_RSE")
+    mesh = object_mesh_path.resolve()
+    if not mesh.is_file():
+        raise FileNotFoundError(f"HARDENING_V2_OBJECT_MESH_MISSING:{mesh}")
+    scale = DimensionlessObjectScaleV1(
+        anchor_bbox_diagonal_m=cfg.ppo26d_object_scale_anchor_bbox_diagonal_m
+    )
+    object_diagonal = object_bbox_diagonal_m(mesh)
+    thresholds = scale.thresholds(object_diagonal)
+    cfg.ppo26d_hardening_v2_enabled = True
+    cfg.ppo26d_object_bbox_diagonal_m = object_diagonal
+    cfg.ppo26d_scaled_proximity_tolerance_m = thresholds["proximity_tolerance_m"]
+    cfg.ppo26d_scaled_distance_scope_m = thresholds["distance_scope_m"]
+    cfg.ppo26d_scaled_object_tracking_sigma_m = thresholds["object_tracking_sigma_m"]
+    cfg.ppo26d_scaled_object_velocity_sigma_mps = thresholds["object_velocity_sigma_mps"]
+    cfg.ppo26d_scaled_object_position_base_m = thresholds["object_position_base_m"]
+    cfg.ppo26d_scaled_object_axis_base_m = thresholds["object_axis_base_m"]
+    if training:
+        if runtime_events is None:
+            raise ValueError("HARDENING_V2_EPISODE_EVENTS_REQUIRED_FOR_TRAINING")
+        if not cfg.ppo26d_rsi_enabled or cfg.reset_reference_index != "uniform":
+            raise ValueError("HARDENING_V2_EVENT_RSI_REQUIRES_UNIFORM_RSI_BASELINE")
+        sampler = UniformEventBalancedRSIV1(uniform_alpha=0.50)
+        cfg.reset_reference_index = "uniform_event_balanced_v1"
+        cfg.ppo26d_event_rsi_uniform_alpha = sampler.uniform_alpha
+        cfg.ppo26d_event_rsi_interaction_start = runtime_events.contact
+        cfg.ppo26d_event_rsi_interaction_end = runtime_events.release
+    elif runtime_events is not None:
+        raise ValueError("HARDENING_V2_EVALUATION_MUST_NOT_ENABLE_EVENT_RSI")
+
+
 __all__ = [
     "IsaacPPO26DReferenceTrackingEnvCfg",
     "configure_stage16d_ppo26d",
@@ -331,4 +398,5 @@ __all__ = [
     "configure_stage16d_reference_gated_contact_reward",
     "configure_stage16d_strict_per_finger_contact_reward_v4",
     "configure_stage16d_grouped_multiplicative_rse",
+    "configure_hardening_v2_generalization",
 ]
