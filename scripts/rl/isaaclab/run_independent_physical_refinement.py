@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run failure-only bounded U15 PPO from a frozen independent evaluation receipt."""
+"""Run or fail-closed-finalize U15 PPO from a frozen evaluation receipt."""
 
 from __future__ import annotations
 
@@ -24,6 +24,14 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--clip-id", required=True)
     parser.add_argument("--frozen-evaluation-receipt", type=Path, required=True)
+    parser.add_argument(
+        "--finalize-existing",
+        action="store_true",
+        help=(
+            "Verify an already-complete non-resumable U15 namespace and emit its receipt "
+            "without launching another optimizer run."
+        ),
+    )
     parser.add_argument("--accept-eula", action="store_true")
     return parser
 
@@ -47,6 +55,27 @@ def _flag(command: list[str], name: str) -> Path:
     if len(indices) != 1 or indices[0] + 1 >= len(command):
         raise ValueError(f"INDEPENDENT_PHYSICAL_REFINEMENT_COMMAND_FLAG_INVALID:{name}")
     return Path(command[indices[0] + 1]).resolve()
+
+
+def _validate_complete(
+    complete: dict[str, Any], progression: list[dict[str, str]], *, clip_id: str
+) -> int:
+    """Validate one immutable, fully completed U15 training lineage."""
+
+    updates = int(complete.get("actual_new_updates", -1))
+    if (
+        complete.get("schema_version") != "PhysicalRefinementTrainingV1"
+        or complete.get("clip") != clip_id
+        or int(complete.get("max_new_updates", -1)) != 15
+        or updates < 1
+        or updates > 15
+        or len(progression) != updates
+        or any(int(row["new_update"]) != index for index, row in enumerate(progression, 1))
+    ):
+        raise RuntimeError("INDEPENDENT_PHYSICAL_REFINEMENT_RESULT_CONTRACT_INVALID")
+    if not isinstance(complete.get("best_checkpoint"), dict):
+        raise RuntimeError("INDEPENDENT_PHYSICAL_REFINEMENT_BEST_CHECKPOINT_MISSING")
+    return updates
 
 
 def main() -> int:
@@ -82,30 +111,47 @@ def main() -> int:
     final_receipt = report_root / "physical_refinement_receipt.json"
     if final_receipt.exists():
         raise FileExistsError(f"INDEPENDENT_PHYSICAL_REFINEMENT_REFUSES_OVERWRITE:{final_receipt}")
-    environment = dict(os.environ)
-    environment["PYTHONPATH"] = f"{REPO_ROOT / 'src'}:{REPO_ROOT}"
-    environment["OMNI_KIT_ACCEPT_EULA"] = "YES"
     tick = time.perf_counter()
-    result = subprocess.run(
-        command,
-        cwd=REPO_ROOT,
-        env=environment,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=False,
-    )
     log = report_root / "physical_refinement.log"
     log.parent.mkdir(parents=True, exist_ok=True)
-    log.write_text(result.stdout, encoding="utf-8")
     complete_path = run_root / args.clip_id / "complete.json"
     progression_path = report_root / "training" / args.clip_id / "progression.csv"
-    if result.returncode != 0 or not complete_path.is_file() or not progression_path.is_file():
+    if args.finalize_existing:
+        result_returncode = 0
+        log.write_text(
+            json.dumps(
+                {
+                    "operation": "finalize_existing",
+                    "optimizer_subprocess_started": False,
+                    "training_command": command,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    else:
+        environment = dict(os.environ)
+        environment["PYTHONPATH"] = f"{REPO_ROOT / 'src'}:{REPO_ROOT}"
+        environment["OMNI_KIT_ACCEPT_EULA"] = "YES"
+        result = subprocess.run(
+            command,
+            cwd=REPO_ROOT,
+            env=environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        result_returncode = result.returncode
+        log.write_text(result.stdout, encoding="utf-8")
+    if result_returncode != 0 or not complete_path.is_file() or not progression_path.is_file():
         failure = {
             "schema_version": "IndependentPhysicalRefinementFailureV1",
             "status": "FAIL",
             "clip_id": args.clip_id,
-            "returncode": result.returncode,
+            "returncode": result_returncode,
             "command": command,
             "log": _artifact(log),
         }
@@ -114,17 +160,7 @@ def main() -> int:
     complete = _json(complete_path)
     with progression_path.open(newline="", encoding="utf-8") as stream:
         progression = list(csv.DictReader(stream))
-    updates = int(complete.get("actual_new_updates", -1))
-    if (
-        complete.get("schema_version") != "PhysicalRefinementTrainingV1"
-        or complete.get("clip") != args.clip_id
-        or int(complete.get("max_new_updates", -1)) != 15
-        or updates < 1
-        or updates > 15
-        or len(progression) != updates
-        or any(int(row["new_update"]) != index for index, row in enumerate(progression, 1))
-    ):
-        raise RuntimeError("INDEPENDENT_PHYSICAL_REFINEMENT_RESULT_CONTRACT_INVALID")
+    updates = _validate_complete(complete, progression, clip_id=args.clip_id)
     receipt = {
         "schema_version": "IndependentPhysicalRefinementReceiptV1",
         "status": "PASS",
@@ -144,6 +180,8 @@ def main() -> int:
         "technical_retry_seconds": 0.0,
         "retry_count": 0,
         "cache_hit": False,
+        "execution_mode": "finalize_existing" if args.finalize_existing else "train",
+        "optimizer_subprocess_started": not args.finalize_existing,
     }
     atomic_write_json(final_receipt, receipt)
     print(json.dumps(receipt, indent=2, sort_keys=True))

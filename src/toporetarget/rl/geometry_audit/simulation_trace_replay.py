@@ -625,7 +625,7 @@ def load_factor8_hocap_reference_object_pose(
     expected_frames: int,
     time_scale: int = 8,
 ) -> np.ndarray:
-    """Materialize the frozen 41-frame HO-Cap reference as the runtime view.
+    """Materialize a frozen Stage-16 HO-Cap reference as the runtime view.
 
     This intentionally accepts only the immutable Stage 16 reference schema,
     not a recorded PhysX ``source_trace``.  Its interpolation is the NumPy
@@ -645,13 +645,14 @@ def load_factor8_hocap_reference_object_pose(
     position = np.asarray(arrays["object_pose_translation_world_ref"], dtype=np.float64)
     quaternion = np.asarray(arrays["object_pose_quaternion_world_ref_wxyz"], dtype=np.float64)
     twist = np.asarray(arrays["object_twist_world_ref"], dtype=np.float64)
+    frame_count = int(timestamps.shape[0]) if timestamps.ndim == 1 else 0
     if (
-        timestamps.shape != (41,)
-        or position.shape != (41, 3)
-        or quaternion.shape != (41, 4)
-        or twist.shape != (41, 6)
+        frame_count < 2
+        or position.shape != (frame_count, 3)
+        or quaternion.shape != (frame_count, 4)
+        or twist.shape != (frame_count, 6)
     ):
-        raise ValueError("HO-Cap reference must be the frozen 41-frame object contract")
+        raise ValueError("HO-Cap reference must have matching frozen object arrays")
     if not all(np.isfinite(value).all() for value in (timestamps, position, quaternion, twist)):
         raise ValueError("HO-Cap reference contains non-finite values")
     source_delta = np.diff(timestamps)
@@ -662,7 +663,7 @@ def load_factor8_hocap_reference_object_pose(
         raise ValueError("HO-Cap reference contains a zero quaternion")
     quaternion = quaternion / quaternion_norm[:, None]
 
-    retimed_frames = (len(timestamps) - 1) * time_scale + 1
+    retimed_frames = (frame_count - 1) * time_scale + 1
     if expected_frames != retimed_frames:
         raise ValueError(
             f"factor-{time_scale} HO-Cap reference produces {retimed_frames} frames, "

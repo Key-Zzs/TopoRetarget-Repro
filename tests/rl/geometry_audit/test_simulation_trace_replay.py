@@ -280,6 +280,27 @@ def test_factor8_hocap_reference_preserves_all_source_keys(tmp_path: Path) -> No
     np.testing.assert_allclose(np.abs(pose[::8, 3:]), np.abs(quaternion), atol=1.0e-7)
 
 
+def test_factor8_hocap_reference_accepts_full_lifecycle_stage16_lengths(tmp_path: Path) -> None:
+    reference = tmp_path / "hocap_episode.world_wrist.stage16.npz"
+    timestamps = np.arange(141, dtype=np.float64) * 0.05
+    position = np.stack((timestamps, timestamps * 2.0, -timestamps), axis=-1)
+    quaternion = np.zeros((141, 4), dtype=np.float64)
+    quaternion[:, 0] = 1.0
+    twist = np.zeros((141, 6), dtype=np.float64)
+    np.savez_compressed(
+        reference,
+        timestamps=timestamps,
+        object_pose_translation_world_ref=position,
+        object_pose_quaternion_world_ref_wxyz=quaternion,
+        object_twist_world_ref=twist,
+    )
+
+    pose = load_factor8_hocap_reference_object_pose(reference, expected_frames=1121)
+
+    assert pose.shape == (1121, 7)
+    np.testing.assert_allclose(pose[::8, :3], position, atol=1.0e-7)
+
+
 def test_factor8_hocap_reference_rejects_physx_source_trace(tmp_path: Path) -> None:
     source = tmp_path / "source_trace_170105.npz"
     pose = np.zeros((321, 7), dtype=np.float32)

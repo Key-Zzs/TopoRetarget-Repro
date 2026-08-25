@@ -61,7 +61,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--reference",
         type=Path,
-        help="Frozen 41-frame HO-Cap Stage 16 reference; inferred from --object by default",
+        help=(
+            "Frozen uniformly sampled HO-Cap Stage 16 reference; inferred from --object by default"
+        ),
     )
     reference_group = parser.add_mutually_exclusive_group()
     reference_group.add_argument(
