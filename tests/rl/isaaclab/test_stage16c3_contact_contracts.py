@@ -15,6 +15,7 @@ PPO_ENV_SOURCE = (
     REPO_ROOT / "src/toporetarget/rl/environments/isaaclab_backend/ppo26d_reference_tracking_env.py"
 )
 CONTACT_CONFIG = REPO_ROOT / "configs/rl/stage16/isaaclab_contact_telemetry.yaml"
+PHYSICAL_EVALUATOR_SOURCE = REPO_ROOT / "scripts/rl/isaaclab/evaluate_physical_hoi.py"
 
 
 def test_contact_repair_uses_two_object_side_views_not_21_hand_side_views() -> None:
@@ -61,3 +62,13 @@ def test_ppo_contact_reward_selects_configured_objects_without_development_ids()
     assert "self._clip_index" in method
     assert '"Object170105"' not in method
     assert '"Object170650"' not in method
+
+
+def test_table_contact_telemetry_uses_scene_key_not_usd_prim_name() -> None:
+    source = PHYSICAL_EVALUATOR_SOURCE.read_text(encoding="utf-8")
+    snapshot = source[
+        source.index("def _initial_trace_snapshot") : source.index("def _prepend_initial_trace")
+    ]
+
+    assert 'sensor_name = f"{env._object_specs[clip_index][2]}_support_contact"' in snapshot
+    assert 'sensor_name = f"{env._object_specs[clip_index][1]}_support_contact"' not in snapshot

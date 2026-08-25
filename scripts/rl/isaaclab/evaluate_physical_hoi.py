@@ -486,7 +486,10 @@ def _initial_trace_snapshot(
         )
     if getattr(env.cfg, "stage16_support_mode", None) == "finite_inferred_table_proxy_v1":
         clip_index = env.reference_bank.clip_ids.index(env.cfg.stage16d_fixed_clip)
-        sensor_name = f"{env._object_specs[clip_index][1]}_support_contact"
+        # Object specs are (clip_id, USD prim name, scene key, ...).  Contact
+        # sensors are keyed by the scene key (for example ``object_external``),
+        # not the USD prim name (``ObjectExternal``).
+        sensor_name = f"{env._object_specs[clip_index][2]}_support_contact"
         force = env.scene[sensor_name].data.force_matrix_w
         values["table_object_contact"] = (
             torch.linalg.vector_norm(force, dim=-1).amax(dim=(1, 2)) > 1.0e-4
