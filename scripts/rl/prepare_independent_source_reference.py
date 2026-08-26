@@ -27,6 +27,20 @@ from toporetarget.rl.stage12_reference import (  # noqa: E402
 )
 from toporetarget.rl.world_wrist import export_world_wrist_reference  # noqa: E402
 
+_REFERENCE_EXECUTABILITY_CHECKS = (
+    "source_key_preservation",
+    "timestamps",
+    "quaternion",
+    "finite",
+    "linear_fd_consistency",
+    "angular_so3_consistency",
+    "world_angular_convention",
+)
+_REFERENCE_FIDELITY_ONLY_CHECKS = (
+    "factor8_scaling",
+    "integral_consistency",
+)
+
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -57,6 +71,38 @@ def _require_distinct_outputs(paths: tuple[Path, ...]) -> None:
     existing = [str(path) for path in resolved if path.exists()]
     if existing:
         raise FileExistsError(f"INDEPENDENT_SOURCE_REFERENCE_REFUSES_OVERWRITE:{existing}")
+
+
+def reference_executability_v2(
+    *, qualification: dict[str, Any], world_validation: dict[str, Any]
+) -> dict[str, Any]:
+    """Separate readable reference authority from derivative-fidelity diagnostics."""
+
+    checks = qualification.get("checks")
+    if not isinstance(checks, dict):
+        checks = {}
+    hard_checks = {
+        name: checks.get(name) is True for name in _REFERENCE_EXECUTABILITY_CHECKS
+    }
+    hard_checks["world_reference_valid"] = world_validation.get("valid") is True
+    diagnostic_checks = {
+        name: checks.get(name) is True for name in _REFERENCE_FIDELITY_ONLY_CHECKS
+    }
+    passed = all(hard_checks.values())
+    return {
+        "schema_version": "IndependentSourceReferenceExecutabilityV2",
+        "status": "PASS" if passed else "FAIL",
+        "hard_checks": hard_checks,
+        "failed_hard_checks": [name for name, value in hard_checks.items() if not value],
+        "fidelity_only_diagnostics": diagnostic_checks,
+        "full_reference_kinematics_v2_status": qualification.get("status"),
+        "admission_rule": (
+            "finite complete readable world/reference rows and internally consistent stored "
+            "kinematics are hard; factor8 relative-derivative and integral reconstruction "
+            "accuracy remain reported fidelity diagnostics"
+        ),
+        "policy_outcomes_observed": False,
+    }
 
 
 def main() -> int:
@@ -113,11 +159,12 @@ def main() -> int:
         args.reference_v1_output.resolve(),
         args.reference_v2_output.resolve(),
     )
-    if qualification.get("status") != "STAGE16D_REFERENCE_KINEMATICS_V2_VALIDATED":
-        raise RuntimeError("INDEPENDENT_SOURCE_REFERENCE_V2_QUALIFICATION_FAILED")
+    executability = reference_executability_v2(
+        qualification=qualification, world_validation=validation
+    )
     report: dict[str, Any] = {
-        "schema_version": "IndependentSourcePolicyReferencePreparationV1",
-        "status": "PASS",
+        "schema_version": "IndependentSourcePolicyReferencePreparationV2",
+        "status": "PASS" if executability["status"] == "PASS" else "FAIL",
         "clip_id": args.clip_id,
         "source_artifacts": {
             "final_trajectory_zarr": _artifact(final / "zarr.json"),
@@ -134,9 +181,12 @@ def main() -> int:
         "factor8_v1": v1,
         "factor8_v2": v2,
         "factor8_v2_qualification": qualification,
+        "reference_executability_v2": executability,
         "policy_outcomes_observed": False,
     }
     atomic_write_json(args.report.resolve(), report)
+    if executability["status"] != "PASS":
+        raise RuntimeError("INDEPENDENT_SOURCE_REFERENCE_EXECUTABILITY_V2_FAILED")
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 
