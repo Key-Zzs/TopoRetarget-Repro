@@ -43,7 +43,12 @@ from .reference_bank import WorldWristReferenceBank, quaternion_to_matrix_wxyz
 from .reward_terms import Stage16WorldWristRewardProfileV1, world_wrist_reward_terms
 from .scene_frame import Stage16CSceneFrameContractV1, global_to_scene, scene_to_global
 from .tensor_math import apply_local_residual, relative_rotation_log_local
-from .termination_terms import TERMINATION_REASONS, Stage16TerminationProfileV1, stage16_termination
+from .termination_terms import (
+    TERMINATION_REASONS,
+    Stage16TerminationProfileV1,
+    source_controller_admission_dones_v2,
+    stage16_termination,
+)
 from .tvlqr_wrist import (
     BoundedMPCWristControllerV1,
     BoundedMPCWristProfileV1,
@@ -1754,8 +1759,28 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             final_reference_index=self.reference_bank.frame_count - 1,
             profile=self.termination_profile,
         )
-        self._success.copy_(termination["success"])
-        self._reason_codes.copy_(termination["primary_reason_code"])
+        task_fidelity_terminated = termination["terminated"]
+        task_fidelity_success = termination["success"]
+        if self.cfg.source_controller_admission_v2:
+            terminated, success = source_controller_admission_dones_v2(
+                termination,
+                reference_index=index,
+                final_reference_index=self.reference_bank.frame_count - 1,
+            )
+        else:
+            terminated = task_fidelity_terminated
+            success = task_fidelity_success
+        self._success.copy_(success)
+        admission_reason = torch.where(
+            success,
+            torch.full_like(termination["primary_reason_code"], 7),
+            termination["primary_reason_code"],
+        )
+        self._reason_codes.copy_(
+            admission_reason
+            if self.cfg.source_controller_admission_v2
+            else termination["primary_reason_code"]
+        )
         self.extras["stage16"] = {
             # DirectRLEnv resets done environments before returning.  Preserve
             # terminal evidence rather than exposing reset-mutated buffers.
@@ -1763,6 +1788,12 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             "primary_reason_code": self._reason_codes.clone(),
             "clip_index": self._clip_index.clone(),
             "termination_reasons": TERMINATION_REASONS,
+            "source_controller_admission_v2": bool(self.cfg.source_controller_admission_v2),
+            "task_fidelity_terminated": task_fidelity_terminated.clone(),
+            "task_fidelity_success": task_fidelity_success.clone(),
+            "task_fidelity_primary_reason_code": termination[
+                "primary_reason_code"
+            ].clone(),
             "object_position_error_m": termination["object_position_error_m"].clone(),
             "object_axis_error_m": termination["object_axis_error_m"].clone(),
             "object_orientation_error_rad": termination["object_orientation_error_rad"].clone(),
@@ -1790,7 +1821,7 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
                 self._identified_map_selected_reference_frame.clone()
             ),
         }
-        return termination["terminated"], termination["success"]
+        return terminated, success
 
     def _reset_idx(self, env_ids: Sequence[int] | torch.Tensor | None) -> None:
         if env_ids is None:
@@ -2020,6 +2051,7 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             "object_state_writes": int(self._object_state_write_count.sum().item()),
             "object_rollout_state_writes": 0,
             "diagnostic_kinematic_object": bool(self.cfg.diagnostic_kinematic_object),
+            "source_controller_admission_v2": bool(self.cfg.source_controller_admission_v2),
             "diagnostic_object_state_writes": int(
                 self._diagnostic_object_state_write_count.sum().item()
             ),

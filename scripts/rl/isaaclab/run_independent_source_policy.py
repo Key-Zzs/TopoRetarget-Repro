@@ -18,6 +18,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
@@ -45,8 +47,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--interaction-contact-contract", type=Path, required=True)
     parser.add_argument(
         "--source-policy-profile",
-        choices=("l0_then_physical_grouped_rse_v1",),
-        default="l0_then_physical_grouped_rse_v1",
+        choices=("source_controller_auto_v2",),
+        default="source_controller_auto_v2",
     )
     parser.add_argument(
         "--stop-after-cpu-authorities",
@@ -62,6 +64,8 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         help="Required before Isaac import or L0; omitted only for CPU-authorities stop.",
     )
+    parser.add_argument("--support-preflight-receipt", type=Path)
+    parser.add_argument("--base-runtime-geometry-manifest", type=Path)
     parser.add_argument("--accept-eula", action="store_true")
     return parser
 
@@ -82,6 +86,15 @@ def _artifact(path: Path) -> dict[str, str]:
     if not resolved.is_file():
         raise FileNotFoundError(f"INDEPENDENT_SOURCE_POLICY_ARTIFACT_MISSING:{resolved}")
     return {"path": str(resolved), "sha256": sha256_file(resolved)}
+
+
+def _receipt_artifact(row: object) -> Path:
+    if not isinstance(row, dict):
+        raise ValueError("INDEPENDENT_SOURCE_POLICY_RECEIPT_ARTIFACT_REQUIRED")
+    path = Path(str(row.get("path", ""))).resolve()
+    if not path.is_file() or row.get("sha256") != sha256_file(path):
+        raise ValueError("INDEPENDENT_SOURCE_POLICY_RECEIPT_ARTIFACT_DRIFT")
+    return path
 
 
 def _run_step(
@@ -141,6 +154,60 @@ def _run_step(
     return receipt
 
 
+def _zero_network_rollout_parity(
+    direct_root: Path, network_root: Path, output: Path
+) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    overall = True
+    for episode in range(10):
+        direct_path = direct_root / "traces" / f"episode_{episode:02d}.npz"
+        network_path = network_root / "traces" / f"episode_{episode:02d}.npz"
+        with np.load(direct_path, allow_pickle=False) as direct_archive, np.load(
+            network_path, allow_pickle=False
+        ) as network_archive:
+            direct_fields = set(direct_archive.files)
+            network_fields = set(network_archive.files)
+            fields_match = direct_fields == network_fields
+            max_abs = 0.0
+            values_match = fields_match
+            if fields_match:
+                for name in sorted(direct_fields):
+                    direct = np.asarray(direct_archive[name])
+                    network = np.asarray(network_archive[name])
+                    if direct.shape != network.shape:
+                        values_match = False
+                        break
+                    if np.issubdtype(direct.dtype, np.number):
+                        delta = float(
+                            np.max(np.abs(direct.astype(np.float64) - network.astype(np.float64)))
+                        )
+                        max_abs = max(max_abs, delta)
+                        values_match = values_match and delta <= 1.0e-6
+                    else:
+                        values_match = values_match and bool(np.array_equal(direct, network))
+            passed = fields_match and values_match
+            overall = overall and passed
+            rows.append(
+                {
+                    "episode": episode,
+                    "fields_match": fields_match,
+                    "maximum_absolute_difference": max_abs,
+                    "tolerance": 1.0e-6,
+                    "passed": passed,
+                }
+            )
+    receipt = {
+        "schema_version": "ZeroResidualNetworkRolloutParityV1",
+        "status": "PASS" if overall else "FAIL",
+        "deterministic_reference_follower": str(direct_root.resolve()),
+        "zero_output_network": str(network_root.resolve()),
+        "absolute_tolerance": 1.0e-6,
+        "episodes": rows,
+    }
+    atomic_write_json(output, receipt)
+    return receipt
+
+
 def main() -> int:
     args = _parser().parse_args()
     if not args.accept_eula or args.num_envs != 1024:
@@ -189,7 +256,19 @@ def main() -> int:
         l0_root / args.clip_id / f"stage16d_ppo26d_{args.clip_id.removeprefix('hocap_')}_l0.pt"
     )
     l0_result = l0_root / args.clip_id / "l0_training.json"
-    final_receipt = report_root / "source_policy_receipt.v3.json"
+    source_controller_root = report_root / "source_controller_v2"
+    zero_direct_root = source_controller_root / "zero_residual_deterministic"
+    zero_network_root = source_controller_root / "zero_residual_network"
+    l0_qualification_root = source_controller_root / "corrected_l0"
+    zero_checkpoint = run_root / "zero_residual" / "zero_residual_source.pt"
+    zero_result = run_root / "zero_residual" / "source_training.json"
+    zero_parity = source_controller_root / "zero_network_rollout_parity.json"
+    contracts_root = args.report_root.resolve() / "clips" / args.clip_id / "physical_contracts"
+    physical_contract_receipt = contracts_root / "physical_contract_receipt.json"
+    runtime_geometry = contracts_root / "runtime_collision_geometry_manifest.json"
+    evaluation_gates = contracts_root / "frozen_evaluation_gates.json"
+    seed_manifest = contracts_root / "evaluation_seed_manifest.json"
+    final_receipt = report_root / "source_policy_receipt.v4.json"
     if final_receipt.exists():
         raise FileExistsError(f"INDEPENDENT_SOURCE_POLICY_REFUSES_OVERWRITE:{final_receipt}")
 
@@ -289,7 +368,7 @@ def main() -> int:
                 "clip_id": args.clip_id,
                 "selection_manifest_sha256": manifest["manifest_sha256"],
                 "primary_object_authority_sha256": authority["authority_sha256"],
-                "source_policy_profile": args.source_policy_profile,
+                "source_policy_profile": "source_controller_auto_v2",
                 "terminal_scope": "CPU_AUTHORITIES_ONLY",
                 "isaac_object_import": "NOT_RUN",
                 "l0_training": "NOT_RUN",
@@ -311,10 +390,34 @@ def main() -> int:
             atomic_write_json(prerequisite_receipt, prerequisite)
             print(json.dumps(prerequisite, indent=2, sort_keys=True))
             return 0
-        if args.gpu_preflight_receipt is None:
-            raise ValueError("GPU_PREFLIGHT_RECEIPT_REQUIRED_BEFORE_SOURCE_POLICY_L0")
+        if (
+            args.gpu_preflight_receipt is None
+            or args.support_preflight_receipt is None
+            or args.base_runtime_geometry_manifest is None
+        ):
+            raise ValueError(
+                "GPU_SUPPORT_AND_GEOMETRY_RECEIPTS_REQUIRED_BEFORE_SOURCE_CONTROLLER_AUTO_V2"
+            )
         gpu_preflight_path = args.gpu_preflight_receipt.resolve()
         validate_gpu_preflight_receipt(gpu_preflight_path)
+        support_preflight_path = args.support_preflight_receipt.resolve()
+        support_preflight = _json(support_preflight_path)
+        if (
+            support_preflight.get("schema_version")
+            != "IndependentPhysicalSupportPreflightReceiptV1"
+            or support_preflight.get("status") != "PASS"
+            or support_preflight.get("clip_id") != args.clip_id
+            or support_preflight.get("gpu_physx_authorized") is not True
+        ):
+            raise ValueError("INDEPENDENT_SOURCE_POLICY_SUPPORT_PREFLIGHT_INVALID")
+        support_proxy = _receipt_artifact(
+            support_preflight.get("artifacts", {}).get("support_proxy")
+        )
+        support_asset = _receipt_artifact(
+            support_preflight.get("artifacts", {}).get("support_asset")
+        )
+        base_geometry = args.base_runtime_geometry_manifest.resolve()
+        _artifact(base_geometry)
         steps.append(
             _run_step(
                 "import_object_usd",
@@ -340,6 +443,211 @@ def main() -> int:
                 expected_artifacts=(object_usd, object_usd_report),
             )
         )
+        contact = _json(source_contact_receipt)
+        if (
+            contact.get("schema_version") != "IndependentHOCapSourceContactAuthorityV2"
+            or contact.get("status") != "PASS"
+            or contact.get("support_contact_authority", {}).get("scope")
+            != "all_annotated_source_hands"
+        ):
+            raise RuntimeError("INDEPENDENT_SOURCE_POLICY_CONTACT_CONTRACT_INVALID")
+        strict_mask = _receipt_artifact(contact["artifacts"]["strict_mask"])
+        reference_distance = _receipt_artifact(contact["artifacts"]["reference_distance"])
+        steps.append(
+            _run_step(
+                "freeze_physical_contracts",
+                [
+                    sys.executable,
+                    "scripts/rl/prepare_independent_physical_contracts.py",
+                    "--selection-manifest",
+                    str(manifest_path),
+                    "--clip-id",
+                    args.clip_id,
+                    "--world-reference",
+                    str(world_reference),
+                    "--reference-v2",
+                    str(reference_v2),
+                    "--object-mesh",
+                    str(object_mesh),
+                    "--object-usd",
+                    str(object_usd),
+                    "--strict-source-mask",
+                    str(strict_mask),
+                    "--base-runtime-geometry-manifest",
+                    str(base_geometry),
+                    "--output-root",
+                    str(contracts_root),
+                ],
+                log_root=log_root,
+                expected_artifacts=(
+                    physical_contract_receipt,
+                    runtime_geometry,
+                    evaluation_gates,
+                    seed_manifest,
+                ),
+            )
+        )
+        qualifier_base = [
+            "conda",
+            "run",
+            "--no-capture-output",
+            "-n",
+            "toporetarget-isaaclab",
+            "python",
+            "scripts/rl/isaaclab/qualify_zero_residual_source_controller.py",
+            "--accept-eula",
+            "--clip",
+            args.clip_id,
+            "--episodes",
+            "10",
+            "--reference",
+            str(reference_v2),
+            "--object-usd",
+            str(object_usd),
+            "--support-proxy",
+            str(support_proxy),
+            "--support-asset",
+            str(support_asset),
+            "--contact-contract",
+            str(strict_contract),
+            "--contact-mask-root",
+            str(strict_mask.parent),
+            "--reference-distance-root",
+            str(reference_distance.parent),
+            "--object-mesh-root",
+            str(object_mesh.parent),
+            "--runtime-geometry-manifest",
+            str(runtime_geometry),
+            "--frozen-evaluation-gates",
+            str(evaluation_gates),
+            "--seed-manifest",
+            str(seed_manifest),
+        ]
+        steps.append(
+            _run_step(
+                "qualify_zero_residual_deterministic_v2",
+                [
+                    *qualifier_base,
+                    "--controller-mode",
+                    "ZERO_RESIDUAL_DETERMINISTIC",
+                    "--output",
+                    str(zero_direct_root),
+                ],
+                log_root=log_root,
+                expected_artifacts=(zero_direct_root / "qualification.json",),
+            )
+        )
+        zero_direct = _json(zero_direct_root / "qualification.json")
+        if zero_direct.get("source_controller_executability_v2") == "PASS":
+            steps.append(
+                _run_step(
+                    "materialize_zero_residual_network",
+                    [
+                        sys.executable,
+                        "scripts/rl/materialize_zero_residual_source.py",
+                        "--qualification",
+                        str(zero_direct_root / "qualification.json"),
+                        "--checkpoint",
+                        str(zero_checkpoint),
+                        "--result",
+                        str(zero_result),
+                    ],
+                    log_root=log_root,
+                    expected_artifacts=(zero_checkpoint, zero_result),
+                )
+            )
+            steps.append(
+                _run_step(
+                    "qualify_zero_residual_network_v2",
+                    [
+                        *qualifier_base,
+                        "--controller-mode",
+                        "ZERO_RESIDUAL_NETWORK",
+                        "--checkpoint",
+                        str(zero_checkpoint),
+                        "--output",
+                        str(zero_network_root),
+                    ],
+                    log_root=log_root,
+                    expected_artifacts=(zero_network_root / "qualification.json",),
+                )
+            )
+            zero_network_path = zero_network_root / "qualification.json"
+            zero_network = _json(zero_network_path)
+            parity = _zero_network_rollout_parity(
+                zero_direct_root, zero_network_root, zero_parity
+            )
+            if (
+                zero_network.get("source_controller_executability_v2") != "PASS"
+                or parity["status"] != "PASS"
+            ):
+                raise RuntimeError("ZERO_RESIDUAL_NETWORK_PARITY_OR_EXECUTABILITY_FAILED")
+            receipt = {
+                "schema_version": "IndependentSourcePolicyReceiptV4",
+                "status": "PASS",
+                "clip_id": args.clip_id,
+                "primary_object_id": rows[0]["primary_object_id"],
+                "selection_manifest_sha256": manifest["manifest_sha256"],
+                "primary_object_authority_sha256": authority["authority_sha256"],
+                "source_policy_profile": "source_controller_auto_v2",
+                "selected_route": "ZERO_RESIDUAL",
+                "source_controller_executability_v2": "PASS",
+                "source_controller_fidelity_v2": zero_network[
+                    "source_controller_fidelity_v2"
+                ],
+                "l0_samples": 0,
+                "standalone_strict_v4_samples": 0,
+                "checkpoint": str(zero_checkpoint),
+                "checkpoint_sha256": sha256_file(zero_checkpoint),
+                "source_training_result": _artifact(zero_result),
+                "source_qualification": _artifact(zero_network_path),
+                "standalone_strict_v4_training": {
+                    "status": "FORBIDDEN_NOT_RUN",
+                    "samples": 0,
+                    "ppo_optimizer_steps": 0,
+                },
+                "required_downstream_contract": {
+                    "support": "finite_inferred_table_proxy_v1",
+                    "gravity_scale": 1.0,
+                    "friction_scale": 1.0,
+                    "reward_aggregation": "grouped_multiplicative_v1",
+                    "interaction_term": "u10_per_finger_pair_contact_primitive_v1",
+                    "rse_enabled": True,
+                    "standalone_strict_v4_ppo": False,
+                    "evaluation_first": True,
+                    "ppo_only_on_frozen_failure": True,
+                },
+                "lineage": {
+                    "actor_root": str(zero_checkpoint.parent.resolve()),
+                    "critic_root": str(zero_checkpoint.parent.resolve()),
+                    "optimizer_root": str(zero_checkpoint.parent.resolve()),
+                    "normalizer_root": str(zero_checkpoint.parent.resolve()),
+                    "rng_seed": lineage_seed,
+                },
+                "artifacts": {
+                    "gpu_preflight": _artifact(gpu_preflight_path),
+                    "support_preflight": _artifact(support_preflight_path),
+                    "world_reference": _artifact(world_reference),
+                    "reference_v1": _artifact(reference_v1),
+                    "reference_v2": _artifact(reference_v2),
+                    "object_mesh": _artifact(object_mesh),
+                    "object_usd": _artifact(object_usd),
+                    "source_contact": _artifact(source_contact_receipt),
+                    "physical_contracts": _artifact(physical_contract_receipt),
+                    "zero_residual_qualification": _artifact(
+                        zero_direct_root / "qualification.json"
+                    ),
+                    "zero_network_parity": _artifact(zero_parity),
+                },
+                "stages": steps,
+                "productive_run_seconds": time.perf_counter() - started,
+                "technical_retry_seconds": 0.0,
+                "retry_count": 0,
+                "cache_hit": False,
+            }
+            atomic_write_json(final_receipt, receipt)
+            print(json.dumps(receipt, indent=2, sort_keys=True))
+            return 0
         steps.append(
             _run_step(
                 "train_l0",
@@ -382,19 +690,49 @@ def main() -> int:
             != "all_annotated_source_hands"
         ):
             raise RuntimeError("INDEPENDENT_SOURCE_POLICY_L0_FINAL_CONTRACT_INVALID")
+        steps.append(
+            _run_step(
+                "qualify_corrected_bounded_l0_v2",
+                [
+                    *qualifier_base,
+                    "--controller-mode",
+                    "CORRECTED_L0",
+                    "--checkpoint",
+                    str(l0_checkpoint),
+                    "--optimizer-steps",
+                    "250",
+                    "--training-samples",
+                    str(L0_SAMPLES),
+                    "--output",
+                    str(l0_qualification_root),
+                ],
+                log_root=log_root,
+                expected_artifacts=(l0_qualification_root / "qualification.json",),
+            )
+        )
+        l0_qualification_path = l0_qualification_root / "qualification.json"
+        l0_qualification = _json(l0_qualification_path)
+        if l0_qualification.get("source_controller_executability_v2") != "PASS":
+            raise RuntimeError("SOURCE_CONTROLLER_HARD_FAILURE")
         receipt = {
-            "schema_version": "IndependentSourcePolicyReceiptV3",
+            "schema_version": "IndependentSourcePolicyReceiptV4",
             "status": "PASS",
             "clip_id": args.clip_id,
             "primary_object_id": rows[0]["primary_object_id"],
             "selection_manifest_sha256": manifest["manifest_sha256"],
             "primary_object_authority_sha256": authority["authority_sha256"],
-            "source_policy_profile": "l0_then_physical_grouped_rse_v1",
+            "source_policy_profile": "source_controller_auto_v2",
+            "selected_route": "CORRECTED_L0",
+            "source_controller_executability_v2": "PASS",
+            "source_controller_fidelity_v2": l0_qualification[
+                "source_controller_fidelity_v2"
+            ],
             "l0_samples": L0_SAMPLES,
             "standalone_strict_v4_samples": 0,
             "checkpoint": str(l0_checkpoint),
             "checkpoint_sha256": sha256_file(l0_checkpoint),
             "source_training_result": _artifact(l0_result),
+            "source_qualification": _artifact(l0_qualification_path),
             "standalone_strict_v4_training": {
                 "status": "FORBIDDEN_NOT_RUN",
                 "samples": 0,
@@ -420,6 +758,7 @@ def main() -> int:
             },
             "artifacts": {
                 "gpu_preflight": _artifact(gpu_preflight_path),
+                "support_preflight": _artifact(support_preflight_path),
                 "world_reference": _artifact(world_reference),
                 "reference_v1": _artifact(reference_v1),
                 "reference_v2": _artifact(reference_v2),
@@ -427,6 +766,10 @@ def main() -> int:
                 "object_usd": _artifact(object_usd),
                 "source_contact": _artifact(source_contact_receipt),
                 "l0_result": _artifact(l0_result),
+                "physical_contracts": _artifact(physical_contract_receipt),
+                "zero_residual_qualification": _artifact(
+                    zero_direct_root / "qualification.json"
+                ),
             },
             "stages": steps,
             "productive_run_seconds": time.perf_counter() - started,

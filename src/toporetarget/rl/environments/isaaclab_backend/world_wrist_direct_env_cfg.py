@@ -98,6 +98,9 @@ class IsaacWorldWristFingerDirectRLEnvCfg(DirectRLEnvCfg):
     stage16_support_mode = "none"
     stage16_frame_zero_full_gravity_authorized = False
     continuous_virtual_wrist_angles = False
+    # Evaluation-only H3 source-controller admission. Object/contact tracking
+    # remains visible as fidelity evidence but does not terminate execution.
+    source_controller_admission_v2 = False
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
         num_envs=1,
         env_spacing=0.75,

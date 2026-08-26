@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pytest
 import torch
+import yaml
 
 from toporetarget.rl.environments.isaaclab_backend.explicit_virtual_wrist import (
     continuous_angle_branch,
@@ -12,15 +14,27 @@ from toporetarget.rl.environments.isaaclab_backend.explicit_virtual_wrist import
     se3_target_to_explicit_3p3r,
 )
 from toporetarget.rl.environments.isaaclab_backend.tensor_math import quaternion_exp_wxyz
+from toporetarget.rl.environments.isaaclab_backend.termination_terms import (
+    source_controller_admission_dones_v2,
+)
 from toporetarget.rl.environments.isaaclab_backend.virtual_wrist_asset import (
     explicit_virtual_wrist_recipe,
 )
+from toporetarget.rl.ppo.networks import ActorCritic
 from toporetarget.rl.source_controller import (
+    EXECUTABILITY_V2_REQUIRED_TRUE,
     SourceControllerDecision,
+    SourceControllerExecutability,
+    SourceControllerFidelity,
     SourceControllerMode,
+    SourceControllerRouteV2,
     SourceControllerSafetyContractV1,
+    make_zero_output_residual_actor_,
     select_source_controller_route,
+    select_source_controller_route_v2,
     selected_mode_for_clip,
+    source_controller_executability_v2,
+    source_controller_fidelity_v2,
 )
 
 
@@ -37,6 +51,30 @@ def _receipt(clip: str, passed: bool) -> dict[str, object]:
         "collision_safety_pass",
     )
     return {"clip_id": clip, **{name: passed for name in names}}
+
+
+def _v2_receipt(**overrides: object) -> dict[str, object]:
+    result: dict[str, object] = {
+        **{name: True for name in EXECUTABILITY_V2_REQUIRED_TRUE},
+        "wrist_position_tracking_pass": True,
+        "wrist_rotation_tracking_pass": True,
+        "finger_tracking_pass": True,
+        "link_tracking_pass": True,
+        "source_contact_recall_pass": True,
+        "object_tracking_pass": True,
+        "interaction_progression_pass": True,
+        "command_clamp_pass": True,
+        "actuator_saturation_pass": True,
+        "reference_completion_pass": True,
+        "normalized_wrist_tracking_error": 0.1,
+        "normalized_finger_tracking_error": 0.1,
+        "command_clamp_fraction": 0.0,
+        "actuator_saturation_fraction": 0.0,
+        "source_contact_recall": 1.0,
+        "object_tracking_score": 1.0,
+    }
+    result.update(overrides)
+    return result
 
 
 def test_continuous_angle_branch_crosses_principal_boundary_without_jump() -> None:
@@ -110,3 +148,100 @@ def test_continuous_virtual_wrist_recipe_retains_real_finger_and_translation_lim
     assert recipe["finger_joint_position_limits_enforced"] is True
     assert recipe["virtual_wrist_translation_limits_enforced"] is True
     assert recipe["translation_limits_m"] == [-0.4, 0.4]
+
+
+@pytest.mark.parametrize(
+    "diagnostic",
+    (
+        "source_contact_recall_pass",
+        "object_tracking_pass",
+        "interaction_progression_pass",
+        "reference_completion_pass",
+    ),
+)
+def test_task_fidelity_failure_is_degraded_but_executable(diagnostic: str) -> None:
+    receipt = _v2_receipt(**{diagnostic: False})
+    assert (
+        source_controller_executability_v2(receipt)
+        is SourceControllerExecutability.PASS
+    )
+    assert source_controller_fidelity_v2(receipt) is SourceControllerFidelity.DEGRADED
+    assert select_source_controller_route_v2(receipt) is SourceControllerRouteV2.ZERO_RESIDUAL
+
+
+@pytest.mark.parametrize(
+    "hard_gate",
+    (
+        "real_finger_joint_limits_safe",
+        "virtual_wrist_translation_limits_safe",
+        "actuator_effort_limits_safe",
+        "actuator_velocity_limits_safe",
+        "action_bounds_safe",
+        "singularity_safety_pass",
+        "catastrophic_collision_safe",
+        "nonfinite_dynamics_absent",
+        "controller_divergence_absent",
+    ),
+)
+def test_true_execution_or_physical_limit_remains_hard(hard_gate: str) -> None:
+    receipt = _v2_receipt(**{hard_gate: False})
+    assert (
+        source_controller_executability_v2(receipt)
+        is SourceControllerExecutability.FAIL
+    )
+
+
+def test_auto_v2_uses_l0_only_as_executable_fallback_or_source_side_improvement() -> None:
+    non_executable_zero = _v2_receipt(real_finger_joint_limits_safe=False)
+    l0 = _v2_receipt()
+    assert (
+        select_source_controller_route_v2(non_executable_zero, l0)
+        is SourceControllerRouteV2.CORRECTED_L0
+    )
+    assert (
+        select_source_controller_route_v2(non_executable_zero, None)
+        is SourceControllerRouteV2.SOURCE_CONTROLLER_HARD_FAILURE
+    )
+    worse_l0 = _v2_receipt(
+        normalized_wrist_tracking_error=0.4,
+        normalized_finger_tracking_error=0.4,
+    )
+    assert (
+        select_source_controller_route_v2(_v2_receipt(), worse_l0)
+        is SourceControllerRouteV2.ZERO_RESIDUAL
+    )
+
+
+def test_object_fidelity_termination_does_not_stop_v2_admission() -> None:
+    terminated, success = source_controller_admission_dones_v2(
+        {"primary_reason_code": torch.tensor([2, 3, 4, 1, 5, 6])},
+        reference_index=torch.tensor([4, 4, 4, 4, 4, 4]),
+        final_reference_index=4,
+    )
+    assert terminated.tolist() == [False, False, False, True, True, True]
+    assert success.tolist() == [True, True, True, False, False, False]
+
+
+def test_zero_output_network_matches_deterministic_zero_residual_after_reload() -> None:
+    torch.manual_seed(7)
+    model = ActorCritic(observation_dim=11, action_dim=26)
+    make_zero_output_residual_actor_(model)
+    observations = torch.randn(5, 11)
+    expected = torch.zeros(5, 26)
+    assert torch.equal(model.mean(observations), expected)
+    restored = ActorCritic(observation_dim=11, action_dim=26)
+    restored.load_state_dict(model.state_dict())
+    assert torch.equal(restored.mean(observations), expected)
+
+
+def test_unbounded_profile_is_diagnostic_only_not_production_authority() -> None:
+    contract_path = (
+        Path(__file__).resolve().parents[2]
+        / "configs/contracts/source_controller_auto_v2.yaml"
+    )
+    contract = yaml.safe_load(contract_path.read_text(encoding="utf-8"))
+    assert contract["fallback"]["bounded_targets_required"] is True
+    assert contract["fallback"]["wrapped_principal_angle_gate"] == "forbidden"
+    assert contract["diagnostic_only_profiles"] == [
+        "l0_unbounded_joint_targets_then_physical_grouped_rse_v1"
+    ]

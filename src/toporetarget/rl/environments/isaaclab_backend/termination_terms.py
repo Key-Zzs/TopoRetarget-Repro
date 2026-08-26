@@ -103,4 +103,27 @@ def stage16_termination(
     }
 
 
-__all__ = ["Stage16TerminationProfileV1", "TERMINATION_REASONS", "stage16_termination"]
+def source_controller_admission_dones_v2(
+    termination: dict[str, torch.Tensor],
+    *,
+    reference_index: torch.Tensor,
+    final_reference_index: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Separate hard execution stops from task-fidelity termination reasons.
+
+    Codes 2--4 are object-tracking diagnostics. Codes 1, 5, and 6 retain
+    hard authority for numerical and wrist-safety failures.
+    """
+
+    reason = termination["primary_reason_code"]
+    hard_terminated = (reason == 1) | (reason == 5) | (reason == 6)
+    reference_complete = reference_index >= final_reference_index
+    return hard_terminated, reference_complete & ~hard_terminated
+
+
+__all__ = [
+    "Stage16TerminationProfileV1",
+    "TERMINATION_REASONS",
+    "source_controller_admission_dones_v2",
+    "stage16_termination",
+]

@@ -60,9 +60,11 @@ def test_support_resolves_strict_mask_from_source_contact_receipt() -> None:
     assert 'source_contact["artifacts"]["support_native"]' in source
     assert 'contact_root / f"strict_source_contact_mask_' not in source
     assert '"IndependentSourcePolicyReceiptV3"' in source
+    assert '"IndependentSourcePolicyReceiptV4"' in source
     assert '"IndependentSourcePolicyPrerequisitesReceiptV2"' in source
     assert '"IndependentSourcePolicyReceiptV1"' not in source
     assert '"l0_then_physical_grouped_rse_v1"' in source
+    assert '"source_controller_auto_v2"' in source
     assert '"gpu_physx_authorized": not preflight_reasons' in source
     assert '"l0_training_authorized": not preflight_reasons' in source
     assert '"CPU_SUPPORT_PREFLIGHT_ONLY"' in source

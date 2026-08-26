@@ -89,6 +89,7 @@ def _make_table_env(
     reference_distance_root: Path | None = None,
     object_mesh_root: Path | None = None,
     continuous_virtual_wrist_angles: bool = False,
+    source_controller_admission_v2: bool = False,
     hardening_v2_generalization: bool = False,
     hardening_v2_runtime_events: Any = None,
 ) -> Any:
@@ -331,6 +332,7 @@ def _make_table_env(
 
     cfg = ppo_cfg.IsaacPPO26DReferenceTrackingEnvCfg()
     cfg.continuous_virtual_wrist_angles = bool(continuous_virtual_wrist_angles)
+    cfg.source_controller_admission_v2 = bool(source_controller_admission_v2)
     ppo_cfg.configure_stage16d_ppo26d(
         cfg, num_envs=num_envs, clip=clip, rsi=training_rsi, critical_dr=False
     )

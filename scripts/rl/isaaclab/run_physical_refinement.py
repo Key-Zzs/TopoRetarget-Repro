@@ -300,6 +300,47 @@ def _source(clip: str, *, independent: dict[str, Path] | None = None) -> dict[st
     if independent is not None:
         result_path = independent["source_training_result"]
         result = json.loads(result_path.read_text(encoding="utf-8"))
+        if result.get("schema_version") == "Stage16DZeroResidualSourceTrainingV1":
+            checkpoint = Path(str(result.get("checkpoint", ""))).resolve()
+            checkpoint_hash = str(result.get("checkpoint_sha256", ""))
+            if (
+                result.get("status") != "ZERO_RESIDUAL_SOURCE_CONTROLLER_MATERIALIZED"
+                or result.get("clip") != clip
+                or result.get("source_controller_executability_v2") != "PASS"
+                or int(result.get("optimizer_steps", -1)) != 0
+                or int(result.get("training_samples", -1)) != 0
+                or not checkpoint.is_file()
+                or _sha256(checkpoint) != checkpoint_hash
+            ):
+                raise RuntimeError("INDEPENDENT_ZERO_RESIDUAL_SOURCE_RESULT_INVALID")
+            payload = load_checkpoint(checkpoint, map_location="cpu")
+            actor = {
+                name: value
+                for name, value in payload.get("actor_critic", {}).items()
+                if name.startswith("actor.")
+            }
+            if (
+                payload.get("schema_version") != "Stage16DPPO26DCheckpointV1"
+                or payload.get("clip") != clip
+                or payload.get("source_controller_route") != "ZERO_RESIDUAL"
+                or int(payload.get("cumulative_samples", -1)) != 0
+                or not actor
+                or not all(bool(torch.count_nonzero(value) == 0) for value in actor.values())
+            ):
+                raise RuntimeError("INDEPENDENT_ZERO_RESIDUAL_SOURCE_CHECKPOINT_INVALID")
+            return {
+                "kind": "independent_zero_residual_before_physical_grouped_rse",
+                "clip": clip,
+                "checkpoint": str(checkpoint),
+                "checkpoint_sha256": checkpoint_hash,
+                "initial_update": 0,
+                "initial_stage_samples": 0,
+                "initial_cumulative_samples": 0,
+                "source_training_result": str(result_path),
+                "source_training_result_sha256": _sha256(result_path),
+                "l0_samples": 0,
+                "strict_v4_samples": 0,
+            }
         if result.get("schema_version") == "Stage16DPPO26DL0TrainingV1":
             checkpoint = Path(str(result.get("l0_checkpoint", ""))).resolve()
             if (
@@ -549,7 +590,10 @@ def _restore_source(env: Any, source: dict[str, object]) -> tuple[PPO26DTrainer,
         )
         initialization["rse_state"] = "fresh_initial_counts_1_1"
         return trainer, initialization
-    if source["kind"] == "independent_l0_before_physical_grouped_rse":
+    if source["kind"] in {
+        "independent_l0_before_physical_grouped_rse",
+        "independent_zero_residual_before_physical_grouped_rse",
+    }:
         payload = load_checkpoint(checkpoint, map_location=env.device)
         trainer.model.load_state_dict(payload["actor_critic"])
         trainer.trainer.optimizer.load_state_dict(payload["optimizer"])
@@ -559,7 +603,11 @@ def _restore_source(env: Any, source: dict[str, object]) -> tuple[PPO26DTrainer,
         restore_rng_state(payload["rng"])
         env.restore_rse_state(fail_count=1, total_count=1)
         return trainer, {
-            "kind": "L0_TO_GROUPED_RSE_FULL_PPO_STATE",
+            "kind": (
+                "ZERO_RESIDUAL_TO_GROUPED_RSE_FULL_PPO_STATE"
+                if source["kind"] == "independent_zero_residual_before_physical_grouped_rse"
+                else "L0_TO_GROUPED_RSE_FULL_PPO_STATE"
+            ),
             "checkpoint": str(checkpoint.resolve()),
             "checkpoint_sha256": _sha256(checkpoint),
             "optimizer_restored": True,

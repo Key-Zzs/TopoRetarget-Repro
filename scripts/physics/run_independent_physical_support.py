@@ -145,7 +145,10 @@ def main() -> int:
     source_receipt_path = args.source_policy_receipt.resolve()
     source = _json(source_receipt_path)
     source_schema = source.get("schema_version")
-    allowed_source_schemas = {"IndependentSourcePolicyReceiptV3"}
+    allowed_source_schemas = {
+        "IndependentSourcePolicyReceiptV3",
+        "IndependentSourcePolicyReceiptV4",
+    }
     if args.preflight_only:
         allowed_source_schemas.add("IndependentSourcePolicyPrerequisitesReceiptV2")
     if (
@@ -168,8 +171,20 @@ def main() -> int:
         is not False
     ):
         raise ValueError("INDEPENDENT_SUPPORT_L0_SOURCE_POLICY_CONTRACT_INVALID")
+    if source_schema == "IndependentSourcePolicyReceiptV4" and (
+        source.get("source_policy_profile") != "source_controller_auto_v2"
+        or source.get("selected_route") not in {"ZERO_RESIDUAL", "CORRECTED_L0"}
+        or source.get("source_controller_executability_v2") != "PASS"
+        or int(source.get("l0_samples", -1))
+        != (0 if source.get("selected_route") == "ZERO_RESIDUAL" else 1_024_000)
+        or int(source.get("standalone_strict_v4_samples", -1)) != 0
+        or source.get("required_downstream_contract", {}).get("reward_aggregation")
+        != "grouped_multiplicative_v1"
+        or source.get("required_downstream_contract", {}).get("rse_enabled") is not True
+    ):
+        raise ValueError("INDEPENDENT_SUPPORT_SOURCE_CONTROLLER_AUTO_V2_INVALID")
     if source_schema == "IndependentSourcePolicyPrerequisitesReceiptV2" and (
-        source.get("source_policy_profile") != "l0_then_physical_grouped_rse_v1"
+        source.get("source_policy_profile") != "source_controller_auto_v2"
         or source.get("terminal_scope") != "CPU_AUTHORITIES_ONLY"
         or source.get("isaac_object_import") != "NOT_RUN"
         or source.get("l0_training") != "NOT_RUN"
@@ -183,7 +198,7 @@ def main() -> int:
     object_mesh = _receipt_path(source["artifacts"]["object_mesh"])
     object_usd = (
         _receipt_path(source["artifacts"]["object_usd"])
-        if source_schema == "IndependentSourcePolicyReceiptV3"
+        if source_schema in {"IndependentSourcePolicyReceiptV3", "IndependentSourcePolicyReceiptV4"}
         else None
     )
     source_contact_path = _receipt_path(source["artifacts"]["source_contact"])
@@ -434,35 +449,56 @@ def main() -> int:
         summary = _json(support_report / "final_summary.json")
         if summary.get("overall_status") != "PASS_WITH_TRANSFER_DEFERRED":
             raise RuntimeError("INDEPENDENT_SUPPORT_PHYSICAL_GATE_BLOCKED")
-        steps.append(
-            _run_step(
-                "freeze_physical_contracts",
-                [
-                    sys.executable,
-                    "scripts/rl/prepare_independent_physical_contracts.py",
-                    "--selection-manifest",
-                    str(manifest_path),
-                    "--clip-id",
-                    args.clip_id,
-                    "--world-reference",
-                    str(reference),
-                    "--reference-v2",
-                    str(reference_v2),
-                    "--object-mesh",
-                    str(object_mesh),
-                    "--object-usd",
-                    str(object_usd),
-                    "--strict-source-mask",
-                    str(strict_mask),
-                    "--base-runtime-geometry-manifest",
-                    str(base_geometry),
-                    "--output-root",
-                    str(contracts_root),
-                ],
-                log_root=support_report / "logs",
-                expected_artifacts=(contracts_root / "physical_contract_receipt.json",),
+        contracts_receipt_path = contracts_root / "physical_contract_receipt.json"
+        if contracts_receipt_path.is_file():
+            contracts_receipt = _json(contracts_receipt_path)
+            if (
+                contracts_receipt.get("schema_version")
+                != "IndependentPhysicalContractsReceiptV1"
+                or contracts_receipt.get("status") != "PASS"
+                or contracts_receipt.get("clip_id") != args.clip_id
+                or contracts_receipt.get("selection_manifest_sha256")
+                != manifest["manifest_sha256"]
+            ):
+                raise ValueError("INDEPENDENT_SUPPORT_EXISTING_PHYSICAL_CONTRACT_INVALID")
+            steps.append(
+                {
+                    "stage": "freeze_physical_contracts",
+                    "status": "PASS",
+                    "resumed_from_source_controller_auto_v2": True,
+                    "receipt": _artifact(contracts_receipt_path),
+                }
             )
-        )
+        else:
+            steps.append(
+                _run_step(
+                    "freeze_physical_contracts",
+                    [
+                        sys.executable,
+                        "scripts/rl/prepare_independent_physical_contracts.py",
+                        "--selection-manifest",
+                        str(manifest_path),
+                        "--clip-id",
+                        args.clip_id,
+                        "--world-reference",
+                        str(reference),
+                        "--reference-v2",
+                        str(reference_v2),
+                        "--object-mesh",
+                        str(object_mesh),
+                        "--object-usd",
+                        str(object_usd),
+                        "--strict-source-mask",
+                        str(strict_mask),
+                        "--base-runtime-geometry-manifest",
+                        str(base_geometry),
+                        "--output-root",
+                        str(contracts_root),
+                    ],
+                    log_root=support_report / "logs",
+                    expected_artifacts=(contracts_receipt_path,),
+                )
+            )
     except BaseException as error:
         atomic_write_json(
             support_report / "support_failure.json",

@@ -41,9 +41,13 @@ from toporetarget.rl.environments.isaaclab_backend.explicit_virtual_wrist import
 from toporetarget.rl.geometry_audit.hand_collision_reconstruction import (
     HAND_COLLISION_BODY_NAMES,
 )
-from toporetarget.rl.source_controller import SourceControllerSafetyContractV1
+from toporetarget.rl.source_controller import (
+    SourceControllerExecutableContractV2,
+    source_controller_executability_v2,
+    source_controller_fidelity_v2,
+)
 
-DEFAULT_CONTRACT = REPO_ROOT / "configs/contracts/source_controller_auto_v1.yaml"
+DEFAULT_CONTRACT = REPO_ROOT / "configs/contracts/source_controller_auto_v2.yaml"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -53,6 +57,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--episodes", type=int, default=10)
     parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument(
+        "--controller-mode",
+        choices=("ZERO_RESIDUAL_DETERMINISTIC", "ZERO_RESIDUAL_NETWORK", "CORRECTED_L0"),
+    )
     parser.add_argument("--optimizer-steps", type=int, default=0)
     parser.add_argument("--training-samples", type=int, default=0)
     parser.add_argument("--contract", type=Path, default=DEFAULT_CONTRACT)
@@ -91,6 +99,13 @@ def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
         writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _quaternion_error_deg(actual: np.ndarray, target: np.ndarray) -> np.ndarray:
+    actual_norm = actual / np.linalg.norm(actual, axis=-1, keepdims=True)
+    target_norm = target / np.linalg.norm(target, axis=-1, keepdims=True)
+    dot = np.clip(np.abs(np.sum(actual_norm * target_norm, axis=-1)), 0.0, 1.0)
+    return np.degrees(2.0 * np.arccos(dot))
 
 
 class _ZeroResidualDistribution:
@@ -132,32 +147,67 @@ def _seeds_for(args: argparse.Namespace, *, independent: bool) -> list[int]:
     return [int(value) for value in seeds[: args.episodes]]
 
 
-def _contract(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+def _contract(path: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
-    qualification = payload.get("zero_residual_eval", {}).get("qualification", {})
-    required = {
+    admission = payload.get("admission", {})
+    fidelity = payload.get("fidelity", {})
+    fidelity_required = {
         "minimum_pass_fraction",
+    }
+    fidelity_thresholds = {
         "wrist_command_to_actual_position_mean_m_max",
         "wrist_command_to_actual_rotation_mean_deg_max",
         "finger_command_to_actual_mean_rad_max",
-        "minimum_contact_fraction",
-        "reference_end_required",
+        "link_reference_error_mean_m_max",
+        "source_contact_recall_min",
+        "object_position_error_mean_m_max",
+        "object_rotation_error_mean_deg_max",
+        "command_clamp_fraction_max",
+        "actuator_saturation_fraction_max",
     }
-    if payload.get("schema_version") != "SourceControllerAutoContractV1" or not required.issubset(
-        qualification
+    if (
+        payload.get("schema_version") != "SourceControllerAutoContractV2"
+        or admission.get("schema_version") != "SourceControllerExecutableV2"
+        or not fidelity_required.issubset(admission)
+        or not fidelity_thresholds.issubset(fidelity)
     ):
         raise ValueError("ZERO_RESIDUAL_SOURCE_CONTROLLER_CONTRACT_INVALID")
-    return payload, qualification
+    expected = set(SourceControllerExecutableContractV2().as_dict()) - {
+        "virtual_wrist_angle_authority"
+    }
+    if set(admission.get("hard_requirements", ())) != expected:
+        raise ValueError("SOURCE_CONTROLLER_EXECUTABLE_V2_REQUIREMENTS_DRIFT")
+    return payload, admission, fidelity
 
 
 def main() -> int:
     args = _parser().parse_args()
     if not args.accept_eula or args.episodes != 10:
         raise ValueError("ZERO_RESIDUAL_SOURCE_CONTROLLER_REQUIRES_EVAL10_AND_EULA")
-    if args.checkpoint is None:
-        if args.optimizer_steps != 0 or args.training_samples != 0:
+    controller_mode = args.controller_mode or (
+        "ZERO_RESIDUAL_DETERMINISTIC" if args.checkpoint is None else "CORRECTED_L0"
+    )
+    if controller_mode == "ZERO_RESIDUAL_DETERMINISTIC":
+        if (
+            args.checkpoint is not None
+            or args.optimizer_steps != 0
+            or args.training_samples != 0
+        ):
             raise ValueError("ZERO_RESIDUAL_SOURCE_CONTROLLER_COST_MUST_BE_ZERO")
-    elif not args.checkpoint.is_file() or args.optimizer_steps <= 0 or args.training_samples <= 0:
+    elif controller_mode == "ZERO_RESIDUAL_NETWORK":
+        if (
+            args.checkpoint is None
+            or not args.checkpoint.is_file()
+            or args.optimizer_steps != 0
+            or args.training_samples != 0
+        ):
+            raise ValueError("ZERO_RESIDUAL_NETWORK_COST_OR_CHECKPOINT_INVALID")
+    elif (
+        args.checkpoint is None
+        or not args.checkpoint.is_file()
+        or args.optimizer_steps <= 0
+        or args.training_samples <= 0
+    ):
         raise ValueError("CORRECTED_L0_SOURCE_CONTROLLER_COST_OR_CHECKPOINT_INVALID")
     independent_inputs = (
         args.reference,
@@ -178,7 +228,7 @@ def main() -> int:
         raise ValueError("ZERO_RESIDUAL_SOURCE_CONTROLLER_INDEPENDENT_INPUT_SET_INCOMPLETE")
     independent = args.reference is not None
     contract_path = args.contract.resolve()
-    contract, qualification = _contract(contract_path)
+    contract, admission, fidelity_thresholds = _contract(contract_path)
     output = args.output.resolve()
     if output.exists():
         raise FileExistsError(f"ZERO_RESIDUAL_SOURCE_CONTROLLER_OUTPUT_EXISTS:{output}")
@@ -212,8 +262,8 @@ def main() -> int:
             contact_mask_root=args.contact_mask_root,
             reference_distance_root=args.reference_distance_root,
             object_mesh_root=args.object_mesh_root,
-            enforce_joint_position_limits=True,
             continuous_virtual_wrist_angles=True,
+            source_controller_admission_v2=True,
         )
         runtime = env.contract_report()
         wrist_contract = runtime["finite_virtual_6d_wrist_actuator"]
@@ -229,9 +279,24 @@ def main() -> int:
         else:
             from scripts.rl.isaaclab.evaluate_physical_hoi import model_from_checkpoint
 
-            trainer, _ = model_from_checkpoint(
+            trainer, checkpoint_payload = model_from_checkpoint(
                 args.checkpoint.resolve(), str(env.device), expected_clip=args.clip
             )
+            if controller_mode == "ZERO_RESIDUAL_NETWORK":
+                actor_state = {
+                    name: value
+                    for name, value in checkpoint_payload["actor_critic"].items()
+                    if name.startswith("actor.")
+                }
+                if (
+                    checkpoint_payload.get("source_controller_route") != "ZERO_RESIDUAL"
+                    or not actor_state
+                    or not all(
+                        bool(torch.count_nonzero(value) == 0)
+                        for value in actor_state.values()
+                    )
+                ):
+                    raise ValueError("ZERO_RESIDUAL_NETWORK_CHECKPOINT_NOT_IDENTICALLY_ZERO")
         rollouts = _parallel_rollouts(
             env=env,
             trainer=trainer,
@@ -263,37 +328,85 @@ def main() -> int:
             action = np.asarray(trace["action"], dtype=np.float64)
             finger_q = np.asarray(trace["finger_q"], dtype=np.float64)
             effort = np.asarray(trace["actuator_effort"], dtype=np.float64)
+            wrist_q = np.asarray(trace["virtual_wrist_q"], dtype=np.float64)
             wrist_qdot = np.asarray(trace["virtual_wrist_qdot"], dtype=np.float64)
             finger_qdot = np.asarray(trace["finger_qdot"], dtype=np.float64)
+            reference_index = np.asarray(trace["reference_index"], dtype=np.int64)
             singularity_margin_deg = (
                 serial_xyz_singularity_margin_deg(
-                    torch.as_tensor(trace["virtual_wrist_q"], dtype=torch.float64)
+                    torch.as_tensor(wrist_q, dtype=torch.float64)
                 )
                 .detach()
                 .cpu()
                 .numpy()
             )
-            finite = bool(
-                all(
-                    np.isfinite(np.asarray(trace[name])).all()
-                    for name in (
-                        "wrist_pose",
-                        "finger_q",
-                        "object_pose",
-                        "action",
-                        "actuator_effort",
-                    )
+            state_fields = (
+                "wrist_pose",
+                "wrist_twist_world",
+                "finger_q",
+                "finger_qdot",
+                "virtual_wrist_q",
+                "virtual_wrist_qdot",
+                "object_pose",
+                "object_twist",
+            )
+            target_fields = (
+                "wrist_reference",
+                "finger_reference",
+                "object_reference",
+                "tracked_link_reference",
+            )
+            command_fields = ("wrist_target", "finger_target", "virtual_wrist_target_q")
+            required_fields = state_fields + target_fields + command_fields + ("action",)
+            expected_rows = int(rollout["steps"]) + 1
+            rows_readable = bool(
+                all(name in trace for name in required_fields)
+                and all(len(np.asarray(trace[name])) == expected_rows for name in required_fields)
+                and len(reference_index) == expected_rows
+            )
+            state_finite = bool(
+                rows_readable
+                and all(np.isfinite(np.asarray(trace[name])).all() for name in state_fields)
+            )
+            target_finite = bool(
+                rows_readable
+                and all(np.isfinite(np.asarray(trace[name])).all() for name in target_fields)
+            )
+            command_finite = bool(
+                rows_readable
+                and all(np.isfinite(np.asarray(trace[name])).all() for name in command_fields)
+            )
+            action_finite = bool(np.isfinite(action).all())
+            reference_advances = bool(
+                len(reference_index) > 1
+                and np.all(np.diff(reference_index) >= 0)
+                and int(reference_index[-1]) > int(reference_index[0])
+            )
+            controller_fresh = bool(
+                rows_readable
+                and reference_advances
+                and np.array_equal(
+                    reference_index,
+                    np.arange(reference_index[0], reference_index[0] + len(reference_index)),
                 )
             )
-            joint_safe = bool(
+            finger_joint_safe = bool(
                 np.all(finger_q >= finger_lower[None] - 1.0e-6)
                 and np.all(finger_q <= finger_upper[None] + 1.0e-6)
-                and int(rollout["termination_reason"]) != 2
             )
-            actuator_safe = bool(
+            wrist_translation_safe = bool(
+                np.isfinite(wrist_q[:, :3]).all()
+                and np.all(wrist_q[:, :3] >= -0.4 - 1.0e-6)
+                and np.all(wrist_q[:, :3] <= 0.4 + 1.0e-6)
+            )
+            effort_safe = bool(
                 np.isfinite(effort).all()
                 and np.max(np.abs(effort[:, wrist_effort_indices]), initial=0.0) <= 500.0 + 1.0e-3
                 and np.max(np.abs(effort[:, finger_effort_indices]), initial=0.0) <= 0.6 + 1.0e-3
+            )
+            velocity_safe = bool(
+                np.isfinite(wrist_qdot).all()
+                and np.isfinite(finger_qdot).all()
                 and np.max(np.abs(wrist_qdot[:, :3]), initial=0.0) <= 2.0 + 1.0e-3
                 and np.max(np.abs(wrist_qdot[:, 3:]), initial=0.0) <= 6.0 + 1.0e-3
                 and np.max(np.abs(finger_qdot), initial=0.0) <= 12.0 + 1.0e-3
@@ -302,40 +415,108 @@ def main() -> int:
                 np.isfinite(singularity_margin_deg).all()
                 and np.min(singularity_margin_deg, initial=180.0) > 5.0
             )
-            action_safe = bool(np.isfinite(action).all() and np.max(np.abs(action)) <= 1.0)
+            action_safe = bool(action_finite and np.max(np.abs(action), initial=0.0) <= 1.0)
             wrist_position_mean = float(command["wrist_position_command_to_actual_m"]["mean"])
             wrist_rotation_mean_deg = math.degrees(
                 float(command["wrist_rotation_command_to_actual_rad"]["mean"])
             )
             finger_mean = float(command["finger_command_to_actual_rad"]["mean"])
-            tracking = bool(
-                wrist_position_mean
-                <= float(qualification["wrist_command_to_actual_position_mean_m_max"])
-                and wrist_rotation_mean_deg
-                <= float(qualification["wrist_command_to_actual_rotation_mean_deg_max"])
-                and finger_mean <= float(qualification["finger_command_to_actual_mean_rad_max"])
+            tracked_link_error_mean = float(
+                np.linalg.norm(
+                    np.asarray(trace["tracked_link_positions"], dtype=np.float64)
+                    - np.asarray(trace["tracked_link_reference"], dtype=np.float64),
+                    axis=-1,
+                ).mean()
             )
-            contact = float(rollout["contact_fraction"]) >= float(
-                qualification["minimum_contact_fraction"]
+            source_contact = np.asarray(trace["source_contact_mask"], dtype=bool)
+            actual_contact = np.asarray(trace["actual_contact_mask"], dtype=bool)
+            source_contact_count = int(source_contact.sum())
+            source_contact_recall = float(
+                1.0
+                if source_contact_count == 0
+                else np.count_nonzero(source_contact & actual_contact) / source_contact_count
             )
-            progression = bool(rollout["reached_reference_end"])
-            collision = bool(
+            object_actual = np.asarray(trace["object_pose"], dtype=np.float64)
+            object_reference = np.asarray(trace["object_reference"], dtype=np.float64)
+            object_position_error_mean = float(
+                np.linalg.norm(object_actual[:, :3] - object_reference[:, :3], axis=-1).mean()
+            )
+            object_rotation_error_mean_deg = float(
+                _quaternion_error_deg(object_actual[:, 3:7], object_reference[:, 3:7]).mean()
+            )
+            finger_fraction = float(runtime["action"]["finger_joint_range_fraction"])
+            pre_finger_target = (
+                np.asarray(trace["finger_reference"], dtype=np.float64)
+                + action[:, 6:] * (finger_upper - finger_lower)[None] * finger_fraction
+            )
+            post_finger_target = np.asarray(trace["finger_target"], dtype=np.float64)
+            command_clamp_fraction = float(
+                np.mean(np.abs(pre_finger_target - post_finger_target) > 1.0e-7)
+            )
+            wrist_saturation = np.abs(effort[:, wrist_effort_indices]) >= 500.0 * 0.999
+            finger_saturation = np.abs(effort[:, finger_effort_indices]) >= 0.6 * 0.999
+            actuator_saturation_fraction = float(
+                np.mean(np.concatenate((wrist_saturation, finger_saturation), axis=1))
+            )
+            reference_completion = bool(rollout["reached_reference_end"])
+            interaction_progression = bool(
+                reference_advances
+                and (int(reference_index[-1]) - int(reference_index[0]))
+                >= max(1, expected_rows // 2)
+            )
+            catastrophic_collision_safe = bool(
                 float(geometry["max_penetration_m"]) < float(gate["catastrophic_penetration_m"])
-                and float(geometry["p95_penetration_m"]) <= float(gate["p95_penetration_m"])
                 and float(inter.max(initial=0.0))
                 <= float(gate["maximum_inter_finger_penetration_m"])
             )
-            qualified = bool(
-                tracking
-                and contact
-                and progression
-                and finite
-                and joint_safe
-                and actuator_safe
-                and action_safe
-                and singularity_safe
-                and collision
-            )
+            hard_reason = int(rollout["termination_reason"]) in (1, 5, 6)
+            executable_receipt = {
+                "state_finite": state_finite,
+                "target_finite": target_finite,
+                "command_finite": command_finite,
+                "action_finite": action_finite,
+                "reference_index_advances": reference_advances,
+                "trajectory_rows_readable": rows_readable,
+                "controller_state_fresh": controller_fresh,
+                "real_finger_joint_limits_safe": finger_joint_safe,
+                "virtual_wrist_translation_limits_safe": wrist_translation_safe,
+                "actuator_effort_limits_safe": effort_safe,
+                "actuator_velocity_limits_safe": velocity_safe,
+                "action_bounds_safe": action_safe,
+                "singularity_safety_pass": singularity_safe,
+                "catastrophic_collision_safe": catastrophic_collision_safe,
+                "nonfinite_dynamics_absent": state_finite,
+                "controller_divergence_absent": not hard_reason,
+            }
+            fidelity_receipt = {
+                "wrist_position_tracking_pass": wrist_position_mean
+                <= float(
+                    fidelity_thresholds["wrist_command_to_actual_position_mean_m_max"]
+                ),
+                "wrist_rotation_tracking_pass": wrist_rotation_mean_deg
+                <= float(
+                    fidelity_thresholds["wrist_command_to_actual_rotation_mean_deg_max"]
+                ),
+                "finger_tracking_pass": finger_mean
+                <= float(fidelity_thresholds["finger_command_to_actual_mean_rad_max"]),
+                "link_tracking_pass": tracked_link_error_mean
+                <= float(fidelity_thresholds["link_reference_error_mean_m_max"]),
+                "source_contact_recall_pass": source_contact_recall
+                >= float(fidelity_thresholds["source_contact_recall_min"]),
+                "object_tracking_pass": object_position_error_mean
+                <= float(fidelity_thresholds["object_position_error_mean_m_max"])
+                and object_rotation_error_mean_deg
+                <= float(fidelity_thresholds["object_rotation_error_mean_deg_max"]),
+                "interaction_progression_pass": interaction_progression,
+                "command_clamp_pass": command_clamp_fraction
+                <= float(fidelity_thresholds["command_clamp_fraction_max"]),
+                "actuator_saturation_pass": actuator_saturation_fraction
+                <= float(fidelity_thresholds["actuator_saturation_fraction_max"]),
+                "reference_completion_pass": reference_completion,
+            }
+            combined_receipt = {**executable_receipt, **fidelity_receipt}
+            executability = source_controller_executability_v2(combined_receipt)
+            fidelity = source_controller_fidelity_v2(combined_receipt)
             trace_path = output / "traces" / f"episode_{episode:02d}.npz"
             trace_path.parent.mkdir(parents=True, exist_ok=True)
             np.savez_compressed(trace_path, **trace)
@@ -349,39 +530,82 @@ def main() -> int:
                 "wrist_command_actual_position_mean_m": wrist_position_mean,
                 "wrist_command_actual_rotation_mean_deg": wrist_rotation_mean_deg,
                 "finger_command_actual_mean_rad": finger_mean,
+                "link_reference_error_mean_m": tracked_link_error_mean,
+                "source_contact_recall": source_contact_recall,
+                "object_position_error_mean_m": object_position_error_mean,
+                "object_rotation_error_mean_deg": object_rotation_error_mean_deg,
+                "command_clamp_fraction": command_clamp_fraction,
+                "actuator_saturation_fraction": actuator_saturation_fraction,
                 "contact_fraction": float(rollout["contact_fraction"]),
-                "reference_end": progression,
-                "finite_safe": finite,
-                "joint_limits_safe": joint_safe,
-                "actuator_limits_safe": actuator_safe,
+                "reference_end": reference_completion,
+                "finite_safe": state_finite and target_finite and command_finite and action_finite,
+                "joint_limits_safe": finger_joint_safe and wrist_translation_safe,
+                "actuator_limits_safe": effort_safe and velocity_safe,
                 "singularity_safe": singularity_safe,
                 "minimum_singularity_margin_deg": float(
                     np.min(singularity_margin_deg, initial=180.0)
                 ),
                 "action_bounds_safe": action_safe,
-                "collision_safety_pass": collision,
-                "qualified": qualified,
+                "collision_safety_pass": catastrophic_collision_safe,
+                "executability_v2": executability.value,
+                "fidelity_v2": fidelity.value,
+                "qualified": executability.value == "PASS",
                 "trace": str(trace_path),
                 "trace_sha256": _sha256(trace_path),
             }
             rows.append(row)
             receipt = {
                 **row,
-                "schema_version": "ZeroResidualSourceControllerEpisodeReceiptV1",
-                "reference_tracking_pass": tracking,
-                "contact_execution_pass": contact,
-                "reference_progression_pass": progression,
-                "controller_authority_pass": tracking,
+                **combined_receipt,
+                "schema_version": "SourceControllerEpisodeReceiptV2",
+                "reference_tracking_pass": bool(
+                    fidelity_receipt["wrist_position_tracking_pass"]
+                    and fidelity_receipt["wrist_rotation_tracking_pass"]
+                    and fidelity_receipt["finger_tracking_pass"]
+                ),
+                "contact_execution_pass": fidelity_receipt["source_contact_recall_pass"],
+                "reference_progression_pass": fidelity_receipt[
+                    "interaction_progression_pass"
+                ],
+                "controller_authority_pass": executability.value == "PASS",
+                "normalized_wrist_tracking_error": (
+                    wrist_position_mean
+                    / float(
+                        fidelity_thresholds[
+                            "wrist_command_to_actual_position_mean_m_max"
+                        ]
+                    )
+                    + wrist_rotation_mean_deg
+                    / float(
+                        fidelity_thresholds[
+                            "wrist_command_to_actual_rotation_mean_deg_max"
+                        ]
+                    )
+                ),
+                "normalized_finger_tracking_error": finger_mean
+                / float(fidelity_thresholds["finger_command_to_actual_mean_rad_max"]),
+                "object_tracking_score": 1.0
+                / (
+                    1.0
+                    + object_position_error_mean
+                    / float(
+                        fidelity_thresholds["object_position_error_mean_m_max"]
+                    )
+                    + object_rotation_error_mean_deg
+                    / float(
+                        fidelity_thresholds["object_rotation_error_mean_deg_max"]
+                    )
+                ),
             }
             receipts.append(receipt)
             _write_json(output / "per_episode" / f"episode_{episode:02d}.json", receipt)
-        passed = sum(bool(row["qualified"]) for row in rows)
-        minimum = math.ceil(float(qualification["minimum_pass_fraction"]) * args.episodes)
+        passed = sum(row["executability_v2"] == "PASS" for row in rows)
+        minimum = math.ceil(float(admission["minimum_pass_fraction"]) * args.episodes)
         summary = {
-            "schema_version": "ZeroResidualSourceControllerQualificationV1",
+            "schema_version": "SourceControllerQualificationV2",
             "status": "PASS" if passed >= minimum else "FAIL",
             "clip_id": args.clip,
-            "mode": "ZERO_RESIDUAL" if args.checkpoint is None else "CORRECTED_L0",
+            "mode": controller_mode,
             "optimizer_steps": args.optimizer_steps,
             "training_samples": args.training_samples,
             "checkpoint": (
@@ -395,10 +619,23 @@ def main() -> int:
             "episodes": args.episodes,
             "qualified_episodes": passed,
             "qualification_required": minimum,
-            "source_policy_ready_no_l0": passed >= minimum,
+            "source_policy_ready_no_l0": controller_mode.startswith("ZERO_RESIDUAL")
+            and passed >= minimum,
+            "source_controller_executability_v2": (
+                "PASS" if passed >= minimum else "FAIL"
+            ),
+            "source_controller_fidelity_v2": (
+                "PASS"
+                if all(row["fidelity_v2"] == "PASS" for row in rows)
+                else (
+                    "FAIL"
+                    if all(row["fidelity_v2"] == "FAIL" for row in rows)
+                    else "DEGRADED"
+                )
+            ),
             "continuous_virtual_wrist_angles": True,
             "real_finger_joint_limits_enforced": True,
-            "safety_contract": SourceControllerSafetyContractV1().as_dict(),
+            "executable_contract": SourceControllerExecutableContractV2().as_dict(),
             "contract": {"path": str(contract_path), "sha256": _sha256(contract_path)},
             "runtime_contract": runtime,
             "seed_manifest": seeds,

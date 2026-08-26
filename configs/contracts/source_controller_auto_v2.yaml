@@ -1,0 +1,52 @@
+schema_version: SourceControllerAutoContractV2
+mode: AUTO
+angle_authority: continuous_equivalent_branch_v1
+admission:
+  schema_version: SourceControllerExecutableV2
+  minimum_pass_fraction: 1.0
+  hard_requirements:
+    - state_finite
+    - target_finite
+    - command_finite
+    - action_finite
+    - reference_index_advances
+    - trajectory_rows_readable
+    - controller_state_fresh
+    - real_finger_joint_limits_safe
+    - virtual_wrist_translation_limits_safe
+    - actuator_effort_limits_safe
+    - actuator_velocity_limits_safe
+    - action_bounds_safe
+    - singularity_safety_pass
+    - catastrophic_collision_safe
+    - nonfinite_dynamics_absent
+    - controller_divergence_absent
+fidelity:
+  schema_version: SourceControllerFidelityV2
+  wrist_command_to_actual_position_mean_m_max: 0.05
+  wrist_command_to_actual_rotation_mean_deg_max: 30.0
+  finger_command_to_actual_mean_rad_max: 0.35
+  link_reference_error_mean_m_max: 0.05
+  source_contact_recall_min: 0.50
+  object_position_error_mean_m_max: 0.05
+  object_rotation_error_mean_deg_max: 45.0
+  command_clamp_fraction_max: 0.05
+  actuator_saturation_fraction_max: 0.05
+zero_residual:
+  optimizer_steps: 0
+  action: zero_26d_reference_residual
+fallback:
+  mode: CORRECTED_L0
+  samples: 1024000
+  bounded_targets_required: true
+  wrapped_principal_angle_gate: forbidden
+route_selection:
+  order:
+    - safety_executability
+    - reference_completion
+    - normalized_wrist_finger_tracking_error
+    - command_clamp_actuator_saturation
+    - contact_object_fidelity_tiebreak
+  downstream_outcomes_forbidden: true
+diagnostic_only_profiles:
+  - l0_unbounded_joint_targets_then_physical_grouped_rse_v1
