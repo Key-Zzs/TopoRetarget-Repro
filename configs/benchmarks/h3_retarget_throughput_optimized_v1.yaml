@@ -1,0 +1,60 @@
+schema_version: H3RetargetThroughputBenchmarkV1
+repeats: 3
+conda_environment: topo-retarget
+solver_profile: wuji_continuous_sequential_v1
+execution_profile: wuji_continuous_sequential_fast_exact_v2_h3_audit_reuse_v1
+thread_environment:
+  OMP_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+  OPENBLAS_NUM_THREADS: "1"
+  NUMEXPR_NUM_THREADS: "1"
+  BLIS_NUM_THREADS: "1"
+  VECLIB_MAXIMUM_THREADS: "1"
+cases:
+  - case_id: A_historical_170650_first60
+    case_role: A_170650_60_frames
+    authority: immutable_stage12_prepared_inputs
+    sequence: hocap:subject_1/20231025_170650
+    frames: 60
+    repeats: 3
+    full_case: false
+    hand: right
+    robot: wuji_hand2_beta1_rh
+    object_id: G04_1
+    prepared_root: .local/experiments/stage12_dataset_validation/hocap/hocap_subject_1_20231025_170650
+  - case_id: B_hardening1_first60
+    case_role: B_hardening_1_first_60
+    authority: HOCapSingleHandObjectEpisodeV1
+    episode_id: hocap_subject_9_20231027_125019__right__G16_3__ep00
+    frames: 60
+    repeats: 3
+    full_case: false
+    benchmark_first_frames: 60
+  - case_id: C_hardening1_full210
+    case_role: C_hardening_1_full
+    authority: HOCapSingleHandObjectEpisodeV1
+    episode_id: hocap_subject_9_20231027_125019__right__G16_3__ep00
+    frames: 210
+    repeats: 1
+    full_case: true
+  - case_id: D_hardening4_first60
+    case_role: D_hardening_4_first_60
+    authority: HOCapSingleHandObjectEpisodeV1
+    episode_id: hocap_subject_3_20231024_161209__right__G16_2__ep00
+    frames: 60
+    repeats: 3
+    full_case: false
+    benchmark_first_frames: 60
+  - case_id: E_hardening4_full241
+    case_role: E_hardening_4_full
+    authority: HOCapSingleHandObjectEpisodeV1
+    episode_id: hocap_subject_3_20231024_161209__right__G16_2__ep00
+    frames: 241
+    repeats: 1
+    full_case: true
+historical_regression_baseline:
+  status: H3_BEFORE_AFTER_SAME_INPUT
+  reason: >-
+    Baseline and optimized phases use the exact same five cases, frozen inputs,
+    solver, thread limits, and repetition counts; only final exact audit query
+    scheduling differs.

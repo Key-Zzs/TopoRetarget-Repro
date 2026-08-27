@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
@@ -292,6 +293,7 @@ class CheckpointStore:
     root: Path
     manifest: dict[str, Any] | None = None
     _scan_cache: dict[str, Any] | None = field(default=None, init=False, repr=False)
+    last_assembly_timing: dict[str, float] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.root = Path(self.root).expanduser()
@@ -631,16 +633,25 @@ class CheckpointStore:
     def assemble(self, output: str | Path, *, force: bool = False) -> Path:
         assert self.manifest is not None
         manifest = self.manifest
+        total_started = time.perf_counter()
+        tick = time.perf_counter()
         chain = self.validate_chain()
+        chain_validation_seconds = time.perf_counter() - tick
         if not chain["complete"] or not chain["chain_pass"]:
             raise CheckpointError(f"cannot assemble incomplete checkpoint chain: {chain}")
+        tick = time.perf_counter()
         rows = [self.load_frame(local) for local in chain["contiguous_frames"]]
+        checkpoint_load_seconds = time.perf_counter() - tick
         metadata_rows = [item[0] for item in rows]
         payloads = [item[1] for item in rows]
+        tick = time.perf_counter()
         independent_validation = _independent_source_validation(
             self.manifest, metadata_rows, payloads
         )
+        independent_validation_seconds = time.perf_counter() - tick
+        tick = time.perf_counter()
         arrays = _assemble_arrays(metadata_rows, payloads)
+        array_assembly_seconds = time.perf_counter() - tick
         artifact_metadata = dict(manifest.get("artifact_metadata", {}))
         execution_profile_id = manifest.get("execution_profile_id")
         execution_profile_hash = manifest.get("execution_profile_hash")
@@ -673,9 +684,23 @@ class CheckpointStore:
                 "artifact_hash": None,
             }
         )
+        tick = time.perf_counter()
         trajectory = FinalRetargetTrajectory(artifact_metadata, arrays).validate()
         trajectory.metadata["artifact_hash"] = final_artifact_hash(trajectory)
-        return save_final_trajectory(trajectory, output, force=force)
+        final_validation_hash_seconds = time.perf_counter() - tick
+        tick = time.perf_counter()
+        destination = save_final_trajectory(trajectory, output, force=force)
+        final_serialization_seconds = time.perf_counter() - tick
+        self.last_assembly_timing = {
+            "chain_validation_seconds": chain_validation_seconds,
+            "checkpoint_load_seconds": checkpoint_load_seconds,
+            "independent_validation_seconds": independent_validation_seconds,
+            "array_assembly_seconds": array_assembly_seconds,
+            "final_validation_hash_seconds": final_validation_hash_seconds,
+            "final_serialization_seconds": final_serialization_seconds,
+            "total_seconds": time.perf_counter() - total_started,
+        }
+        return destination
 
 
 def _independent_source_validation(

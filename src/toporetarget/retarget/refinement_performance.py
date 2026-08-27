@@ -151,6 +151,7 @@ class RefinementExecutionProfile:
     role: str
     math_equivalent: bool
     final_full_surface_audit: bool
+    final_audit_scheduling: str
     recommended: bool
     stage12_default: bool
     paper_objective_unchanged: bool
@@ -210,6 +211,9 @@ class RefinementExecutionProfile:
             role=str(values.get("role", "engineering_execution")),
             math_equivalent=bool(values.get("math_equivalent", False)),
             final_full_surface_audit=bool(values.get("final_full_surface_audit", True)),
+            final_audit_scheduling=str(
+                values.get("final_audit_scheduling", "independent_reference_query_v1")
+            ),
             recommended=bool(values.get("recommended", False)),
             stage12_default=bool(values.get("stage12_default", False)),
             paper_objective_unchanged=bool(values.get("paper_objective_unchanged", True)),
@@ -276,6 +280,11 @@ class RefinementExecutionProfile:
             raise ValueError("an unvalidated performance candidate cannot be a Stage 12 default")
         if not result.final_full_surface_audit:
             raise ValueError("all final-refinement execution profiles require a full final audit")
+        if result.final_audit_scheduling not in {
+            "independent_reference_query_v1",
+            "reuse_exact_reference_discovery_if_identical_v1",
+        }:
+            raise ValueError("unsupported final full-surface audit scheduling")
         return result
 
     def as_dict(self) -> dict[str, Any]:
@@ -300,6 +309,7 @@ class RefinementExecutionProfile:
             "role": self.role,
             "math_equivalent": self.math_equivalent,
             "final_full_surface_audit": self.final_full_surface_audit,
+            "final_audit_scheduling": self.final_audit_scheduling,
             "recommended": self.recommended,
             "stage12_default": self.stage12_default,
             "paper_objective_unchanged": self.paper_objective_unchanged,

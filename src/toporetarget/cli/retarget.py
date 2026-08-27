@@ -1236,9 +1236,12 @@ def _run_checkpoint_refinement(
     frame_health_gate: Callable[[dict[str, Any], list[dict[str, Any]]], str | None] | None = None,
     ready_callback: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
+    command_started = time.perf_counter()
+    tick = time.perf_counter()
     sequence, warm, graph, model, surface, selected_samples = _refinement_components(
         canonical, warm_start, graph_path, robot, collision_samples, asset_root
     )
+    input_loading_seconds = time.perf_counter() - tick
     sample_path = selected_samples or _default_collision_samples(robot)
     stop = warm.frame_count if end_frame is None else int(end_frame)
     if stop <= start_frame or stop > warm.frame_count:
@@ -1251,6 +1254,7 @@ def _run_checkpoint_refinement(
     coordinate = RefinementCoordinateProfile.load(coordinate_profile_id)
     paper = PaperRefinementWeights.load()
     quality_extension = _load_quality_extension(quality_extension_path)
+    tick = time.perf_counter()
     resources = prepare_refinement_resources(
         sequence,
         graph,
@@ -1259,6 +1263,7 @@ def _run_checkpoint_refinement(
         geometry_artifact_root=checkpoint_root.parents[3] / "geometry",
     )
     runtime_backends = prepare_refinement_runtime_backends(resources, execution)
+    static_preprocessing_seconds = time.perf_counter() - tick
     source_frame_offset = _source_frame_offset(canonical)
     signature = _refinement_input_signature(
         canonical,
@@ -1330,6 +1335,16 @@ def _run_checkpoint_refinement(
         )
     started = time.perf_counter()
     frame_rows: list[dict[str, Any]] = []
+    timing: dict[str, Any] = {
+        "input_loading_seconds": input_loading_seconds,
+        "static_preprocessing_seconds": static_preprocessing_seconds,
+        "solver_seconds": 0.0,
+        "refinement_call_seconds": 0.0,
+        "checkpoint_payload_seconds": 0.0,
+        "checkpoint_write_seconds": 0.0,
+        "progress_write_seconds": 0.0,
+        "durable_checkpoint_seconds": 0.0,
+    }
     if next_frame > start_frame:
         # A recovered health gate must include already committed frames; this
         # preserves the original five-frame window instead of silently moving
@@ -1378,6 +1393,7 @@ def _run_checkpoint_refinement(
             context: Any,
         ) -> None:
             nonlocal callback_hash, latest_metadata, rejected_metadata
+            callback_started = time.perf_counter()
             metadata, arrays = frame_checkpoint_payload(
                 local_index,
                 frame_result,
@@ -1390,6 +1406,7 @@ def _run_checkpoint_refinement(
                 execution_profile=execution.as_dict(),
                 previous_checkpoint_hash=callback_hash,
             )
+            timing["checkpoint_payload_seconds"] += time.perf_counter() - callback_started
             latest_metadata = metadata
             # A checkpoint chain only accepts strict frames.  Retain a
             # rejected frame as diagnostics, rather than trying to put it in
@@ -1399,9 +1416,12 @@ def _run_checkpoint_refinement(
             if not bool(frame_result.accepted):
                 rejected_metadata = metadata
                 return
+            write_started = time.perf_counter()
             callback_hash = store.save_frame(metadata, arrays)
+            timing["checkpoint_write_seconds"] += time.perf_counter() - write_started
             frame_rows.append(metadata)
 
+        refinement_started = time.perf_counter()
         trajectory, _ = build_final_trajectory(
             sequence,
             warm,
@@ -1425,13 +1445,19 @@ def _run_checkpoint_refinement(
             execution_profile=execution,
             quality_extension=quality_extension,
         )
+        timing["refinement_call_seconds"] += time.perf_counter() - refinement_started
+        timing["solver_seconds"] += float(
+            np.asarray(trajectory.arrays["solve_time_s"], dtype=np.float64).sum()
+        )
         previous = (
             np.asarray(trajectory.arrays["base_pose_scene"][-1], dtype=np.float64),
             np.asarray(trajectory.arrays["qpos"][-1], dtype=np.float64),
         )
         previous_hash = callback_hash
         next_frame += 1
+        progress_started = time.perf_counter()
         store.update_progress(status="paused", elapsed_s=time.perf_counter() - started)
+        timing["progress_write_seconds"] += time.perf_counter() - progress_started
         if frame_health_gate is not None:
             if latest_metadata is None:
                 raise RuntimeError("final refinement emitted no checkpoint metadata")
@@ -1464,13 +1490,31 @@ def _run_checkpoint_refinement(
                 _json_write(status, progress_json)
             return status
 
+    durable_started = time.perf_counter()
     store.commit_durable_checkpoint(status="complete")
+    timing["durable_checkpoint_seconds"] += time.perf_counter() - durable_started
     status = store.update_progress(status="complete", elapsed_s=time.perf_counter() - started)
     status.update(_checkpoint_status_payload(store))
     status["frame_rows"] = frame_rows
     if output is not None:
         destination = store.assemble(output, force=force)
         status["final_artifact"] = str(destination)
+    timing["assembly"] = dict(store.last_assembly_timing)
+    timing["total_internal_seconds"] = time.perf_counter() - command_started
+    categorized = (
+        timing["input_loading_seconds"]
+        + timing["static_preprocessing_seconds"]
+        + timing["solver_seconds"]
+        + timing["checkpoint_payload_seconds"]
+        + timing["checkpoint_write_seconds"]
+        + timing["progress_write_seconds"]
+        + timing["durable_checkpoint_seconds"]
+        + float(timing["assembly"].get("total_seconds", 0.0))
+    )
+    timing["orchestration_seconds"] = max(0.0, timing["total_internal_seconds"] - categorized)
+    timing["schema_version"] = "RetargetThroughputTimingV1"
+    status["timing"] = timing
+    _json_write(timing, checkpoint_root / "timing.json")
     if progress_json is not None:
         _json_write(status, progress_json)
     if progress_log is not None:

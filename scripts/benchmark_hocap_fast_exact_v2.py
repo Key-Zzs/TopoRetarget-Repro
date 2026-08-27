@@ -25,7 +25,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from scripts.run_hocap_episode_geometric_retarget import (  # noqa: E402
-    EXECUTION_PROFILE_ID,
+    EXECUTION_PROFILE_IDS,
     SOLVER_PROFILE_ID,
     THREAD_ENVIRONMENT,
     _run_step,
@@ -430,6 +430,7 @@ def _episode_repeat(
     *,
     repeat: int,
     args: argparse.Namespace,
+    execution: RefinementExecutionProfile,
 ) -> dict[str, Any]:
     case_root = args.run_root.resolve() / str(case["case_id"]) / f"repeat_{repeat:02d}"
     case_report = (
@@ -450,6 +451,8 @@ def _episode_repeat(
         str(case_root),
         "--report-root",
         str(case_report),
+        "--execution-profile",
+        execution.profile_id,
     ]
     if args.asset_root is not None:
         command.extend(["--asset-root", str(args.asset_root.resolve())])
@@ -512,10 +515,22 @@ def _write_outputs(
     columns = [
         "case_id",
         "repeat",
+        "cache_state",
         "frames",
         "raw_loading_seconds",
         "solver_seconds",
         "solver_ms_per_frame",
+        "checkpoint_payload_seconds",
+        "checkpoint_serialization_seconds",
+        "append_write_seconds",
+        "durable_checkpoint_seconds",
+        "checkpoint_chain_validation_seconds",
+        "checkpoint_load_seconds",
+        "assembly_validation_seconds",
+        "array_assembly_seconds",
+        "final_serialization_seconds",
+        "static_preprocessing_seconds",
+        "orchestration_seconds",
         "iterations_per_frame_mean",
         "iterations_per_frame_median",
         "full_frame_validation_seconds",
@@ -544,6 +559,17 @@ def _write_outputs(
             key: statistics.median(float(row[key]) for row in case_rows)
             for key in (
                 "solver_ms_per_frame",
+                "checkpoint_payload_seconds",
+                "checkpoint_serialization_seconds",
+                "append_write_seconds",
+                "durable_checkpoint_seconds",
+                "checkpoint_chain_validation_seconds",
+                "checkpoint_load_seconds",
+                "assembly_validation_seconds",
+                "array_assembly_seconds",
+                "final_serialization_seconds",
+                "static_preprocessing_seconds",
+                "orchestration_seconds",
                 "iterations_per_frame_mean",
                 "raw_loading_seconds",
                 "full_frame_validation_seconds",
@@ -557,7 +583,10 @@ def _write_outputs(
     summary = {
         "schema_version": "HOCapFastExactV2BenchmarkSummaryV1",
         "status": "PASS",
-        "repeats": config["repeats"],
+        "repeats": {
+            str(case["case_id"]): int(case.get("repeats", config["repeats"]))
+            for case in config["cases"]
+        },
         "medians": medians,
         "regression_conclusion": "INCONCLUSIVE",
         "regression_reason": regression["reason"],
@@ -626,15 +655,27 @@ def main() -> int:
     args = _parser().parse_args()
     config_path = args.config.resolve()
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    if config["schema_version"] != "HOCapFastExactV2BenchmarkV1":
+    if config["schema_version"] not in {
+        "HOCapFastExactV2BenchmarkV1",
+        "H3RetargetThroughputBenchmarkV1",
+    }:
         raise ValueError("HOCAP_FAST_EXACT_V2_BENCHMARK_CONFIG_INVALID")
-    if config["repeats"] < 3:
+    if any(
+        int(case.get("repeats", config["repeats"]))
+        < (1 if bool(case.get("full_case", False)) else 3)
+        for case in config["cases"]
+    ):
         raise ValueError("HOCAP_FAST_EXACT_V2_BENCHMARK_REPEATS_TOO_SMALL")
     if config["thread_environment"] != THREAD_ENVIRONMENT:
         raise ValueError("HOCAP_FAST_EXACT_V2_BENCHMARK_THREAD_CONTRACT_DRIFT")
-    execution = RefinementExecutionProfile.load(EXECUTION_PROFILE_ID, REPO_ROOT)
+    if config.get("solver_profile") != SOLVER_PROFILE_ID:
+        raise ValueError("HOCAP_FAST_EXACT_V2_BENCHMARK_SOLVER_PROFILE_DRIFT")
+    configured_execution = str(config.get("execution_profile", ""))
+    if configured_execution not in EXECUTION_PROFILE_IDS:
+        raise ValueError("HOCAP_FAST_EXACT_V2_BENCHMARK_EXECUTION_PROFILE_NOT_ALLOWED")
+    execution = RefinementExecutionProfile.load(configured_execution, REPO_ROOT)
     if not (
-        execution.profile_id == EXECUTION_PROFILE_ID
+        execution.profile_id == configured_execution
         and execution.math_equivalent
         and execution.final_full_surface_audit
         and execution.device == "cpu"
@@ -659,7 +700,8 @@ def main() -> int:
     receipts: list[dict[str, Any]] = []
     rows: list[dict[str, Any]] = []
     for case in config["cases"]:
-        for repeat in range(1, int(config["repeats"]) + 1):
+        case_repeats = int(case.get("repeats", config["repeats"]))
+        for repeat in range(1, case_repeats + 1):
             if "prepared_root" in case:
                 receipt = _historical_repeat(
                     case,
@@ -670,16 +712,29 @@ def main() -> int:
                     asset_root=args.asset_root,
                 )
             else:
-                receipt = _episode_repeat(case, repeat=repeat, args=args)
+                receipt = _episode_repeat(case, repeat=repeat, args=args, execution=execution)
             receipts.append(receipt)
-            rows.append({"case_id": case["case_id"], "repeat": repeat, **receipt["timing"]})
+            rows.append(
+                {
+                    "case_id": case["case_id"],
+                    "repeat": repeat,
+                    "cache_state": (
+                        "FIRST_RUN_OS_CACHE_UNCONTROLLED"
+                        if repeat == 1
+                        else "WARM_SHARED_READ_ONLY_INPUTS"
+                    ),
+                    **receipt["timing"],
+                }
+            )
             atomic_write_json(
                 report_root / "benchmark_progress.json",
                 {
                     "schema_version": "HOCapFastExactV2BenchmarkProgressV1",
                     "status": "RUNNING",
                     "completed": len(receipts),
-                    "total": len(config["cases"]) * int(config["repeats"]),
+                    "total": sum(
+                        int(item.get("repeats", config["repeats"])) for item in config["cases"]
+                    ),
                     "rows": rows,
                 },
             )

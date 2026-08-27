@@ -34,6 +34,11 @@ from toporetarget.utils.hashing import sha256_file  # noqa: E402
 
 SOLVER_PROFILE_ID = "wuji_continuous_sequential_v1"
 EXECUTION_PROFILE_ID = "wuji_continuous_sequential_fast_exact_v2"
+H3_AUDIT_REUSE_EXECUTION_PROFILE_ID = "wuji_continuous_sequential_fast_exact_v2_h3_audit_reuse_v1"
+EXECUTION_PROFILE_IDS = (
+    EXECUTION_PROFILE_ID,
+    H3_AUDIT_REUSE_EXECUTION_PROFILE_ID,
+)
 THREAD_ENVIRONMENT = {
     "OMP_NUM_THREADS": "1",
     "MKL_NUM_THREADS": "1",
@@ -70,7 +75,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--execution-profile",
-        choices=(EXECUTION_PROFILE_ID,),
+        choices=EXECUTION_PROFILE_IDS,
         default=EXECUTION_PROFILE_ID,
     )
     return parser
@@ -137,13 +142,31 @@ def _timing_summary(
     )
     solver_seconds = float(np.sum(solve_times))
     solver_wall = float(by_name["continuous_refinement"]["wall_seconds"])
+    checkpoint_timing_path = Path(str(trajectory.metadata["checkpoint_root"])) / "timing.json"
+    checkpoint_timing = json.loads(checkpoint_timing_path.read_text(encoding="utf-8"))
+    assembly = checkpoint_timing["assembly"]
     return {
-        "schema_version": "FastExactV2SeparatedTimingV1",
+        "schema_version": "FastExactV2SeparatedTimingV2",
         "frames": int(len(solve_times)),
-        "input_quality_scan_seconds": float(by_name["input_quality_precheck"]["wall_seconds"]),
+        "input_quality_scan_seconds": float(
+            by_name.get("input_quality_precheck", {}).get("wall_seconds", 0.0)
+        ),
         "raw_loading_seconds": float(by_name["raw_conversion"]["wall_seconds"]),
         "solver_seconds": solver_seconds,
         "solver_ms_per_frame": 1000.0 * solver_seconds / len(solve_times),
+        "checkpoint_payload_seconds": float(checkpoint_timing["checkpoint_payload_seconds"]),
+        "checkpoint_serialization_seconds": float(checkpoint_timing["checkpoint_write_seconds"]),
+        "append_write_seconds": float(checkpoint_timing["progress_write_seconds"]),
+        "durable_checkpoint_seconds": float(checkpoint_timing["durable_checkpoint_seconds"]),
+        "checkpoint_chain_validation_seconds": float(assembly["chain_validation_seconds"]),
+        "checkpoint_load_seconds": float(assembly["checkpoint_load_seconds"]),
+        "assembly_validation_seconds": float(
+            assembly["independent_validation_seconds"] + assembly["final_validation_hash_seconds"]
+        ),
+        "array_assembly_seconds": float(assembly["array_assembly_seconds"]),
+        "final_serialization_seconds": float(assembly["final_serialization_seconds"]),
+        "static_preprocessing_seconds": float(checkpoint_timing["static_preprocessing_seconds"]),
+        "orchestration_seconds": float(checkpoint_timing["orchestration_seconds"]),
         "iterations_per_frame_mean": float(np.mean(iterations)),
         "iterations_per_frame_median": float(np.median(iterations)),
         "full_frame_validation_seconds": float(
@@ -158,8 +181,8 @@ def _timing_summary(
         ),
         "serialization_seconds": max(0.0, solver_wall - solver_seconds),
         "serialization_timing_authority": (
-            "continuous_refinement_wall_minus_sum_per_frame_solve_time; includes checkpoint/final "
-            "serialization and command orchestration"
+            "legacy continuous-refinement wall minus summed per-frame solver time; exact "
+            "checkpoint/append/assembly/final-serialization categories are also reported"
         ),
         "total_seconds": float(sum(float(row["wall_seconds"]) for row in stages)),
         "warm_start_enabled": True,
@@ -176,7 +199,7 @@ def main() -> int:
     args = _parser().parse_args()
     execution = RefinementExecutionProfile.load(args.execution_profile, REPO_ROOT)
     if not (
-        execution.profile_id == EXECUTION_PROFILE_ID
+        execution.profile_id in EXECUTION_PROFILE_IDS
         and execution.math_equivalent
         and execution.final_full_surface_audit
         and execution.device == "cpu"

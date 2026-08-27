@@ -5,7 +5,10 @@ import json
 import numpy as np
 import pytest
 
-from toporetarget.retarget.final_refinement import FinalRetargetTrajectory
+from toporetarget.retarget.final_refinement import (
+    FinalRetargetTrajectory,
+    _final_audit_reuse_checks,
+)
 from toporetarget.retarget.refinement_checkpoint import (
     CheckpointError,
     CheckpointStore,
@@ -51,6 +54,41 @@ def test_timer_book_and_execution_profile() -> None:
     assert v4.ambiguity_fd_backend == "compiled_spatial_central_fd_winding_v1"
     assert not v4.recommended
     assert not v4.stage12_default
+    h3 = RefinementExecutionProfile.load(
+        "wuji_continuous_sequential_fast_exact_v2_h3_audit_reuse_v1"
+    )
+    assert h3.final_audit_scheduling == "reuse_exact_reference_discovery_if_identical_v1"
+    assert h3.math_equivalent
+    assert h3.final_full_surface_audit
+
+
+def test_final_audit_discovery_reuse_is_exact_identity_only() -> None:
+    value = np.asarray([1.0, 2.0], dtype=np.float64)
+
+    def checks(**overrides: object) -> dict[str, bool]:
+        values: dict[str, object] = {
+            "scheduling": "reuse_exact_reference_discovery_if_identical_v1",
+            "discovery_value": value.copy(),
+            "final_value": value.copy(),
+            "discovery_query_hash": "query",
+            "final_query_hash": "query",
+            "discovery_context_hash": "context",
+            "final_context_hash": "context",
+            "discovery_context_identity": 7,
+            "final_context_identity": 7,
+            "discovery_used_reference_backend": True,
+        }
+        values.update(overrides)
+        return _final_audit_reuse_checks(**values)  # type: ignore[arg-type]
+
+    assert all(checks().values())
+    changed = value.copy()
+    changed[0] = np.nextafter(changed[0], np.inf)
+    assert not checks(final_value=changed)["exact_x_identical"]
+    assert not checks(final_query_hash="other")["query_set_identical"]
+    assert not checks(final_context_identity=8)["frame_context_object_identical"]
+    assert not checks(discovery_used_reference_backend=False)["reference_backend_identical"]
+    assert not checks(scheduling="independent_reference_query_v1")["scheduling_requested"]
 
 
 def test_checkpoint_store_atomic_chain_and_orphan_detection(tmp_path) -> None:

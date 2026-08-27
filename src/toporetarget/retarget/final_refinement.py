@@ -2299,6 +2299,34 @@ def strict_acceptance_decision(
     }
 
 
+def _final_audit_reuse_checks(
+    *,
+    scheduling: str,
+    discovery_value: np.ndarray | None,
+    final_value: np.ndarray,
+    discovery_query_hash: str | None,
+    final_query_hash: str,
+    discovery_context_hash: str | None,
+    final_context_hash: str,
+    discovery_context_identity: int | None,
+    final_context_identity: int,
+    discovery_used_reference_backend: bool,
+) -> dict[str, bool]:
+    """Fail-closed identity checks for reusing an exact discovery query."""
+
+    return {
+        "scheduling_requested": scheduling == "reuse_exact_reference_discovery_if_identical_v1",
+        "discovery_result_available": discovery_value is not None,
+        "reference_backend_identical": discovery_used_reference_backend,
+        "exact_x_identical": bool(
+            discovery_value is not None and np.array_equal(discovery_value, final_value)
+        ),
+        "query_set_identical": discovery_query_hash == final_query_hash,
+        "frame_context_hash_identical": discovery_context_hash == final_context_hash,
+        "frame_context_object_identical": discovery_context_identity == final_context_identity,
+    }
+
+
 def refine_frame(
     context: _FrameContext,
     query_set: CollisionQuerySet,
@@ -2312,6 +2340,7 @@ def refine_frame(
     initialization_source: str = "warm_reset",
     retry_attempt: int = 0,
     retry_profile: str = "none",
+    final_audit_scheduling: str = "independent_reference_query_v1",
 ) -> FinalFrameResult:
     started = time.perf_counter()
     warm_value_without = np.concatenate([np.zeros(6), context.seed_qpos])
@@ -2338,6 +2367,12 @@ def refine_frame(
     active_set_converged = False
     discovery_audit_count = 0
     final_full_audit_count = 0
+    physical_reference_final_audit_query_count = 0
+    discovery_value: np.ndarray | None = None
+    discovery_query_hash: str | None = None
+    discovery_context_hash: str | None = None
+    discovery_context_identity: int | None = None
+    discovery_used_reference_backend = False
     while True:
         query_rounds += 1
         outer_round_started = time.perf_counter()
@@ -2438,6 +2473,11 @@ def refine_frame(
                 context.candidate_points(result.x, query_set.query_hash),
                 context.object_pose_scene,
             )
+        discovery_value = np.asarray(result.x, dtype=np.float64).copy()
+        discovery_query_hash = str(query_set.query_hash)
+        discovery_context_hash = str(context.context_hash)
+        discovery_context_identity = id(context)
+        discovery_used_reference_backend = discovery_sdf is context.reference_sdf
         discovery_audit_count += 1
         full_phi = np.asarray(full.signed_distance, dtype=np.float64)
         if not np.all(full.sign_valid):
@@ -2525,12 +2565,32 @@ def refine_frame(
     if full is None:
         raise RuntimeError("Stage 9 full-surface audit did not run")
     value = np.asarray(result.x, dtype=np.float64)
+    reuse_checks = _final_audit_reuse_checks(
+        scheduling=final_audit_scheduling,
+        discovery_value=discovery_value,
+        final_value=value,
+        discovery_query_hash=discovery_query_hash,
+        final_query_hash=str(query_set.query_hash),
+        discovery_context_hash=discovery_context_hash,
+        final_context_hash=str(context.context_hash),
+        discovery_context_identity=discovery_context_identity,
+        final_context_identity=id(context),
+        discovery_used_reference_backend=discovery_used_reference_backend,
+    )
+    final_audit_query_reused = bool(all(reuse_checks.values()))
+    fallback_reason: str | None = None
     with context.timers.measure("final_full_audit"):
-        with context.timers.measure("full_512_audit"):
-            full = context.reference_sdf.query_scene(
-                context.candidate_points(value, query_set.query_hash),
-                context.object_pose_scene,
-            )
+        if not final_audit_query_reused:
+            if not reuse_checks["scheduling_requested"]:
+                fallback_reason = "SCHEDULING_REQUIRES_INDEPENDENT_REFERENCE_QUERY"
+            else:
+                fallback_reason = next(name for name, passed in reuse_checks.items() if not passed)
+            with context.timers.measure("full_512_audit"):
+                full = context.reference_sdf.query_scene(
+                    context.candidate_points(value, query_set.query_hash),
+                    context.object_pose_scene,
+                )
+            physical_reference_final_audit_query_count += 1
     final_full_audit_count += 1
     if not np.all(full.sign_valid):
         raise ValueError("final independent full-surface audit received invalid signed distance")
@@ -2572,6 +2632,13 @@ def refine_frame(
     diagnostics["active_set_converged"] = active_set_converged
     diagnostics["full_audit_call_count"] = final_full_audit_count
     diagnostics["full_audit_call_reasons"] = ["frame_final_independent_acceptance"]
+    diagnostics["final_audit_scheduling"] = final_audit_scheduling
+    diagnostics["final_audit_query_reused"] = final_audit_query_reused
+    diagnostics["physical_reference_final_audit_query_count"] = (
+        physical_reference_final_audit_query_count
+    )
+    diagnostics["final_audit_reuse_checks"] = reuse_checks
+    diagnostics["final_audit_reuse_fallback_reason"] = fallback_reason
     diagnostics["active_set_discovery_audit_count"] = discovery_audit_count
     diagnostics["active_set_discovery_backend_id"] = discovery_backend_id
     diagnostics["active_query_call_count"] = int(context.active_query_call_count)
@@ -3719,6 +3786,13 @@ def build_final_trajectory(
         getattr(execution_profile, "point_jacobian_backend", "reference_batched_torch_v1")
     )
     strict_recovery = str(getattr(execution_profile, "strict_recovery", "none"))
+    final_audit_scheduling = str(
+        getattr(
+            execution_profile,
+            "final_audit_scheduling",
+            "independent_reference_query_v1",
+        )
+    )
     sdf_tree_leaf_size = int(getattr(execution_profile, "sdf_tree_leaf_size", 32))
     spatial_gradient_backend = str(
         getattr(
@@ -3906,6 +3980,7 @@ def build_final_trajectory(
                 active_margin_m=query_profile.active_margin_m,
                 point_jacobian_backend=point_jacobian_backend,
                 strict_recovery=strict_recovery,
+                final_audit_scheduling=final_audit_scheduling,
                 initial_state_without_slack=initial_state_without_slack,
                 initialization_source=initialization_source,
             )
@@ -3938,6 +4013,7 @@ def build_final_trajectory(
                     active_margin_m=query_profile.active_margin_m,
                     point_jacobian_backend=point_jacobian_backend,
                     strict_recovery=strict_recovery,
+                    final_audit_scheduling=final_audit_scheduling,
                     initial_state_without_slack=initial_state_without_slack,
                     initialization_source="propagated_previous_final",
                     retry_attempt=1,
@@ -4014,6 +4090,7 @@ def build_final_trajectory(
                             active_margin_m=query_profile.active_margin_m,
                             point_jacobian_backend=point_jacobian_backend,
                             strict_recovery=strict_recovery,
+                            final_audit_scheduling=final_audit_scheduling,
                             initial_state_without_slack=candidate_state,
                             initialization_source=source,
                             retry_attempt=2,
@@ -4132,6 +4209,7 @@ def build_final_trajectory(
                                 active_margin_m=query_profile.active_margin_m,
                                 point_jacobian_backend=point_jacobian_backend,
                                 strict_recovery=strict_recovery,
+                                final_audit_scheduling=final_audit_scheduling,
                                 initial_state_without_slack=joint["states"][0],
                                 initialization_source="five_frame_window_joint_center",
                                 retry_attempt=3,
@@ -4176,6 +4254,7 @@ def build_final_trajectory(
                                 active_margin_m=query_profile.active_margin_m,
                                 point_jacobian_backend=point_jacobian_backend,
                                 strict_recovery=strict_recovery,
+                                final_audit_scheduling=final_audit_scheduling,
                                 initial_state_without_slack=initial_state_without_slack,
                                 initialization_source="five_frame_window_failed_fallback",
                                 retry_attempt=3,
@@ -4290,6 +4369,7 @@ def build_final_trajectory(
                         active_margin_m=query_profile.active_margin_m,
                         point_jacobian_backend=point_jacobian_backend,
                         strict_recovery=strict_recovery,
+                        final_audit_scheduling=final_audit_scheduling,
                         initial_state_without_slack=joint["states"][0],
                         initialization_source="five_frame_window_joint_center",
                         retry_attempt=3,
@@ -4332,6 +4412,7 @@ def build_final_trajectory(
                         active_margin_m=query_profile.active_margin_m,
                         point_jacobian_backend=point_jacobian_backend,
                         strict_recovery=strict_recovery,
+                        final_audit_scheduling=final_audit_scheduling,
                         initial_state_without_slack=initial_state_without_slack,
                         initialization_source="five_frame_window_failed_fallback",
                         retry_attempt=3,
