@@ -22,7 +22,7 @@ from toporetarget.rl.geometry_audit.runtime_geometry import (  # noqa: E402
     load_runtime_geometry_manifest,
 )
 from toporetarget.rl.independent_physical_refinement import (  # noqa: E402
-    assert_frozen_manifest,
+    assert_frozen_episode_manifest,
     atomic_write_json,
     stable_hash,
 )
@@ -159,7 +159,7 @@ def main() -> int:
         raise ValueError("INDEPENDENT_PHYSICAL_CONTRACT_CLIP_ID_INVALID")
     manifest_path = args.selection_manifest.resolve()
     manifest = _json(manifest_path)
-    assert_frozen_manifest(manifest)
+    assert_frozen_episode_manifest(manifest)
     matches = [row for row in manifest["clips"] if row.get("clip_id") == args.clip_id]
     if len(matches) != 1:
         raise ValueError("INDEPENDENT_PHYSICAL_CONTRACT_CLIP_NOT_FROZEN")

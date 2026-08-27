@@ -420,6 +420,136 @@ def assert_frozen_manifest(manifest: Mapping[str, Any]) -> None:
         raise BatchContractError("HELD_OUT_MANIFEST_OUTCOME_LEAKAGE")
 
 
+def assert_frozen_episode_manifest(manifest: Mapping[str, Any]) -> None:
+    """Validate either a strict held-out manifest or an H3 regression manifest.
+
+    ``assert_frozen_manifest`` remains the unchanged outcome-blind held-out
+    authority. H3-C deliberately reuses five historical hardening episodes as
+    a regression set, so it needs a separate, schema-bound path that requires
+    those observed outcomes to be acknowledged and forbids held-out claims.
+    """
+
+    schema = manifest.get("schema_version")
+    h3_schemas = {
+        "H3PipelineHardeningRegressionManifestV1",
+        "H3UnseenObjectFrozen5ManifestV1",
+    }
+    if schema not in h3_schemas:
+        assert_frozen_manifest(manifest)
+        return
+
+    value = dict(manifest)
+    expected = value.pop("manifest_sha256", None)
+    if not isinstance(expected, str) or stable_hash(value) != expected:
+        raise BatchContractError("H3_EPISODE_MANIFEST_HASH_DRIFT")
+    if not (
+        isinstance(value.get("h3_protocol_hash"), str)
+        and len(value["h3_protocol_hash"]) == 64
+        and isinstance(value.get("H3_EXECUTION_HEAD"), str)
+        and len(value["H3_EXECUTION_HEAD"]) == 40
+    ):
+        raise BatchContractError("H3_EPISODE_MANIFEST_PROTOCOL_AUTHORITY_INVALID")
+    if schema == "H3UnseenObjectFrozen5ManifestV1":
+        if not (
+            value.get("status") == "FROZEN_NOT_EXECUTED"
+            and value.get("HELD_OUT_SET_FROZEN") == "YES"
+            and value.get("dataset_role") == "UNSEEN_OBJECT_INSTANCE_HELDOUT"
+            and value.get("split_type") == "UNSEEN_OBJECT_INSTANCE_HELDOUT"
+            and value.get("held_out") is True
+            and value.get("held_out_count") == 5
+            and value.get("downstream_outcomes_observed") is False
+            and value.get("shared_policy_zero_shot_claim") is False
+            and value.get("independent_ppo_per_episode") is True
+            and all(
+                value.get(name) is False
+                for name in (
+                    "geometric_retarget_run",
+                    "source_controller_run",
+                    "support_physx_run",
+                    "frozen_evaluation_run",
+                    "physical_ppo_run",
+                )
+            )
+        ):
+            raise BatchContractError("H3_UNSEEN_OBJECT_MANIFEST_CONTRACT_INVALID")
+        clips = value.get("clips")
+        episodes = value.get("episodes")
+        if not isinstance(clips, list) or len(clips) != 5 or episodes != clips:
+            raise BatchContractError("H3_UNSEEN_OBJECT_MANIFEST_EPISODES_INVALID")
+        if not all(isinstance(item, Mapping) for item in clips):
+            raise BatchContractError("H3_UNSEEN_OBJECT_MANIFEST_CLIP_INVALID")
+        ids = [str(item.get("clip_id")) for item in clips]
+        object_ids = [str(item.get("primary_object_id")) for item in clips]
+        mesh_hashes = [
+            str(item.get("object_identity", {}).get("canonical_mesh_sha256")) for item in clips
+        ]
+        geometry_hashes = [
+            str(item.get("object_identity", {}).get("geometry_hash")) for item in clips
+        ]
+        alias_sets = [
+            {str(alias) for alias in item.get("object_identity", {}).get("aliases", ())}
+            for item in clips
+        ]
+        aliases_disjoint = all(
+            aliases and aliases.isdisjoint(other)
+            for index, aliases in enumerate(alias_sets)
+            for other in alias_sets[index + 1 :]
+        )
+        if (
+            len(set(ids)) != 5
+            or len(set(object_ids)) != 5
+            or len(set(mesh_hashes)) != 5
+            or len(set(geometry_hashes)) != 5
+            or any(len(value) != 64 for value in (*mesh_hashes, *geometry_hashes))
+            or not aliases_disjoint
+            or DEVELOPMENT_CLIPS.intersection(ids)
+        ):
+            raise BatchContractError("H3_UNSEEN_OBJECT_MANIFEST_DISJOINTNESS_INVALID")
+        if not all(
+            item.get("exclusion_audit", {}).get("outcome_observed") is False
+            and item.get("exclusion_audit", {}).get("metadata_exposure_only") is True
+            and item.get("exclusion_audit", {}).get("object_id_disjoint") is True
+            and item.get("exclusion_audit", {}).get("mesh_sha256_disjoint") is True
+            and item.get("exclusion_audit", {}).get("geometry_hash_disjoint") is True
+            and item.get("exclusion_audit", {}).get("known_alias_disjoint") is True
+            for item in clips
+        ):
+            raise BatchContractError("H3_UNSEEN_OBJECT_MANIFEST_EXCLUSION_AUDIT_INVALID")
+        return
+
+    if not (
+        value.get("status") == "FROZEN_NOT_EXECUTED"
+        and value.get("REGRESSION_SET_FROZEN") == "YES"
+        and value.get("dataset_role") == "PIPELINE_HARDENING_SET_V1"
+        and value.get("held_out") is False
+        and value.get("held_out_rate_denominator") is False
+        and value.get("historical_outcomes_acknowledged") is True
+        and value.get("fresh_raw_to_final_execution_required") is True
+        and value.get("episode_count") == 5
+    ):
+        raise BatchContractError("H3_REGRESSION_MANIFEST_CONTRACT_INVALID")
+    clips = value.get("clips")
+    episodes = value.get("episodes")
+    if not isinstance(clips, list) or len(clips) != 5 or episodes != clips:
+        raise BatchContractError("H3_REGRESSION_MANIFEST_EPISODES_INVALID")
+    if not all(isinstance(item, Mapping) for item in clips):
+        raise BatchContractError("H3_REGRESSION_MANIFEST_CLIP_INVALID")
+    ids = [str(item.get("clip_id")) for item in clips]
+    if len(set(ids)) != 5 or DEVELOPMENT_CLIPS.intersection(ids):
+        raise BatchContractError("H3_REGRESSION_MANIFEST_EPISODE_LEAKAGE")
+    if not all(
+        item.get("dataset_role") == "PIPELINE_HARDENING_SET_V1"
+        and item.get("held_out") is False
+        and item.get("historical_outcome_observed") is True
+        and item.get("execution_purpose") == "PIPELINE_REGRESSION_NOT_SCIENTIFIC_HELDOUT_RATE"
+        and item.get("exclusion_audit", {}).get("outcome_observed") is True
+        and item.get("exclusion_audit", {}).get("allowed_because_dataset_role_is_regression")
+        is True
+        for item in clips
+    ):
+        raise BatchContractError("H3_REGRESSION_MANIFEST_DISCLOSURE_INVALID")
+
+
 def frozen_method_contract() -> dict[str, Any]:
     """Return the only shared pilot method configuration; values are not per clip."""
 
@@ -610,6 +740,7 @@ __all__ = [
     "SCHEMA_VERSION",
     "SELECTION_SEED",
     "append_stage_receipt",
+    "assert_frozen_episode_manifest",
     "assert_frozen_manifest",
     "assert_independent_lineages",
     "atomic_write_json",

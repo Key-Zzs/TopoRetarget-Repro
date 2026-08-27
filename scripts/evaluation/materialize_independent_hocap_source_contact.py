@@ -52,7 +52,7 @@ from toporetarget.rl.geometry_audit.raw_mocap_overlay import (  # noqa: E402
     resolve_raw_mocap_overlay,
 )
 from toporetarget.rl.independent_physical_refinement import (  # noqa: E402
-    assert_frozen_manifest,
+    assert_frozen_episode_manifest,
     atomic_write_json,
 )
 from toporetarget.rl.reference_tracking.contact_reward_mode import (  # noqa: E402
@@ -317,7 +317,7 @@ def _stats(values: np.ndarray) -> dict[str, float | int]:
 def main() -> int:
     args = _parser().parse_args()
     manifest = _json(args.manifest.resolve())
-    assert_frozen_manifest(manifest)
+    assert_frozen_episode_manifest(manifest)
     authority = load_primary_object_authority(args.primary_object_authority.resolve())
     rows = [row for row in manifest["clips"] if row.get("clip_id") == args.clip_id]
     if len(rows) != 1:

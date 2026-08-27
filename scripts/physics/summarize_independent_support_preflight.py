@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from toporetarget.rl.independent_physical_refinement import (  # noqa: E402
-    assert_frozen_manifest,
+    assert_frozen_episode_manifest,
     atomic_write_json,
 )
 from toporetarget.utils.hashing import sha256_file  # noqa: E402
@@ -96,7 +96,7 @@ def _row(*, clip_id: str, receipt_path: Path, selection_manifest_sha256: str) ->
 
 
 def build_aggregate(*, manifest: dict[str, Any], report_root: Path) -> dict[str, Any]:
-    assert_frozen_manifest(manifest)
+    assert_frozen_episode_manifest(manifest)
     rows = [
         _row(
             clip_id=str(item["clip_id"]),

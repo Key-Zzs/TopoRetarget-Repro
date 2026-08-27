@@ -1,0 +1,83 @@
+{
+    "schema_version": "H3PhysicalizationProtocolV1",
+    "dataset": "hocap",
+    "episode_authority": "HOCapSingleHandObjectEpisodeV1",
+    "retarget": {
+        "input_quality_contract": "RetargetInputQualityV1",
+        "input_quality_position": "before_expensive_solver",
+        "solver_profile": "wuji_continuous_sequential_v1",
+        "execution_contract_authority": "H3B_SELECTED_RETARGET_EXECUTION_CONTRACT",
+        "math_changed": false,
+        "precision": "float64",
+        "sequential_warm_start": true,
+        "all_frame_independent_validation": true
+    },
+    "source_controller": {
+        "admission_contract": "SourceControllerExecutableV2",
+        "fidelity_contract": "SourceControllerFidelityV2",
+        "mode": "AUTO_V2",
+        "route": [
+            "ZERO_RESIDUAL_DETERMINISTIC_EVAL10",
+            "ZERO_OUTPUT_NETWORK_PARITY_IF_EXECUTABLE",
+            "CORRECTED_L0_ONLY_IF_ZERO_RESIDUAL_NON_EXECUTABLE",
+            "SOURCE_CONTROLLER_HARD_FAILURE_ONLY_IF_BOTH_NON_EXECUTABLE"
+        ],
+        "angle_authority": "CONTINUOUS_EQUIVALENT_VIRTUAL_WRIST_V1",
+        "fidelity_is_hard_admission": false,
+        "virtual_wrist_position_limits": true,
+        "real_finger_joint_position_limits": true,
+        "actuator_effort_limits": true,
+        "actuator_velocity_limits": true,
+        "action_bounds": true,
+        "corrected_l0_samples": 1024000,
+        "unbounded_l0_profile": "DIAGNOSTIC_ONLY_FORBIDDEN_IN_PRODUCTION"
+    },
+    "support": {
+        "contract": "SupportResolutionV1",
+        "priority": [
+            "SOURCE_EXPLICIT_SUPPORT",
+            "SOURCE_RECONSTRUCTED_SUPPORT",
+            "INFERRED_PLANAR_SUPPORT",
+            "UNRESOLVED"
+        ]
+    },
+    "runtime": {
+        "gpu_preflight": "GPURuntimePreflightV1",
+        "max_concurrent_gpu_jobs": 1,
+        "cpu_retarget_benchmark_with_gpu_job": false
+    },
+    "ppo": {
+        "evaluate_first": true,
+        "success_stop": true,
+        "max_updates": 15,
+        "samples_per_update": 40960,
+        "global_sample_cap": 614400,
+        "rsi_contract": "UniformEventBalancedRSIV1",
+        "rsi_formula": "0.5*U(T_valid)+0.5*U(EpisodeV1_CONTACT_through_RELEASE)",
+        "object_scale_contract": "DimensionlessObjectScaleV1",
+        "independent_lineage_per_episode": true,
+        "joint_multi_clip_policy": false,
+        "per_episode_tuning": false
+    },
+    "physical": {
+        "reward": "Stage16GroupedMultiplicativeRewardV1",
+        "rse": "Stage16ReferenceScopedExplorationV1",
+        "angular_authority": "AngularAuthorityV2",
+        "pf": "PhysicalFunctionalityV2",
+        "pf_full_cycle": "PhysicalFunctionalityFullCycleV1",
+        "df_authorities": ["pose", "linear", "AngularAuthorityV2"],
+        "friction_changed": false,
+        "mass_changed": false,
+        "material_changed": false,
+        "per_object_reward_tuning": false,
+        "per_object_rse_tuning": false,
+        "per_object_friction_tuning": false,
+        "per_object_ppo_budget_tuning": false
+    },
+    "execution": {
+        "h3c_dataset_role": "PIPELINE_HARDENING_SET_V1",
+        "h3c_held_out_rate_denominator": false,
+        "h3d_dataset_role": "UNSEEN_OBJECT_INSTANCE_HELDOUT",
+        "protocol_mutation_after_first_h3c_result": false
+    }
+}

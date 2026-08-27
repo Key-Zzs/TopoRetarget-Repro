@@ -27,7 +27,7 @@ from toporetarget.retarget.refinement_performance import (  # noqa: E402
 )
 from toporetarget.rl.independent_physical_refinement import (  # noqa: E402
     BatchContractError,
-    assert_frozen_manifest,
+    assert_frozen_episode_manifest,
     atomic_write_json,
 )
 from toporetarget.utils.hashing import sha256_file  # noqa: E402
@@ -213,7 +213,7 @@ def main() -> int:
         selection_manifest = json.loads(
             args.selection_manifest.resolve().read_text(encoding="utf-8")
         )
-        assert_frozen_manifest(selection_manifest)
+        assert_frozen_episode_manifest(selection_manifest)
         matches = [
             item
             for item in selection_manifest["clips"]

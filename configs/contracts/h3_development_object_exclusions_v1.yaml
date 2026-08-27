@@ -1,0 +1,85 @@
+schema_version: H3DevelopmentObjectExclusionsV1
+dataset: hocap
+policy: object_id_mesh_geometry_and_known_alias_fail_closed_v1
+metadata_only_candidate_exposure_is_outcome_exposure: false
+entries:
+  - object_id: G10_1
+    exposure_class: DEVELOPMENT_SEQUENCE_ALL_OBJECTS
+    evidence_scope: subject_1/20231025_170105
+    evidence_path: .local/reports/hocap_physicalization_protocol_freeze/held_out_selection/development_exclusions.csv
+  - object_id: G10_2
+    exposure_class: DEVELOPMENT_SEQUENCE_ALL_OBJECTS
+    evidence_scope: subject_1/20231025_170105
+    evidence_path: .local/reports/hocap_physicalization_protocol_freeze/held_out_selection/development_exclusions.csv
+  - object_id: G10_3
+    exposure_class: DEVELOPMENT_SEQUENCE_AND_HARDENING_TARGET
+    evidence_scope: subject_1/20231025_170105_and_hardening_5
+    evidence_path: .local/reports/raw_to_physical_hardening_v2/p0_closeout/hardening_set_manifest.json
+  - object_id: G10_4
+    exposure_class: DEVELOPMENT_SEQUENCE_ALL_OBJECTS
+    evidence_scope: subject_1/20231025_170105
+    evidence_path: .local/reports/hocap_physicalization_protocol_freeze/held_out_selection/development_exclusions.csv
+  - object_id: G04_1
+    exposure_class: DEVELOPMENT_SEQUENCE_AND_H3B_BENCHMARK
+    evidence_scope: subject_1/20231025_170650
+    evidence_path: configs/benchmarks/h3_retarget_throughput_v1.yaml
+  - object_id: G04_2
+    exposure_class: DEVELOPMENT_SEQUENCE_AND_MANUAL_RETARGET_INSPECTION
+    evidence_scope: subject_1/20231025_170650
+    evidence_path: .local/reports/hocap_physicalization_protocol_freeze/episode_segmentation/manual_inspection.md
+  - object_id: G04_3
+    exposure_class: DEVELOPMENT_SEQUENCE_ALL_OBJECTS
+    evidence_scope: subject_1/20231025_170650
+    evidence_path: .local/reports/hocap_physicalization_protocol_freeze/held_out_selection/development_exclusions.csv
+  - object_id: G04_4
+    exposure_class: DEVELOPMENT_SEQUENCE_ALL_OBJECTS
+    evidence_scope: subject_1/20231025_170650
+    evidence_path: .local/reports/hocap_physicalization_protocol_freeze/held_out_selection/development_exclusions.csv
+  - object_id: G16_3
+    exposure_class: HARDENING_TARGET_H3A_H3B_H3C
+    evidence_scope: hardening_1
+    evidence_path: .local/reports/raw_to_physical_hardening_v2/p0_closeout/hardening_set_manifest.json
+  - object_id: G09_4
+    exposure_class: HARDENING_TARGET_H3A_H3C
+    evidence_scope: hardening_2
+    evidence_path: .local/reports/raw_to_physical_hardening_v2/p0_closeout/hardening_set_manifest.json
+  - object_id: G22_3
+    exposure_class: HARDENING_TARGET_H3A_H3C
+    evidence_scope: hardening_3
+    evidence_path: .local/reports/raw_to_physical_hardening_v2/p0_closeout/hardening_set_manifest.json
+  - object_id: G16_2
+    exposure_class: HARDENING_TARGET_H3A_H3B_H3C
+    evidence_scope: hardening_4
+    evidence_path: .local/reports/raw_to_physical_hardening_v2/p0_closeout/hardening_set_manifest.json
+  - object_id: G06_4
+    exposure_class: OUTCOME_OBSERVED_MULTICLIP_TARGET
+    evidence_scope: hocap_111118
+    evidence_path: .local/reports/independent_multiclip_hocap_pilot_v4_fast_exact_v2/selection/held_out_5_manifest.json
+  - object_id: G21_1
+    exposure_class: OUTCOME_OBSERVED_MULTICLIP_TARGET
+    evidence_scope: hocap_162842
+    evidence_path: .local/reports/independent_multiclip_hocap_pilot_v4_fast_exact_v2/selection/held_out_5_manifest.json
+  - object_id: G19_1
+    exposure_class: OUTCOME_OBSERVED_MULTICLIP_TARGET
+    evidence_scope: hocap_164242
+    evidence_path: .local/reports/independent_multiclip_hocap_pilot_v4_fast_exact_v2/selection/held_out_5_manifest.json
+  - object_id: G02_1
+    exposure_class: OUTCOME_OBSERVED_MULTICLIP_TARGET
+    evidence_scope: hocap_193506
+    evidence_path: .local/reports/independent_multiclip_hocap_pilot_v4_fast_exact_v2/selection/held_out_5_manifest.json
+  - object_id: G09_1
+    exposure_class: OUTCOME_OBSERVED_MULTICLIP_TARGET
+    evidence_scope: hocap_123725
+    evidence_path: .local/reports/independent_multiclip_hocap_pilot_v4_fast_exact_v2/selection/held_out_5_manifest.json
+  - object_id: G18_1
+    exposure_class: MANUAL_LIFECYCLE_AND_RETARGET_INSPECTION
+    evidence_scope: hocap_subject_1_20231025_165502__left__G18_1__ep00
+    evidence_path: .local/reports/hocap_physicalization_protocol_freeze/episode_segmentation/manual_inspection.md
+  - object_id: G15_1
+    exposure_class: MANUAL_LIFECYCLE_INSPECTION
+    evidence_scope: hocap_subject_1_20231025_165807__left__G15_1__ep00
+    evidence_path: .local/reports/hocap_physicalization_protocol_freeze/episode_segmentation/manual_inspection.md
+  - object_id: G05_1
+    exposure_class: MANUAL_RETARGET_INSPECTION_AND_BENCHMARK
+    evidence_scope: hocap_subject_2_20231022_201316__right__G05_1__ep00
+    evidence_path: .local/reports/hocap_physicalization_protocol_freeze/episode_segmentation/manual_inspection.md

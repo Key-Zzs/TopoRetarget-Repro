@@ -16,7 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from toporetarget.rl.independent_physical_refinement import (  # noqa: E402
-    assert_frozen_manifest,
+    assert_frozen_episode_manifest,
     atomic_write_json,
 )
 from toporetarget.runtime.gpu_preflight import (  # noqa: E402
@@ -70,7 +70,7 @@ def main() -> int:
     validate_gpu_preflight_receipt(gpu_preflight_path)
     manifest_path = args.manifest.resolve()
     manifest = _json(manifest_path)
-    assert_frozen_manifest(manifest)
+    assert_frozen_episode_manifest(manifest)
     if len([row for row in manifest["clips"] if row.get("clip_id") == args.clip_id]) != 1:
         raise ValueError("INDEPENDENT_FROZEN_EVALUATION_CLIP_NOT_FROZEN")
     source_path = args.source_policy_receipt.resolve()

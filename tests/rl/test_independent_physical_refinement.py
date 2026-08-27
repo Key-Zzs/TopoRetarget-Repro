@@ -10,12 +10,14 @@ from toporetarget.rl.independent_physical_refinement import (
     BatchContractError,
     HOCapCandidate,
     append_stage_receipt,
+    assert_frozen_episode_manifest,
     assert_frozen_manifest,
     assert_independent_lineages,
     freeze_method_contract,
     freeze_selection,
     scan_hocap_candidates,
     select_held_out_candidates,
+    stable_hash,
     validate_authority_manifest,
 )
 
@@ -71,6 +73,141 @@ def test_freeze_manifest_hash_rejects_outcome_mutation(tmp_path: Path) -> None:
     manifest["clips"][0]["exclusion_audit"]["outcome_observed"] = True
     with pytest.raises(BatchContractError, match="HELD_OUT_MANIFEST_HASH_DRIFT"):
         assert_frozen_manifest(manifest)
+
+
+def _with_manifest_hash(payload: dict[str, object]) -> dict[str, object]:
+    manifest = dict(payload)
+    manifest["manifest_sha256"] = stable_hash(payload)
+    return manifest
+
+
+def _h3_regression_manifest() -> dict[str, object]:
+    clips = [
+        {
+            "clip_id": f"hocap_hardening_{index}",
+            "dataset_role": "PIPELINE_HARDENING_SET_V1",
+            "held_out": False,
+            "historical_outcome_observed": True,
+            "execution_purpose": "PIPELINE_REGRESSION_NOT_SCIENTIFIC_HELDOUT_RATE",
+            "exclusion_audit": {
+                "outcome_observed": True,
+                "allowed_because_dataset_role_is_regression": True,
+            },
+        }
+        for index in range(5)
+    ]
+    return _with_manifest_hash(
+        {
+            "schema_version": "H3PipelineHardeningRegressionManifestV1",
+            "status": "FROZEN_NOT_EXECUTED",
+            "REGRESSION_SET_FROZEN": "YES",
+            "dataset_role": "PIPELINE_HARDENING_SET_V1",
+            "held_out": False,
+            "held_out_rate_denominator": False,
+            "historical_outcomes_acknowledged": True,
+            "fresh_raw_to_final_execution_required": True,
+            "episode_count": 5,
+            "h3_protocol_hash": "a" * 64,
+            "H3_EXECUTION_HEAD": "b" * 40,
+            "clips": clips,
+            "episodes": clips,
+        }
+    )
+
+
+def _h3_unseen_object_manifest() -> dict[str, object]:
+    clips = [
+        {
+            "clip_id": f"hocap_unseen_{index}",
+            "primary_object_id": f"G{index:02d}_1",
+            "object_identity": {
+                "canonical_mesh_sha256": f"{index + 1:064x}",
+                "geometry_hash": f"{index + 11:064x}",
+                "aliases": [f"G{index:02d}_1"],
+            },
+            "exclusion_audit": {
+                "outcome_observed": False,
+                "metadata_exposure_only": True,
+                "object_id_disjoint": True,
+                "mesh_sha256_disjoint": True,
+                "geometry_hash_disjoint": True,
+                "known_alias_disjoint": True,
+            },
+        }
+        for index in range(5)
+    ]
+    return _with_manifest_hash(
+        {
+            "schema_version": "H3UnseenObjectFrozen5ManifestV1",
+            "status": "FROZEN_NOT_EXECUTED",
+            "HELD_OUT_SET_FROZEN": "YES",
+            "dataset_role": "UNSEEN_OBJECT_INSTANCE_HELDOUT",
+            "split_type": "UNSEEN_OBJECT_INSTANCE_HELDOUT",
+            "held_out": True,
+            "held_out_count": 5,
+            "downstream_outcomes_observed": False,
+            "shared_policy_zero_shot_claim": False,
+            "independent_ppo_per_episode": True,
+            "geometric_retarget_run": False,
+            "source_controller_run": False,
+            "support_physx_run": False,
+            "frozen_evaluation_run": False,
+            "physical_ppo_run": False,
+            "h3_protocol_hash": "a" * 64,
+            "H3_EXECUTION_HEAD": "b" * 40,
+            "clips": clips,
+            "episodes": clips,
+        }
+    )
+
+
+def test_h3_regression_manifest_requires_explicit_outcome_disclosure() -> None:
+    manifest = _h3_regression_manifest()
+
+    assert_frozen_episode_manifest(manifest)
+    with pytest.raises(BatchContractError, match="HELD_OUT_MANIFEST_INVALID"):
+        assert_frozen_manifest(manifest)
+
+    clips = manifest["clips"]
+    assert isinstance(clips, list)
+    clips[0]["exclusion_audit"]["outcome_observed"] = False
+    manifest["manifest_sha256"] = stable_hash(
+        {key: value for key, value in manifest.items() if key != "manifest_sha256"}
+    )
+    with pytest.raises(BatchContractError, match="H3_REGRESSION_MANIFEST_DISCLOSURE_INVALID"):
+        assert_frozen_episode_manifest(manifest)
+
+
+def test_h3_unseen_object_manifest_requires_object_and_mesh_disjointness() -> None:
+    manifest = _h3_unseen_object_manifest()
+
+    assert_frozen_episode_manifest(manifest)
+
+    clips = manifest["clips"]
+    assert isinstance(clips, list)
+    clips[1]["object_identity"]["canonical_mesh_sha256"] = clips[0]["object_identity"][
+        "canonical_mesh_sha256"
+    ]
+    manifest["manifest_sha256"] = stable_hash(
+        {key: value for key, value in manifest.items() if key != "manifest_sha256"}
+    )
+    with pytest.raises(BatchContractError, match="H3_UNSEEN_OBJECT_MANIFEST_DISJOINTNESS_INVALID"):
+        assert_frozen_episode_manifest(manifest)
+
+
+def test_h3_unseen_object_manifest_rejects_outcome_observation() -> None:
+    manifest = _h3_unseen_object_manifest()
+    clips = manifest["clips"]
+    assert isinstance(clips, list)
+    clips[0]["exclusion_audit"]["outcome_observed"] = True
+    manifest["manifest_sha256"] = stable_hash(
+        {key: value for key, value in manifest.items() if key != "manifest_sha256"}
+    )
+
+    with pytest.raises(
+        BatchContractError, match="H3_UNSEEN_OBJECT_MANIFEST_EXCLUSION_AUDIT_INVALID"
+    ):
+        assert_frozen_episode_manifest(manifest)
 
 
 def test_method_contract_uses_dynamic_rsi_domain(tmp_path: Path) -> None:
