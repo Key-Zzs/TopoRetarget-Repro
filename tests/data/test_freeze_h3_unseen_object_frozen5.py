@@ -225,3 +225,8 @@ def test_full_freeze_is_deterministic_and_object_disjoint(tmp_path, monkeypatch)
     assert receipt["object_id_overlap_with_development"] == 0
     assert receipt["mesh_sha256_overlap_with_development"] == 0
     assert receipt["downstream_outcomes_used"] is False
+    authority = json.loads((output / "episode_object_authority.json").read_text(encoding="utf-8"))
+    authority_core = dict(authority)
+    authority_hash = authority_core.pop("authority_sha256")
+    assert _stable_hash(authority_core) == authority_hash
+    assert manifest["primary_object_authority_sha256"] == authority_hash

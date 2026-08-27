@@ -336,6 +336,7 @@ def main() -> int:
         raise RuntimeError("H3D_OBJECT_MESH_ALIAS_OR_SEQUENCE_DISJOINTNESS_FAILED")
 
     clips: list[dict[str, Any]] = []
+    authority_mappings: list[dict[str, Any]] = []
     for row in selected:
         clip = _manifest_episode(row)
         clip.update(
@@ -354,6 +355,27 @@ def main() -> int:
             }
         )
         clips.append(clip)
+        authority_mappings.append(
+            {
+                "status": "RESOLVED",
+                "sequence": row["raw_sequence"],
+                "episode_id": row["episode_id"],
+                "primary_object_id": row["target_object"],
+                "available_object_ids": [row["target_object"]],
+                "selected_frame_range": [row["start_frame"], row["end_frame"]],
+                "frame_count": row["end_frame"],
+                "authority_kind": "episode_target_object_exact_surface_lifecycle_v1",
+                "outcome_inputs_used": False,
+            }
+        )
+    primary_object_authority: dict[str, Any] = {
+        "schema_version": "HOCapPrimaryObjectAuthorityV2",
+        "status": "CURRENT_EPISODE_TARGET_AUTHORITY",
+        "authority_kind": "HOCapSingleHandObjectEpisodeV1_target_object",
+        "outcome_inputs_used": False,
+        "mappings": authority_mappings,
+    }
+    primary_object_authority["authority_sha256"] = _stable_hash(primary_object_authority)
     manifest: dict[str, Any] = {
         "schema_version": "H3UnseenObjectFrozen5ManifestV1",
         "status": "FROZEN_NOT_EXECUTED",
@@ -367,6 +389,7 @@ def main() -> int:
         "physicalization_protocol": "H3PhysicalizationProtocolV1",
         "h3_protocol_hash": protocol_hash,
         "H3_EXECUTION_HEAD": execution_head,
+        "primary_object_authority_sha256": primary_object_authority["authority_sha256"],
         "held_out_count": args.count,
         "selection_seed": args.seed,
         "selection_basis": (
@@ -505,6 +528,10 @@ def main() -> int:
     _write_new(
         output / "selection_receipt.json",
         json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+    )
+    _write_new(
+        output / "episode_object_authority.json",
+        json.dumps(primary_object_authority, indent=2, sort_keys=True) + "\n",
     )
     _write_new(
         output / "category_audit.json",

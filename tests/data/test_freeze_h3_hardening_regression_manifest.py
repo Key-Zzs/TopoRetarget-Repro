@@ -88,3 +88,8 @@ def test_h3c_manifest_is_regression_not_heldout(tmp_path, monkeypatch) -> None:
     core = dict(manifest)
     embedded = core.pop("manifest_sha256")
     assert freeze._stable_hash(core) == embedded
+    authority = json.loads((output / "episode_object_authority.json").read_text(encoding="utf-8"))
+    authority_core = dict(authority)
+    authority_hash = authority_core.pop("authority_sha256")
+    assert freeze._stable_hash(authority_core) == authority_hash
+    assert manifest["primary_object_authority_sha256"] == authority_hash

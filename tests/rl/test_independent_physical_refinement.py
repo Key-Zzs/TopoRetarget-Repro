@@ -109,6 +109,7 @@ def _h3_regression_manifest() -> dict[str, object]:
             "episode_count": 5,
             "h3_protocol_hash": "a" * 64,
             "H3_EXECUTION_HEAD": "b" * 40,
+            "primary_object_authority_sha256": "c" * 64,
             "clips": clips,
             "episodes": clips,
         }
@@ -155,6 +156,7 @@ def _h3_unseen_object_manifest() -> dict[str, object]:
             "physical_ppo_run": False,
             "h3_protocol_hash": "a" * 64,
             "H3_EXECUTION_HEAD": "b" * 40,
+            "primary_object_authority_sha256": "c" * 64,
             "clips": clips,
             "episodes": clips,
         }

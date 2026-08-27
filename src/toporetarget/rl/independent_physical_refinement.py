@@ -447,6 +447,8 @@ def assert_frozen_episode_manifest(manifest: Mapping[str, Any]) -> None:
         and len(value["h3_protocol_hash"]) == 64
         and isinstance(value.get("H3_EXECUTION_HEAD"), str)
         and len(value["H3_EXECUTION_HEAD"]) == 40
+        and isinstance(value.get("primary_object_authority_sha256"), str)
+        and len(value["primary_object_authority_sha256"]) == 64
     ):
         raise BatchContractError("H3_EPISODE_MANIFEST_PROTOCOL_AUTHORITY_INVALID")
     if schema == "H3UnseenObjectFrozen5ManifestV1":
