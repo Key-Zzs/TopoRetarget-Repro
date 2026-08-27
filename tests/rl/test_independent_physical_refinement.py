@@ -123,7 +123,7 @@ def _h3_unseen_object_manifest() -> dict[str, object]:
             "primary_object_id": f"G{index:02d}_1",
             "object_identity": {
                 "canonical_mesh_sha256": f"{index + 1:064x}",
-                "geometry_hash": f"{index + 11:064x}",
+                "geometry_hash": f"{index + 11:0128x}",
                 "aliases": [f"G{index:02d}_1"],
             },
             "exclusion_audit": {

@@ -502,7 +502,8 @@ def assert_frozen_episode_manifest(manifest: Mapping[str, Any]) -> None:
             or len(set(object_ids)) != 5
             or len(set(mesh_hashes)) != 5
             or len(set(geometry_hashes)) != 5
-            or any(len(value) != 64 for value in (*mesh_hashes, *geometry_hashes))
+            or any(len(value) != 64 for value in mesh_hashes)
+            or any(len(value) != 128 for value in geometry_hashes)
             or not aliases_disjoint
             or DEVELOPMENT_CLIPS.intersection(ids)
         ):
