@@ -1791,9 +1791,7 @@ class IsaacWorldWristFingerDirectRLEnv(DirectRLEnv):
             "source_controller_admission_v2": bool(self.cfg.source_controller_admission_v2),
             "task_fidelity_terminated": task_fidelity_terminated.clone(),
             "task_fidelity_success": task_fidelity_success.clone(),
-            "task_fidelity_primary_reason_code": termination[
-                "primary_reason_code"
-            ].clone(),
+            "task_fidelity_primary_reason_code": termination["primary_reason_code"].clone(),
             "object_position_error_m": termination["object_position_error_m"].clone(),
             "object_axis_error_m": termination["object_axis_error_m"].clone(),
             "object_orientation_error_rad": termination["object_orientation_error_rad"].clone(),

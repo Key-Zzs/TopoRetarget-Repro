@@ -69,9 +69,7 @@ def test_materialized_actor_is_identically_zero_and_bound_to_qualification(
     assert script.main() == 0
     payload = load_checkpoint(checkpoint, map_location="cpu")
     actor = {
-        name: value
-        for name, value in payload["actor_critic"].items()
-        if name.startswith("actor.")
+        name: value for name, value in payload["actor_critic"].items() if name.startswith("actor.")
     }
     assert actor
     assert all(torch.count_nonzero(value) == 0 for value in actor.values())

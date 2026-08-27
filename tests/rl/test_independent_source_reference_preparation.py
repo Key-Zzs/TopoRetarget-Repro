@@ -6,8 +6,7 @@ from pathlib import Path
 
 def _module():
     path = (
-        Path(__file__).resolve().parents[2]
-        / "scripts/rl/prepare_independent_source_reference.py"
+        Path(__file__).resolve().parents[2] / "scripts/rl/prepare_independent_source_reference.py"
     )
     spec = importlib.util.spec_from_file_location("independent_source_reference", path)
     assert spec is not None and spec.loader is not None

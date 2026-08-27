@@ -81,13 +81,9 @@ def reference_executability_v2(
     checks = qualification.get("checks")
     if not isinstance(checks, dict):
         checks = {}
-    hard_checks = {
-        name: checks.get(name) is True for name in _REFERENCE_EXECUTABILITY_CHECKS
-    }
+    hard_checks = {name: checks.get(name) is True for name in _REFERENCE_EXECUTABILITY_CHECKS}
     hard_checks["world_reference_valid"] = world_validation.get("valid") is True
-    diagnostic_checks = {
-        name: checks.get(name) is True for name in _REFERENCE_FIDELITY_ONLY_CHECKS
-    }
+    diagnostic_checks = {name: checks.get(name) is True for name in _REFERENCE_FIDELITY_ONLY_CHECKS}
     passed = all(hard_checks.values())
     return {
         "schema_version": "IndependentSourceReferenceExecutabilityV2",

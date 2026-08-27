@@ -142,9 +142,7 @@ def test_zero_residual_is_qualified_before_bounded_l0_fallback() -> None:
         encoding="utf-8"
     )
 
-    assert runner.index('"qualify_zero_residual_deterministic_v2"') < runner.index(
-        '"train_l0"'
-    )
+    assert runner.index('"qualify_zero_residual_deterministic_v2"') < runner.index('"train_l0"')
     assert '"ZERO_RESIDUAL_NETWORK"' in runner
     assert "ZERO_RESIDUAL_NETWORK_PARITY_OR_EXECUTABILITY_FAILED" in runner
     assert '"source_controller_executability_v2": "PASS"' in runner
