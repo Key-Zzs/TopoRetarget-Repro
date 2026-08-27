@@ -30,8 +30,8 @@ full-dataset, real-time, hardware-control, or vendor-supported reproduction.
 ### H3 physical admission and unseen-object claim boundary
 
 `Executable V2 is the physical admission hard gate`; it asks whether the
-source controller is finite, bounded, safe, and runnable. `Fidelity V2 is
-diagnostic/warm-start quality`; degraded task/contact imitation is carried into
+source controller is finite, bounded, safe, and runnable.
+`Fidelity V2 is diagnostic/warm-start quality`; degraded task/contact imitation is carried into
 frozen full-gravity evaluation instead of being relabeled as an execution
 failure. Real joint, actuator, collision, velocity, effort, and action limits
 remain enabled.
