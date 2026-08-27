@@ -337,10 +337,17 @@ def _resolve_clip(
             reference["object_pose_translation_world_ref"],
             reference["object_pose_quaternion_world_ref_wxyz"],
         )
-        interval = (
-            result.support_interval.start_frame,
-            min(len(visual_world), result.support_interval.end_frame_exclusive + 4),
+        plane_evidence = result.diagnostics.get("plane_evidence", {})
+        footprint_frames = (
+            plane_evidence.get("footprint_frames") if isinstance(plane_evidence, dict) else None
         )
+        if (
+            not isinstance(footprint_frames, list)
+            or len(footprint_frames) != 2
+            or not all(isinstance(value, int) for value in footprint_frames)
+        ):
+            raise ValueError("SUPPORT_FOOTPRINT_INTERVAL_EVIDENCE_INVALID")
+        interval = (footprint_frames[0], footprint_frames[1])
         object_geometry = validate_object_table_geometry(
             visual_vertices_local=visual,
             collision_vertices_local=collision,

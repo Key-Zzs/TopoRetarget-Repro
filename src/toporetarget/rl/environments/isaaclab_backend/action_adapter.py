@@ -92,6 +92,7 @@ class Stage16ActionAdapter:
             "canonical_joint_names": list(self.canonical_joint_names),
             "isaac_joint_names": list(self.isaac_joint_names),
             "isaac_index_for_canonical_index": self.isaac_from_canonical.detach().cpu().tolist(),
+            "joint_position_target_limits_enforced": True,
         }
 
 

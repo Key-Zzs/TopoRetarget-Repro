@@ -141,10 +141,13 @@ class SupportExtentContractV1:
     schema_version: str = "SupportExtentContractV1"
     support_extent_margin_m: float = 0.02
     table_thickness_m: float = 0.02
+    max_post_stable_approach_frames: int = 4
 
     def __post_init__(self) -> None:
         if self.support_extent_margin_m <= 0.0 or self.table_thickness_m <= 0.0:
             raise ValueError("SUPPORT_EXTENT_PARAMETER_INVALID")
+        if self.max_post_stable_approach_frames < 0:
+            raise ValueError("SUPPORT_EXTENT_APPROACH_FRAMES_INVALID")
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)

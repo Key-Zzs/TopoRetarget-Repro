@@ -30,6 +30,7 @@ from toporetarget.rl.source_controller import (
     SourceControllerRouteV2,
     SourceControllerSafetyContractV1,
     make_zero_output_residual_actor_,
+    real_finger_joint_limit_safety_v2,
     select_source_controller_route,
     select_source_controller_route_v2,
     selected_mode_for_clip,
@@ -138,6 +139,35 @@ def test_real_limits_remain_active_under_auto_contract() -> None:
     assert safety.collision_safety is True
 
 
+def test_real_finger_limit_audit_keeps_strict_targets_and_bounded_solver_tolerance() -> None:
+    lower = torch.tensor([-1.0, -0.5], dtype=torch.float64).numpy()
+    upper = torch.tensor([1.0, 0.5], dtype=torch.float64).numpy()
+    target = torch.tensor([[1.0, -0.5], [0.0, 0.0]], dtype=torch.float64).numpy()
+    within = torch.tensor([[1.004, -0.503], [0.0, 0.0]], dtype=torch.float64).numpy()
+    audit = real_finger_joint_limit_safety_v2(
+        within,
+        target,
+        lower,
+        upper,
+        solver_tolerance_rad=0.005,
+    )
+    assert audit["real_finger_joint_targets_within_authored_limits"] is True
+    assert audit["real_finger_joint_limits_safe"] is True
+    assert audit["maximum_finger_joint_limit_excursion_rad"] == pytest.approx(0.004)
+    outside = within.copy()
+    outside[1, 0] = 1.006
+    failed = real_finger_joint_limit_safety_v2(
+        outside,
+        target,
+        lower,
+        upper,
+        solver_tolerance_rad=0.005,
+    )
+    assert failed["real_finger_joint_limits_safe"] is False
+    assert failed["first_true_joint_limit_failure_frame"] == 1
+    assert failed["first_true_joint_limit_failure_joint_index"] == 0
+
+
 def test_continuous_virtual_wrist_recipe_retains_real_finger_and_translation_limits() -> None:
     recipe = explicit_virtual_wrist_recipe(
         "high_authority_bounded", continuous_virtual_wrist_angles=True
@@ -161,10 +191,7 @@ def test_continuous_virtual_wrist_recipe_retains_real_finger_and_translation_lim
 )
 def test_task_fidelity_failure_is_degraded_but_executable(diagnostic: str) -> None:
     receipt = _v2_receipt(**{diagnostic: False})
-    assert (
-        source_controller_executability_v2(receipt)
-        is SourceControllerExecutability.PASS
-    )
+    assert source_controller_executability_v2(receipt) is SourceControllerExecutability.PASS
     assert source_controller_fidelity_v2(receipt) is SourceControllerFidelity.DEGRADED
     assert select_source_controller_route_v2(receipt) is SourceControllerRouteV2.ZERO_RESIDUAL
 
@@ -185,10 +212,7 @@ def test_task_fidelity_failure_is_degraded_but_executable(diagnostic: str) -> No
 )
 def test_true_execution_or_physical_limit_remains_hard(hard_gate: str) -> None:
     receipt = _v2_receipt(**{hard_gate: False})
-    assert (
-        source_controller_executability_v2(receipt)
-        is SourceControllerExecutability.FAIL
-    )
+    assert source_controller_executability_v2(receipt) is SourceControllerExecutability.FAIL
 
 
 def test_auto_v2_uses_l0_only_as_executable_fallback_or_source_side_improvement() -> None:
@@ -236,8 +260,7 @@ def test_zero_output_network_matches_deterministic_zero_residual_after_reload() 
 
 def test_unbounded_profile_is_diagnostic_only_not_production_authority() -> None:
     contract_path = (
-        Path(__file__).resolve().parents[2]
-        / "configs/contracts/source_controller_auto_v2.yaml"
+        Path(__file__).resolve().parents[2] / "configs/contracts/source_controller_auto_v2.yaml"
     )
     contract = yaml.safe_load(contract_path.read_text(encoding="utf-8"))
     assert contract["fallback"]["bounded_targets_required"] is True

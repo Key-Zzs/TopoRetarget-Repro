@@ -314,6 +314,32 @@ def test_inferred_box_top_and_extent_share_the_audited_support_frame() -> None:
     assert geometry["collision"]["out_of_extent_frames"] == 0
 
 
+def test_post_stable_footprint_extension_stops_before_first_lift_frame() -> None:
+    vertices, _, translation, quaternion = _cube_trajectory()
+    translation = translation.copy()
+    translation[8, 2] = 0.001
+    translation[9, 2] = 0.004
+    translation[10:, 2] = 0.006
+
+    _, _, evidence = infer_planar_support(
+        visual_vertices_local=vertices,
+        collision_vertices_local=vertices,
+        object_translation_world=translation,
+        object_quaternion_world_wxyz=quaternion,
+        gravity=(0.0, 0.0, -9.81),
+        stable_interval=SupportInterval(0, 8, "test"),
+    )
+
+    assert evidence["footprint_frames"] == [0, 10]
+    boundary = evidence["footprint_boundary"]
+    assert boundary["candidate_end_frame_exclusive"] == 12
+    assert boundary["selected_end_frame_exclusive"] == 10
+    assert boundary["stop_reason"] == (
+        "first_post_stable_frame_exceeds_support_plane_consistency_gate"
+    )
+    assert boundary["first_excluded_frame"]["frame"] == 10
+
+
 def test_hand_table_gate_uses_finite_footprint_not_infinite_plane() -> None:
     points = np.asarray([[[0.0, 0.0, -0.003], [0.20, 0.20, -0.050]]], dtype=np.float64)
     result = validate_hand_table_geometry(

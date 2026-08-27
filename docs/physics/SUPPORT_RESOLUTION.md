@@ -19,6 +19,12 @@ semantics, and the existing absolute hand-object geometry gate.
 5. qualify object/table and hand/table geometry, then run a matched full-
    gravity PhysX A/B: object-only with the proxy versus object-only without it.
 
+The finite footprint may include at most four frames immediately after the
+stable interval, but only while both visual and collision geometry remain
+inside the frozen object/table penetration and gap limits. The first lifted or
+over-penetrating frame is recorded and excluded from the support-contact
+geometry interval; the stable interval itself is never shortened.
+
 `source_only` never falls back to an inferred plane. `inferred_planar` is an
 explicit opt-in to steps 3–5. A missing source asset is not itself evidence
 that a table existed.

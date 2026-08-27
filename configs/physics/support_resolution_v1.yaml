@@ -26,6 +26,7 @@ extent:
   schema_version: SupportExtentContractV1
   support_extent_margin_m: 0.02
   table_thickness_m: 0.02
+  max_post_stable_approach_frames: 4
 material:
   schema_version: NOMINAL_UNCALIBRATED_SUPPORT_MATERIAL_V1
   static_friction: 0.8

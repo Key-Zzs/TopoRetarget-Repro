@@ -12,6 +12,7 @@ import json
 import math
 import os
 import sys
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +44,7 @@ from toporetarget.rl.geometry_audit.hand_collision_reconstruction import (
 )
 from toporetarget.rl.source_controller import (
     SourceControllerExecutableContractV2,
+    real_finger_joint_limit_safety_v2,
     source_controller_executability_v2,
     source_controller_fidelity_v2,
 )
@@ -170,6 +172,7 @@ def _contract(path: Path) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any
         or admission.get("schema_version") != "SourceControllerExecutableV2"
         or not fidelity_required.issubset(admission)
         or not fidelity_thresholds.issubset(fidelity)
+        or float(admission.get("real_finger_joint_limit_solver_tolerance_rad", -1.0)) != 0.005
     ):
         raise ValueError("ZERO_RESIDUAL_SOURCE_CONTROLLER_CONTRACT_INVALID")
     expected = set(SourceControllerExecutableContractV2().as_dict()) - {
@@ -188,11 +191,7 @@ def main() -> int:
         "ZERO_RESIDUAL_DETERMINISTIC" if args.checkpoint is None else "CORRECTED_L0"
     )
     if controller_mode == "ZERO_RESIDUAL_DETERMINISTIC":
-        if (
-            args.checkpoint is not None
-            or args.optimizer_steps != 0
-            or args.training_samples != 0
-        ):
+        if args.checkpoint is not None or args.optimizer_steps != 0 or args.training_samples != 0:
             raise ValueError("ZERO_RESIDUAL_SOURCE_CONTROLLER_COST_MUST_BE_ZERO")
     elif controller_mode == "ZERO_RESIDUAL_NETWORK":
         if (
@@ -292,8 +291,7 @@ def main() -> int:
                     checkpoint_payload.get("source_controller_route") != "ZERO_RESIDUAL"
                     or not actor_state
                     or not all(
-                        bool(torch.count_nonzero(value) == 0)
-                        for value in actor_state.values()
+                        bool(torch.count_nonzero(value) == 0) for value in actor_state.values()
                     )
                 ):
                     raise ValueError("ZERO_RESIDUAL_NETWORK_CHECKPOINT_NOT_IDENTICALLY_ZERO")
@@ -333,9 +331,7 @@ def main() -> int:
             finger_qdot = np.asarray(trace["finger_qdot"], dtype=np.float64)
             reference_index = np.asarray(trace["reference_index"], dtype=np.int64)
             singularity_margin_deg = (
-                serial_xyz_singularity_margin_deg(
-                    torch.as_tensor(wrist_q, dtype=torch.float64)
-                )
+                serial_xyz_singularity_margin_deg(torch.as_tensor(wrist_q, dtype=torch.float64))
                 .detach()
                 .cpu()
                 .numpy()
@@ -390,10 +386,16 @@ def main() -> int:
                     np.arange(reference_index[0], reference_index[0] + len(reference_index)),
                 )
             )
-            finger_joint_safe = bool(
-                np.all(finger_q >= finger_lower[None] - 1.0e-6)
-                and np.all(finger_q <= finger_upper[None] + 1.0e-6)
+            finger_limit_audit = real_finger_joint_limit_safety_v2(
+                finger_q,
+                np.asarray(trace["finger_target"], dtype=np.float64),
+                finger_lower,
+                finger_upper,
+                solver_tolerance_rad=float(
+                    admission["real_finger_joint_limit_solver_tolerance_rad"]
+                ),
             )
+            finger_joint_safe = bool(finger_limit_audit["real_finger_joint_limits_safe"])
             wrist_translation_safe = bool(
                 np.isfinite(wrist_q[:, :3]).all()
                 and np.all(wrist_q[:, :3] >= -0.4 - 1.0e-6)
@@ -490,13 +492,9 @@ def main() -> int:
             }
             fidelity_receipt = {
                 "wrist_position_tracking_pass": wrist_position_mean
-                <= float(
-                    fidelity_thresholds["wrist_command_to_actual_position_mean_m_max"]
-                ),
+                <= float(fidelity_thresholds["wrist_command_to_actual_position_mean_m_max"]),
                 "wrist_rotation_tracking_pass": wrist_rotation_mean_deg
-                <= float(
-                    fidelity_thresholds["wrist_command_to_actual_rotation_mean_deg_max"]
-                ),
+                <= float(fidelity_thresholds["wrist_command_to_actual_rotation_mean_deg_max"]),
                 "finger_tracking_pass": finger_mean
                 <= float(fidelity_thresholds["finger_command_to_actual_mean_rad_max"]),
                 "link_tracking_pass": tracked_link_error_mean
@@ -557,6 +555,7 @@ def main() -> int:
             receipt = {
                 **row,
                 **combined_receipt,
+                **finger_limit_audit,
                 "schema_version": "SourceControllerEpisodeReceiptV2",
                 "reference_tracking_pass": bool(
                     fidelity_receipt["wrist_position_tracking_pass"]
@@ -564,23 +563,13 @@ def main() -> int:
                     and fidelity_receipt["finger_tracking_pass"]
                 ),
                 "contact_execution_pass": fidelity_receipt["source_contact_recall_pass"],
-                "reference_progression_pass": fidelity_receipt[
-                    "interaction_progression_pass"
-                ],
+                "reference_progression_pass": fidelity_receipt["interaction_progression_pass"],
                 "controller_authority_pass": executability.value == "PASS",
                 "normalized_wrist_tracking_error": (
                     wrist_position_mean
-                    / float(
-                        fidelity_thresholds[
-                            "wrist_command_to_actual_position_mean_m_max"
-                        ]
-                    )
+                    / float(fidelity_thresholds["wrist_command_to_actual_position_mean_m_max"])
                     + wrist_rotation_mean_deg
-                    / float(
-                        fidelity_thresholds[
-                            "wrist_command_to_actual_rotation_mean_deg_max"
-                        ]
-                    )
+                    / float(fidelity_thresholds["wrist_command_to_actual_rotation_mean_deg_max"])
                 ),
                 "normalized_finger_tracking_error": finger_mean
                 / float(fidelity_thresholds["finger_command_to_actual_mean_rad_max"]),
@@ -588,13 +577,9 @@ def main() -> int:
                 / (
                     1.0
                     + object_position_error_mean
-                    / float(
-                        fidelity_thresholds["object_position_error_mean_m_max"]
-                    )
+                    / float(fidelity_thresholds["object_position_error_mean_m_max"])
                     + object_rotation_error_mean_deg
-                    / float(
-                        fidelity_thresholds["object_rotation_error_mean_deg_max"]
-                    )
+                    / float(fidelity_thresholds["object_rotation_error_mean_deg_max"])
                 ),
             }
             receipts.append(receipt)
@@ -621,17 +606,11 @@ def main() -> int:
             "qualification_required": minimum,
             "source_policy_ready_no_l0": controller_mode.startswith("ZERO_RESIDUAL")
             and passed >= minimum,
-            "source_controller_executability_v2": (
-                "PASS" if passed >= minimum else "FAIL"
-            ),
+            "source_controller_executability_v2": ("PASS" if passed >= minimum else "FAIL"),
             "source_controller_fidelity_v2": (
                 "PASS"
                 if all(row["fidelity_v2"] == "PASS" for row in rows)
-                else (
-                    "FAIL"
-                    if all(row["fidelity_v2"] == "FAIL" for row in rows)
-                    else "DEGRADED"
-                )
+                else ("FAIL" if all(row["fidelity_v2"] == "FAIL" for row in rows) else "DEGRADED")
             ),
             "continuous_virtual_wrist_angles": True,
             "real_finger_joint_limits_enforced": True,
@@ -645,6 +624,18 @@ def main() -> int:
         _write_json(output / "qualification.json", summary)
         print(json.dumps(summary, indent=2, sort_keys=True))
         return 0
+    except BaseException as exc:
+        _write_json(
+            output / "technical_failure.json",
+            {
+                "schema_version": "SourceControllerQualificationTechnicalFailureV1",
+                "status": "TECHNICAL_FAILURE",
+                "exception_type": type(exc).__name__,
+                "exception_message": str(exc),
+                "traceback": traceback.format_exc(),
+            },
+        )
+        raise
     finally:
         active_error = sys.exc_info()[0]
         if active_error is None and env is not None:

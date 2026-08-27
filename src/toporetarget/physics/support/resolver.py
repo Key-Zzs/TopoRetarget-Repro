@@ -155,6 +155,7 @@ def resolve_support(
         candidates=stable.candidate_intervals,
         extent_contract=extent_contract,
         detection_contract=detection_contract,
+        geometry_gate=geometry_gate,
     )
     if stable.interval is None:
         return _unknown_result(
@@ -182,6 +183,7 @@ def resolve_support(
             stable_interval=stable.interval,
             extent_contract=extent_contract,
             detection_contract=detection_contract,
+            geometry_gate=geometry_gate,
         )
     except ValueError as error:
         return _unknown_result(
@@ -230,6 +232,7 @@ def resolve_support(
             "source_reference_kind": source_reference_kind,
             "thresholds": (detection_contract or StablePreContactDetectionContractV1()).as_dict(),
             "extent_contract": (extent_contract or SupportExtentContractV1()).as_dict(),
+            "geometry_gate": (geometry_gate or SupportPlaneConsistencyGateV1()).as_dict(),
         },
         hashes=hashes,
         stable_interval=stable,

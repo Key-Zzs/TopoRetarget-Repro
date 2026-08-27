@@ -4,6 +4,7 @@ angle_authority: continuous_equivalent_branch_v1
 admission:
   schema_version: SourceControllerExecutableV2
   minimum_pass_fraction: 1.0
+  real_finger_joint_limit_solver_tolerance_rad: 0.005
   hard_requirements:
     - state_finite
     - target_finite

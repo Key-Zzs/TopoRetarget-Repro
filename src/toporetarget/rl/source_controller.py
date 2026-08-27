@@ -7,6 +7,8 @@ from dataclasses import asdict, dataclass
 from enum import StrEnum
 from typing import Any
 
+import numpy as np
+
 
 class SourceControllerMode(StrEnum):
     """Supported source-controller routing modes."""
@@ -110,6 +112,52 @@ FIDELITY_V2_CHECKS = (
     "actuator_saturation_pass",
     "reference_completion_pass",
 )
+
+
+def real_finger_joint_limit_safety_v2(
+    joint_position: np.ndarray,
+    joint_target: np.ndarray,
+    joint_lower: np.ndarray,
+    joint_upper: np.ndarray,
+    *,
+    solver_tolerance_rad: float,
+) -> dict[str, object]:
+    """Audit strict targets and bounded PhysX joint-constraint penetration."""
+
+    position = np.asarray(joint_position, dtype=np.float64)
+    target = np.asarray(joint_target, dtype=np.float64)
+    lower = np.asarray(joint_lower, dtype=np.float64)
+    upper = np.asarray(joint_upper, dtype=np.float64)
+    if (
+        position.ndim != 2
+        or target.shape != position.shape
+        or lower.shape != (position.shape[1],)
+        or upper.shape != lower.shape
+        or not 0.0 <= solver_tolerance_rad <= 0.005
+    ):
+        raise ValueError("SOURCE_CONTROLLER_FINGER_JOINT_LIMIT_AUDIT_INVALID")
+    finite = bool(
+        np.isfinite(position).all()
+        and np.isfinite(target).all()
+        and np.isfinite(lower).all()
+        and np.isfinite(upper).all()
+    )
+    target_safe = bool(finite and np.all(target >= lower[None]) and np.all(target <= upper[None]))
+    excursion = np.maximum(
+        np.maximum(lower[None] - position, position - upper[None]),
+        0.0,
+    )
+    maximum = float(np.max(excursion, initial=0.0)) if finite else float("inf")
+    failures = np.argwhere(excursion > solver_tolerance_rad) if finite else np.empty((0, 2))
+    first = None if len(failures) == 0 else failures[0]
+    return {
+        "real_finger_joint_targets_within_authored_limits": target_safe,
+        "maximum_finger_joint_limit_excursion_rad": maximum,
+        "real_finger_joint_limit_solver_tolerance_rad": solver_tolerance_rad,
+        "first_true_joint_limit_failure_frame": (None if first is None else int(first[0])),
+        "first_true_joint_limit_failure_joint_index": (None if first is None else int(first[1])),
+        "real_finger_joint_limits_safe": bool(target_safe and maximum <= solver_tolerance_rad),
+    }
 
 
 def source_controller_executability_v2(

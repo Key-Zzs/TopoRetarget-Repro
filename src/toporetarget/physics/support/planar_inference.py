@@ -13,6 +13,7 @@ from .types import (
     SupportExtentContractV1,
     SupportInterval,
     SupportPatchType,
+    SupportPlaneConsistencyGateV1,
     SupportPlaneFit,
 )
 
@@ -256,6 +257,60 @@ def _patch_type(projected: np.ndarray) -> SupportPatchType:
     return SupportPatchType.AREA_SUPPORT
 
 
+def _bounded_pre_lift_footprint_stop(
+    *,
+    h_visual: np.ndarray,
+    h_collision: np.ndarray,
+    plane_offset: float,
+    stable_interval: SupportInterval,
+    gate: SupportPlaneConsistencyGateV1,
+    maximum_following_frames: int,
+) -> tuple[int, dict[str, object]]:
+    """Extend a stable footprint only across support-consistent approach frames.
+
+    The historical four-frame extension is useful for the finite swept table
+    footprint, but a blind ``stable_end + 4`` can include the first lifted
+    object frame.  The stable interval itself remains authoritative and is
+    never shortened here; only its optional trailing extension is bounded by
+    the already-frozen object/table consistency gate.
+    """
+
+    candidate_stop = min(
+        len(h_visual), stable_interval.end_frame_exclusive + maximum_following_frames
+    )
+    footprint_stop = stable_interval.end_frame_exclusive
+    first_excluded: dict[str, object] | None = None
+    for frame in range(stable_interval.end_frame_exclusive, candidate_stop):
+        visual_signed = float(h_visual[frame] - plane_offset)
+        collision_signed = float(h_collision[frame] - plane_offset)
+        support_consistent = (
+            visual_signed <= gate.max_object_table_gap_m
+            and visual_signed >= -gate.max_object_table_penetration_m
+            and collision_signed >= -gate.max_object_table_penetration_m
+        )
+        if not support_consistent:
+            first_excluded = {
+                "frame": frame,
+                "visual_signed_distance_m": visual_signed,
+                "collision_signed_distance_m": collision_signed,
+            }
+            break
+        footprint_stop = frame + 1
+    evidence: dict[str, object] = {
+        "candidate_end_frame_exclusive": candidate_stop,
+        "selected_end_frame_exclusive": footprint_stop,
+        "maximum_following_frames": maximum_following_frames,
+        "gate": gate.as_dict(),
+        "stop_reason": (
+            "first_post_stable_frame_exceeds_support_plane_consistency_gate"
+            if first_excluded is not None
+            else "bounded_approach_extension_exhausted"
+        ),
+        "first_excluded_frame": first_excluded,
+    }
+    return footprint_stop, evidence
+
+
 def infer_planar_support(
     *,
     visual_vertices_local: np.ndarray,
@@ -266,11 +321,13 @@ def infer_planar_support(
     stable_interval: SupportInterval,
     extent_contract: SupportExtentContractV1 | None = None,
     detection_contract: StablePreContactDetectionContractV1 | None = None,
+    geometry_gate: SupportPlaneConsistencyGateV1 | None = None,
 ) -> tuple[SupportPlaneFit, FinitePlanarSupportProxy, dict[str, object]]:
     """Fit one finite support proxy using the stable interval and object meshes."""
 
     extent = extent_contract or SupportExtentContractV1()
     detection = detection_contract or StablePreContactDetectionContractV1()
+    active_geometry_gate = geometry_gate or SupportPlaneConsistencyGateV1()
     normal = support_normal_from_gravity(gravity)
     visual_world = transform_mesh_trajectory(
         visual_vertices_local, object_translation_world, object_quaternion_world_wxyz
@@ -294,7 +351,14 @@ def infer_planar_support(
     tangent_u, tangent_v = _plane_basis(normal)
     # Use stable plus the immediately following approach/contact frames for a
     # finite swept footprint, while never using post-lift frames.
-    footprint_stop = min(len(visual_world), stable_interval.end_frame_exclusive + 4)
+    footprint_stop, footprint_boundary = _bounded_pre_lift_footprint_stop(
+        h_visual=h_visual,
+        h_collision=h_collision,
+        plane_offset=plane_offset,
+        stable_interval=stable_interval,
+        gate=active_geometry_gate,
+        maximum_following_frames=extent.max_post_stable_approach_frames,
+    )
     footprint_world = visual_world[stable_interval.start_frame : footprint_stop].reshape(-1, 3)
     projected = np.column_stack((footprint_world @ tangent_u, footprint_world @ tangent_v))
     bounds = np.array(
@@ -352,6 +416,7 @@ def infer_planar_support(
         "tangent_u": tangent_u.tolist(),
         "tangent_v": tangent_v.tolist(),
         "footprint_frames": [stable_interval.start_frame, footprint_stop],
+        "footprint_boundary": footprint_boundary,
         "collision_geometry_source": "caller_supplied_collision_vertices"
         if collision_vertices_local is not None
         else "visual_mesh_fallback_not_runtime_qualified",
@@ -369,6 +434,7 @@ def audit_candidate_support_intervals(
     candidates: Sequence[SupportInterval],
     extent_contract: SupportExtentContractV1 | None = None,
     detection_contract: StablePreContactDetectionContractV1 | None = None,
+    geometry_gate: SupportPlaneConsistencyGateV1 | None = None,
 ) -> list[dict[str, object]]:
     """Audit every eligible interval without changing frame-zero authority.
 
@@ -388,6 +454,7 @@ def audit_candidate_support_intervals(
                 stable_interval=interval,
                 extent_contract=extent_contract,
                 detection_contract=detection_contract,
+                geometry_gate=geometry_gate,
             )
         except ValueError as error:
             rows.append(

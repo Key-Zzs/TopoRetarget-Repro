@@ -12,6 +12,10 @@
 4. 拟合重力对齐的平面支撑，同时使用 visual 与 runtime collision mesh 轨迹，并生成有限尺寸的 static/kinematic box proxy；
 5. 执行 object/table 与 hand/table 几何检查，再执行匹配的全重力 PhysX A/B：有 proxy 的 object-only 与无 proxy 的 object-only。
 
+有限 footprint 最多可包含稳定区间之后的四帧，但这些帧必须持续满足冻结的
+object/table 穿透与间隙限制。首个已经抬起或过度穿透的帧会被记录并排除在
+support-contact 几何区间之外；稳定区间本身不会因此缩短。
+
 `source_only` 永远不会回退到推断平面。`inferred_planar` 是显式允许步骤 3–5 的模式。找不到 source asset 不等于证明序列中存在桌面。
 
 ## 冻结合同

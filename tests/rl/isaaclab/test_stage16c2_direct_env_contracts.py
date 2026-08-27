@@ -107,6 +107,7 @@ def test_scene_origin_invariance() -> None:
 def test_action_mapping_round_trip_and_bounds() -> None:
     value = torch.arange(20, dtype=torch.float32).reshape(1, 20)
     mapping = adapter()
+    assert mapping.mapping_manifest()["joint_position_target_limits_enforced"] is True
     assert torch.equal(mapping.isaac_to_canonical(mapping.canonical_to_isaac(value)), value)
     action = torch.ones((1, 26))
     target = mapping.finger_target_canonical(torch.zeros((1, 20)), action)

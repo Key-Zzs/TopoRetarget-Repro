@@ -162,9 +162,10 @@ def _zero_network_rollout_parity(
     for episode in range(10):
         direct_path = direct_root / "traces" / f"episode_{episode:02d}.npz"
         network_path = network_root / "traces" / f"episode_{episode:02d}.npz"
-        with np.load(direct_path, allow_pickle=False) as direct_archive, np.load(
-            network_path, allow_pickle=False
-        ) as network_archive:
+        with (
+            np.load(direct_path, allow_pickle=False) as direct_archive,
+            np.load(network_path, allow_pickle=False) as network_archive,
+        ):
             direct_fields = set(direct_archive.files)
             network_fields = set(network_archive.files)
             fields_match = direct_fields == network_fields
@@ -543,7 +544,12 @@ def main() -> int:
                 _run_step(
                     "materialize_zero_residual_network",
                     [
-                        sys.executable,
+                        "conda",
+                        "run",
+                        "--no-capture-output",
+                        "-n",
+                        "toporetarget-isaaclab",
+                        "python",
                         "scripts/rl/materialize_zero_residual_source.py",
                         "--qualification",
                         str(zero_direct_root / "qualification.json"),
@@ -574,9 +580,7 @@ def main() -> int:
             )
             zero_network_path = zero_network_root / "qualification.json"
             zero_network = _json(zero_network_path)
-            parity = _zero_network_rollout_parity(
-                zero_direct_root, zero_network_root, zero_parity
-            )
+            parity = _zero_network_rollout_parity(zero_direct_root, zero_network_root, zero_parity)
             if (
                 zero_network.get("source_controller_executability_v2") != "PASS"
                 or parity["status"] != "PASS"
@@ -592,9 +596,7 @@ def main() -> int:
                 "source_policy_profile": "source_controller_auto_v2",
                 "selected_route": "ZERO_RESIDUAL",
                 "source_controller_executability_v2": "PASS",
-                "source_controller_fidelity_v2": zero_network[
-                    "source_controller_fidelity_v2"
-                ],
+                "source_controller_fidelity_v2": zero_network["source_controller_fidelity_v2"],
                 "l0_samples": 0,
                 "standalone_strict_v4_samples": 0,
                 "checkpoint": str(zero_checkpoint),
@@ -671,6 +673,7 @@ def main() -> int:
                     str(args.num_envs),
                     "--seed",
                     str(lineage_seed),
+                    "--continuous-virtual-wrist-angles",
                     "--accept-eula",
                 ],
                 log_root=log_root,
@@ -724,9 +727,7 @@ def main() -> int:
             "source_policy_profile": "source_controller_auto_v2",
             "selected_route": "CORRECTED_L0",
             "source_controller_executability_v2": "PASS",
-            "source_controller_fidelity_v2": l0_qualification[
-                "source_controller_fidelity_v2"
-            ],
+            "source_controller_fidelity_v2": l0_qualification["source_controller_fidelity_v2"],
             "l0_samples": L0_SAMPLES,
             "standalone_strict_v4_samples": 0,
             "checkpoint": str(l0_checkpoint),
@@ -767,9 +768,7 @@ def main() -> int:
                 "source_contact": _artifact(source_contact_receipt),
                 "l0_result": _artifact(l0_result),
                 "physical_contracts": _artifact(physical_contract_receipt),
-                "zero_residual_qualification": _artifact(
-                    zero_direct_root / "qualification.json"
-                ),
+                "zero_residual_qualification": _artifact(zero_direct_root / "qualification.json"),
             },
             "stages": steps,
             "productive_run_seconds": time.perf_counter() - started,
