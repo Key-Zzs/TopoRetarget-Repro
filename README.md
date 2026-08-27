@@ -27,6 +27,25 @@ separate from this main causal solution and must label its outputs
 This repository is an engineering reproduction, not a claim of author-exact,
 full-dataset, real-time, hardware-control, or vendor-supported reproduction.
 
+### H3 physical admission and unseen-object claim boundary
+
+`Executable V2 is the physical admission hard gate`; it asks whether the
+source controller is finite, bounded, safe, and runnable. `Fidelity V2 is
+diagnostic/warm-start quality`; degraded task/contact imitation is carried into
+frozen full-gravity evaluation instead of being relabeled as an execution
+failure. Real joint, actuator, collision, velocity, effort, and action limits
+remain enabled.
+
+The frozen H3 Hardening5 regression reached five exact-retarget terminal
+results. Three episodes entered evaluation and exhausted their independent
+15-update PPO budgets; two reached the explicit `SUPPORT_UNRESOLVED` physical
+invalid state. Consequently,
+`H3C_READY_FOR_UNSEEN_OBJECT_EXECUTION=NO`. The object/mesh-disjoint Frozen5
+selection is frozen and audited, but its downstream episodes were not consumed.
+There is `no shared-policy zero-shot claim`: the method contract uses
+`independent PPO per Episode`, and this run makes no unseen-object performance
+claim.
+
 ## Method overview
 
 ```text

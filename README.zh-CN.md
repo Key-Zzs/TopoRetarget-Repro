@@ -22,6 +22,19 @@ controller、object pose/velocity write、attachment 或 suction。未来 H2R as
 
 本仓库是工程复现；不声称作者级精确复现、完整数据集覆盖、实时性、硬件控制或持续的厂商支持。
 
+### H3 物理准入与未见物体 claim 边界
+
+`Executable V2 是物理 admission hard gate`：它判断 source controller 是否有限、
+有界、安全且可执行。`Fidelity V2 是诊断/warm-start 质量`：task/contact imitation
+退化会继续进入冻结的 full-gravity evaluation，而不会被重新标成执行失败。真实 joint、
+actuator、collision、velocity、effort 和 action limits 均保留。
+
+冻结的 H3 Hardening5 回归得到五条 exact-retarget 终态：三条进入 evaluation 并耗尽各自
+独立的 15-update PPO budget；两条进入明确的 `SUPPORT_UNRESOLVED` 物理无效状态。因此
+`H3C_READY_FOR_UNSEEN_OBJECT_EXECUTION=NO`。object/mesh-disjoint Frozen5 已冻结并完成
+审计，但没有消费其 downstream Episode。本轮`不做 shared-policy zero-shot claim`；合同要求
+`每条 Episode 独立 PPO`，且本轮不声明未见物体性能结论。
+
 ## 方法总览
 
 ```text
