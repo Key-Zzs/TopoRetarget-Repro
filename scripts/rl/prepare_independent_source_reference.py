@@ -12,6 +12,9 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from toporetarget.evaluation.retarget_semantic_validity import (  # noqa: E402
+    require_semantic_admission,
+)
 from toporetarget.rl.independent_physical_refinement import atomic_write_json  # noqa: E402
 from toporetarget.rl.reference_tracking.ppo26d_reference import (  # noqa: E402
     export_factor8_reference,
@@ -47,6 +50,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--clip-id", required=True)
     parser.add_argument("--final-trajectory", type=Path, required=True)
     parser.add_argument("--canonical", type=Path, required=True)
+    parser.add_argument("--geometric-receipt", type=Path, required=True)
+    parser.add_argument("--semantic-qualification", type=Path, required=True)
     parser.add_argument("--checkpoint-manifest", type=Path, required=True)
     parser.add_argument("--wuji-mjcf", type=Path, required=True)
     parser.add_argument("--world-reference-output", type=Path, required=True)
@@ -71,6 +76,43 @@ def _require_distinct_outputs(paths: tuple[Path, ...]) -> None:
     existing = [str(path) for path in resolved if path.exists()]
     if existing:
         raise FileExistsError(f"INDEPENDENT_SOURCE_REFERENCE_REFUSES_OVERWRITE:{existing}")
+
+
+def require_numerical_solver_success(
+    receipt_path: Path,
+    *,
+    clip_id: str,
+    canonical: Path,
+    final: Path,
+    checkpoint_manifest: Path,
+) -> dict[str, str]:
+    """Validate the numerical half of production retarget admission."""
+
+    resolved = receipt_path.resolve()
+    try:
+        payload = json.loads(resolved.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
+        raise ValueError("INDEPENDENT_SOURCE_REFERENCE_GEOMETRIC_RECEIPT_INVALID") from exc
+    if (
+        not isinstance(payload, dict)
+        or payload.get("status") != "PASS"
+        or payload.get("clip_id", payload.get("episode_id")) != clip_id
+    ):
+        raise ValueError("INDEPENDENT_SOURCE_REFERENCE_NUMERICAL_SOLVER_NONPASS")
+    artifacts = payload.get("artifacts")
+    if not isinstance(artifacts, dict):
+        raise ValueError("INDEPENDENT_SOURCE_REFERENCE_GEOMETRIC_ARTIFACTS_MISSING")
+    expected = {
+        "canonical": canonical.resolve(),
+        "final": final.resolve(),
+        "checkpoint_manifest": checkpoint_manifest.resolve(),
+    }
+    for name, expected_path in expected.items():
+        row = artifacts.get(name)
+        reported = Path(str(row.get("path", ""))).resolve() if isinstance(row, dict) else Path()
+        if reported != expected_path:
+            raise ValueError(f"INDEPENDENT_SOURCE_REFERENCE_GEOMETRIC_BINDING_MISMATCH:{name}")
+    return {"path": str(resolved), "sha256": sha256_file(resolved), "status": "PASS"}
 
 
 def reference_executability_v2(
@@ -103,10 +145,6 @@ def reference_executability_v2(
 
 def main() -> int:
     args = _parser().parse_args()
-    try:
-        import mujoco
-    except ImportError as exc:
-        raise RuntimeError("INDEPENDENT_SOURCE_REFERENCE_REQUIRES_MUJOCO_ENVIRONMENT") from exc
     final = args.final_trajectory.resolve()
     canonical = args.canonical.resolve()
     checkpoint_manifest = args.checkpoint_manifest.resolve()
@@ -122,6 +160,23 @@ def main() -> int:
     for path in (final / "zarr.json", canonical / "zarr.json", checkpoint_manifest, mjcf):
         if not path.is_file():
             raise FileNotFoundError(f"INDEPENDENT_SOURCE_REFERENCE_INPUT_MISSING:{path}")
+    numerical_admission = require_numerical_solver_success(
+        args.geometric_receipt,
+        clip_id=args.clip_id,
+        canonical=canonical,
+        final=final,
+        checkpoint_manifest=checkpoint_manifest,
+    )
+    semantic_admission = require_semantic_admission(
+        args.semantic_qualification,
+        identifier=args.clip_id,
+        canonical=canonical,
+        final=final,
+    )
+    try:
+        import mujoco
+    except ImportError as exc:
+        raise RuntimeError("INDEPENDENT_SOURCE_REFERENCE_REQUIRES_MUJOCO_ENVIRONMENT") from exc
 
     robot_reference, vertices, faces, mesh_metadata = materialize_accepted_stage12_reference(
         final_trajectory=final,
@@ -167,6 +222,8 @@ def main() -> int:
             "canonical_zarr": _artifact(canonical / "zarr.json"),
             "checkpoint_manifest": _artifact(checkpoint_manifest),
             "wuji_mjcf": _artifact(mjcf),
+            "numerical_solver_qualification": numerical_admission,
+            "retarget_semantic_qualification": semantic_admission,
         },
         "world_reference": _artifact(world_path),
         "world_reference_validation": validation,

@@ -15,6 +15,7 @@ import numpy as np
 from toporetarget.data.storage import load_hoi_sequence
 from toporetarget.retarget.artifacts import artifact_hash, load_warm_start
 from toporetarget.retarget.final_refinement import load_final_trajectory
+from toporetarget.retarget.frames import load_frame_profile
 from toporetarget.retarget.interaction_artifacts import (
     interaction_artifact_hash,
     load_interaction_evaluation,
@@ -58,11 +59,16 @@ def _validate_primary_object_contract(
     canonical = sequence.metadata.metadata.get("primary_object_id")
     conversion = sequence.metadata.provenance.conversion_options.get("primary_object_id")
     final_object = final.metadata.get("object_id")
+    audit_compatibility = manifest.get("schema_version") == "RetargetSemanticViewerManifestV1"
+    missing_historical_authorities: list[str] = []
     for label, value in (
         ("canonical", canonical),
         ("conversion", conversion),
         ("final", final_object),
     ):
+        if value is None and audit_compatibility and label in {"canonical", "conversion"}:
+            missing_historical_authorities.append(label)
+            continue
         if value != expected:
             raise ValueError(f"HTML_PRIMARY_OBJECT_MISMATCH:{label}:{value!r}:{expected!r}")
     return {
@@ -70,6 +76,47 @@ def _validate_primary_object_contract(
         "primary_object_authority_sha256": (
             None if authority_hash is None else str(authority_hash)
         ),
+        "historical_primary_object_metadata_missing": ",".join(missing_historical_authorities)
+        or None,
+    }
+
+
+def _semantic_axes_payload(
+    sequence: Any,
+    warm: Any,
+    final: Any,
+    source_indices: np.ndarray,
+    selected: np.ndarray,
+    object_poses: np.ndarray,
+) -> dict[str, Any]:
+    """Serialize the explicit FrameAuthorityV1 poses used by the audit viewer."""
+
+    hand_id = str(final.metadata.get("source_hand_id", warm.metadata["source_hand_id"]))
+    hand = sequence.hand(hand_id)
+    side = str(final.metadata.get("source_hand_side", warm.metadata["source_side"]))
+    profile = load_frame_profile("canonical_keypoint_wrist_v1")
+    source_keypoints = np.asarray(hand.keypoint_tracks["mediapipe21"].positions_scene)[
+        source_indices
+    ]
+    source_wrist = np.asarray(profile.frame_transform(source_keypoints, side=side, strict=True))
+    warm_base = np.asarray(warm.arrays["base_pose_scene"])[selected]
+    warm_wrist = np.matmul(warm_base, np.asarray(warm.arrays["robot_hand_frame_base"])[selected])
+    final_base = np.asarray(final.arrays["base_pose_scene"])[selected]
+    final_wrist_base = np.asarray(
+        profile.frame_transform(
+            np.asarray(final.arrays["robot_keypoints_base"])[selected], side=side, strict=True
+        )
+    )
+    final_wrist = np.matmul(final_base, final_wrist_base)
+    canonical = np.broadcast_to(np.eye(4), (len(selected), 4, 4))
+    return {
+        "canonical": _rounded(canonical, digits=8),
+        "object": _rounded(object_poses, digits=8),
+        "source_wrist": _rounded(source_wrist, digits=8),
+        "warm_base": _rounded(warm_base, digits=8),
+        "warm_wrist": _rounded(warm_wrist, digits=8),
+        "final_base": _rounded(final_base, digits=8),
+        "final_wrist": _rounded(final_wrist, digits=8),
     }
 
 
@@ -107,7 +154,7 @@ def _html_document(payload: dict[str, Any]) -> str:
   <section id="view"><canvas id="scene"></canvas></section>
   <aside>
     <h1>{payload["title"]}</h1>
-    <div class="hint">Drag to orbit · wheel to zoom · all graph states use the same frozen Stage 8 connectivity.</div>
+    <div class="hint">Drag to orbit · wheel to zoom · RAW and CANONICAL coincide only when the HOCap receipt records an identity world-to-canonical transform.</div>
     <h2>Visualization mode</h2>
     <select id="mode">
       <option value="mesh">mesh</option>
@@ -121,16 +168,28 @@ def _html_document(payload: dict[str, Any]) -> str:
     <div><span id="frameLabel"></span> <button id="play">Play</button></div>
     <h2>Mesh layers</h2>
     <div class="grid">
-      <label><input id="meshSource" type="checkbox" checked> <span class="legend" style="background:#3b82f6"></span>source</label>
+      <label><input id="meshRaw" type="checkbox"> <span class="legend" style="background:#06b6d4"></span>RAW human</label>
+      <label><input id="meshSource" type="checkbox" checked> <span class="legend" style="background:#3b82f6"></span>CANONICAL human</label>
       <label><input id="meshWarm" type="checkbox" checked> <span class="legend" style="background:#f59e0b"></span>warm</label>
       <label><input id="meshFinal" type="checkbox" checked> <span class="legend" style="background:#22c55e"></span>final</label>
       <label><input id="objectContext" type="checkbox" checked> object context</label>
     </div>
-    <h2>Graph states</h2>
+    <h2>Frame axes</h2>
     <div class="grid">
-      <label><input id="graphSource" type="checkbox" checked> source graph</label>
-      <label><input id="graphWarm" type="checkbox" checked> warm graph</label>
-      <label><input id="graphFinal" type="checkbox" checked> final graph</label>
+      <label><input id="axisCanonical" type="checkbox"> canonical world</label>
+      <label><input id="axisObject" type="checkbox" checked> source object</label>
+      <label><input id="axisSourceWrist" type="checkbox"> source wrist</label>
+      <label><input id="axisWarmBase" type="checkbox"> warm base</label>
+      <label><input id="axisWarmWrist" type="checkbox"> warm wrist</label>
+      <label><input id="axisFinalBase" type="checkbox"> final base</label>
+      <label><input id="axisFinalWrist" type="checkbox" checked> final wrist</label>
+      <label><input id="showFingertips" type="checkbox" checked> fingertips</label>
+    </div>
+    <h2>Interaction / contact opportunity</h2>
+    <div class="grid">
+      <label><input id="graphSource" type="checkbox" checked> source expected graph</label>
+      <label><input id="graphWarm" type="checkbox" checked> warm opportunity</label>
+      <label><input id="graphFinal" type="checkbox" checked> final opportunity</label>
       <label><input id="showLabels" type="checkbox"> labels</label>
     </div>
     <h2>Edge filters</h2>
@@ -175,7 +234,8 @@ const modeInput = document.getElementById('mode');
 let frame = 0, yaw = -0.75, pitch = 0.3, zoom = 1.0, playing = false, timer = null;
 let dragging = false, lastX = 0, lastY = 0;
 const colors = {{ source: '#3b82f6', warm: '#f59e0b', final: '#22c55e' }};
-const meshLayers = {{ source: document.getElementById('meshSource'), warm: document.getElementById('meshWarm'), final: document.getElementById('meshFinal') }};
+const meshLayers = {{ raw: document.getElementById('meshRaw'), source: document.getElementById('meshSource'), warm: document.getElementById('meshWarm'), final: document.getElementById('meshFinal') }};
+const axisLayers = {{ canonical: document.getElementById('axisCanonical'), object: document.getElementById('axisObject'), source_wrist: document.getElementById('axisSourceWrist'), warm_base: document.getElementById('axisWarmBase'), warm_wrist: document.getElementById('axisWarmWrist'), final_base: document.getElementById('axisFinalBase'), final_wrist: document.getElementById('axisFinalWrist') }};
 const graphLayers = {{ source: document.getElementById('graphSource'), warm: document.getElementById('graphWarm'), final: document.getElementById('graphFinal') }};
 const edgeLayers = {{ 0: document.getElementById('edgeHH'), 1: document.getElementById('edgeHO'), 2: document.getElementById('edgeOO') }};
 const low = DATA.bounds[0], high = DATA.bounds[1], center = [(low[0]+high[0])/2,(low[1]+high[1])/2,(low[2]+high[2])/2];
@@ -187,6 +247,10 @@ function transformRobot(payload,index) {{ return payload.parts.map(part => {{ co
 function drawMesh(vertices,faces,color,alpha,w,h) {{ const projected=vertices.map(p=>project(p,w,h)), ordered=faces.map(face=>[face,(projected[face[0]][2]+projected[face[1]][2]+projected[face[2]][2])/3]); ordered.sort((a,b)=>a[1]-b[1]); ctx.fillStyle=color;ctx.globalAlpha=alpha; for(const [face] of ordered) {{ const a=projected[face[0]],b=projected[face[1]],c=projected[face[2]];ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.lineTo(c[0],c[1]);ctx.closePath();ctx.fill(); }} ctx.globalAlpha=1; }}
 function drawRobot(payload,index,color,alpha,w,h) {{ const vertices=transformRobot(payload,index); payload.parts.forEach((part,i)=>drawMesh(vertices[i],part.faces,color,alpha,w,h)); }}
 function drawObjectContext(index,w,h) {{ const pose=DATA.object.poses[index],faces=DATA.object.faces||[],vertices=DATA.object.vertices.map(p=>[pose[0][0]*p[0]+pose[0][1]*p[1]+pose[0][2]*p[2]+pose[0][3],pose[1][0]*p[0]+pose[1][1]*p[1]+pose[1][2]*p[2]+pose[1][3],pose[2][0]*p[0]+pose[2][1]*p[1]+pose[2][2]*p[2]+pose[2][3]]);if(faces.length){{drawMesh(vertices,faces,'#64748b',0.42,w,h);return;}}ctx.fillStyle='#64748b';ctx.globalAlpha=0.42;for(const q of vertices){{const s=project(q,w,h);ctx.fillRect(s[0]-1,s[1]-1,2,2);}}ctx.globalAlpha=1; }}
+function posePoint(m,p) {{ return [m[0][0]*p[0]+m[0][1]*p[1]+m[0][2]*p[2]+m[0][3],m[1][0]*p[0]+m[1][1]*p[1]+m[1][2]*p[2]+m[1][3],m[2][0]*p[0]+m[2][1]*p[1]+m[2][2]*p[2]+m[2][3]]; }}
+function drawAxes(m,label,w,h) {{ const length=Math.max(extent*0.12,0.015),o=project(posePoint(m,[0,0,0]),w,h),colors=['#ef4444','#22c55e','#3b82f6'];[[length,0,0],[0,length,0],[0,0,length]].forEach((p,i)=>{{const e=project(posePoint(m,p),w,h);ctx.strokeStyle=colors[i];ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(o[0],o[1]);ctx.lineTo(e[0],e[1]);ctx.stroke();}});ctx.fillStyle='#111827';ctx.font='10px monospace';ctx.fillText(label,o[0]+4,o[1]-4); }}
+function drawFingertips(index,w,h) {{ const tipIds=[4,8,12,16,20],states=[['source','#3b82f6'],['warm','#f59e0b'],['final','#22c55e']];for(const [state,color] of states){{const points=DATA.interaction.vertices[state][index];ctx.fillStyle=color;for(const i of tipIds){{const p=project(points[i],w,h);ctx.beginPath();ctx.arc(p[0],p[1],4,0,Math.PI*2);ctx.fill();}}}} }}
+function drawSemanticOverlays(w,h) {{ for(const [name,control] of Object.entries(axisLayers))if(control.checked)drawAxes(DATA.axes[name][frame],name,w,h);if(document.getElementById('showFingertips').checked)drawFingertips(frame,w,h); }}
 function categoryStyle(category) {{ return category===0 ? [0.25,0.8] : category===1 ? [0.85,1.7] : [0.18,0.55]; }}
 function weightColor(weight) {{ const t=Math.max(0,Math.min(1,weight/0.15)), hue=235-235*t; return `hsl(${{hue}},80%,50%)`; }}
 function drawEdge(points,edge,color,alpha,width,w,h) {{ const a=project(points[edge[0]],w,h),b=project(points[edge[1]],w,h);ctx.strokeStyle=color;ctx.globalAlpha=alpha;ctx.lineWidth=width;ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();ctx.globalAlpha=1; }}
@@ -198,6 +262,8 @@ function drawResidual(index,w,h) {{ const target=document.getElementById('residu
 function applyModeDefaults(value) {{ if(value==='figure4-style'){{document.getElementById('handObjectOnly').checked=true;document.getElementById('edgeHH').checked=false;document.getElementById('edgeOO').checked=false;}}else if(value==='full-graph'){{document.getElementById('handObjectOnly').checked=false;document.getElementById('edgeHH').checked=true;document.getElementById('edgeHO').checked=true;document.getElementById('edgeOO').checked=true;}}draw(); }}
 function draw() {{ const rect=canvas.getBoundingClientRect(),w=rect.width,h=rect.height,mode=modeInput.value;ctx.clearRect(0,0,w,h);ctx.fillStyle='#f8fafc';ctx.fillRect(0,0,w,h);if(document.getElementById('objectContext').checked&&DATA.object.vertices.length)drawObjectContext(frame,w,h);if(mode==='mesh'||mode==='combined'){{if(meshLayers.source.checked)drawMesh(DATA.source.vertices[frame],DATA.source.faces,'#3b82f6',0.30,w,h);if(meshLayers.warm.checked)drawRobot(DATA.warm,frame,'#f59e0b',0.25,w,h);if(meshLayers.final.checked)drawRobot(DATA.final,frame,'#22c55e',0.48,w,h);}}let residualSummary=null;if(mode!=='mesh'){{for(const state of Object.keys(graphLayers))if(graphLayers[state].checked)drawGraphState(state,frame,w,h);if(mode==='laplacian-diagnostic'||mode==='combined')residualSummary=drawResidual(frame,w,h);}}const graphFrame=DATA.interaction.frames[frame],metric=DATA.metrics.frames[frame];frameLabel.textContent=`local ${{metric.local_frame}} · source ${{metric.source_frame}}`;const lines=[`mode: ${{mode}}`,`graph: ${{graphFrame.graph_hash.slice(0,12)}}`,`edges: ${{graphFrame.edges.length}} (HH ${{graphFrame.stats.hand_hand_edge_count}}, HO ${{graphFrame.stats.hand_object_edge_count}}, OO ${{graphFrame.stats.object_object_edge_count}})`];for(const [key,value] of Object.entries(metric))if(!['local_frame','source_frame'].includes(key))lines.push(`${{key}}: ${{typeof value==='number'?value.toPrecision(5):value}}`);if(residualSummary){{lines.push('',`residual target: ${{document.getElementById('residualTarget').value}}`,`residual max: ${{residualSummary.max.toPrecision(5)}}`,`residual mean: ${{residualSummary.mean.toPrecision(5)}}`,`hand mean: ${{residualSummary.hand_mean.toPrecision(5)}}`,`object mean: ${{residualSummary.object_mean.toPrecision(5)}}`,`top vertices: ${{residualSummary.top.map(x=>x.vertex_id).join(', ')}}`);}}metricsBox.textContent=lines.join('\\n');document.getElementById('thresholdValue').textContent=Number(document.getElementById('edgeThreshold').value).toFixed(3);document.getElementById('residualThresholdValue').textContent=Number(document.getElementById('residualThreshold').value).toFixed(4); }}
 function drawMeshLayers() {{ const rect=canvas.getBoundingClientRect(),w=rect.width,h=rect.height;if(meshLayers.source.checked)drawMesh(DATA.source.vertices[frame],DATA.source.faces,'#3b82f6',0.30,w,h);if(meshLayers.warm.checked)drawRobot(DATA.warm,frame,'#f59e0b',0.25,w,h);if(meshLayers.final.checked)drawRobot(DATA.final,frame,'#22c55e',0.48,w,h); }}
+const drawSemanticBase=draw;
+draw=function() {{ drawSemanticBase(); const rect=canvas.getBoundingClientRect(),w=rect.width,h=rect.height;if(meshLayers.raw.checked)drawMesh(DATA.raw.vertices[frame],DATA.raw.faces,'#06b6d4',0.18,w,h);drawSemanticOverlays(w,h); }};
 const drawBase=draw;
 draw=function() {{ drawBase(); if(modeInput.value!=='mesh'&&modeInput.value!=='combined')drawMeshLayers(); }};
 function setFrame(value){{frame=Math.max(0,Math.min(DATA.frame_count-1,Number(value)));frameInput.value=frame;draw();}}
@@ -279,6 +345,11 @@ def render_interaction_mesh_html(
     )
     object_vertices = np.asarray(object_payload["vertices"], dtype=np.float64)
     object_poses = np.asarray(object_payload["poses"], dtype=np.float64)
+    raw_to_canonical = (
+        "IDENTITY_HOCAP_WORLD_TO_CANONICAL"
+        if sequence.metadata.dataset_name == "hocap"
+        else "RAW_UNAVAILABLE_CANONICAL_PROXY_ONLY"
+    )
     hashes = {
         "canonical": artifact_hash(artifacts["canonical"]["path"]),
         "warm_start": artifact_hash(artifacts["warm_start"]["path"]),
@@ -293,10 +364,15 @@ def render_interaction_mesh_html(
         "robot": _robot_name(manifest),
         "frame_count": int(len(selected)),
         "initial_mode": mode,
+        "raw": {"vertices": _rounded(source_vertices), "faces": source_faces.tolist()},
         "source": {"vertices": _rounded(source_vertices), "faces": source_faces.tolist()},
         "warm": warm_payload,
         "final": final_payload,
         "object": object_payload,
+        "axes": _semantic_axes_payload(
+            sequence, warm, final, source_local_indices, selected, object_poses
+        ),
+        "frame_authority": {"raw_to_canonical": raw_to_canonical},
         "interaction": interaction,
         "metrics": _metrics(
             type(

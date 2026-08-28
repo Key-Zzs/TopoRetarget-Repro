@@ -23,6 +23,9 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from toporetarget.evaluation.retarget_semantic_validity import (  # noqa: E402
+    require_semantic_admission,
+)
 from toporetarget.rl.independent_physical_refinement import (  # noqa: E402
     assert_frozen_episode_manifest,
     atomic_write_json,
@@ -41,6 +44,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--primary-object-authority", type=Path, required=True)
     parser.add_argument("--clip-id", required=True)
     parser.add_argument("--geometric-receipt", type=Path, required=True)
+    parser.add_argument("--semantic-qualification", type=Path, required=True)
     parser.add_argument("--run-root", type=Path, required=True)
     parser.add_argument("--report-root", type=Path, required=True)
     parser.add_argument("--wuji-mjcf", type=Path, required=True)
@@ -275,6 +279,12 @@ def main() -> int:
 
     final = Path(str(geometry["artifacts"]["final"]["path"])).resolve()
     canonical = Path(str(geometry["artifacts"]["canonical"]["path"])).resolve()
+    semantic_admission = require_semantic_admission(
+        args.semantic_qualification,
+        identifier=args.clip_id,
+        canonical=canonical,
+        final=final,
+    )
     checkpoint_manifest = final.parent / "continuous_checkpoints" / "manifest.json"
     mjcf = args.wuji_mjcf.resolve()
     strict_contract = args.interaction_contact_contract.resolve()
@@ -298,6 +308,10 @@ def main() -> int:
                     str(final),
                     "--canonical",
                     str(canonical),
+                    "--geometric-receipt",
+                    str(geometry_path),
+                    "--semantic-qualification",
+                    str(args.semantic_qualification.resolve()),
                     "--checkpoint-manifest",
                     str(checkpoint_manifest),
                     "--wuji-mjcf",
@@ -376,6 +390,7 @@ def main() -> int:
                 "standalone_strict_v4_training": "FORBIDDEN_NOT_RUN",
                 "ppo_optimizer_steps": 0,
                 "artifacts": {
+                    "retarget_semantic_qualification": semantic_admission,
                     "world_reference": _artifact(world_reference),
                     "reference_v1": _artifact(reference_v1),
                     "reference_v2": _artifact(reference_v2),
@@ -627,6 +642,7 @@ def main() -> int:
                     "rng_seed": lineage_seed,
                 },
                 "artifacts": {
+                    "retarget_semantic_qualification": semantic_admission,
                     "gpu_preflight": _artifact(gpu_preflight_path),
                     "support_preflight": _artifact(support_preflight_path),
                     "world_reference": _artifact(world_reference),
@@ -758,6 +774,7 @@ def main() -> int:
                 "rng_seed": lineage_seed,
             },
             "artifacts": {
+                "retarget_semantic_qualification": semantic_admission,
                 "gpu_preflight": _artifact(gpu_preflight_path),
                 "support_preflight": _artifact(support_preflight_path),
                 "world_reference": _artifact(world_reference),
