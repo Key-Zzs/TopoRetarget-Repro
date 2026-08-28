@@ -354,6 +354,26 @@ def _bone_direction_steps(values: np.ndarray) -> np.ndarray:
     return result
 
 
+def _final_laplacian_residuals(graph: Any, final_keypoints_scene: np.ndarray) -> np.ndarray:
+    if graph is None:
+        return np.empty((0, 0, 3), dtype=np.float64)
+    final_vertices = np.concatenate(
+        [np.asarray(final_keypoints_scene), np.asarray(graph.source_vertices)[:, 21:]], axis=1
+    )
+    return np.stack(
+        [
+            laplacian_numpy(
+                final_vertices[frame],
+                directed.source_index,
+                directed.destination_index,
+                directed.weights,
+            )
+            - graph.source_laplacian[frame]
+            for frame, directed in enumerate(graph.directed_frames)
+        ]
+    )
+
+
 def _interaction_fidelity(
     graph: Any, evaluation: Any, final_keypoints_scene: np.ndarray
 ) -> dict[str, Any]:
@@ -363,7 +383,6 @@ def _interaction_fidelity(
     final_length: list[np.ndarray] = []
     warm_direction: list[np.ndarray] = []
     final_direction: list[np.ndarray] = []
-    final_residuals: list[np.ndarray] = []
     final_vertices = np.concatenate(
         [np.asarray(final_keypoints_scene), np.asarray(graph.source_vertices)[:, 21:]], axis=1
     )
@@ -380,16 +399,7 @@ def _interaction_fidelity(
         final_length.append(np.abs(np.linalg.norm(final_vectors, axis=1) - source_lengths))
         warm_direction.append(angular_error(source_vectors, warm_vectors))
         final_direction.append(angular_error(source_vectors, final_vectors))
-        directed = graph.directed_frames[frame]
-        final_residuals.append(
-            laplacian_numpy(
-                final_vertices[frame],
-                directed.source_index,
-                directed.destination_index,
-                directed.weights,
-            )
-            - graph.source_laplacian[frame]
-        )
+    final_residuals = _final_laplacian_residuals(graph, final_keypoints_scene)
     return {
         "status": "PASS",
         "connectivity_hashes_preserved": len(set(graph.graph_hashes)) >= 1,
@@ -771,6 +781,9 @@ def _case_metrics(
                 np.asarray(evaluation.residual)
                 if evaluation is not None
                 else np.empty((0, 0, 3), dtype=np.float64)
+            ),
+            interaction_final_laplacian_residual=_final_laplacian_residuals(
+                graph, np.asarray(final.arrays["robot_keypoints_scene"])
             ),
             interaction_warm_e_im=warm_e_im,
             interaction_final_e_im=final_e_im,
@@ -1637,6 +1650,47 @@ def main() -> int:
     cases: list[dict[str, Any]] = []
     baseline_cases: dict[str, dict[str, Any]] = {}
     baseline_root = root / "baseline_snapshot/hardening5/per_episode"
+    if args.phase == "post_fix":
+        historical_bundle_rows: list[dict[str, Any]] = []
+        for identifier in HARDENING_IDS:
+            baseline_path = baseline_root / identifier / "semantic_qualification.json"
+            baseline_case = json.loads(baseline_path.read_text(encoding="utf-8"))
+            bundle = root / "historical_layer_bundles" / f"{identifier}.npz"
+            bundle_complete = False
+            if bundle.is_file():
+                with np.load(bundle, allow_pickle=False) as payload:
+                    bundle_complete = "interaction_final_laplacian_residual" in payload.files
+            if not bundle_complete:
+                _case_metrics(
+                    identifier,
+                    _hardening_paths(
+                        HARDENING_ROOT_DEFAULT.resolve(),
+                        HARDENING_REPORT_DEFAULT.resolve(),
+                        identifier,
+                    ),
+                    gate,
+                    diagnostic_bundle=bundle,
+                )
+            historical_bundle_rows.append(
+                {
+                    "episode": identifier,
+                    "bundle_path": str(bundle),
+                    "bundle_sha256": sha256_file(bundle),
+                    "historical_final_status": baseline_case["final"]["qualification"]["status"],
+                    "historical_earliest_divergence": baseline_case["earliest_divergence"],
+                    "historical_root_cause": baseline_case["root_cause"],
+                    "historical_artifacts": baseline_case["artifacts"],
+                    "historical_artifacts_modified": False,
+                }
+            )
+        _write_json(
+            root / "historical_layer_bundles/manifest.json",
+            {
+                "schema_version": "RetargetHistoricalLayerBundleManifestV1",
+                "source": "IMMUTABLE_ORIGINAL_H3C_RETARGET_ARTIFACTS",
+                "bundles": historical_bundle_rows,
+            },
+        )
     all_frame_mapping_rows: list[dict[str, Any]] = []
     all_event_mapping_rows: list[dict[str, Any]] = []
     for identifier in HARDENING_IDS:
@@ -2192,6 +2246,8 @@ def main() -> int:
             "Both controls are `RETARGET_SEMANTIC_PASS`; their accepted artifacts were read-only.",
             "",
             "## 5. G10_3 Layer Audit",
+            "",
+            "The complete hash-bound RAW/Episode/Canonical/Warm/Final diagnostic arrays for all five immutable original H3-C references are listed in `historical_layer_bundles/manifest.json`.",
             "",
             "| Layer | Correct? | Main metric | Evidence |",
             "| --- | --- | --- | --- |",
