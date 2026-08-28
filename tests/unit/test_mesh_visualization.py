@@ -98,6 +98,19 @@ def test_interaction_residual_summary_and_html_modes() -> None:
     assert "modeInput.value=DATA.initial_mode||'mesh'" in html
     assert "function drawMeshLayers()" in html
     assert "faces=DATA.object.faces||[]" in html
+    for control in (
+        "meshRaw",
+        "meshSource",
+        "axisCanonical",
+        "axisObject",
+        "axisWarmBase",
+        "axisWarmWrist",
+        "axisFinalBase",
+        "axisFinalWrist",
+        "showFingertips",
+    ):
+        assert control in html
+    assert "drawSemanticOverlays" in html
 
 
 def test_hocap_html_requires_and_checks_primary_object_authority() -> None:
@@ -122,6 +135,28 @@ def test_hocap_html_requires_and_checks_primary_object_authority() -> None:
         final,
     )
     assert result["primary_object_id"] == "G01_2"
+
+
+def test_semantic_audit_viewer_accepts_immutable_historical_missing_object_metadata() -> None:
+    sequence = SimpleNamespace(
+        metadata=SimpleNamespace(
+            dataset_name="hocap",
+            metadata={"primary_object_id": None},
+            provenance=SimpleNamespace(conversion_options={"primary_object_id": None}),
+        ),
+        rigid_objects=[SimpleNamespace(object_id="G01_1"), SimpleNamespace(object_id="G01_2")],
+    )
+    final = SimpleNamespace(metadata={"object_id": "G01_2"})
+    result = _validate_primary_object_contract(
+        {
+            "schema_version": "RetargetSemanticViewerManifestV1",
+            "primary_object_id": "G01_2",
+            "primary_object_authority_sha256": "canonical-hash-bound-authority",
+        },
+        sequence,
+        final,
+    )
+    assert result["historical_primary_object_metadata_missing"] == "canonical,conversion"
 
 
 def test_four_state_review_html_contains_all_acceptance_layers() -> None:

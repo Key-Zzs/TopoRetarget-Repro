@@ -137,6 +137,23 @@ def test_cpu_authorities_precede_gpu_object_import() -> None:
     assert runner.index('"materialize_source_contact"') < runner.index('"import_object_usd"')
 
 
+def test_semantic_pass_is_required_before_reference_or_source_controller() -> None:
+    module = _load_runner()
+    semantic_action = next(
+        item for item in module._parser()._actions if item.dest == "semantic_qualification"
+    )
+    runner = (REPO_ROOT / "scripts/rl/isaaclab/run_independent_source_policy.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert semantic_action.required is True
+    assert runner.index("require_semantic_admission(") < runner.index('"prepare_reference"')
+    prepare_step = runner[runner.index('"prepare_reference"') :]
+    prepare_step = prepare_step[: prepare_step.index("expected_artifacts")]
+    assert '"--geometric-receipt"' in prepare_step
+    assert '"--semantic-qualification"' in prepare_step
+
+
 def test_zero_residual_is_qualified_before_bounded_l0_fallback() -> None:
     runner = (REPO_ROOT / "scripts/rl/isaaclab/run_independent_source_policy.py").read_text(
         encoding="utf-8"
