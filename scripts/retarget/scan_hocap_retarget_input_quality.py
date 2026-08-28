@@ -32,6 +32,7 @@ from toporetarget.adapters.datasets.stage12_base import (  # noqa: E402
     sha256_paths,
 )
 from toporetarget.retarget.bones import load_bone_profile  # noqa: E402
+from toporetarget.retarget.frames import load_frame_profile  # noqa: E402
 from toporetarget.retarget.input_quality import (  # noqa: E402
     RetargetInputQualityContractV1,
     RetargetInputQualityError,
@@ -209,22 +210,31 @@ def scan(args: argparse.Namespace) -> dict[str, Any]:
     parents = np.asarray([item.parent_index for item in bone_profile.bones], dtype=np.int64)
     children = np.asarray([item.child_index for item in bone_profile.bones], dtype=np.int64)
     # HOCap exposes parameters rather than a separate raw keypoint track.  The
-    # canonical track is therefore explicitly the MANO-parametric authority.
+    # canonical keypoints are reconstructed deterministically from those parameters;
+    # their canonical wrist profile, not the parameter frame, is semantic authority.
     bones = bone_quality(keypoints, keypoints, parents, children, frozen)
     frame_diag = keypoint_frame_diagnostics(keypoints, frozen)
-    wrist_frames, wrist_authority = select_mano_primary_wrist_frames(
+    # The MANO pose translation/global orientation parameterize the MANO layer;
+    # they are not the semantic wrist origin/axes used by TopoRetarget.  Freeze
+    # the latter from the same canonical keypoint profile used by the solver.
+    # Keeping the MANO-primary resolver here provides an independent continuity
+    # diagnostic without granting that parameter frame production authority.
+    mano_parameter_frames, _ = select_mano_primary_wrist_frames(
         repaired_mano[:, :3],
         repaired_mano[:, 48:51],
         timestamps=timestamps,
         contract=frozen,
         reconstructed_wrist_pose=render.wrist_pose_scene,
     )
-    if np.any(wrist_authority == "RAW_TRACKING_QUALITY_FAILED"):
-        raise RetargetInputQualityError("RAW_TRACKING_QUALITY_FAILED:WRIST_FRAME_UNRECOVERABLE")
-    if np.any(wrist_authority == "KEYPOINT_DERIVED_WRIST_FRAME_DIAGNOSTIC_ONLY"):
+    if np.any(~frame_diag["valid"]):
         raise RetargetInputQualityError(
-            "RAW_TRACKING_QUALITY_FAILED:KEYPOINT_WRIST_FRAME_IS_DIAGNOSTIC_ONLY"
+            "RAW_TRACKING_QUALITY_FAILED:CANONICAL_WRIST_FRAME_DEGENERATE"
         )
+    frame_profile = load_frame_profile("canonical_keypoint_wrist_v1")
+    wrist_frames = np.asarray(
+        frame_profile.frame_transform(keypoints, side=hand, strict=True), dtype=np.float64
+    )
+    wrist_authority = np.full(len(wrist_frames), "CANONICAL_KEYPOINT_WRIST_FRAME_V1", dtype="U64")
     if np.any(bones["unrecoverable"]):
         bad = np.flatnonzero(bones["unrecoverable"]).tolist()
         raise RetargetInputQualityError(
@@ -235,6 +245,7 @@ def scan(args: argparse.Namespace) -> dict[str, Any]:
         bad = np.flatnonzero(duplicate_count).tolist()
         raise RetargetInputQualityError(f"RAW_TRACKING_QUALITY_FAILED:DUPLICATE_MANO_JOINTS:{bad}")
     orientation_step = rotation_step_angles(wrist_frames[:, :3, :3])
+    mano_parameter_orientation_step = rotation_step_angles(mano_parameter_frames[:, :3, :3])
     translation_step = np.zeros(len(wrist_frames), dtype=np.float64)
     translation_step[1:] = np.linalg.norm(np.diff(wrist_frames[:, :3, 3], axis=0), axis=1)
     object_rotation_step = np.zeros((len(repaired_objects), repaired_objects.shape[1]))
@@ -276,6 +287,9 @@ def scan(args: argparse.Namespace) -> dict[str, Any]:
                 "translation_step_m": float(translation_step[local]),
                 "translation_discontinuity": bool(
                     translation_step[local] > frozen.translation_discontinuity_m
+                ),
+                "mano_parameter_orientation_step_rad": float(
+                    mano_parameter_orientation_step[local]
                 ),
                 "object_pose_finite": bool(object_pose_finite[local]),
                 "object_max_orientation_step_rad": float(
@@ -320,8 +334,9 @@ def scan(args: argparse.Namespace) -> dict[str, Any]:
         "fps": fps,
         "contract": frozen.as_dict(),
         "contract_sha256": frozen.contract_sha256,
-        "wrist_orientation_authority": "MANO_GLOBAL_WRIST_ORIENTATION",
-        "canonical_keypoint_wrist_production_authority": False,
+        "wrist_orientation_authority": "CANONICAL_KEYPOINT_WRIST_FRAME_V1",
+        "canonical_keypoint_wrist_production_authority": True,
+        "mano_parameter_frame_role": "INPUT_QUALITY_DIAGNOSTIC_ONLY",
         "keypoint_wrist_diagnostic_invalid_frames": np.flatnonzero(~frame_diag["valid"]).tolist(),
         "mano_repair": mano_repair,
         "object_repair": object_repair,

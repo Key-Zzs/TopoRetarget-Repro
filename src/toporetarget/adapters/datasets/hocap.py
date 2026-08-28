@@ -215,6 +215,7 @@ class HOCapAdapterV1(Stage12AdapterBase):
                     "mano_pose_51",
                     "object_pose_qxyzw",
                     "source_frame_range",
+                    "wrist_pose_scene",
                     "wrist_authority",
                 }
                 if not required.issubset(repaired.files):
@@ -233,6 +234,9 @@ class HOCapAdapterV1(Stage12AdapterBase):
                 repaired_object_values = np.asarray(
                     repaired["object_pose_qxyzw"][:requested_count], dtype=np.float64
                 )
+                repaired_wrist_pose = np.asarray(
+                    repaired["wrist_pose_scene"][:requested_count], dtype=np.float64
+                )
                 wrist_authority = [
                     bytes(value).decode("utf-8", errors="strict").rstrip("\x00")
                     for value in np.asarray(repaired["wrist_authority"])[:requested_count].reshape(
@@ -243,7 +247,11 @@ class HOCapAdapterV1(Stage12AdapterBase):
                 raise Stage12AdapterError("HOCAP_RETARGET_INPUT_REPAIR_MANO_SHAPE_INVALID")
             if repaired_object_values.shape != (stop - start, poses_o.shape[1], 7):
                 raise Stage12AdapterError("HOCAP_RETARGET_INPUT_REPAIR_OBJECT_SHAPE_INVALID")
-            if any(value != "MANO_GLOBAL_WRIST_ORIENTATION" for value in wrist_authority):
+            if repaired_wrist_pose.shape != (stop - start, 4, 4):
+                raise Stage12AdapterError("HOCAP_RETARGET_INPUT_REPAIR_WRIST_SHAPE_INVALID")
+            if not np.isfinite(repaired_wrist_pose).all():
+                raise Stage12AdapterError("HOCAP_RETARGET_INPUT_REPAIR_WRIST_NONFINITE")
+            if any(value != "CANONICAL_KEYPOINT_WRIST_FRAME_V1" for value in wrist_authority):
                 raise Stage12AdapterError(
                     "HOCAP_RETARGET_INPUT_REPAIR_WRIST_AUTHORITY_NOT_PRODUCTION"
                 )
@@ -251,8 +259,9 @@ class HOCapAdapterV1(Stage12AdapterBase):
                 "schema_version": "RetargetInputQualityV1",
                 "artifact_path": str(repair_path),
                 "artifact_source_frame_range": repaired_range,
-                "wrist_orientation_authority": "MANO_GLOBAL_WRIST_ORIENTATION",
-                "canonical_keypoint_wrist_production_authority": False,
+                "wrist_orientation_authority": "CANONICAL_KEYPOINT_WRIST_FRAME_V1",
+                "canonical_keypoint_wrist_production_authority": True,
+                "mano_parameter_frame_role": "INPUT_QUALITY_DIAGNOSTIC_ONLY",
             }
         valid = np.asarray(np.isfinite(pose_values).all(axis=1), dtype=bool)
         if not valid.all():
@@ -282,7 +291,9 @@ class HOCapAdapterV1(Stage12AdapterBase):
             side=selected_hand,
             vertices_scene=render.vertices,
             faces=render.faces,
-            wrist_pose_scene=render.wrist_pose_scene,
+            wrist_pose_scene=(
+                render.wrist_pose_scene if retarget_input_repair is None else repaired_wrist_pose
+            ),
             valid=valid,
             mano_parameters=mano_parameters,
             mano_model_root=self.mano_model_root,
