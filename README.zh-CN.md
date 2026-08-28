@@ -29,8 +29,11 @@ controller、object pose/velocity write、attachment 或 suction。未来 H2R as
 退化会继续进入冻结的 full-gravity evaluation，而不会被重新标成执行失败。真实 joint、
 actuator、collision、velocity、effort 和 action limits 均保留。
 
-冻结的 H3 Hardening5 回归得到五条 exact-retarget 终态：三条进入 evaluation 并耗尽各自
-独立的 15-update PPO budget；两条进入明确的 `SUPPORT_UNRESOLVED` 物理无效状态。因此
+冻结的 H3 Hardening5 回归得到五条数值 exact-retarget 终态，但后续
+`RetargetSemanticValidityV1` 审计发现：原 HOCap 路径把 MANO 参数 frame 当成了语义 wrist，
+所以旧 reference 均未通过语义资格化。三条历史 PPO failure 必须降级为
+`NON_DIAGNOSTIC_INVALID_REFERENCE`；重新生成的几何 reference 不会追溯改变这些不可变 trace。
+另外两条进入明确的 `SUPPORT_UNRESOLVED` 物理无效状态。因此
 `H3C_READY_FOR_UNSEEN_OBJECT_EXECUTION=NO`。object/mesh-disjoint Frozen5 已冻结并完成
 审计，但没有消费其 downstream Episode。本轮`不做 shared-policy zero-shot claim`；合同要求
 `每条 Episode 独立 PPO`，且本轮不声明未见物体性能结论。
@@ -42,7 +45,8 @@ actuator、collision、velocity、effort 和 action limits 均保留。
   -> 规范 HOI 序列与坐标约定
   -> MANO / 目标手语义转换
   -> 交互感知运动学重定向
-  -> 几何与接触验证
+  -> RetargetSemanticValidityV1 的 frame、时间、几何、接触与连续性验证
+  -> source/canonical/warm/final HTML 人工复核
   -> 版本化机器人参考导出
   -> Isaac Lab 因果物理修正与评价
 ```
@@ -206,8 +210,43 @@ export EPISODE_ID=<frozen-episode-id>
      --report-root "$PHYS_REPORT_ROOT/geometric"
    ```
 
-5. 打开输出的 `continuous_refinement_visualization.html`。若要从相同、receipt-bound
-   artifact 重新生成 HTML：
+5. 在生成任何 physical reference 前，对 receipt-bound source、warm 和 final artifact
+   执行语义资格化。**优化器数值收敛不等价于几何重定向语义正确。** production admission 必须同时满足
+   `NumericalSolverSuccess` 与 `RetargetSemanticValidityV1`；`FAIL` 或 `INCONCLUSIVE` 均停止
+   downstream。第一个命令是单 Episode 的 fail-closed production gate；随后注册审计命令
+   会先重新计算不可变 170105/170650 正控对比，再检查 Hardening5。
+
+   ```bash
+   GEOMETRIC_RUN="$PHYS_RUN_ROOT/geometric/$EPISODE_ID"
+   GEOMETRIC_REPORT="$PHYS_REPORT_ROOT/geometric/episodes/$EPISODE_ID"
+   conda run -n toporetarget-rl python \
+     scripts/evaluation/qualify_retarget_semantics.py \
+     --episode-id "$EPISODE_ID" \
+     --canonical "$GEOMETRIC_RUN/raw_contract/canonical_episode.zarr" \
+     --warm-start "$GEOMETRIC_RUN/retarget/warm_start.npz" \
+     --final "$GEOMETRIC_RUN/retarget/final_continuous.zarr" \
+     --graph "$GEOMETRIC_RUN/retarget/interaction_graph.npz" \
+     --evaluation "$GEOMETRIC_RUN/retarget/interaction_evaluation.npz" \
+     --viewer "$GEOMETRIC_REPORT/retarget/continuous_refinement_visualization.html" \
+     --receipt "$GEOMETRIC_REPORT/geometric_retarget_receipt.json" \
+     --output "$GEOMETRIC_REPORT/retarget/semantic_qualification.json" \
+     --per-frame-csv "$GEOMETRIC_REPORT/retarget/semantic_metrics_per_frame.csv"
+
+   export SEMANTIC_REPORT_ROOT="$PHYS_REPORT_ROOT/retarget_semantic_validity_frame_authority_audit"
+   conda run -n toporetarget-rl python \
+     scripts/evaluation/audit_retarget_semantic_validity.py \
+     --phase post_fix --output-root "$SEMANTIC_REPORT_ROOT" \
+     --episode-index "$EPISODE_ROOT/all_hocap_episodes.json" \
+     --positive-control-root <accepted-stage12-hocap-root> \
+     --hardening-run-root <hardening5-geometric-run-root> \
+     --hardening-report-root <hardening5-geometric-report-root>
+   column -s, -t "$SEMANTIC_REPORT_ROOT/positive_controls/comparison.csv"
+   column -s, -t "$SEMANTIC_REPORT_ROOT/hardening5/main_table.csv"
+   ```
+
+6. 打开输出的 `continuous_refinement_visualization.html`。统一 semantic viewer 支持
+   RAW/CANONICAL/WARM/FINAL/object 切换、显式 frame axes、fingertips、冻结 interaction
+   graph 与 warm→final residual vectors。若要从相同、receipt-bound artifact 重新生成：
 
    ```bash
    conda run -n topo-retarget python -m toporetarget workflow visualize-mesh \
@@ -215,12 +254,14 @@ export EPISODE_ID=<frozen-episode-id>
      --max-object-points 50000 --output <retarget.html>
    ```
 
-6. 从通过验证的 final trajectory 与 checkpoint manifest 构建 physical reference：
+7. 从通过验证的 final trajectory 与 checkpoint manifest 构建 physical reference：
 
    ```bash
    conda run -n toporetarget-rl python scripts/rl/prepare_independent_source_reference.py \
      --clip-id "$EPISODE_ID" --final-trajectory <final_continuous.zarr> \
      --canonical <canonical_episode.zarr> \
+     --geometric-receipt "$GEOMETRIC_REPORT/geometric_retarget_receipt.json" \
+     --semantic-qualification "$GEOMETRIC_REPORT/retarget/semantic_qualification.json" \
      --checkpoint-manifest <continuous_checkpoints/manifest.json> \
      --wuji-mjcf third_party/robot_hands/wuji_hand2_beta1/mjcf/right.xml \
      --world-reference-output <world_reference.npz> --object-mesh-output <object.obj> \
@@ -228,7 +269,7 @@ export EPISODE_ID=<frozen-episode-id>
      --reference-v2-output <reference_kinematics_v2.npz> --report <reference.json>
    ```
 
-7. 在精确 Isaac 环境中冻结 host GPU authority。sandbox 中 CUDA 失败只是一条诊断，
+8. 在精确 Isaac 环境中冻结 host GPU authority。sandbox 中 CUDA 失败只是一条诊断，
    不等价于 host GPU 不可用；禁止 CPU fallback。
 
    ```bash
@@ -239,7 +280,7 @@ export EPISODE_ID=<frozen-episode-id>
      --output <gpu_preflight_receipt.json>
    ```
 
-8. 先运行 zero-residual deterministic source controller，并使用 continuous equivalent-angle
+9. 先运行 zero-residual deterministic source controller，并使用 continuous equivalent-angle
    virtual wrist 与真实 finger limits。L0 是条件 fallback，不是每条 episode 自动必需。
 
    ```bash
@@ -257,7 +298,7 @@ export EPISODE_ID=<frozen-episode-id>
      --seed-manifest <seed_manifest.json>
    ```
 
-9. 仅当步骤 8 FAIL 时，训练恰好 `1,024,000` samples 的 corrected L0 actor，并用相同
+10. 仅当步骤 9 FAIL 时，训练恰好 `1,024,000` samples 的 corrected L0 actor，并用相同
    Eval10 qualification。`--continuous-virtual-wrist-angles` 只消除表示 wrapping failure，
    不移除真实 finger、action、effort、velocity、singularity、collision 或 actuator limit。
 
@@ -284,7 +325,7 @@ export EPISODE_ID=<frozen-episode-id>
      --seed-manifest <seed_manifest.json>
    ```
 
-10. 按 `SOURCE_EXPLICIT_SUPPORT -> SOURCE_RECONSTRUCTED_SUPPORT ->
+11. 按 `SOURCE_EXPLICIT_SUPPORT -> SOURCE_RECONSTRUCTED_SUPPORT ->
    INFERRED_PLANAR_SUPPORT -> UNRESOLVED` 解析 support。source table 参数存在时必须恢复，
    不得再推断第二张 table。source/reconstructed support 的 hand/object collision 都为 ON；
    inferred proxy 仅用 pairwise filter 将 hand/support collision 设为 OFF，object collision 保持 ON。
@@ -298,7 +339,7 @@ export EPISODE_ID=<frozen-episode-id>
      --gpu-preflight-receipt <gpu_preflight_receipt.json> --accept-eula
    ```
 
-11. 在任何 physical update 前执行冻结的 full-gravity Eval10：
+12. 在任何 physical update 前执行冻结的 full-gravity Eval10：
 
    ```bash
    conda run -n topo-retarget python scripts/evaluation/run_independent_frozen_physical_evaluation.py \
@@ -310,7 +351,7 @@ export EPISODE_ID=<frozen-episode-id>
      --run-root "$PHYS_RUN_ROOT" --report-root "$PHYS_REPORT_ROOT" --accept-eula
    ```
 
-12. 只按 PF V2 决策：PASS 以 0 次 PPO update 接受 frozen policy；只有 FAIL 才授权
+13. 只按 PF V2 决策：PASS 以 0 次 PPO update 接受 frozen policy；只有 FAIL 才授权
     physical PPO。获得授权后按顺序执行三个 fail-closed mode。V2 的 P5 冻结 fallback 最多
     15 updates（`614,400` samples），并明确标记 `LENGTH_GENERALIZATION_NOT_ESTABLISHED`。
     RSI 为 `0.5*U(T_valid)+0.5*U(EpisodeV1 CONTACT through RELEASE)`，保留 uniform component；
@@ -340,7 +381,7 @@ export EPISODE_ID=<frozen-episode-id>
       python scripts/rl/isaaclab/run_physical_refinement.py train "${PPO_ARGS[@]}"
     ```
 
-13. 对不可变 trace 执行 `PhysicalFunctionalityFullCycleV1`。PF V2 仍只负责 pick/lift；
+14. 对不可变 trace 执行 `PhysicalFunctionalityFullCycleV1`。PF V2 仍只负责 pick/lift；
     FullCycle V1 分别测量 pick、transport、place、release、retreat。没有记录 destination-region
     或 destination-support signal 时必须报 `NOT_IDENTIFIABLE`，不得用 source-table contact 代替。
 
@@ -352,7 +393,7 @@ export EPISODE_ID=<frozen-episode-id>
       --output <qualification_dir/full_cycle> --geometry-safe
     ```
 
-14. replay 使用不可变 trace。相同入口支持完整 trajectory、window、raw MANO/object overlay、
+15. replay 使用不可变 trace。相同入口支持完整 trajectory、window、raw MANO/object overlay、
     reference 开关和确定性的 low-poly raw object。
 
     ```bash

@@ -36,10 +36,13 @@ frozen full-gravity evaluation instead of being relabeled as an execution
 failure. Real joint, actuator, collision, velocity, effort, and action limits
 remain enabled.
 
-The frozen H3 Hardening5 regression reached five exact-retarget terminal
-results. Three episodes entered evaluation and exhausted their independent
-15-update PPO budgets; two reached the explicit `SUPPORT_UNRESOLVED` physical
-invalid state. Consequently,
+The frozen H3 Hardening5 regression reached five numerical exact-retarget
+terminal results, but its original references failed the later
+`RetargetSemanticValidityV1` audit because the HOCap path used a MANO parameter
+frame as the semantic wrist. The three historical PPO failures are therefore
+`NON_DIAGNOSTIC_INVALID_REFERENCE`; regenerated geometric references do not
+retroactively change those immutable traces. Two other episodes reached the
+explicit `SUPPORT_UNRESOLVED` physical invalid state. Consequently,
 `H3C_READY_FOR_UNSEEN_OBJECT_EXECUTION=NO`. The object/mesh-disjoint Frozen5
 selection is frozen and audited, but its downstream episodes were not consumed.
 There is `no shared-policy zero-shot claim`: the method contract uses
@@ -53,7 +56,8 @@ licensed HOI data
   -> canonical HOI sequence and coordinate conventions
   -> MANO / target-hand semantic conversion
   -> interaction-aware kinematic retargeting
-  -> geometry and contact validation
+  -> RetargetSemanticValidityV1 frame, time, geometry, contact, and continuity validation
+  -> manual source/canonical/warm/final HTML review
   -> versioned robot reference export
   -> Isaac Lab causal physics correction and evaluation
 ```
@@ -213,7 +217,7 @@ export EPISODE_ID=<frozen-episode-id>
      --repaired-output "$PHYS_RUN_ROOT/retarget_input_quality_repaired.npz"
    ```
 
-4. Run the unchanged geometric solver with the math-equivalent
+4. Run the geometric solver with the math-equivalent
    `fast_exact_v2` execution profile. Do not use `--benchmark-first-frames` or
    `--skip-html` in production.
 
@@ -228,8 +232,46 @@ export EPISODE_ID=<frozen-episode-id>
      --report-root "$PHYS_REPORT_ROOT/geometric"
    ```
 
-5. Open the emitted `continuous_refinement_visualization.html`. To rerender the
-   same receipt-bound artifacts, use the existing viewer:
+5. Qualify the receipt-bound source, warm, and final artifacts before producing
+   any physical reference. **Solver convergence does not imply semantic retarget validity.**
+   Production admission requires both `NumericalSolverSuccess` and
+   `RetargetSemanticValidityV1`; `FAIL` or `INCONCLUSIVE` stops downstream use.
+   The first command is the fail-closed single-episode production gate. The
+   registered audit command then recalculates the immutable 170105/170650
+   positive-control comparison before inspecting Hardening5.
+
+   ```bash
+   GEOMETRIC_RUN="$PHYS_RUN_ROOT/geometric/$EPISODE_ID"
+   GEOMETRIC_REPORT="$PHYS_REPORT_ROOT/geometric/episodes/$EPISODE_ID"
+   conda run -n toporetarget-rl python \
+     scripts/evaluation/qualify_retarget_semantics.py \
+     --episode-id "$EPISODE_ID" \
+     --canonical "$GEOMETRIC_RUN/raw_contract/canonical_episode.zarr" \
+     --warm-start "$GEOMETRIC_RUN/retarget/warm_start.npz" \
+     --final "$GEOMETRIC_RUN/retarget/final_continuous.zarr" \
+     --graph "$GEOMETRIC_RUN/retarget/interaction_graph.npz" \
+     --evaluation "$GEOMETRIC_RUN/retarget/interaction_evaluation.npz" \
+     --viewer "$GEOMETRIC_REPORT/retarget/continuous_refinement_visualization.html" \
+     --receipt "$GEOMETRIC_REPORT/geometric_retarget_receipt.json" \
+     --output "$GEOMETRIC_REPORT/retarget/semantic_qualification.json" \
+     --per-frame-csv "$GEOMETRIC_REPORT/retarget/semantic_metrics_per_frame.csv"
+
+   export SEMANTIC_REPORT_ROOT="$PHYS_REPORT_ROOT/retarget_semantic_validity_frame_authority_audit"
+   conda run -n toporetarget-rl python \
+     scripts/evaluation/audit_retarget_semantic_validity.py \
+     --phase post_fix --output-root "$SEMANTIC_REPORT_ROOT" \
+     --episode-index "$EPISODE_ROOT/all_hocap_episodes.json" \
+     --positive-control-root <accepted-stage12-hocap-root> \
+     --hardening-run-root <hardening5-geometric-run-root> \
+     --hardening-report-root <hardening5-geometric-report-root>
+   column -s, -t "$SEMANTIC_REPORT_ROOT/positive_controls/comparison.csv"
+   column -s, -t "$SEMANTIC_REPORT_ROOT/hardening5/main_table.csv"
+   ```
+
+6. Open the emitted `continuous_refinement_visualization.html`. The unified
+   semantic viewer provides RAW/CANONICAL/WARM/FINAL/object toggles, explicit
+   frame axes, fingertips, frozen interaction graphs, and warm-to-final
+   residual vectors. To rerender the same receipt-bound artifacts, use:
 
    ```bash
    conda run -n topo-retarget python -m toporetarget workflow visualize-mesh \
@@ -237,13 +279,15 @@ export EPISODE_ID=<frozen-episode-id>
      --max-object-points 50000 --output <retarget.html>
    ```
 
-6. Build the physical reference from the validated final trajectory and its
+7. Build the physical reference from the validated final trajectory and its
    checkpoint manifest:
 
    ```bash
    conda run -n toporetarget-rl python scripts/rl/prepare_independent_source_reference.py \
      --clip-id "$EPISODE_ID" --final-trajectory <final_continuous.zarr> \
      --canonical <canonical_episode.zarr> \
+     --geometric-receipt "$GEOMETRIC_REPORT/geometric_retarget_receipt.json" \
+     --semantic-qualification "$GEOMETRIC_REPORT/retarget/semantic_qualification.json" \
      --checkpoint-manifest <continuous_checkpoints/manifest.json> \
      --wuji-mjcf third_party/robot_hands/wuji_hand2_beta1/mjcf/right.xml \
      --world-reference-output <world_reference.npz> --object-mesh-output <object.obj> \
@@ -251,7 +295,7 @@ export EPISODE_ID=<frozen-episode-id>
      --reference-v2-output <reference_kinematics_v2.npz> --report <reference.json>
    ```
 
-7. Establish host GPU authority in the exact Isaac environment. A sandbox CUDA
+8. Establish host GPU authority in the exact Isaac environment. A sandbox CUDA
    failure is diagnostic and is not evidence that the host GPU is unavailable;
    CPU fallback is forbidden.
 
@@ -263,7 +307,7 @@ export EPISODE_ID=<frozen-episode-id>
      --output <gpu_preflight_receipt.json>
    ```
 
-8. Run the zero-residual deterministic source controller first, with the
+9. Run the zero-residual deterministic source controller first, with the
    continuous equivalent-angle virtual wrist and real finger limits. L0 is
    conditional, not automatically required for every episode.
 
@@ -282,7 +326,7 @@ export EPISODE_ID=<frozen-episode-id>
      --seed-manifest <seed_manifest.json>
    ```
 
-9. Only if step 8 fails, train the corrected L0 actor for exactly `1,024,000`
+10. Only if step 9 fails, train the corrected L0 actor for exactly `1,024,000`
    samples and qualify it with the same Eval10. `--continuous-virtual-wrist-angles`
    removes representation wrapping as a failure without removing real finger,
    action, effort, velocity, singularity, collision, or actuator limits.
@@ -310,7 +354,7 @@ export EPISODE_ID=<frozen-episode-id>
      --seed-manifest <seed_manifest.json>
    ```
 
-10. Resolve support with the frozen priority
+11. Resolve support with the frozen priority
    `SOURCE_EXPLICIT_SUPPORT -> SOURCE_RECONSTRUCTED_SUPPORT ->
    INFERRED_PLANAR_SUPPORT -> UNRESOLVED`. If source table parameters exist,
    restore them; never infer a second table. Source/reconstructed support keeps
@@ -326,7 +370,7 @@ export EPISODE_ID=<frozen-episode-id>
      --gpu-preflight-receipt <gpu_preflight_receipt.json> --accept-eula
    ```
 
-11. Run the immutable full-gravity Eval10 before any physical update:
+12. Run the immutable full-gravity Eval10 before any physical update:
 
    ```bash
    conda run -n topo-retarget python scripts/evaluation/run_independent_frozen_physical_evaluation.py \
@@ -338,7 +382,7 @@ export EPISODE_ID=<frozen-episode-id>
      --run-root "$PHYS_RUN_ROOT" --report-root "$PHYS_REPORT_ROOT" --accept-eula
    ```
 
-12. Decide from PF V2: a PASS accepts the frozen policy with zero PPO updates;
+13. Decide from PF V2: a PASS accepts the frozen policy with zero PPO updates;
     a failure alone permits physical PPO. When authorized, run the three
     fail-closed modes in order. V2's frozen P5 fallback is at most 15 updates
     (`614,400` samples); this is explicitly
@@ -370,7 +414,7 @@ export EPISODE_ID=<frozen-episode-id>
       python scripts/rl/isaaclab/run_physical_refinement.py train "${PPO_ARGS[@]}"
     ```
 
-13. Apply `PhysicalFunctionalityFullCycleV1` to the immutable traces. PF V2
+14. Apply `PhysicalFunctionalityFullCycleV1` to the immutable traces. PF V2
     remains the pick/lift authority; FullCycle V1 separately measures pick,
     transport, place, release, and retreat. If destination-region or
     destination-support signals were not recorded, those phases are
@@ -384,7 +428,7 @@ export EPISODE_ID=<frozen-episode-id>
       --output <qualification_dir/full_cycle> --geometry-safe
     ```
 
-14. Replay the immutable trace. The same entrypoint supports the full
+15. Replay the immutable trace. The same entrypoint supports the full
     trajectory, a window, raw MANO/object overlays, reference toggling, and the
     deterministic low-poly raw object.
 
