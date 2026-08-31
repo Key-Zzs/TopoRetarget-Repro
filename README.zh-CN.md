@@ -38,6 +38,30 @@ actuator、collision、velocity、effort 和 action limits 均保留。
 审计，但没有消费其 downstream Episode。本轮`不做 shared-policy zero-shot claim`；合同要求
 `每条 Episode 独立 PPO`，且本轮不声明未见物体性能结论。
 
+### Dataset semantic authority 与双 canary gate（P0-P5）
+
+在任何 exact retarget 或 physicalization admission 之前，先对完整 HOCap corpus 执行只读的
+`DatasetSemanticAuthorityV1` audit。它解析所有官方 hand slot 和 object candidate，记录
+`CanonicalHOIRecordV1` authority chain，并对 target object 歧义、object-asset binding 错误、生命周期不完整、
+bimanual same-object episode、frame/time authority 缺陷 fail closed。P0-P4 artifacts 写入一个 ignored report root，
+并使用 `TWO_CANARY_SELECTION_SEED=20260830` 冻结恰好两条新的 right-hand semantic-PASS canary：
+
+```bash
+conda run --no-capture-output -n topo-retarget python \
+  scripts/evaluation/run_dataset_semantic_authority.py \
+  --episode-index <all_hocap_episodes.json> \
+  --data-root <HOCap-root> \
+  --output-root <report-root>/dataset_semantic_authority_two_clip_canary \
+  --force
+```
+
+只有冻结 manifest 中的两条 entry 可以进入
+`wuji_continuous_sequential_fast_exact_v2`。对两条 receipt-bound HTML 进行人工检查，并分别执行
+`qualify_retarget_semantics.py`。第一次执行在
+`WAITING_FOR_USER_RETARGET_HTML_ACCEPTANCE` 停止；不会启动 PPO、support、PhysX、reward、RSE、PF、DF 或任何
+P6-P8 route。恢复必须对每条 canary 分别给出明确决定：
+`CANARY_1=APPROVE` 与 `CANARY_2=APPROVE`。
+
 ## 方法总览
 
 ```text

@@ -49,6 +49,35 @@ There is `no shared-policy zero-shot claim`: the method contract uses
 `independent PPO per Episode`, and this run makes no unseen-object performance
 claim.
 
+### Dataset semantic authority and the two-canary gate (P0-P5)
+
+Before any exact retarget or physicalization admission, run the read-only
+`DatasetSemanticAuthorityV1` audit over the complete HOCap corpus. It parses
+all official hand slots and object candidates, records the
+`CanonicalHOIRecordV1` authority chain, and fails closed on ambiguous target
+objects, bad object-asset binding, incomplete lifecycle, bimanual same-object
+episodes, or frame/time authority defects. The audit writes its P0-P4
+inventory and regression artifacts under one ignored report root and freezes
+exactly two new right-hand semantic-PASS canaries with seed
+`TWO_CANARY_SELECTION_SEED=20260830`:
+
+```bash
+conda run --no-capture-output -n topo-retarget python \
+  scripts/evaluation/run_dataset_semantic_authority.py \
+  --episode-index <all_hocap_episodes.json> \
+  --data-root <HOCap-root> \
+  --output-root <report-root>/dataset_semantic_authority_two_clip_canary \
+  --force
+```
+
+Only those two frozen manifest entries may then enter
+`wuji_continuous_sequential_fast_exact_v2`. Inspect both receipt-bound HTML
+views and run `qualify_retarget_semantics.py` for each. The first execution
+ends at `WAITING_FOR_USER_RETARGET_HTML_ACCEPTANCE`; it does not start PPO,
+support, PhysX, reward, RSE, PF, DF, or any other P6-P8 route. Resume requires
+an explicit independent decision for each canary:
+`CANARY_1=APPROVE` and `CANARY_2=APPROVE`.
+
 ## Method overview
 
 ```text
