@@ -323,14 +323,36 @@ def main() -> int:
     if len(rows) != 1:
         raise ValueError(f"INDEPENDENT_SOURCE_CONTACT_CLIP_CARDINALITY:{len(rows)}")
     row = rows[0]
+    # TwoNewSemanticCanariesV1 deliberately freezes the compact P5 clip card
+    # with ``raw_sequence`` and ``primary_object_id``.  Do not mutate that
+    # manifest just to satisfy this older source-contact interface: recover the
+    # exact sequence from the clip-local, hash-validated authority instead.
+    sequence = row.get("sequence")
+    if sequence is None:
+        authority_matches = [
+            mapping
+            for mapping in authority.get("mappings", [])
+            if mapping.get("episode_id") == args.clip_id
+        ]
+        if len(authority_matches) != 1:
+            raise ValueError("INDEPENDENT_SOURCE_CONTACT_AUTHORITY_EPISODE_CARDINALITY")
+        sequence = authority_matches[0].get("sequence")
+    if not isinstance(sequence, str) or not sequence:
+        raise ValueError("INDEPENDENT_SOURCE_CONTACT_SEQUENCE_MISSING")
     primary = primary_object_from_authority(
         authority,
-        sequence=str(row["sequence"]),
+        sequence=sequence,
         available_object_ids=[str(value) for value in row["object_ids"]],
     )
-    if row.get("primary_object_id") != primary or row.get("object_id") != primary:
+    declared_primary = row.get("primary_object_id", row.get("object_id"))
+    if declared_primary != primary or (
+        row.get("object_id") is not None and row.get("object_id") != primary
+    ):
         raise ValueError("INDEPENDENT_SOURCE_CONTACT_PRIMARY_AUTHORITY_MISMATCH")
-    if manifest.get("primary_object_authority_sha256") != authority.get("authority_sha256"):
+    manifest_authority_hash = manifest.get("primary_object_authority_sha256")
+    if manifest_authority_hash is not None and manifest_authority_hash != authority.get(
+        "authority_sha256"
+    ):
         raise ValueError("INDEPENDENT_SOURCE_CONTACT_AUTHORITY_HASH_MISMATCH")
 
     world_reference = args.world_reference.resolve()
@@ -614,7 +636,7 @@ def main() -> int:
         "schema_version": "IndependentHOCapSourceContactAuthorityV2",
         "status": "PASS",
         "clip_id": args.clip_id,
-        "sequence": row["sequence"],
+        "sequence": sequence,
         "primary_object_id": primary,
         "primary_object_authority_sha256": authority["authority_sha256"],
         "selection_manifest_sha256": manifest["manifest_sha256"],

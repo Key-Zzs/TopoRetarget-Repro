@@ -142,6 +142,7 @@ def main() -> int:
     rows = [row for row in manifest["clips"] if row.get("clip_id") == args.clip_id]
     if len(rows) != 1 or args.clip_id in {"hocap_170105", "hocap_170650"}:
         raise ValueError("INDEPENDENT_SUPPORT_CLIP_NOT_HELD_OUT")
+    row = rows[0]
     source_receipt_path = args.source_policy_receipt.resolve()
     source = _json(source_receipt_path)
     source_schema = source.get("schema_version")
@@ -212,6 +213,20 @@ def main() -> int:
         != "all_annotated_source_hands"
     ):
         raise ValueError("INDEPENDENT_SUPPORT_SOURCE_CONTACT_RECEIPT_INVALID")
+    source_sequence_dir = row.get("raw_path")
+    if source_sequence_dir is None:
+        # TwoNewSemanticCanariesV1 keeps the frozen manifest metadata-only.
+        # The source-contact authority already records the exact raw_meta
+        # artifact, so derive its sequence directory from that signed input
+        # rather than adding a path to the immutable manifest.
+        raw_meta_row = source_contact.get("frozen_inputs", {}).get("raw_meta")
+        raw_meta_path = (
+            Path(str(raw_meta_row.get("path", ""))) if isinstance(raw_meta_row, dict) else Path()
+        )
+        if not raw_meta_path.is_file():
+            raise ValueError("INDEPENDENT_SUPPORT_RAW_SEQUENCE_PROVENANCE_MISSING")
+        source_sequence_dir = str(raw_meta_path.parent)
+    source_sequence_dir = str(Path(str(source_sequence_dir)).resolve())
     strict_mask = _receipt_path(source_contact["artifacts"]["strict_mask"])
     native_contact = _receipt_path(source_contact["artifacts"]["support_native"])
     reference_root = reference.parent
@@ -264,7 +279,7 @@ def main() -> int:
                     "--object-root",
                     str(object_root),
                     "--source-sequence-dir",
-                    str(Path(str(rows[0]["raw_path"])).resolve()),
+                    source_sequence_dir,
                     "--support-asset-root",
                     str(support_asset_root),
                     "--output-root",

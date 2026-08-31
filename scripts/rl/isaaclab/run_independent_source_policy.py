@@ -228,7 +228,10 @@ def main() -> int:
     lineage_seed = int(rows[0]["selection_key"][:8], 16) & 0x7FFFFFFF
     authority_path = args.primary_object_authority.resolve()
     authority = _json(authority_path)
-    if manifest.get("primary_object_authority_sha256") != authority.get("authority_sha256"):
+    manifest_authority_hash = manifest.get("primary_object_authority_sha256")
+    if manifest_authority_hash is not None and manifest_authority_hash != authority.get(
+        "authority_sha256"
+    ):
         raise ValueError("INDEPENDENT_SOURCE_POLICY_PRIMARY_AUTHORITY_MISMATCH")
     geometry_path = args.geometric_receipt.resolve()
     geometry = _json(geometry_path)
