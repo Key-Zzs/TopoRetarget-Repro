@@ -28,7 +28,14 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--clip", required=True)
     parser.add_argument("--case", choices=("with_support", "without_support"), required=True)
-    parser.add_argument("--steps", type=int, default=360)
+    duration = parser.add_mutually_exclusive_group()
+    duration.add_argument("--steps", type=int, default=None)
+    duration.add_argument(
+        "--duration-seconds",
+        type=float,
+        default=None,
+        help="Physical duration; converted to fixed dt steps without changing physics.",
+    )
     parser.add_argument("--accept-eula", action="store_true")
     parser.add_argument(
         "--reference",
@@ -51,6 +58,18 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Inference table_proxy.json; required for --case with_support.",
+    )
+    parser.add_argument(
+        "--reference-file",
+        type=Path,
+        default=None,
+        help="Exact frozen reference file; overrides --reference/--clip lookup.",
+    )
+    parser.add_argument(
+        "--object-usd-file",
+        type=Path,
+        default=None,
+        help="Exact generated runtime object USD; overrides --object-usd/--clip lookup.",
     )
     parser.add_argument(
         "--output",
@@ -95,8 +114,10 @@ def _contact_telemetry(sensor: Any, support_normal: np.ndarray) -> tuple[np.ndar
 
 
 def _load_inputs(args: argparse.Namespace) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
-    reference_path = args.reference / f"{args.clip}.world_wrist.stage16.npz"
-    object_usd = args.object_usd / args.clip / f"{args.clip}.usda"
+    reference_path = args.reference_file or (
+        args.reference / f"{args.clip}.world_wrist.stage16.npz"
+    )
+    object_usd = args.object_usd_file or (args.object_usd / args.clip / f"{args.clip}.usda")
     if not reference_path.is_file():
         raise FileNotFoundError(f"REFERENCE_NOT_FOUND:{reference_path}")
     if not object_usd.is_file():
@@ -265,9 +286,17 @@ def _run_simulation(
         sensor = scene["contact_sensor"] if args.case == "with_support" else None
         print("STAGE16_SUPPORT_MARKER sensor_resolved", flush=True)
         support_normal = np.asarray(inputs["support_normal"], dtype=np.float64)
+        if args.duration_seconds is not None:
+            if not np.isfinite(args.duration_seconds) or args.duration_seconds <= 0.0:
+                raise ValueError("SUPPORT_DURATION_SECONDS_INVALID")
+            steps = int(np.ceil(args.duration_seconds / float(sim_cfg.dt)))
+        else:
+            steps = args.steps if args.steps is not None else 360
+        if steps < 1:
+            raise ValueError("SUPPORT_STEPS_INVALID")
         rows: list[dict[str, Any]] = []
         started = time.monotonic()
-        for step in range(args.steps):
+        for step in range(steps):
             if step == 0:
                 print("STAGE16_SUPPORT_MARKER first_step_begin", flush=True)
             scene.write_data_to_sim()
@@ -317,7 +346,12 @@ def _run_simulation(
             "status": "CAPTURED_PHYSX_TELEMETRY",
             "clip": args.clip,
             "case": args.case,
-            "steps": args.steps,
+            "steps": steps,
+            "duration_s_requested": (
+                float(args.duration_seconds)
+                if args.duration_seconds is not None
+                else float(steps * sim_cfg.dt)
+            ),
             "dt_s": float(sim_cfg.dt),
             "full_gravity": True,
             "device": "cuda:0",
@@ -369,8 +403,10 @@ def main() -> int:
         raise SystemExit("INDEPENDENT_SUPPORT_CLIP_ID_INVALID")
     if not args.accept_eula:
         raise SystemExit("explicit --accept-eula is required for this licensed runtime process")
-    if args.steps < 1:
+    if args.steps is not None and args.steps < 1:
         raise SystemExit("--steps must be positive")
+    if args.duration_seconds is not None and args.duration_seconds <= 0.0:
+        raise SystemExit("--duration-seconds must be positive")
     initial_translation, initial_quaternion, inputs = _load_inputs(args)
     output = args.output or (
         REPO_ROOT
