@@ -430,6 +430,28 @@ def assert_frozen_episode_manifest(manifest: Mapping[str, Any]) -> None:
     """
 
     schema = manifest.get("schema_version")
+    if schema == "TwoNewSemanticCanariesV1":
+        value = dict(manifest)
+        expected = value.pop("manifest_sha256", None)
+        episodes = value.get("episodes")
+        clips = value.get("clips")
+        if (
+            not isinstance(expected, str)
+            or stable_hash(value) != expected
+            or value.get("status") != "FROZEN_BEFORE_RETARGET"
+            or value.get("downstream_outcomes_used") is not False
+            or not isinstance(episodes, list)
+            or len(episodes) != 2
+            or clips != episodes
+            or any(
+                not isinstance(item, Mapping)
+                or item.get("exclusion_audit", {}).get("outcome_observed") is not False
+                for item in episodes
+            )
+            or len({str(item.get("clip_id")) for item in episodes}) != 2
+        ):
+            raise BatchContractError("TWO_CANARY_MANIFEST_INVALID")
+        return
     h3_schemas = {
         "H3PipelineHardeningRegressionManifestV1",
         "H3UnseenObjectFrozen5ManifestV1",
