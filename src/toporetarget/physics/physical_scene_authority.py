@@ -178,7 +178,12 @@ def validate_runtime_collision_shapes(
                 errors.append(f"{prefix}:{key}_missing")
         for key in ("local_transform", "world_transform"):
             try:
-                _array(shape.get(key), shape=(4, 4), name=f"{prefix}:{key}")
+                value = shape.get(key)
+                _array(
+                    value if value is not None else (),
+                    shape=(4, 4),
+                    name=f"{prefix}:{key}",
+                )
             except (TypeError, ValueError):
                 errors.append(f"{prefix}:{key}_invalid")
         if not bool(shape.get("collision_enabled", False)):

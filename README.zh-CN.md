@@ -349,10 +349,30 @@ export EPISODE_ID=<frozen-episode-id>
      --seed-manifest <seed_manifest.json>
    ```
 
-11. 按 `SOURCE_EXPLICIT_SUPPORT -> SOURCE_RECONSTRUCTED_SUPPORT ->
-   INFERRED_PLANAR_SUPPORT -> UNRESOLVED` 解析 support。source table 参数存在时必须恢复，
-   不得再推断第二张 table。source/reconstructed support 的 hand/object collision 都为 ON；
-   inferred proxy 仅用 pairwise filter 将 hand/support collision 设为 OFF，object collision 保持 ON。
+11. 在进入仿真前应用 V2 physical-scene authority。`ObjectDynamicsAuthorityV1`
+   记录 mass、COM、inertia 是 explicit、derived 还是 unresolved；缺少 source
+   support geometry 只能记为 `SUPPORT_UNDERDETERMINED`，不能推断为
+   `SUPPORT_ABSENT`。`SupportExistenceContractV1` 与
+   `SupportPhysicalizationV1` 是两个独立决策。按冻结优先级
+   `SUPPORT_ONLY -> COMMON_SCENE_SE3 -> RELATIVE_OBJECT_PROJECTION` 解析；前两者
+   保持手-物相对变换，因此复用已验证的几何重定向。`RELATIVE_OBJECT_PROJECTION`
+   只有在 exact retarget 与 semantic revalidation 通过、并经过 hard human gate
+   后才允许。必须在看到 canary 结果前冻结一个全局
+   `PhysicalizationDeviationBudgetV1`；禁止按 canary 调 friction、mass、COM、inertia、
+   reward、PPO、wrist、finger 或 trajectory。
+
+   settled-support qualification 使用 runtime `dt` 与秒域 terminal window；impact peak
+   只作诊断。只有在 `SettledSupportDynamicsQualificationV2` 下 contact、terminal motion
+   有界、runtime COM/inertia provenance 均通过，scene 才算 ready。
+
+   ```text
+   source semantics -> support existence -> physicalization -> settled dynamics
+                                  \-> frozen retarget reuse decision
+   ```
+
+   若 source table 参数存在必须恢复，不得再推断第二张 table。source/reconstructed
+   support 的 hand/object collision 都为 ON；inferred proxy 仅用 pairwise filter 将
+   hand/support collision 设为 OFF，object collision 保持 ON。
 
    ```bash
    conda run -n topo-retarget python scripts/physics/run_independent_physical_support.py \

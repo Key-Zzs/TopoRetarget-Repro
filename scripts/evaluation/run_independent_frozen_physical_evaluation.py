@@ -153,6 +153,7 @@ def main() -> int:
         "--run-root",
         str(run_root),
         "--accept-eula",
+        "--continuous-virtual-wrist-angles",
         "--gpu-preflight-receipt",
         str(gpu_preflight_path),
     ]

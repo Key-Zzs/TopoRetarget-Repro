@@ -452,6 +452,63 @@ def assert_frozen_episode_manifest(manifest: Mapping[str, Any]) -> None:
         ):
             raise BatchContractError("TWO_CANARY_MANIFEST_INVALID")
         return
+    if schema == "DatasetSemanticAuthorityUnseenObjectFrozen5ManifestV1":
+        # The semantic-authority refreeze predates the H3 execution manifest
+        # schema.  It is still a frozen, outcome-blind held-out authority and
+        # must be accepted without mutating or reserializing that input.
+        value = dict(manifest)
+        expected = value.pop("manifest_sha256", None)
+        if not isinstance(expected, str) or stable_hash(value) != expected:
+            raise BatchContractError("P7_SEMANTIC_MANIFEST_HASH_DRIFT")
+        clips = value.get("clips")
+        episodes = value.get("episodes")
+        if not (
+            value.get("status") == "FROZEN_NOT_EXECUTED"
+            and value.get("HELD_OUT_SET_FROZEN") == "YES"
+            and value.get("dataset") == "hocap"
+            and value.get("dataset_role") == "UNSEEN_OBJECT_INSTANCE_HELDOUT"
+            and value.get("held_out_count") == 5
+            and value.get("downstream_outcomes_observed") is False
+            and value.get("shared_policy_zero_shot_claim") is False
+            and isinstance(clips, list)
+            and len(clips) == 5
+            and episodes == clips
+            and all(isinstance(item, Mapping) for item in clips)
+        ):
+            raise BatchContractError("P7_SEMANTIC_MANIFEST_CONTRACT_INVALID")
+        ids = [str(item.get("clip_id")) for item in clips]
+        object_ids = [str(item.get("primary_object_id")) for item in clips]
+        mesh_hashes = [
+            str(item.get("object_identity", {}).get("canonical_mesh_sha256")) for item in clips
+        ]
+        geometry_hashes = [
+            str(item.get("object_identity", {}).get("geometry_hash")) for item in clips
+        ]
+        if (
+            len(set(ids)) != 5
+            or len(set(object_ids)) != 5
+            or len(set(mesh_hashes)) != 5
+            or len(set(geometry_hashes)) != 5
+            or any(len(mesh_hash) != 64 for mesh_hash in mesh_hashes)
+            or any(len(geometry_hash) != 128 for geometry_hash in geometry_hashes)
+            or any(
+                item.get("exclusion_audit", {}).get(name) is not True
+                for item in clips
+                for name in (
+                    "object_id_disjoint",
+                    "mesh_sha256_disjoint",
+                    "geometry_hash_disjoint",
+                    "known_alias_disjoint",
+                    "sequence_disjoint",
+                )
+            )
+            or any(
+                item.get("exclusion_audit", {}).get("outcome_observed") is not False
+                for item in clips
+            )
+        ):
+            raise BatchContractError("P7_SEMANTIC_MANIFEST_DISJOINTNESS_INVALID")
+        return
     h3_schemas = {
         "H3PipelineHardeningRegressionManifestV1",
         "H3UnseenObjectFrozen5ManifestV1",

@@ -219,11 +219,20 @@ def main() -> int:
             for item in selection_manifest["clips"]
             if item.get("episode_id") == args.episode_id and item.get("clip_id") == args.episode_id
         ]
+        selected_range = matches[0].get("selected_frame_range") if len(matches) == 1 else None
+        row_range = [row.get("start_frame"), row.get("end_frame")]
+        frame_range_matches = False
+        if isinstance(selected_range, (list, tuple)) and len(selected_range) == 2:
+            try:
+                frame_range_matches = [int(value) for value in selected_range] == [
+                    int(value) for value in row_range
+                ]
+            except (TypeError, ValueError):
+                frame_range_matches = False
         if (
             len(matches) != 1
             or matches[0].get("primary_object_id") != row.get("target_object")
-            or matches[0].get("selected_frame_range")
-            != [row.get("start_frame"), row.get("end_frame")]
+            or not frame_range_matches
         ):
             raise BatchContractError("HOCAP_EPISODE_RETARGET_SELECTION_MANIFEST_MISMATCH")
         selection_manifest_sha256 = str(selection_manifest["manifest_sha256"])

@@ -375,6 +375,11 @@ class ObjectAssetBindingV1:
             checks["episode_mesh_sha256"] and checks["asset_mesh_sha256"]
         )
         passed = all(checks.values())
+
+        def chain_object_id(name: str) -> Any:
+            item = chain.get(name)
+            return item.get("object_id") if item is not None else expected_id
+
         return {
             "schema_version": cls.schema_version,
             "status": "PASS" if passed else AuthorityStatus.OBJECT_ASSET_BINDING_FAIL.value,
@@ -383,24 +388,12 @@ class ObjectAssetBindingV1:
             "target_object_mesh_sha256": expected_mesh,
             "checks": checks,
             "identity_tuple": {
-                "ID_episode": chain.get("episode", {}).get("object_id")
-                if chain.get("episode")
-                else expected_id,
-                "ID_pose": chain.get("pose", {}).get("object_id")
-                if chain.get("pose")
-                else expected_id,
-                "ID_asset": chain.get("asset", {}).get("object_id")
-                if chain.get("asset")
-                else expected_id,
-                "ID_retarget": chain.get("retarget", {}).get("object_id")
-                if chain.get("retarget")
-                else expected_id,
-                "ID_viewer": chain.get("viewer", {}).get("object_id")
-                if chain.get("viewer")
-                else expected_id,
-                "ID_support": chain.get("support", {}).get("object_id")
-                if chain.get("support")
-                else expected_id,
+                "ID_episode": chain_object_id("episode"),
+                "ID_pose": chain_object_id("pose"),
+                "ID_asset": chain_object_id("asset"),
+                "ID_retarget": chain_object_id("retarget"),
+                "ID_viewer": chain_object_id("viewer"),
+                "ID_support": chain_object_id("support"),
             },
         }
 

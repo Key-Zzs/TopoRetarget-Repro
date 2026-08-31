@@ -92,7 +92,9 @@ def _one_vector(value: Any) -> np.ndarray:
     return reshaped.sum(axis=0)
 
 
-def _contact_telemetry(sensor: Any, support_normal: np.ndarray) -> tuple[np.ndarray, bool, int]:
+def _contact_telemetry(
+    sensor: Any, support_normal: np.ndarray
+) -> tuple[np.ndarray, bool, int, list[list[float]]]:
     force_matrix = sensor.data.force_matrix_w
     if force_matrix is None:
         raise RuntimeError("SUPPORT_CONTACT_FORCE_MATRIX_UNAVAILABLE")
@@ -109,8 +111,45 @@ def _contact_telemetry(sensor: Any, support_normal: np.ndarray) -> tuple[np.ndar
     # onto the inferred support normal.
     if not np.isfinite(net_force).all():
         raise RuntimeError("SUPPORT_CONTACT_FORCE_NONFINITE")
+    contact_positions = getattr(sensor.data, "contact_pos_w", None)
+    if contact_positions is None:
+        raise RuntimeError("SUPPORT_CONTACT_POSITION_UNAVAILABLE")
+    contact_positions_array = _as_numpy(contact_positions)
+    if contact_positions_array.size == 0:
+        active_positions: list[list[float]] = []
+    else:
+        contact_positions_array = np.asarray(contact_positions_array, dtype=np.float64)
+        contact_positions_array = contact_positions_array.reshape(-1, 3)
+        active_positions = contact_positions_array[
+            np.isfinite(contact_positions_array).all(axis=1)
+        ].tolist()
     del support_normal
-    return net_force, bool(active.any()), int(active.sum())
+    return net_force, bool(active.any()), int(active.sum()), active_positions
+
+
+def _center_of_mass_position(obj: Any) -> list[float] | None:
+    """Read the backend COM when available without fabricating total energy."""
+
+    for name in ("root_com_pos_w", "body_com_pos_w"):
+        value = getattr(obj.data, name, None)
+        if value is None:
+            continue
+        array = np.asarray(_as_numpy(value), dtype=np.float64).reshape(-1, 3)
+        if len(array) and np.isfinite(array[0]).all():
+            return array[0].tolist()
+    return None
+
+
+def _rotation_matrix_from_wxyz(quaternion: np.ndarray) -> np.ndarray:
+    w, x, y, z = quaternion / np.linalg.norm(quaternion)
+    return np.asarray(
+        [
+            [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
+            [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
+            [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+        ],
+        dtype=np.float64,
+    )
 
 
 def _load_inputs(args: argparse.Namespace) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
@@ -276,6 +315,10 @@ def _run_simulation(
         obj = scene["object"]
         print("STAGE16_SUPPORT_MARKER object_resolved", flush=True)
         runtime_mass = float(_as_numpy(obj.data.default_mass[0]).reshape(-1)[0])
+        runtime_inertia_value = _as_numpy(obj.data.default_inertia[0])
+        runtime_inertia = np.asarray(runtime_inertia_value, dtype=np.float64).reshape(3, 3)
+        if not np.isfinite(runtime_inertia).all():
+            raise RuntimeError("SUPPORT_OBJECT_RUNTIME_INERTIA_NONFINITE")
         support_runtime_state = None
         if args.case == "with_support":
             support_runtime_state = _as_numpy(scene["support"].data.root_state_w[0]).reshape(-1)
@@ -316,13 +359,19 @@ def _run_simulation(
             linear = root_state[7:10]
             angular = root_state[10:13]
             if sensor is not None:
-                support_force, support_contact, contact_count = _contact_telemetry(
-                    sensor, support_normal
-                )
+                (
+                    support_force,
+                    support_contact,
+                    contact_count,
+                    contact_positions,
+                ) = _contact_telemetry(sensor, support_normal)
             else:
                 support_force = np.zeros(3, dtype=np.float64)
                 support_contact = False
                 contact_count = 0
+                contact_positions = []
+            com_position = _center_of_mass_position(obj)
+            linear_kinetic_energy = 0.5 * runtime_mass * float(np.dot(linear, linear))
             rows.append(
                 {
                     "step": step,
@@ -332,8 +381,17 @@ def _run_simulation(
                     "linear_velocity_world_mps": linear.tolist(),
                     "angular_velocity_world_radps": angular.tolist(),
                     "support_force_world_n": support_force.tolist(),
+                    "support_impulse_proxy_world_ns": (support_force * sim_cfg.dt).tolist(),
                     "support_contact": support_contact,
                     "support_contact_count": contact_count,
+                    "support_contact_points_world_m": contact_positions,
+                    "support_patch_id": "finite_planar_support_proxy_v1"
+                    if args.case == "with_support"
+                    else None,
+                    "center_of_mass_world_m": com_position,
+                    "kinetic_energy_linear_j": linear_kinetic_energy,
+                    "kinetic_energy_j": None,
+                    "kinetic_energy_reliable": False,
                     "external_guidance": False,
                     "object_state_writes": 0,
                     "hidden_attachment": False,
@@ -357,6 +415,21 @@ def _run_simulation(
             "device": "cuda:0",
             "wall_time_s": time.monotonic() - started,
             "mass_kg": runtime_mass,
+            "runtime_default_inertia_kgm2": runtime_inertia.tolist(),
+            "runtime_default_center_of_mass_world_m_first": (
+                rows[0]["center_of_mass_world_m"] if rows else None
+            ),
+            "runtime_default_center_of_mass_local_m": (
+                _rotation_matrix_from_wxyz(
+                    np.asarray(rows[0]["orientation_world_wxyz"], dtype=np.float64)
+                ).T
+                @ (
+                    np.asarray(rows[0]["center_of_mass_world_m"], dtype=np.float64)
+                    - np.asarray(rows[0]["position_world_m"], dtype=np.float64)
+                )
+            ).tolist()
+            if rows and rows[0]["center_of_mass_world_m"] is not None
+            else None,
             "initial_translation_world_m": initial_translation.tolist(),
             "initial_quaternion_world_wxyz": initial_quaternion.tolist(),
             "support_runtime_root_state_initial": (

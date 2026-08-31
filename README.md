@@ -383,12 +383,32 @@ export EPISODE_ID=<frozen-episode-id>
      --seed-manifest <seed_manifest.json>
    ```
 
-11. Resolve support with the frozen priority
-   `SOURCE_EXPLICIT_SUPPORT -> SOURCE_RECONSTRUCTED_SUPPORT ->
-   INFERRED_PLANAR_SUPPORT -> UNRESOLVED`. If source table parameters exist,
-   restore them; never infer a second table. Source/reconstructed support keeps
-   hand and object collision ON. An inferred proxy keeps object collision ON
-   and filters only hand/support collision OFF.
+11. Apply the V2 physical-scene authority before simulation. `ObjectDynamicsAuthorityV1`
+   records whether mass, COM, and inertia are explicit, derived, or unresolved;
+   missing source support geometry means `SUPPORT_UNDERDETERMINED`, not
+   `SUPPORT_ABSENT`. `SupportExistenceContractV1` and
+   `SupportPhysicalizationV1` are separate decisions. Resolve support with the
+   frozen priority `SUPPORT_ONLY -> COMMON_SCENE_SE3 ->
+   RELATIVE_OBJECT_PROJECTION`; the first two preserve the hand-object relative
+   transform and therefore reuse the validated geometric retarget. Relative
+   projection is permitted only after exact retarget and semantic revalidation,
+   with a hard human gate. Freeze one global `PhysicalizationDeviationBudgetV1`
+   before canary outcomes; do not tune support, friction, mass, COM, inertia,
+   reward, PPO, wrist, finger, or trajectory per canary.
+
+   Settled-support qualification uses the runtime `dt` and seconds-domain
+   terminal windows. Impact peaks are diagnostic only. A scene is not ready
+   until contact, bounded terminal motion, and runtime COM/inertia provenance
+   pass under `SettledSupportDynamicsQualificationV2`.
+
+   ```text
+   source semantics -> support existence -> physicalization -> settled dynamics
+                                  \-> frozen retarget reuse decision
+   ```
+
+   If source table parameters exist, restore them; never infer a second table.
+   Source/reconstructed support keeps hand and object collision ON. An inferred
+   proxy keeps object collision ON and filters only hand/support collision OFF.
 
    ```bash
    conda run -n topo-retarget python scripts/physics/run_independent_physical_support.py \
