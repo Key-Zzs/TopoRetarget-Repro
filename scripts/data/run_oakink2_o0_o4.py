@@ -263,6 +263,23 @@ def b64(array: np.ndarray) -> str:
     return base64.b64encode(np.ascontiguousarray(array).tobytes()).decode("ascii")
 
 
+def vertex_normals(vertices: np.ndarray, faces: np.ndarray) -> np.ndarray:
+    """Compute unit vertex normals for a local WebGL depth/shading viewer."""
+    values = np.asarray(vertices, dtype=np.float64)
+    triangles = np.asarray(faces, dtype=np.int64)
+    if values.ndim != 2 or values.shape[1] != 3 or triangles.ndim != 2 or triangles.shape[1] != 3:
+        raise OakInk2AdapterError("OAKINK2_RENDER_MESH_SHAPE_INVALID")
+    edges_a = values[triangles[:, 1]] - values[triangles[:, 0]]
+    edges_b = values[triangles[:, 2]] - values[triangles[:, 0]]
+    face_normals = np.cross(edges_a, edges_b)
+    normals = np.zeros_like(values)
+    for column in range(3):
+        np.add.at(normals, triangles[:, column], face_normals)
+    lengths = np.linalg.norm(normals, axis=1, keepdims=True)
+    normals /= np.maximum(lengths, 1e-12)
+    return normals.astype(np.float32)
+
+
 def git_output(*args: str) -> str:
     """Return a repository provenance value without mutating Git state."""
     return subprocess.check_output(["git", *args], cwd=REPO_ROOT, text=True).strip()
@@ -329,24 +346,99 @@ def render_html(
     transforms = adapter.object_track(annotation, str(row["canonical_target_object"]), selected)
     mesh = trimesh.load_mesh(str(row["object_asset"]), process=False)
     object_vertices = np.asarray(mesh.vertices, dtype=np.float32)
-    object_faces = np.asarray(mesh.faces, dtype=np.uint32)
+    raw_object_faces = np.asarray(mesh.faces, dtype=np.int64)
+    if int(raw_object_faces.max()) >= np.iinfo(np.uint16).max:
+        raise OakInk2AdapterError("OAKINK2_RENDER_OBJECT_VERTEX_INDEX_TOO_LARGE")
+    object_faces = raw_object_faces.astype(np.uint16)
+    hand_normals = np.stack([vertex_normals(frame, faces) for frame in vertices], axis=0).astype(
+        np.float32
+    )
+    object_normals = vertex_normals(object_vertices, object_faces)
     diagnostics = row.get("semantic_metrics") or {}
     data = {
         "frames": selected.astype(np.int32).tolist(),
         "hand": b64(vertices.astype(np.float32)),
         "handShape": list(vertices.shape),
-        "handFaces": b64(faces.astype(np.uint32)),
+        "handNormals": b64(hand_normals),
+        "handCenters": b64(vertices.mean(axis=1).astype(np.float32)),
+        "handFaces": b64(faces.astype(np.uint16)),
         "object": b64(object_vertices),
         "objectShape": list(object_vertices.shape),
+        "objectNormals": b64(object_normals),
+        "objectCentroid": object_vertices.mean(axis=0).tolist(),
         "objectFaces": b64(object_faces),
         "objectFaceShape": list(object_faces.shape),
         "transforms": b64(transforms.astype(np.float32)),
         "metrics": diagnostics,
         "record": row,
+        "renderer": {
+            "name": "local_webgl_depth_normal_v1",
+            "depth_test": True,
+            "back_face_culling": True,
+            "shading": "Lambert normal lighting",
+            "external_assets": False,
+        },
     }
-    html = """<!doctype html><meta charset=utf-8><title>OakInk2 source/canonical review</title><style>body{font:14px system-ui;margin:12px;background:#15191e;color:#e8edf2}canvas{border:1px solid #53606b;background:#0b0f13}button,input{margin:4px}pre{white-space:pre-wrap;max-width:1100px}.legend{color:#6ee7b7}</style><h1>OakInk2 SOURCE / CANONICAL ADAPTER OUTPUT</h1><div><button id=play>Play</button><button id=view>SOURCE VIEW (identity canonical)</button><input id=frame type=range><span id=label></span></div><canvas id=c width=1000 height=700></canvas><p class=legend>Green: RIGHT MANO · Orange: TARGET OBJECT · Drag: orbit · Wheel: zoom.</p><pre id=meta></pre><script>const D=__DATA__;const b=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0)).buffer;const H=new Float32Array(b(D.hand)),HF=new Uint32Array(b(D.handFaces)),O=new Float32Array(b(D.object)),OF=new Uint32Array(b(D.objectFaces)),T=new Float32Array(b(D.transforms));let i=0,play=false,yaw=.55,pitch=-.2,zoom=600;const c=document.querySelector('#c'),x=c.getContext('2d'),r=document.querySelector('#frame'),l=document.querySelector('#label');r.max=D.frames.length-1;document.querySelector('#meta').textContent=JSON.stringify({dataset:D.record.dataset,sequence:D.record.sequence_id,primitive:D.record.primitive,source_interval:D.record.source_interval,active_hand:D.record.active_hand,target:D.record.canonical_target_object,semantic:D.record.semantic_crosscheck,MANO:D.record.mano_representation,units:D.record.units,metrics:D.metrics,manifest_record_hash:D.record.canonical_record_sha256},null,2);function p(v){let[a,b,d]=v,cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);let qx=cy*a-sy*d,qz=sy*a+cy*d,qy=cp*b-sp*qz;qz=sp*b+cp*qz;return [500+qx*zoom,350-qy*zoom,qz]}function draw(v,f,col,mat){x.fillStyle=col;x.beginPath();for(let k=0;k<f.length;k+=3){let q=[];for(let n=0;n<3;n++){let j=f[k+n]*3,a=v[j],bb=v[j+1],d=v[j+2];if(mat){let z=j/3*0+a;let m=mat;q.push(p([m[0]*a+m[1]*bb+m[2]*d+m[3],m[4]*a+m[5]*bb+m[6]*d+m[7],m[8]*a+m[9]*bb+m[10]*d+m[11]]))}else q.push(p([a,bb,d]))}x.moveTo(q[0][0],q[0][1]);x.lineTo(q[1][0],q[1][1]);x.lineTo(q[2][0],q[2][1])}x.fill()}function paint(){x.clearRect(0,0,c.width,c.height);let hv=H.subarray(i*D.handShape[1]*3,(i+1)*D.handShape[1]*3),m=T.subarray(i*16,i*16+16);draw(O,OF,'#e67e22',m);draw(hv,HF,'#35d08a');l.textContent=`source frame ${D.frames[i]} (${i+1}/${D.frames.length})`;r.value=i}r.oninput=e=>{i=+e.target.value;paint()};document.querySelector('#play').onclick=()=>play=!play;document.querySelector('#view').onclick=e=>e.target.textContent=e.target.textContent.startsWith('SOURCE')?'CANONICAL VIEW (identity source)':'SOURCE VIEW (identity canonical)';let drag; c.onpointerdown=e=>drag=[e.clientX,e.clientY];c.onpointerup=()=>drag=null;c.onpointermove=e=>{if(drag){yaw+=(e.clientX-drag[0])*.01;pitch+=(e.clientY-drag[1])*.01;drag=[e.clientX,e.clientY];paint()}};c.onwheel=e=>{zoom*=e.deltaY>0?.9:1.1;paint()};setInterval(()=>{if(play){i=(i+1)%D.frames.length;paint()}},80);paint()</script>""".replace(
-        "__DATA__", json.dumps(data, separators=(",", ":"))
-    )
+    html = """<!doctype html>
+<meta charset="utf-8">
+<title>OakInk2 source/canonical review</title>
+<style>
+  body{font:14px system-ui;margin:12px;background:#15191e;color:#e8edf2}
+  canvas{border:1px solid #53606b;background:#0b0f13;display:block;width:min(100%,1000px);height:auto;touch-action:none}
+  button,input{margin:4px} pre{white-space:pre-wrap;max-width:1100px}.legend{color:#6ee7b7}.status{color:#fbbf24}
+</style>
+<h1>OakInk2 SOURCE / CANONICAL ADAPTER OUTPUT</h1>
+<div><button id="play">Play</button><button id="view">SOURCE VIEW (identity canonical)</button><input id="frame" type="range"><span id="label"></span></div>
+<canvas id="c" width="1000" height="700"></canvas>
+<p class="legend">Green: RIGHT MANO · Orange: TARGET OBJECT · Drag: orbit · Wheel: zoom.</p>
+<p id="status" class="status">Local WebGL: depth buffer, back-face culling, and Lambert normal shading.</p>
+<pre id="meta"></pre>
+<script>
+const D=__DATA__;
+const decode=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0)).buffer;
+const H=new Float32Array(decode(D.hand)), HN=new Float32Array(decode(D.handNormals));
+const HC=new Float32Array(decode(D.handCenters)), HF=new Uint16Array(decode(D.handFaces));
+const O=new Float32Array(decode(D.object)), ON=new Float32Array(decode(D.objectNormals));
+const OF=new Uint16Array(decode(D.objectFaces)), T=new Float32Array(decode(D.transforms));
+const canvas=document.querySelector('#c'), slider=document.querySelector('#frame');
+const label=document.querySelector('#label'), status=document.querySelector('#status');
+const gl=canvas.getContext('webgl',{antialias:true,alpha:false,depth:true});
+slider.max=D.frames.length-1;
+document.querySelector('#meta').textContent=JSON.stringify({dataset:D.record.dataset,sequence:D.record.sequence_id,primitive:D.record.primitive,source_interval:D.record.source_interval,active_hand:D.record.active_hand,target:D.record.canonical_target_object,semantic:D.record.semantic_crosscheck,MANO:D.record.mano_representation,units:D.record.units,renderer:D.renderer,metrics:D.metrics,manifest_record_hash:D.record.canonical_record_sha256},null,2);
+if(!gl){status.textContent='WebGL unavailable in this browser; use a browser with local WebGL support for depth-correct review.';throw new Error('WEBGL_UNAVAILABLE');}
+const vertexSource=`attribute vec3 aPosition;attribute vec3 aNormal;uniform mat4 uModel;uniform mat4 uViewProj;varying vec3 vNormal;void main(){gl_Position=uViewProj*uModel*vec4(aPosition,1.0);vNormal=mat3(uModel)*aNormal;}`;
+const fragmentSource=`precision mediump float;uniform vec3 uColor;uniform vec3 uLight;varying vec3 vNormal;void main(){float diffuse=max(dot(normalize(vNormal),normalize(uLight)),0.0);vec3 color=uColor*(0.24+0.76*diffuse);gl_FragColor=vec4(color,1.0);}`;
+function shader(type,source){const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
+const program=gl.createProgram();gl.attachShader(program,shader(gl.VERTEX_SHADER,vertexSource));gl.attachShader(program,shader(gl.FRAGMENT_SHADER,fragmentSource));gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(program));gl.useProgram(program);
+const aPosition=gl.getAttribLocation(program,'aPosition'),aNormal=gl.getAttribLocation(program,'aNormal');
+const uModel=gl.getUniformLocation(program,'uModel'),uViewProj=gl.getUniformLocation(program,'uViewProj'),uColor=gl.getUniformLocation(program,'uColor'),uLight=gl.getUniformLocation(program,'uLight');
+function makeBuffer(target,data,usage){const b=gl.createBuffer();gl.bindBuffer(target,b);gl.bufferData(target,data,usage);return b;}
+const handPosition=makeBuffer(gl.ARRAY_BUFFER,H.subarray(0,D.handShape[1]*3),gl.DYNAMIC_DRAW);
+const handNormal=makeBuffer(gl.ARRAY_BUFFER,HN.subarray(0,D.handShape[1]*3),gl.DYNAMIC_DRAW);
+const handIndex=makeBuffer(gl.ELEMENT_ARRAY_BUFFER,HF,gl.STATIC_DRAW);
+const objectPosition=makeBuffer(gl.ARRAY_BUFFER,O,gl.STATIC_DRAW),objectNormal=makeBuffer(gl.ARRAY_BUFFER,ON,gl.STATIC_DRAW);
+const objectIndex=makeBuffer(gl.ELEMENT_ARRAY_BUFFER,OF,gl.STATIC_DRAW);
+const identity=new Float32Array([1,0,0,0,0,1,0,0,0,1,0,0,0,0,0,1]);
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const normalize=a=>{const n=Math.hypot(...a)||1;return a.map(x=>x/n)};
+const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+function multiply(a,b){const out=new Float32Array(16);for(let col=0;col<4;col++)for(let row=0;row<4;row++){let value=0;for(let k=0;k<4;k++)value+=a[k*4+row]*b[col*4+k];out[col*4+row]=value;}return out;}
+function perspective(fovy,aspect,near,far){const f=1/Math.tan(fovy/2),q=1/(near-far);return new Float32Array([f/aspect,0,0,0,0,f,0,0,0,0,(far+near)*q,-1,0,0,2*far*near*q,0]);}
+function lookAt(eye,center,up){const z=normalize([eye[0]-center[0],eye[1]-center[1],eye[2]-center[2]]),x=normalize(cross(up,z)),y=cross(z,x);return new Float32Array([x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-dot(x,eye),-dot(y,eye),-dot(z,eye),1]);}
+function modelFromRowMajor(index){const r=T.subarray(index*16,index*16+16);return new Float32Array([r[0],r[4],r[8],r[12],r[1],r[5],r[9],r[13],r[2],r[6],r[10],r[14],r[3],r[7],r[11],r[15]]);}
+function transformPoint(m,p){return [m[0]*p[0]+m[1]*p[1]+m[2]*p[2]+m[3],m[4]*p[0]+m[5]*p[1]+m[6]*p[2]+m[7],m[8]*p[0]+m[9]*p[1]+m[10]*p[2]+m[11]];}
+function center(index){const objectCenter=transformPoint(T.subarray(index*16,index*16+16),D.objectCentroid),h=index*3;return [(HC[h]+objectCenter[0])/2,(HC[h+1]+objectCenter[1])/2,(HC[h+2]+objectCenter[2])/2];}
+function bind(buffer,location){gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.enableVertexAttribArray(location);gl.vertexAttribPointer(location,3,gl.FLOAT,false,0,0);}
+function draw(position,normal,index,count,model,color){bind(position,aPosition);bind(normal,aNormal);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,index);gl.uniformMatrix4fv(uModel,false,model);gl.uniform3fv(uColor,color);gl.drawElements(gl.TRIANGLES,count,gl.UNSIGNED_SHORT,0);}
+let frame=0,playing=false,yaw=.55,pitch=-.2,distance=.52,drag=null;
+function resize(){const ratio=Math.min(window.devicePixelRatio||1,2),width=Math.round(canvas.clientWidth*ratio),height=Math.round(canvas.clientHeight*ratio);if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}gl.viewport(0,0,canvas.width,canvas.height);}
+function paint(){resize();const c=center(frame),cp=Math.cos(pitch),eye=[c[0]+distance*cp*Math.sin(yaw),c[1]+distance*Math.sin(pitch),c[2]+distance*cp*Math.cos(yaw)];const viewProj=multiply(perspective(Math.PI/4,canvas.width/canvas.height,.01,10),lookAt(eye,c,[0,1,0]));const begin=frame*D.handShape[1]*3,end=begin+D.handShape[1]*3;gl.clearColor(.043,.059,.075,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.uniformMatrix4fv(uViewProj,false,viewProj);gl.uniform3f(uLight,.35,.85,.45);gl.bindBuffer(gl.ARRAY_BUFFER,handPosition);gl.bufferData(gl.ARRAY_BUFFER,H.subarray(begin,end),gl.DYNAMIC_DRAW);gl.bindBuffer(gl.ARRAY_BUFFER,handNormal);gl.bufferData(gl.ARRAY_BUFFER,HN.subarray(begin,end),gl.DYNAMIC_DRAW);draw(objectPosition,objectNormal,objectIndex,OF.length,modelFromRowMajor(frame),new Float32Array([.95,.40,.08]));draw(handPosition,handNormal,handIndex,HF.length,identity,new Float32Array([.12,.85,.50]));label.textContent=`source frame ${D.frames[frame]} (${frame+1}/${D.frames.length})`;slider.value=frame;}
+gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);
+slider.oninput=e=>{frame=+e.target.value;paint();};document.querySelector('#play').onclick=e=>{playing=!playing;e.target.textContent=playing?'Pause':'Play';};document.querySelector('#view').onclick=e=>e.target.textContent=e.target.textContent.startsWith('SOURCE')?'CANONICAL VIEW (identity source)':'SOURCE VIEW (identity canonical)';
+canvas.onpointerdown=e=>{drag=[e.clientX,e.clientY];canvas.setPointerCapture(e.pointerId);};canvas.onpointerup=()=>drag=null;canvas.onpointermove=e=>{if(drag){yaw+=(e.clientX-drag[0])*.01;pitch=clamp(pitch+(e.clientY-drag[1])*.01,-1.45,1.45);drag=[e.clientX,e.clientY];paint();}};canvas.onwheel=e=>{e.preventDefault();distance=clamp(distance*(e.deltaY>0?1.1:.9),.18,2.0);paint();};
+setInterval(()=>{if(playing){frame=(frame+1)%D.frames.length;paint();}},80);window.onresize=paint;paint();
+</script>""".replace("__DATA__", json.dumps(data, separators=(",", ":")))
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(html, encoding="utf-8")
     return {
@@ -358,9 +450,15 @@ def render_html(
         "smoke": {
             "html_nonempty": destination.stat().st_size > 0,
             "finite_hand_geometry": bool(np.isfinite(vertices).all()),
+            "finite_hand_normals": bool(np.isfinite(hand_normals).all()),
             "finite_object_transforms": bool(np.isfinite(transforms).all()),
+            "finite_object_normals": bool(np.isfinite(object_normals).all()),
             "correct_target": row["canonical_target_object"],
         },
+        "renderer": "local_webgl_depth_normal_v1",
+        "depth_test": True,
+        "back_face_culling": True,
+        "normal_shading": "Lambert",
     }
 
 
