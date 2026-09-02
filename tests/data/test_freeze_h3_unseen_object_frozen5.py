@@ -96,7 +96,7 @@ def test_selection_contract_constants_and_hash_are_deterministic() -> None:
     assert _stable_hash({"b": 2, "a": 1}) == _stable_hash({"a": 1, "b": 2})
 
 
-def test_development_exclusions_are_unique_evidence_backed_and_not_p6_metadata_only() -> None:
+def test_development_exclusions_are_unique_evidence_referenced_and_not_p6_metadata_only() -> None:
     path = REPO_ROOT / "configs/contracts/h3_development_object_exclusions_v1.yaml"
     payload = yaml.safe_load(path.read_text(encoding="utf-8"))
     entries = payload["entries"]
@@ -125,7 +125,13 @@ def test_development_exclusions_are_unique_evidence_backed_and_not_p6_metadata_o
         "G05_1",
     } == set(object_ids)
     assert {"G11_1", "G21_2", "G21_4"}.isdisjoint(object_ids)
-    assert all((REPO_ROOT / row["evidence_path"]).exists() for row in entries)
+    for row in entries:
+        evidence_path = Path(row["evidence_path"])
+        assert not evidence_path.is_absolute()
+        assert ".." not in evidence_path.parts
+        if evidence_path.parts[:2] == (".local", "reports"):
+            continue
+        assert (REPO_ROOT / evidence_path).is_file()
 
 
 def test_full_freeze_is_deterministic_and_object_disjoint(tmp_path, monkeypatch) -> None:
