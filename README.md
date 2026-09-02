@@ -722,6 +722,30 @@ README files are stable project entry documents; experiment logs and
 run-specific metrics live outside README, in stage documentation and local
 machine-readable reports.
 
+## OakInk2 O0–O4 raw-to-physical preparation
+
+The OakInk2 gate reads only the local OakInk-v2 program annotations,
+`anno_preview` MANO/object tracks, and object meshes. It builds canonical
+right-hand records from official PrimitiveTask intervals and freezes an
+object-disjoint development/certification/held-out split. It does not retarget,
+create support geometry, start a physics simulator, evaluate a frozen suite, or
+train PPO.
+
+```bash
+REPORT_ROOT=.local/"reports"/oakink2_o0_o4_adapter_manifest_v1
+conda run -n toporetarget-rl python scripts/data/run_oakink2_o0_o4.py \
+  --dataset-root /mnt/nas/storage/Ref2Dex_storage/OakInk2 \
+  --report-root "$REPORT_ROOT" \
+  --stage all
+```
+
+The accepted subset is intentionally narrow: an official `rh_main` primitive,
+one official right-hand target, no left-hand object context, a matching object
+mesh, valid source tracks, and a finite geometry cross-check. All other rows
+remain in the quarantine manifest with a reason. The source/canonical split is
+separate from any OakInk official split. Review the two generated development
+HTML files and explicitly approve both before beginning O5.
+
 ## Acknowledgements
 
 This repository is an independent reproduction and engineering extension of

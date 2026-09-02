@@ -200,15 +200,12 @@ def inventory(dataset_root: Path, output: Path) -> dict[str, Any]:
         if object_id in all_objects and not preferred:
             missing_assets.append({"object_id": object_id, "reason": "MISSING_OBJECT_ASSET"})
 
-    trajectory_files = [
-        p
-        for p in hub.rglob("*")
-        if p.is_file()
-        and any(
-            token in p.name.lower()
-            for token in ("mano", "hand_pose", "obj_transf", "object_pose", "object_transform")
-        )
-    ]
+    # ``anno_preview`` is a repository-relative symlink in the local hub
+    # snapshot. ``Path.rglob`` does not recurse through directory symlinks,
+    # and the annotation filenames intentionally do not encode their schema.
+    # Inspect the authoritative pickle root directly instead.
+    annotation_root = hub / "anno_preview"
+    trajectory_files = sorted(annotation_root.glob("*.pkl")) if annotation_root.is_dir() else []
     missing_required = []
     if not trajectory_files:
         missing_required = list(REQUIRED_TRAJECTORY_KINDS)
@@ -234,16 +231,20 @@ def inventory(dataset_root: Path, output: Path) -> dict[str, Any]:
             "available_repaired_meshes": sum(
                 bool(row["repaired_mesh_path"]) for row in object_rows
             ),
-            "mano_containing_sequences": 0 if missing_required else None,
-            "object_transform_containing_sequences": 0 if missing_required else None,
+            "mano_containing_sequences": 0 if missing_required else len(trajectory_files),
+            "object_transform_containing_sequences": 0
+            if missing_required
+            else len(trajectory_files),
             "malformed_or_missing_records": len(malformed) + len(missing_assets),
         },
         "layout": {
             "program_info": str(program),
             "program_extension": str(hub / "program_extension"),
+            "trajectory_annotation_root": str(annotation_root),
             "raw_meshes": str(hub / "object_raw" / "align_ds"),
             "repaired_meshes": str(hub / "object_repair" / "align_ds"),
-            "trajectory_files_matching_authority_names": [str(p) for p in trajectory_files[:20]],
+            "trajectory_annotation_file_count": len(trajectory_files),
+            "trajectory_annotation_file_examples": [str(p) for p in trajectory_files[:20]],
         },
         "required_local_data_missing": missing_required,
         "interaction_modes": dict(sorted(modes.items())),

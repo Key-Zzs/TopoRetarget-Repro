@@ -5,6 +5,7 @@ from .dexycb import DexYCBAdapterV1
 from .grab import GrabDatasetAdapterV1
 from .hocap import HOCapAdapterV1
 from .oakink import OakInkAdapterV1
+from .oakink2 import OakInk2CanonicalAdapterV1
 from .registry import get_dataset_adapter_registry
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "GrabDatasetAdapterV1",
     "HOCapAdapterV1",
     "OakInkAdapterV1",
+    "OakInk2CanonicalAdapterV1",
     "get_dataset_adapter_registry",
 ]

@@ -644,6 +644,26 @@ artifact 保留在忽略的本地存储中。
 README 文件是稳定的项目入口文档；实验日志和 run-specific metrics 位于 README 之外，进入
 stage 文档和本地 machine-readable reports。
 
+## OakInk2 O0–O4 raw-to-physical 准备门
+
+OakInk2 gate 只读取本地 OakInk-v2 program annotation、`anno_preview` 中的
+MANO/object track 和 object mesh。它以官方 PrimitiveTask interval 构建 canonical
+right-hand record，并冻结 object-disjoint 的 development/certification/held-out split。
+它不会进行 retarget、support geometry、physics simulator、frozen-suite evaluation 或 PPO training。
+
+```bash
+REPORT_ROOT=.local/"reports"/oakink2_o0_o4_adapter_manifest_v1
+conda run -n toporetarget-rl python scripts/data/run_oakink2_o0_o4.py \
+  --dataset-root /mnt/nas/storage/Ref2Dex_storage/OakInk2 \
+  --report-root "$REPORT_ROOT" \
+  --stage all
+```
+
+纳入集合被有意限制为：官方 `rh_main` primitive、唯一的官方右手 target、没有左手 object
+context、匹配的 object mesh、有效 source track，以及有限的 geometry cross-check。其余 row
+都会带 reason 保留在 quarantine manifest 中。该 source/canonical split 独立于 OakInk
+可能提供的官方 split。开始 O5 前，必须人工审阅生成的两个 development HTML，并明确批准两者。
+
 ## 致谢
 
 本仓库是对 [*TopoRetarget: Interaction-Preserving Retargeting for Dexterous
