@@ -370,7 +370,8 @@ def run(dataset_root: Path, report_root: Path) -> dict[str, Any]:
     adapter = OakInk2CanonicalAdapterV1(dataset_root)
     tasks = adapter.primitives()
     records: list[dict[str, Any]] = []
-    failures: list[dict[str, Any]] = []
+    annotation_failures: list[dict[str, Any]] = []
+    technical_failures: list[dict[str, Any]] = []
     by_sequence: dict[str, list[OakInk2PrimitiveTask]] = defaultdict(list)
     for task in tasks:
         by_sequence[task.sequence_id].append(task)
@@ -382,7 +383,9 @@ def run(dataset_root: Path, report_root: Path) -> dict[str, Any]:
             try:
                 annotation = adapter.load_annotation(sequence)
             except OakInk2AdapterError as exc:
-                failures.append({"sequence": sequence, "error": str(exc)})
+                failure = {"sequence": sequence, "stage": "O1", "error": str(exc)}
+                annotation_failures.append(failure)
+                technical_failures.append(failure)
         for task, target, reason in provisional:
             semantic, metrics = "NOT_APPLICABLE_QUARANTINED", None
             if target and annotation is not None:
@@ -392,6 +395,14 @@ def run(dataset_root: Path, report_root: Path) -> dict[str, Any]:
                     )
                 except (OakInk2AdapterError, ValueError, KeyError) as exc:
                     reason, semantic = str(exc), "INSUFFICIENT_GEOMETRY_EVIDENCE"
+                    technical_failures.append(
+                        {
+                            "record_id": task.record_id,
+                            "sequence": sequence,
+                            "stage": "O3",
+                            "error": str(exc),
+                        }
+                    )
             elif target and annotation is None:
                 reason, semantic = "MISSING_MANO_OR_OBJECT_TRACK", "INSUFFICIENT_GEOMETRY_EVIDENCE"
             records.append(canonical_row(adapter, task, target, reason, semantic, metrics))
@@ -422,7 +433,7 @@ def run(dataset_root: Path, report_root: Path) -> dict[str, Any]:
         o0 / "dataset_inventory.json",
         {
             "schema_version": "OakInk2DatasetInventoryV1",
-            "status": "O0_PASS_WITH_QUARANTINED_RECORDS" if failures else "O0_PASS",
+            "status": ("O0_PASS_WITH_QUARANTINED_RECORDS" if annotation_failures else "O0_PASS"),
             "counts": {
                 "complex_task_sequences": len(by_sequence),
                 "program_annotation_records": len(adapter.program_paths()),
@@ -430,9 +441,9 @@ def run(dataset_root: Path, report_root: Path) -> dict[str, Any]:
                 "object_identities": len(asset_ids),
                 "available_object_meshes": sum(row["status"] == "AVAILABLE" for row in object_rows),
                 "mano_containing_sequences": len(by_sequence)
-                - len({item["sequence"] for item in failures}),
+                - len({item["sequence"] for item in annotation_failures}),
                 "object_transform_containing_sequences": len(by_sequence)
-                - len({item["sequence"] for item in failures}),
+                - len({item["sequence"] for item in annotation_failures}),
             },
             "annotation_root": str(adapter.annotation_root),
             "dataset_modified": False,
@@ -486,7 +497,7 @@ def run(dataset_root: Path, report_root: Path) -> dict[str, Any]:
         },
     )
     (o0 / "inventory_summary.md").write_text(
-        f"# OakInk2 O0 inventory\n\n- sequences: {len(by_sequence)}\n- primitives: {len(tasks)}\n- annotations: {len(by_sequence) - len(failures)} usable\n",
+        f"# OakInk2 O0 inventory\n\n- sequences: {len(by_sequence)}\n- primitives: {len(tasks)}\n- annotations: {len(by_sequence) - len(annotation_failures)} usable\n",
         encoding="utf-8",
     )
     write_json(
@@ -572,6 +583,7 @@ def run(dataset_root: Path, report_root: Path) -> dict[str, Any]:
         ("official_weak.jsonl", "OFFICIAL_WEAKLY_SUPPORTED"),
         ("conflicts.jsonl", "OFFICIAL_GEOMETRY_CONFLICT"),
         ("ambiguous.jsonl", "TARGET_OBJECT_AMBIGUOUS"),
+        ("insufficient_geometry_evidence.jsonl", "INSUFFICIENT_GEOMETRY_EVIDENCE"),
     ):
         write_jsonl(o3 / name, [row for row in records if row["semantic_crosscheck"] == status])
     write_json(
@@ -607,6 +619,9 @@ def run(dataset_root: Path, report_root: Path) -> dict[str, Any]:
     }
     write_json(o4 / "oakink2_raw_to_physical_split_v1.json", split_payload)
     split_hash = sha256_file(o4 / "oakink2_raw_to_physical_split_v1.json")
+    (o4 / "oakink2_raw_to_physical_split_v1.sha256").write_text(
+        split_hash + "  oakink2_raw_to_physical_split_v1.json\n", encoding="utf-8"
+    )
     for name, values in assignments.items():
         write_jsonl(o4 / f"{name.lower()}_manifest.jsonl", values)
     write_jsonl(o4 / "quarantine_manifest.jsonl", quarantine)
@@ -676,8 +691,8 @@ def run(dataset_root: Path, report_root: Path) -> dict[str, Any]:
             "heldout_downstream_consumed": 0,
         },
     )
-    write_json(report_root / "technical_failures.json", failures)
-    write_jsonl(report_root / "technical_failures.jsonl", failures)
+    write_json(report_root / "technical_failures.json", technical_failures)
+    write_jsonl(report_root / "technical_failures.jsonl", technical_failures)
     write_json(
         report_root / "resource_usage.json",
         {
