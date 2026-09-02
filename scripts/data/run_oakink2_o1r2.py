@@ -103,6 +103,24 @@ FINGER_CHAINS = {
     "ring": (0, 13, 14, 15, 16),
     "little": (0, 17, 18, 19, 20),
 }
+MANO_POSE_JOINT_NAMES = (
+    "wrist_root",
+    "index_mcp",
+    "index_pip",
+    "index_dip",
+    "middle_mcp",
+    "middle_pip",
+    "middle_dip",
+    "little_mcp",
+    "little_pip",
+    "little_dip",
+    "ring_mcp",
+    "ring_pip",
+    "ring_dip",
+    "thumb_mcp",
+    "thumb_pip",
+    "thumb_dip",
+)
 VIEW_ROTATIONS = {
     "front": (90.0, 0.0, 0.0),
     "oblique": (55.0, -35.0, 15.0),
@@ -205,7 +223,7 @@ def quaternion_diagnostics(pose: np.ndarray) -> dict[str, Any]:
         "norm_max": float(norms.max()),
         "max_abs_normalization_correction": float(np.max(np.abs(norms - 1.0))),
         "angles_rad": {
-            name: float(value) for name, value in zip(JOINT_NAMES[:16], angles, strict=True)
+            name: float(value) for name, value in zip(MANO_POSE_JOINT_NAMES, angles, strict=True)
         },
         "max_angle_rad": float(angles.max()),
         "manotorch_matrix_semantics": "scale-invariant via two_s=2/squared_norm; no source mutation",

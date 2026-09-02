@@ -23,6 +23,15 @@ def test_percentile_rank_has_midrank_and_outlier_controls() -> None:
     assert module.percentile_rank(np.arange(100.0), 99.0) > 99.0
 
 
+def test_pose_quaternion_labels_use_original_mano_kinematic_order() -> None:
+    module = _module()
+    result = module.quaternion_diagnostics(np.tile([1.0, 0.0, 0.0, 0.0], (1, 16, 1)))
+
+    assert len(module.MANO_POSE_JOINT_NAMES) == 16
+    assert tuple(result["angles_rad"]) == module.MANO_POSE_JOINT_NAMES
+    assert "thumb_tip" not in result["angles_rad"]
+
+
 def test_ablation_view_transform_is_finite_and_root_translation_is_explicit() -> None:
     module = _module()
     point = np.array([[0.0, 0.0, 0.0]])
