@@ -139,7 +139,7 @@ def repair_mano_pose(
     time = np.asarray(timestamps, dtype=np.float64)
     if pose.ndim != 2 or pose.shape[1:] != (51,) or time.shape != (len(pose),):
         raise ValueError("RETARGET_INPUT_MANO_SHAPE_INVALID")
-    valid = np.isfinite(pose).all(axis=1)
+    valid = np.asarray(np.isfinite(pose).all(axis=1), dtype=np.bool_)
     short, long = _repairable_runs(valid, time, frozen.maximum_repair_gap_seconds)
     if long:
         raise RetargetInputQualityError(f"UNRECOVERABLE_TRACKING_GAP:MANO:{long}")

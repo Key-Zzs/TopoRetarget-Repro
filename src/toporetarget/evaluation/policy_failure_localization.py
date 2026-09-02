@@ -68,15 +68,13 @@ def force_feasibility(
     if normal_rank < 2:
         return "CONTACT_GEOMETRY_DEGENERATE", count, normal_rank, float("nan")
     torque = np.cross(points - np.asarray(object_com, dtype=np.float64), forces).sum(axis=0)
-    residual = np.linalg.norm(
-        forces.sum(axis=0) + np.asarray(gravity_force, dtype=np.float64)
-    ) + np.linalg.norm(torque)
-    status = (
-        "GRASP_FEASIBLE"
-        if residual < max(0.25 * np.linalg.norm(gravity_force), 1e-6)
-        else "GRASP_MARGINAL"
+    residual = float(
+        np.linalg.norm(forces.sum(axis=0) + np.asarray(gravity_force, dtype=np.float64))
+        + np.linalg.norm(torque)
     )
-    return status, count, normal_rank, float(residual)
+    gravity_norm = float(np.linalg.norm(gravity_force))
+    status = "GRASP_FEASIBLE" if residual < max(0.25 * gravity_norm, 1e-6) else "GRASP_MARGINAL"
+    return status, count, normal_rank, residual
 
 
 def viability_probability(
