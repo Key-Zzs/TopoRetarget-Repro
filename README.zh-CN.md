@@ -664,6 +664,29 @@ context、匹配的 object mesh、有效 source track，以及有限的 geometry
 都会带 reason 保留在 quarantine manifest 中。该 source/canonical split 独立于 OakInk
 可能提供的官方 split。开始 O5 前，必须人工审阅生成的两个 development HTML，并明确批准两者。
 
+### OakInk2 O1R 官方 MANO authority 审计
+
+O1R 在进入 O5 前解析 source-hand authority。OakInk2 `raw_mano` 保存 16 个
+scalar-first `WXYZ` quaternion。独立官方路径由 `oakink2_toolkit` 绑定 exact mocap-frame
+key，再运行 `ManoLayer(rot_mode="quat", side="right", center_idx=0, use_pca=False,
+flat_hand_mean=True)`，并把 `rh__tsl` 加到 vertices 和 21 joints。当前 adapter 在完全相同
+的 key 和 licensed MANO asset 上独立运行；两路结果在任何 viewer transform 前做数值比较。
+
+Manifest V1 保持 byte-identical，作为历史证据保留；但其 scalar-last representation metadata
+已经使 downstream authority 失效。O1 machine gate 与 corrected O3 geometry cross-check 通过后，
+O1R 冻结 Manifest/Split V2，并记录 `SCALAR_FIRST_WXYZ`、MANO asset SHA256、官方 layer
+semantics、exact mocap-frame authority 与 O1R authority hash。Machine PASS 不等于 anatomical
+validation 完成：同两条 episode 的 Official-vs-Adapter HTML 仍须用户逐条批准。
+
+```bash
+conda run -n toporetarget-rl python scripts/data/run_oakink2_o1r.py --help
+conda run -n ref2dex-oakink python scripts/data/oakink2_official_reference.py --help
+conda run -n toporetarget-rl python scripts/data/run_oakink2_o1r.py --stage all
+```
+
+该 CLI 在 `WAITING_FOR_USER_OAKINK2_O1R_HTML_ACCEPTANCE` 停止；不会启动 geometric/Wuji
+retarget、support physicalization、PhysX、frozen evaluation 或 PPO。
+
 ## 致谢
 
 本仓库是对 [*TopoRetarget: Interaction-Preserving Retargeting for Dexterous

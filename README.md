@@ -746,6 +746,34 @@ remain in the quarantine manifest with a reason. The source/canonical split is
 separate from any OakInk official split. Review the two generated development
 HTML files and explicitly approve both before beginning O5.
 
+### OakInk2 O1R official-MANO authority audit
+
+O1R resolves the source-hand authority before O5. OakInk2 `raw_mano` stores
+sixteen scalar-first `WXYZ` quaternions. The independent official path uses
+`oakink2_toolkit` to bind the exact mocap-frame key, then evaluates
+`ManoLayer(rot_mode="quat", side="right", center_idx=0, use_pca=False,
+flat_hand_mean=True)` and adds `rh__tsl` to its vertices and 21 joints. The
+current adapter is evaluated separately on the same exact key and licensed
+MANO asset; comparison happens numerically before any viewer transform.
+
+Manifest V1 remains byte-identical historical evidence, but its downstream
+authority is invalidated because its representation metadata says scalar-last.
+After the O1 machine gate and corrected O3 geometry cross-check pass, O1R
+freezes Manifest/Split V2 with `SCALAR_FIRST_WXYZ`, the MANO asset SHA256,
+official layer semantics, exact mocap-frame authority, and the O1R authority
+hash. A machine pass does not complete anatomical validation: both same-episode
+Official-vs-Adapter HTMLs still require explicit human approval.
+
+```bash
+conda run -n toporetarget-rl python scripts/data/run_oakink2_o1r.py --help
+conda run -n ref2dex-oakink python scripts/data/oakink2_official_reference.py --help
+conda run -n toporetarget-rl python scripts/data/run_oakink2_o1r.py --stage all
+```
+
+This CLI stops at `WAITING_FOR_USER_OAKINK2_O1R_HTML_ACCEPTANCE`; it does not
+run geometric/Wuji retargeting, support physicalization, PhysX, frozen
+evaluation, or PPO.
+
 ## Acknowledgements
 
 This repository is an independent reproduction and engineering extension of
