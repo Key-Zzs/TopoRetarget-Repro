@@ -26,12 +26,15 @@ def test_webgl_viewer_normals_are_unit_and_finite() -> None:
     assert np.allclose(np.linalg.norm(normals, axis=1), 1.0)
 
 
-def test_viewer_declares_depth_and_normal_rendering() -> None:
+def test_viewer_declares_depth_shading_and_hand_readability_controls() -> None:
     source = (Path(__file__).parents[2] / "scripts" / "data" / "run_oakink2_o0_o4.py").read_text(
         encoding="utf-8"
     )
 
-    assert "local_webgl_depth_normal_v1" in source
+    assert "local_webgl_depth_normal_v2" in source
     assert "gl.DEPTH_TEST" in source
     assert "gl.CULL_FACE" in source
     assert "vNormal" in source
+    assert "gl_FrontFacing" in source
+    assert "cameraDistanceM" in source
+    assert "initialRenderFrameIndex" in source

@@ -354,28 +354,56 @@ def render_html(
         np.float32
     )
     object_normals = vertex_normals(object_vertices, object_faces)
+    hand_centers = vertices.mean(axis=1)
+    object_centroid = object_vertices.mean(axis=0)
+    object_centers = (
+        np.einsum("tij,j->ti", transforms[:, :3, :3], object_centroid) + transforms[:, :3, 3]
+    )
+    object_world = (
+        np.einsum("tij,vj->tvi", transforms[:, :3, :3], object_vertices)
+        + transforms[:, None, :3, 3]
+    )
+    rendered_hand_target_distance = np.linalg.norm(
+        object_world - hand["translation_world"][:, None, :], axis=-1
+    ).min(axis=1)
+    initial_render_frame_index = int(np.argmin(rendered_hand_target_distance))
+    hand_radius = np.linalg.norm(vertices - hand_centers[:, None, :], axis=-1).max(axis=1)
+    object_radius = float(np.linalg.norm(object_vertices - object_centroid, axis=-1).max())
+    scene_radius = (
+        0.5 * np.linalg.norm(hand_centers - object_centers, axis=1)
+        + np.maximum(hand_radius, object_radius)
+        + 0.02
+    )
+    camera_distance = np.clip(scene_radius / np.sin(np.pi / 8.0) * 1.2, 0.28, 2.0)
     diagnostics = row.get("semantic_metrics") or {}
     data = {
         "frames": selected.astype(np.int32).tolist(),
         "hand": b64(vertices.astype(np.float32)),
         "handShape": list(vertices.shape),
         "handNormals": b64(hand_normals),
-        "handCenters": b64(vertices.mean(axis=1).astype(np.float32)),
+        "handCenters": b64(hand_centers.astype(np.float32)),
         "handFaces": b64(faces.astype(np.uint16)),
         "object": b64(object_vertices),
         "objectShape": list(object_vertices.shape),
         "objectNormals": b64(object_normals),
-        "objectCentroid": object_vertices.mean(axis=0).tolist(),
+        "objectCentroid": object_centroid.tolist(),
         "objectFaces": b64(object_faces),
         "objectFaceShape": list(object_faces.shape),
         "transforms": b64(transforms.astype(np.float32)),
+        "renderedHandTargetDistanceM": rendered_hand_target_distance.tolist(),
+        "initialRenderFrameIndex": initial_render_frame_index,
+        "cameraDistanceM": camera_distance.tolist(),
         "metrics": diagnostics,
         "record": row,
         "renderer": {
-            "name": "local_webgl_depth_normal_v1",
+            "name": "local_webgl_depth_normal_v2",
             "depth_test": True,
-            "back_face_culling": True,
-            "shading": "Lambert normal lighting",
+            "object_back_face_culling": True,
+            "hand_two_sided_normal_shading": True,
+            "camera_headlight": True,
+            "shading": "two-sided Lambert normal lighting",
+            "initial_frame": "nearest rendered hand-target distance",
+            "framing": "per-frame hand-object union radius",
             "external_assets": False,
         },
     }
@@ -388,10 +416,10 @@ def render_html(
   button,input{margin:4px} pre{white-space:pre-wrap;max-width:1100px}.legend{color:#6ee7b7}.status{color:#fbbf24}
 </style>
 <h1>OakInk2 SOURCE / CANONICAL ADAPTER OUTPUT</h1>
-<div><button id="play">Play</button><button id="view">SOURCE VIEW (identity canonical)</button><input id="frame" type="range"><span id="label"></span></div>
+<div><button id="play">Play</button><button id="view">SOURCE VIEW (identity canonical)</button><button id="autoframe">Auto frame</button><input id="frame" type="range"><span id="label"></span></div>
 <canvas id="c" width="1000" height="700"></canvas>
 <p class="legend">Green: RIGHT MANO · Orange: TARGET OBJECT · Drag: orbit · Wheel: zoom.</p>
-<p id="status" class="status">Local WebGL: depth buffer, back-face culling, and Lambert normal shading.</p>
+<p id="status" class="status">Local WebGL: depth buffer; two-sided hand normals; camera headlight; nearest-contact start; auto frame.</p>
 <pre id="meta"></pre>
 <script>
 const D=__DATA__;
@@ -407,11 +435,11 @@ slider.max=D.frames.length-1;
 document.querySelector('#meta').textContent=JSON.stringify({dataset:D.record.dataset,sequence:D.record.sequence_id,primitive:D.record.primitive,source_interval:D.record.source_interval,active_hand:D.record.active_hand,target:D.record.canonical_target_object,semantic:D.record.semantic_crosscheck,MANO:D.record.mano_representation,units:D.record.units,renderer:D.renderer,metrics:D.metrics,manifest_record_hash:D.record.canonical_record_sha256},null,2);
 if(!gl){status.textContent='WebGL unavailable in this browser; use a browser with local WebGL support for depth-correct review.';throw new Error('WEBGL_UNAVAILABLE');}
 const vertexSource=`attribute vec3 aPosition;attribute vec3 aNormal;uniform mat4 uModel;uniform mat4 uViewProj;varying vec3 vNormal;void main(){gl_Position=uViewProj*uModel*vec4(aPosition,1.0);vNormal=mat3(uModel)*aNormal;}`;
-const fragmentSource=`precision mediump float;uniform vec3 uColor;uniform vec3 uLight;varying vec3 vNormal;void main(){float diffuse=max(dot(normalize(vNormal),normalize(uLight)),0.0);vec3 color=uColor*(0.24+0.76*diffuse);gl_FragColor=vec4(color,1.0);}`;
+const fragmentSource=`precision mediump float;uniform vec3 uColor;uniform vec3 uLight;uniform bool uTwoSided;varying vec3 vNormal;void main(){vec3 normal=normalize(vNormal);if(uTwoSided&&!gl_FrontFacing)normal=-normal;float diffuse=max(dot(normal,normalize(uLight)),0.0);vec3 color=uColor*(0.38+0.62*diffuse);gl_FragColor=vec4(color,1.0);}`;
 function shader(type,source){const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;}
 const program=gl.createProgram();gl.attachShader(program,shader(gl.VERTEX_SHADER,vertexSource));gl.attachShader(program,shader(gl.FRAGMENT_SHADER,fragmentSource));gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(program));gl.useProgram(program);
 const aPosition=gl.getAttribLocation(program,'aPosition'),aNormal=gl.getAttribLocation(program,'aNormal');
-const uModel=gl.getUniformLocation(program,'uModel'),uViewProj=gl.getUniformLocation(program,'uViewProj'),uColor=gl.getUniformLocation(program,'uColor'),uLight=gl.getUniformLocation(program,'uLight');
+const uModel=gl.getUniformLocation(program,'uModel'),uViewProj=gl.getUniformLocation(program,'uViewProj'),uColor=gl.getUniformLocation(program,'uColor'),uLight=gl.getUniformLocation(program,'uLight'),uTwoSided=gl.getUniformLocation(program,'uTwoSided');
 function makeBuffer(target,data,usage){const b=gl.createBuffer();gl.bindBuffer(target,b);gl.bufferData(target,data,usage);return b;}
 const handPosition=makeBuffer(gl.ARRAY_BUFFER,H.subarray(0,D.handShape[1]*3),gl.DYNAMIC_DRAW);
 const handNormal=makeBuffer(gl.ARRAY_BUFFER,HN.subarray(0,D.handShape[1]*3),gl.DYNAMIC_DRAW);
@@ -430,13 +458,13 @@ function modelFromRowMajor(index){const r=T.subarray(index*16,index*16+16);retur
 function transformPoint(m,p){return [m[0]*p[0]+m[1]*p[1]+m[2]*p[2]+m[3],m[4]*p[0]+m[5]*p[1]+m[6]*p[2]+m[7],m[8]*p[0]+m[9]*p[1]+m[10]*p[2]+m[11]];}
 function center(index){const objectCenter=transformPoint(T.subarray(index*16,index*16+16),D.objectCentroid),h=index*3;return [(HC[h]+objectCenter[0])/2,(HC[h+1]+objectCenter[1])/2,(HC[h+2]+objectCenter[2])/2];}
 function bind(buffer,location){gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.enableVertexAttribArray(location);gl.vertexAttribPointer(location,3,gl.FLOAT,false,0,0);}
-function draw(position,normal,index,count,model,color){bind(position,aPosition);bind(normal,aNormal);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,index);gl.uniformMatrix4fv(uModel,false,model);gl.uniform3fv(uColor,color);gl.drawElements(gl.TRIANGLES,count,gl.UNSIGNED_SHORT,0);}
-let frame=0,playing=false,yaw=.55,pitch=-.2,distance=.52,drag=null;
+function draw(position,normal,index,count,model,color,twoSided){if(twoSided)gl.disable(gl.CULL_FACE);else gl.enable(gl.CULL_FACE);bind(position,aPosition);bind(normal,aNormal);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,index);gl.uniformMatrix4fv(uModel,false,model);gl.uniform3fv(uColor,color);gl.uniform1i(uTwoSided,twoSided?1:0);gl.drawElements(gl.TRIANGLES,count,gl.UNSIGNED_SHORT,0);}
+let frame=D.initialRenderFrameIndex,playing=false,yaw=.55,pitch=-.2,distance=D.cameraDistanceM[D.initialRenderFrameIndex],autoFrame=true,drag=null;
 function resize(){const ratio=Math.min(window.devicePixelRatio||1,2),width=Math.round(canvas.clientWidth*ratio),height=Math.round(canvas.clientHeight*ratio);if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}gl.viewport(0,0,canvas.width,canvas.height);}
-function paint(){resize();const c=center(frame),cp=Math.cos(pitch),eye=[c[0]+distance*cp*Math.sin(yaw),c[1]+distance*Math.sin(pitch),c[2]+distance*cp*Math.cos(yaw)];const viewProj=multiply(perspective(Math.PI/4,canvas.width/canvas.height,.01,10),lookAt(eye,c,[0,1,0]));const begin=frame*D.handShape[1]*3,end=begin+D.handShape[1]*3;gl.clearColor(.043,.059,.075,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.uniformMatrix4fv(uViewProj,false,viewProj);gl.uniform3f(uLight,.35,.85,.45);gl.bindBuffer(gl.ARRAY_BUFFER,handPosition);gl.bufferData(gl.ARRAY_BUFFER,H.subarray(begin,end),gl.DYNAMIC_DRAW);gl.bindBuffer(gl.ARRAY_BUFFER,handNormal);gl.bufferData(gl.ARRAY_BUFFER,HN.subarray(begin,end),gl.DYNAMIC_DRAW);draw(objectPosition,objectNormal,objectIndex,OF.length,modelFromRowMajor(frame),new Float32Array([.95,.40,.08]));draw(handPosition,handNormal,handIndex,HF.length,identity,new Float32Array([.12,.85,.50]));label.textContent=`source frame ${D.frames[frame]} (${frame+1}/${D.frames.length})`;slider.value=frame;}
+function paint(){resize();const c=center(frame),viewDistance=autoFrame?D.cameraDistanceM[frame]:distance,cp=Math.cos(pitch),eye=[c[0]+viewDistance*cp*Math.sin(yaw),c[1]+viewDistance*Math.sin(pitch),c[2]+viewDistance*cp*Math.cos(yaw)],headlight=normalize([eye[0]-c[0],eye[1]-c[1],eye[2]-c[2]]);const viewProj=multiply(perspective(Math.PI/4,canvas.width/canvas.height,.01,10),lookAt(eye,c,[0,1,0]));const begin=frame*D.handShape[1]*3,end=begin+D.handShape[1]*3;gl.clearColor(.043,.059,.075,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.uniformMatrix4fv(uViewProj,false,viewProj);gl.uniform3fv(uLight,headlight);gl.bindBuffer(gl.ARRAY_BUFFER,handPosition);gl.bufferData(gl.ARRAY_BUFFER,H.subarray(begin,end),gl.DYNAMIC_DRAW);gl.bindBuffer(gl.ARRAY_BUFFER,handNormal);gl.bufferData(gl.ARRAY_BUFFER,HN.subarray(begin,end),gl.DYNAMIC_DRAW);draw(objectPosition,objectNormal,objectIndex,OF.length,modelFromRowMajor(frame),new Float32Array([.95,.40,.08]),false);draw(handPosition,handNormal,handIndex,HF.length,identity,new Float32Array([.12,.85,.50]),true);label.textContent=`source frame ${D.frames[frame]} (${frame+1}/${D.frames.length}) · hand-target ${D.renderedHandTargetDistanceM[frame].toFixed(3)} m${autoFrame?' · auto frame':''}`;slider.value=frame;}
 gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);
-slider.oninput=e=>{frame=+e.target.value;paint();};document.querySelector('#play').onclick=e=>{playing=!playing;e.target.textContent=playing?'Pause':'Play';};document.querySelector('#view').onclick=e=>e.target.textContent=e.target.textContent.startsWith('SOURCE')?'CANONICAL VIEW (identity source)':'SOURCE VIEW (identity canonical)';
-canvas.onpointerdown=e=>{drag=[e.clientX,e.clientY];canvas.setPointerCapture(e.pointerId);};canvas.onpointerup=()=>drag=null;canvas.onpointermove=e=>{if(drag){yaw+=(e.clientX-drag[0])*.01;pitch=clamp(pitch+(e.clientY-drag[1])*.01,-1.45,1.45);drag=[e.clientX,e.clientY];paint();}};canvas.onwheel=e=>{e.preventDefault();distance=clamp(distance*(e.deltaY>0?1.1:.9),.18,2.0);paint();};
+slider.oninput=e=>{frame=+e.target.value;paint();};document.querySelector('#play').onclick=e=>{playing=!playing;e.target.textContent=playing?'Pause':'Play';};document.querySelector('#view').onclick=e=>e.target.textContent=e.target.textContent.startsWith('SOURCE')?'CANONICAL VIEW (identity source)':'SOURCE VIEW (identity canonical)';document.querySelector('#autoframe').onclick=()=>{autoFrame=true;paint();};
+canvas.onpointerdown=e=>{drag=[e.clientX,e.clientY];canvas.setPointerCapture(e.pointerId);};canvas.onpointerup=()=>drag=null;canvas.onpointermove=e=>{if(drag){yaw+=(e.clientX-drag[0])*.01;pitch=clamp(pitch+(e.clientY-drag[1])*.01,-1.45,1.45);drag=[e.clientX,e.clientY];paint();}};canvas.onwheel=e=>{e.preventDefault();distance=clamp((autoFrame?D.cameraDistanceM[frame]:distance)*(e.deltaY>0?1.1:.9),.18,2.0);autoFrame=false;paint();};
 setInterval(()=>{if(playing){frame=(frame+1)%D.frames.length;paint();}},80);window.onresize=paint;paint();
 </script>""".replace("__DATA__", json.dumps(data, separators=(",", ":")))
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -453,12 +481,18 @@ setInterval(()=>{if(playing){frame=(frame+1)%D.frames.length;paint();}},80);wind
             "finite_hand_normals": bool(np.isfinite(hand_normals).all()),
             "finite_object_transforms": bool(np.isfinite(transforms).all()),
             "finite_object_normals": bool(np.isfinite(object_normals).all()),
+            "nearest_hand_target_distance_m": float(rendered_hand_target_distance.min()),
+            "initial_render_frame_index": initial_render_frame_index,
             "correct_target": row["canonical_target_object"],
         },
-        "renderer": "local_webgl_depth_normal_v1",
+        "renderer": "local_webgl_depth_normal_v2",
         "depth_test": True,
-        "back_face_culling": True,
-        "normal_shading": "Lambert",
+        "object_back_face_culling": True,
+        "hand_two_sided_normal_shading": True,
+        "camera_headlight": True,
+        "normal_shading": "two-sided Lambert",
+        "initial_frame": "nearest rendered hand-target distance",
+        "framing": "per-frame hand-object union radius",
     }
 
 
