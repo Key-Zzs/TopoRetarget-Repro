@@ -4,8 +4,9 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
-from toporetarget.adapters.datasets.oakink2 import OakInk2CanonicalAdapterV1
+from toporetarget.adapters.datasets.oakink2 import OakInk2AdapterError, OakInk2CanonicalAdapterV1
 
 
 def _adapter(tmp_path: Path) -> OakInk2CanonicalAdapterV1:
@@ -39,7 +40,7 @@ def _adapter(tmp_path: Path) -> OakInk2CanonicalAdapterV1:
 
 def _annotation() -> dict[str, object]:
     pose = np.zeros((1, 16, 4), dtype=np.float64)
-    pose[..., 3] = 1.0
+    pose[..., 0] = 1.0
     hand = {
         "rh__pose_coeffs": pose,
         "rh__tsl": np.zeros((1, 3), dtype=np.float64),
@@ -72,7 +73,31 @@ def test_oakink2_adapter_extracts_canonical_right_hand_and_object_tracks(tmp_pat
     object_track = adapter.object_track(annotation, "target", frames)
 
     assert frames.tolist() == [0, 1]
-    assert hand["pose_quat_xyzw"].shape == (2, 16, 4)
+    assert hand["pose_quat_wxyz"].shape == (2, 16, 4)
     assert hand["translation_world"].shape == (2, 3)
     assert object_track.shape == (2, 4, 4)
-    assert np.allclose(adapter.quaternion_matrices_xyzw(hand["pose_quat_xyzw"][:, 0]), np.eye(3))
+    assert np.allclose(adapter.quaternion_matrices_wxyz(hand["pose_quat_wxyz"][:, 0]), np.eye(3))
+
+
+def test_oakink2_exact_frame_lookup_and_half_open_interval_fail_closed(tmp_path: Path) -> None:
+    adapter = _adapter(tmp_path)
+    annotation = _annotation()
+
+    assert adapter.select_interval((0, 2), adapter.available_frames(annotation)).tolist() == [0, 1]
+    with pytest.raises(OakInk2AdapterError, match="OAKINK2_MANO_FRAME_MISSING:3"):
+        adapter.hand_track(annotation, "right", np.asarray([3]))
+
+
+def test_oakink2_wxyz_quaternion_known_rotation_and_xyzw_negative_control(
+    tmp_path: Path,
+) -> None:
+    adapter = _adapter(tmp_path)
+    half = np.sqrt(0.5)
+    wxyz = np.asarray([[half, 0.0, 0.0, half]])
+    expected = np.asarray([[[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]])
+
+    actual = adapter.quaternion_matrices_wxyz(wxyz)
+    wrong_xyzw_interpretation = adapter.quaternion_matrices_wxyz(wxyz[:, [1, 2, 3, 0]])
+
+    assert np.allclose(actual, expected, atol=1e-7)
+    assert not np.allclose(wrong_xyzw_interpretation, expected, atol=1e-3)

@@ -31,7 +31,9 @@ def test_viewer_declares_depth_shading_and_hand_readability_controls() -> None:
         encoding="utf-8"
     )
 
-    assert "local_webgl_depth_normal_v2" in source
+    assert "local_webgl_depth_normal_v3_official_mano" in source
+    assert "pose_quat_wxyz" in source
+    assert "MANO joint 0 before source translation" in source
     assert "gl.DEPTH_TEST" in source
     assert "gl.CULL_FACE" in source
     assert "vNormal" in source

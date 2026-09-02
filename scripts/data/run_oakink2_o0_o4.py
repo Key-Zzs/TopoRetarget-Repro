@@ -197,7 +197,7 @@ def canonical_row(
         "program_annotation_sha256": sha256_file(task.source_path),
         "source_annotation_path": str(annotation),
         "source_annotation_sha256": sha256_file(annotation) if annotation.is_file() else None,
-        "mano_representation": "16x4 scalar-last quaternion; translation [m]; betas[10]",
+        "mano_representation": "MANO v1.2: pose[16,4] WXYZ (scalar-first); root translation [m]; betas[10]",
         "object_transform_representation": "per-mocap-frame T_anno_preview_common_object 4x4",
         "source_to_canonical": "identity: anno_preview common source frame preserved",
         "units": "meters (translation scale sanity from source values)",
@@ -338,7 +338,7 @@ def render_html(
     selected = frames[np.linspace(0, len(frames) - 1, min(180, len(frames)), dtype=np.int64)]
     hand = adapter.hand_track(annotation, "right", selected)
     vertices, faces = reconstruct_mano_vertices(
-        hand["pose_quat_xyzw"],
+        hand["pose_quat_wxyz"],
         hand["translation_world"],
         hand["betas"],
         MANO_ROOT / "MANO_RIGHT.pkl",
@@ -376,6 +376,11 @@ def render_html(
     )
     camera_distance = np.clip(scene_radius / np.sin(np.pi / 8.0) * 1.2, 0.28, 2.0)
     diagnostics = row.get("semantic_metrics") or {}
+    viewer_record = {
+        **row,
+        "mano_representation": "MANO v1.2: pose[16,4] WXYZ (scalar-first); "
+        "ManoLayer(center_idx=0) root-centred; translation [m]; betas[10]",
+    }
     data = {
         "frames": selected.astype(np.int32).tolist(),
         "hand": b64(vertices.astype(np.float32)),
@@ -394,9 +399,13 @@ def render_html(
         "initialRenderFrameIndex": initial_render_frame_index,
         "cameraDistanceM": camera_distance.tolist(),
         "metrics": diagnostics,
-        "record": row,
+        "record": viewer_record,
         "renderer": {
-            "name": "local_webgl_depth_normal_v2",
+            "name": "local_webgl_depth_normal_v3_official_mano",
+            "mano_source": "raw_mano",
+            "mano_quaternion_order": "wxyz (scalar-first)",
+            "mano_root_centre": "MANO joint 0 before source translation",
+            "official_reference": "ManoLayer(rot_mode=quat, center_idx=0)",
             "depth_test": True,
             "object_back_face_culling": True,
             "hand_two_sided_normal_shading": True,
@@ -418,8 +427,8 @@ def render_html(
 <h1>OakInk2 SOURCE / CANONICAL ADAPTER OUTPUT</h1>
 <div><button id="play">Play</button><button id="view">SOURCE VIEW (identity canonical)</button><button id="autoframe">Auto frame</button><input id="frame" type="range"><span id="label"></span></div>
 <canvas id="c" width="1000" height="700"></canvas>
-<p class="legend">Green: RIGHT MANO · Orange: TARGET OBJECT · Drag: orbit · Wheel: zoom.</p>
-<p id="status" class="status">Local WebGL: depth buffer; two-sided hand normals; camera headlight; nearest-contact start; auto frame.</p>
+<p class="legend">Green: RIGHT MANO (WXYZ, root-centred) · Orange: TARGET OBJECT · Drag: orbit · Wheel: zoom.</p>
+<p id="status" class="status">Local WebGL: official MANO semantics; depth buffer; two-sided hand normals; camera headlight; nearest-contact start; auto frame.</p>
 <pre id="meta"></pre>
 <script>
 const D=__DATA__;
@@ -485,7 +494,11 @@ setInterval(()=>{if(playing){frame=(frame+1)%D.frames.length;paint();}},80);wind
             "initial_render_frame_index": initial_render_frame_index,
             "correct_target": row["canonical_target_object"],
         },
-        "renderer": "local_webgl_depth_normal_v2",
+        "renderer": "local_webgl_depth_normal_v3_official_mano",
+        "mano_source": "raw_mano",
+        "mano_quaternion_order": "wxyz",
+        "mano_root_centre": "MANO joint 0 before source translation",
+        "official_reference": "ManoLayer(rot_mode=quat, center_idx=0)",
         "depth_test": True,
         "object_back_face_culling": True,
         "hand_two_sided_normal_shading": True,
@@ -493,6 +506,119 @@ setInterval(()=>{if(playing){frame=(frame+1)%D.frames.length;paint();}},80);wind
         "normal_shading": "two-sided Lambert",
         "initial_frame": "nearest rendered hand-target distance",
         "framing": "per-frame hand-object union radius",
+    }
+
+
+def _selected_development_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    development = sorted(
+        rows,
+        key=lambda row: (row["canonical_target_object"], row["sequence_id"], row["record_id"]),
+    )
+    if len(development) < 2:
+        raise OakInk2AdapterError("OAKINK2_VIEWER_DEVELOPMENT_ROWS_INSUFFICIENT")
+    return [
+        development[0],
+        next(
+            (
+                row
+                for row in development[1:]
+                if row["canonical_target_object"] != development[0]["canonical_target_object"]
+            ),
+            development[1],
+        ),
+    ]
+
+
+def rerender_development_visualizations(dataset_root: Path, report_root: Path) -> dict[str, Any]:
+    """Regenerate only the human-review HTMLs from the immutable development manifest.
+
+    This leaves O0–O4 discovery, semantic qualification, split assignment, and
+    all downstream stages untouched.  It is intentionally a viewer repair path,
+    not an authorization to enter O5.
+    """
+    development_manifest = report_root / "o4_manifest" / "development_manifest.jsonl"
+    corpus_manifest = report_root / "o4_manifest" / "oakink2_corpus_manifest_v1.jsonl"
+    if not development_manifest.is_file() or not corpus_manifest.is_file():
+        raise OakInk2AdapterError(
+            "OAKINK2_VIEWER_MANIFEST_MISSING:"
+            f"development={development_manifest}:corpus={corpus_manifest}"
+        )
+    rows = [
+        json.loads(line)
+        for line in development_manifest.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    if not all(isinstance(row, dict) for row in rows):
+        raise OakInk2AdapterError("OAKINK2_VIEWER_MANIFEST_RECORD_INVALID")
+    selected = _selected_development_rows(rows)
+    manifest_hash = sha256_file(corpus_manifest)
+    visual = report_root / "development_visualization"
+    previous_receipts: list[dict[str, Any]] = []
+    for index in range(1, 3):
+        receipt_path = visual / f"dev_{index:02d}" / "receipt.json"
+        if receipt_path.is_file():
+            previous_receipts.append(json.loads(receipt_path.read_text(encoding="utf-8")))
+    adapter = OakInk2CanonicalAdapterV1(dataset_root)
+    receipts = []
+    for index, row in enumerate(selected, 1):
+        receipt = render_html(
+            adapter, row, visual / f"dev_{index:02d}" / "source_canonical_visualization.html"
+        )
+        write_json(visual / f"dev_{index:02d}" / "receipt.json", receipt)
+        receipts.append(receipt)
+    selection = {
+        "algorithm": "sorted development manifest; prefer distinct object",
+        "seed": SEED,
+        "manifest_sha256": manifest_hash,
+        "episodes": [
+            {
+                "record_id": row["record_id"],
+                "object_id": row["canonical_target_object"],
+                "sequence_id": row["sequence_id"],
+                "primitive_id": row["primitive_id"],
+            }
+            for row in selected
+        ],
+    }
+    write_json(visual / "selection.json", selection)
+    write_json(visual / "development_visualization_selection.json", selection)
+    write_json(
+        visual / "viewer_reconstruction_correction_v1.json",
+        {
+            "status": "VIEWER_RECONSTRUCTION_CORRECTED",
+            "scope": "development HTML only; O0-O4 manifest and split retained",
+            "invalidated_renderer": "local_webgl_depth_normal_v2",
+            "invalidated_reason": [
+                "raw_mano quaternions were interpreted as XYZW instead of official WXYZ",
+                "MANO joint-0 centring before source translation was omitted",
+            ],
+            "replacement_renderer": "local_webgl_depth_normal_v3_official_mano",
+            "mano_source": "raw_mano",
+            "mano_quaternion_order": "wxyz (scalar-first)",
+            "mano_root_centre": "MANO joint 0 before source translation",
+            "official_reference": "ManoLayer(rot_mode=quat, center_idx=0)",
+            "manifest_sha256": manifest_hash,
+            "prior_receipts": previous_receipts,
+            "replacement_receipts": receipts,
+            "o5_triggered": False,
+        },
+    )
+    (visual / "manual_review.md").write_text(
+        "# Manual review\n\nFor both HTMLs verify an anatomically coherent right MANO hand, official target, "
+        "scale, mirror/orientation, object pose, common source/canonical frame, interval, and interaction "
+        "motion. The viewer uses the official OakInk2 MANO convention: WXYZ quaternions and MANO joint-0 "
+        "centring before the source translation. The source frame is preserved as the canonical frame; it is "
+        "not relabelled beyond local annotation evidence. Reply exactly `OAKINK2_DEV_1=APPROVE` or "
+        "`OAKINK2_DEV_1=REJECT`, and `OAKINK2_DEV_2=APPROVE` or `OAKINK2_DEV_2=REJECT`.\n",
+        encoding="utf-8",
+    )
+    return {
+        "status": "WAITING_FOR_USER_OAKINK2_DEVELOPMENT_HTML_ACCEPTANCE",
+        "renderer": "local_webgl_depth_normal_v3_official_mano",
+        "manifest_sha256": manifest_hash,
+        "development_html_count": len(receipts),
+        "receipts": receipts,
+        "o5_triggered": False,
     }
 
 
@@ -647,9 +773,9 @@ def run(dataset_root: Path, report_root: Path) -> dict[str, Any]:
         {
             "source_frame": "shared anno_preview source frame (no stronger source label is inferred)",
             "object": "T_anno_preview_common_object",
-            "MANO": "scalar-last quaternion plus translation in the shared source frame",
+            "MANO": "MANO v1.2 scalar-first WXYZ quaternion, joint-0-centred before translation in the shared source frame",
             "canonicalization": "identity",
-            "quaternion_order": "xyzw",
+            "quaternion_order": "wxyz",
             "no_reflection": True,
             "manual_visual_review_required": True,
         },
@@ -659,7 +785,7 @@ def run(dataset_root: Path, report_root: Path) -> dict[str, Any]:
         {
             "right": "pose[16,4], translation[3], betas[10]",
             "left": "pose[16,4], translation[3], betas[10]",
-            "reconstruction": "MANO v1.2 CPU LBS",
+            "reconstruction": "MANO v1.2 CPU LBS matching ManoLayer(rot_mode=quat, center_idx=0)",
         },
     )
     write_json(
@@ -770,49 +896,8 @@ def run(dataset_root: Path, report_root: Path) -> dict[str, Any]:
             for name, values in assignments.items()
         ],
     )
-    development = sorted(
-        assignments["DEVELOPMENT"],
-        key=lambda row: (row["canonical_target_object"], row["sequence_id"], row["record_id"]),
-    )
-    selected = [
-        development[0],
-        next(
-            (
-                row
-                for row in development[1:]
-                if row["canonical_target_object"] != development[0]["canonical_target_object"]
-            ),
-            development[1],
-        ),
-    ]
-    visual = report_root / "development_visualization"
-    receipts = []
-    for index, row in enumerate(selected, 1):
-        receipt = render_html(
-            adapter, row, visual / f"dev_{index:02d}" / "source_canonical_visualization.html"
-        )
-        write_json(visual / f"dev_{index:02d}" / "receipt.json", receipt)
-        receipts.append(receipt)
-    selection = {
-        "algorithm": "sorted development manifest; prefer distinct object",
-        "seed": SEED,
-        "manifest_sha256": manifest_hash,
-        "episodes": [
-            {
-                "record_id": row["record_id"],
-                "object_id": row["canonical_target_object"],
-                "sequence_id": row["sequence_id"],
-                "primitive_id": row["primitive_id"],
-            }
-            for row in selected
-        ],
-    }
-    write_json(visual / "selection.json", selection)
-    write_json(visual / "development_visualization_selection.json", selection)
-    (visual / "manual_review.md").write_text(
-        "# Manual review\n\nFor both HTMLs verify right hand, official target, scale, mirror/orientation, object pose, common source/canonical frame, interval, and interaction motion. The source frame is preserved as the canonical frame; it is not relabelled beyond the local annotation evidence. Reply exactly `OAKINK2_DEV_1=APPROVE` or `OAKINK2_DEV_1=REJECT`, and `OAKINK2_DEV_2=APPROVE` or `OAKINK2_DEV_2=REJECT`.\n",
-        encoding="utf-8",
-    )
+    viewer = rerender_development_visualizations(dataset_root, report_root)
+    receipts = list(viewer["receipts"])
     write_json(
         report_root / "tests.json",
         {
@@ -871,12 +956,17 @@ def main() -> None:
     parser.add_argument("--report-root", type=Path, required=True)
     parser.add_argument(
         "--stage",
-        choices=("all",),
+        choices=("all", "viewer"),
         default="all",
-        help="O0–O4 is a dependency-closed, all-or-nothing preparation gate.",
+        help="Run O0–O4 or regenerate only the two MANO development viewers from the frozen development manifest.",
     )
     args = parser.parse_args()
-    print(json.dumps(run(args.dataset_root, args.report_root), sort_keys=True))
+    result = (
+        run(args.dataset_root, args.report_root)
+        if args.stage == "all"
+        else rerender_development_visualizations(args.dataset_root, args.report_root)
+    )
+    print(json.dumps(result, sort_keys=True))
 
 
 if __name__ == "__main__":

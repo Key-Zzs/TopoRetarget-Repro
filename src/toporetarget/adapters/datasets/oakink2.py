@@ -201,7 +201,10 @@ class OakInk2CanonicalAdapterV1:
         norms = np.linalg.norm(pose, axis=-1)
         if np.max(np.abs(norms - 1.0)) > 2e-3:
             raise OakInk2AdapterError(f"OAKINK2_MANO_QUATERNION_NORMALIZATION_INVALID:{side}")
-        return {"pose_quat_xyzw": pose, "translation_world": translation, "betas": betas}
+        # OakInk2 documents MANO quaternions in scalar-first [w, x, y, z]
+        # order.  Keep that source convention explicit until reconstruction;
+        # scipy's scalar-last conversion happens in exactly one place below.
+        return {"pose_quat_wxyz": pose, "translation_world": translation, "betas": betas}
 
     def object_track(
         self, annotation: dict[str, Any], object_id: str, frames: np.ndarray
@@ -232,8 +235,12 @@ class OakInk2CanonicalAdapterV1:
         return values
 
     @staticmethod
-    def quaternion_matrices_xyzw(quaternions: np.ndarray) -> np.ndarray:
-        return Rotation.from_quat(np.asarray(quaternions, dtype=np.float64)).as_matrix()
+    def quaternion_matrices_wxyz(quaternions: np.ndarray) -> np.ndarray:
+        """Convert OakInk2's scalar-first MANO quaternions to rotation matrices."""
+        values = np.asarray(quaternions, dtype=np.float64)
+        if values.shape[-1] != 4:
+            raise OakInk2AdapterError(f"OAKINK2_MANO_QUATERNION_SHAPE_INVALID:{values.shape}")
+        return Rotation.from_quat(values[..., [1, 2, 3, 0]]).as_matrix()
 
 
 class _ChumpyPlaceholder:
@@ -275,20 +282,47 @@ def _mano_model(model_path: str) -> dict[str, np.ndarray]:
     }
 
 
-def reconstruct_mano_vertices(
-    pose_quat_xyzw: np.ndarray,
+MANO_RIGHT_JOINT_NAMES = (
+    "wrist",
+    "thumb_mcp",
+    "thumb_pip",
+    "thumb_dip",
+    "thumb_tip",
+    "index_mcp",
+    "index_pip",
+    "index_dip",
+    "index_tip",
+    "middle_mcp",
+    "middle_pip",
+    "middle_dip",
+    "middle_tip",
+    "ring_mcp",
+    "ring_pip",
+    "ring_dip",
+    "ring_tip",
+    "little_mcp",
+    "little_pip",
+    "little_dip",
+    "little_tip",
+)
+
+
+def reconstruct_mano_geometry(
+    pose_quat_wxyz: np.ndarray,
     translation_world: np.ndarray,
     betas: np.ndarray,
     model_path: str | Path,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Reconstruct authoritative MANO vertices with the bundled MANO v1.2 LBS.
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Reconstruct official-style MANO vertices and 21 joints in source space.
 
-    OakInk-v2 stores sixteen scalar-last quaternions (global plus 15 hand
-    joints), world translation, and ten betas.  The decoded model is evaluated
-    in float64 on CPU so the visualization never relies on an unavailable GUI
-    backend or an inferred hand orientation.
+    OakInk2 stores sixteen scalar-first ``[w, x, y, z]`` quaternions (global
+    plus 15 hand joints), a wrist-root translation, and ten betas.  Its
+    official segmented viewer evaluates ``ManoLayer(rot_mode="quat",
+    center_idx=0)`` and then adds that translation.  This CPU LBS mirrors
+    those semantics: it centres the mesh at MANO joint 0 before adding the
+    source translation.
     """
-    pose = np.asarray(pose_quat_xyzw, dtype=np.float64)
+    pose = np.asarray(pose_quat_wxyz, dtype=np.float64)
     translation = np.asarray(translation_world, dtype=np.float64)
     shape = np.asarray(betas, dtype=np.float64)
     if pose.ndim != 3 or pose.shape[1:] != (16, 4):
@@ -296,11 +330,15 @@ def reconstruct_mano_vertices(
     if translation.shape != (len(pose), 3) or shape.shape != (len(pose), 10):
         raise OakInk2AdapterError("OAKINK2_MANO_TRANSLATION_OR_BETAS_INVALID")
     model = _mano_model(str(Path(model_path).resolve()))
-    rotations = Rotation.from_quat(pose.reshape(-1, 4)).as_matrix().reshape(len(pose), 16, 3, 3)
+    rotations = (
+        Rotation.from_quat(pose[..., [1, 2, 3, 0]].reshape(-1, 4))
+        .as_matrix()
+        .reshape(len(pose), 16, 3, 3)
+    )
     vertices_shaped = model["v_template"][None] + np.einsum(
         "vck,tk->tvc", model["shapedirs"], shape
     )
-    joints = np.einsum("jv,tvc->tjc", model["j_regressor"], vertices_shaped)
+    rest_joints = np.einsum("jv,tvc->tjc", model["j_regressor"], vertices_shaped)
     pose_feature = (rotations[:, 1:] - np.eye(3)).reshape(len(pose), -1)
     vertices_posed = vertices_shaped + np.einsum("vcp,tp->tvc", model["posedirs"], pose_feature)
     ids, parent_ids = model["kintree"][1], model["kintree"][0]
@@ -308,7 +346,7 @@ def reconstruct_mano_vertices(
     transforms = np.zeros((len(pose), 16, 4, 4), dtype=np.float64)
     transforms[:, :, 3, 3] = 1.0
     transforms[:, 0, :3, :3] = rotations[:, 0]
-    transforms[:, 0, :3, 3] = joints[:, 0]
+    transforms[:, 0, :3, 3] = rest_joints[:, 0]
     for index in range(1, 16):
         parent = index_by_id.get(int(parent_ids[index]))
         if parent is None:
@@ -316,21 +354,48 @@ def reconstruct_mano_vertices(
         local = np.zeros((len(pose), 4, 4), dtype=np.float64)
         local[:, 3, 3] = 1.0
         local[:, :3, :3] = rotations[:, index]
-        local[:, :3, 3] = joints[:, index] - joints[:, parent]
+        local[:, :3, 3] = rest_joints[:, index] - rest_joints[:, parent]
         transforms[:, index] = transforms[:, parent] @ local
-    transforms[:, :, :3, 3] -= np.einsum("tjab,tjb->tja", transforms[:, :, :3, :3], joints)
+    joint16 = transforms[:, :, :3, 3].copy()
+    transforms[:, :, :3, 3] -= np.einsum("tjab,tjb->tja", transforms[:, :, :3, :3], rest_joints)
     blended = np.einsum("vj,tjab->tvab", model["weights"], transforms)
     homogeneous = np.concatenate((vertices_posed, np.ones((len(pose), 778, 1))), axis=-1)
-    vertices = np.einsum("tvab,tvb->tva", blended, homogeneous)[..., :3] + translation[:, None, :]
-    if not np.isfinite(vertices).all():
+    vertices = np.einsum("tvab,tvb->tva", blended, homogeneous)[..., :3]
+    # ``ManoLayer(center_idx=0)`` returns vertices centred at the root joint;
+    # OakInk2's ``rh__tsl``/``lh__tsl`` is applied afterwards.
+    center = joint16[:, 0]
+    vertices = vertices - center[:, None, :] + translation[:, None, :]
+
+    # Match manotorch's right-hand SNAP joint order exactly.  The first 16
+    # entries are transformed MANO joints; the remaining five are fingertip
+    # vertices in thumb/index/middle/ring/little order before reordering.
+    tips = vertices[:, [745, 317, 444, 556, 673]]
+    joint21 = np.concatenate((joint16 - center[:, None, :] + translation[:, None, :], tips), axis=1)
+    joint21 = joint21[:, [0, 13, 14, 15, 16, 1, 2, 3, 17, 4, 5, 6, 18, 10, 11, 12, 19, 7, 8, 9, 20]]
+    if not np.isfinite(vertices).all() or not np.isfinite(joint21).all():
         raise OakInk2AdapterError("OAKINK2_MANO_RECONSTRUCTION_NONFINITE")
-    return vertices, model["faces"]
+    return vertices, joint21, model["faces"]
+
+
+def reconstruct_mano_vertices(
+    pose_quat_wxyz: np.ndarray,
+    translation_world: np.ndarray,
+    betas: np.ndarray,
+    model_path: str | Path,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Backward-compatible vertex-only wrapper around the audited geometry path."""
+    vertices, _, faces = reconstruct_mano_geometry(
+        pose_quat_wxyz, translation_world, betas, model_path
+    )
+    return vertices, faces
 
 
 __all__ = [
     "OakInk2AdapterError",
     "OakInk2CanonicalAdapterV1",
     "OakInk2PrimitiveTask",
+    "MANO_RIGHT_JOINT_NAMES",
+    "reconstruct_mano_geometry",
     "reconstruct_mano_vertices",
     "sha256_file",
 ]
