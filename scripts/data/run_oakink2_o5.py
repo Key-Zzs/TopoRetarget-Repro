@@ -1019,6 +1019,10 @@ def run_one_episode(
         )
         return receipt
     except Exception as exc:
+        try:
+            timed_frames = len(checkpoint_rows(paths, episode))
+        except Exception:
+            timed_frames = 0
         failure = {
             "recorded_at": utc_now(),
             "episode": episode,
@@ -1035,7 +1039,16 @@ def run_one_episode(
             **failure,
         }
         write_json(paths["solver_receipt"], receipt)
-        write_stage_timing(root, episode, load_sec, prepare_sec, solver_sec, semantic_sec, html_sec)
+        write_stage_timing(
+            root,
+            episode,
+            load_sec,
+            prepare_sec,
+            solver_sec,
+            semantic_sec,
+            html_sec,
+            timed_frames=timed_frames,
+        )
         return receipt
 
 
@@ -1185,15 +1198,16 @@ def write_stage_timing(
         "semantic_validation": float(semantic),
         "html": float(html),
     }
+    expected_frames = int(episode["source_interval"][1] - episode["source_interval"][0])
+    actual_timed_frames = int(timed_frames) if timed_frames is not None else expected_frames
     value = {
         "schema_version": "GeometricRetargetTimingV1",
         "episode": episode["review"],
         "record_id": episode["record_id"],
-        "frames": int(episode["source_interval"][1] - episode["source_interval"][0]),
-        "timed_frames": (
-            int(timed_frames)
-            if timed_frames is not None
-            else int(episode["source_interval"][1] - episode["source_interval"][0])
+        "frames": expected_frames,
+        "timed_frames": actual_timed_frames,
+        "measurement_status": (
+            "COMPLETE" if actual_timed_frames == expected_frames else "INCOMPLETE"
         ),
         **{f"T_{key}_sec": seconds for key, seconds in stages.items()},
         "T_episode_machine_total_sec": stage_total(stages),
@@ -1374,7 +1388,15 @@ def summarize(root: Path) -> dict[str, Any]:
             list(csv.DictReader(frame_path.open(encoding="utf-8"))) if frame_path.is_file() else []
         )
         seconds = [float(row["solver_sec"]) for row in frames]
-        if seconds:
+        timing_complete = len(seconds) == int(stage["frames"])
+        if not timing_complete:
+            stage["timed_frames"] = len(frames)
+            stage["measurement_status"] = "INCOMPLETE_TECHNICAL_FAILURE"
+            stage["duration_interpretation"] = (
+                "RECORDED_VALUES_ARE_INCOMPLETE_LOWER_BOUNDS_NOT_STAGE_MEASUREMENTS"
+            )
+            write_json(stage_path, stage)
+        if timing_complete:
             stats = frame_statistics(seconds)
             episode_seconds.append(seconds)
         else:
@@ -1392,13 +1414,16 @@ def summarize(root: Path) -> dict[str, Any]:
         stage_rows.append(
             {
                 "Episode": review,
-                "Frames": stage.get("timed_frames", stage["frames"]),
-                "Load s": stage["T_episode_load_sec"],
-                "Prepare s": stage["T_prepare_sec"],
-                "Solver s": stage["T_solver_episode_sec"],
-                "Semantic s": stage["T_semantic_validation_sec"],
-                "HTML s": stage["T_html_sec"],
-                "Machine total s": stage["T_episode_machine_total_sec"],
+                "Frames": len(frames),
+                "Timing status": "COMPLETE" if timing_complete else "NOT_MEASURED",
+                "Load s": stage["T_episode_load_sec"] if timing_complete else None,
+                "Prepare s": stage["T_prepare_sec"] if timing_complete else None,
+                "Solver s": stage["T_solver_episode_sec"] if timing_complete else None,
+                "Semantic s": stage["T_semantic_validation_sec"] if timing_complete else None,
+                "HTML s": stage["T_html_sec"] if timing_complete else None,
+                "Machine total s": (
+                    stage["T_episode_machine_total_sec"] if timing_complete else None
+                ),
                 "Sec/frame mean": stats["mean_sec_per_frame"],
                 "P50": stats["p50_sec_per_frame"],
                 "P90": stats["p90_sec_per_frame"],
@@ -1749,6 +1774,9 @@ def render_handoff(
     *,
     concise: bool,
 ) -> str:
+    def timing_cell(value: Any) -> str:
+        return "NOT_MEASURED" if value is None else f"{float(value):.6f}"
+
     contract = json.loads(
         (root / "contract/geometric_retarget_contract.json").read_text(encoding="utf-8")
     )
@@ -1886,15 +1914,18 @@ def render_handoff(
             "T_SOLVER_EPISODE_SCOPE=all production refine attempts; cumulative active-set outer-loop plus non-overlapping final-audit perf_counter timers",
             "Per-frame solver_start/solver_end identify the actual terminal selected refine call; accepted_solver_sec is retained separately from cumulative solver_sec.",
             "",
-            "| Episode | Frames | Load s | Prepare s | Solver s | Semantic s | HTML s | Machine total s | Mean s/frame | P50 | P90 | P95 | Max |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            "| Episode | Timing status | Frames | Load s | Prepare s | Solver s | Semantic s | HTML s | Machine total s | Mean s/frame | P50 | P90 | P95 | Max |",
+            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     for row in stages:
         lines.append(
-            "| {Episode} | {Frames} | {Load s:.6f} | {Prepare s:.6f} | {Solver s:.6f} | {Semantic s:.6f} | {HTML s:.6f} | {Machine total s:.6f} | {Sec/frame mean} | {P50} | {P90} | {P95} | {Max} |".format(
-                **row
-            )
+            f"| {row['Episode']} | {row['Timing status']} | {row['Frames']} | "
+            f"{timing_cell(row['Load s'])} | {timing_cell(row['Prepare s'])} | "
+            f"{timing_cell(row['Solver s'])} | {timing_cell(row['Semantic s'])} | "
+            f"{timing_cell(row['HTML s'])} | {timing_cell(row['Machine total s'])} | "
+            f"{row['Sec/frame mean']} | {row['P50']} | {row['P90']} | {row['P95']} | "
+            f"{row['Max']} |"
         )
     aggregate = summary["aggregate"]
     if aggregate.get("n_timed_frames"):
