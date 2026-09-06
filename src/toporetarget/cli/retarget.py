@@ -1014,12 +1014,18 @@ def _refinement_components(
     robot: str,
     collision_samples: Path | None,
     asset_root: Path | None,
+    model_override: Any | None = None,
+    surface_override: Any | None = None,
 ) -> tuple[Any, Any, Any, Any, Any, Any]:
     sequence = load_hoi_sequence(canonical)
     warm = load_warm_start(warm_start)
     graph_trajectory = load_interaction_graph(graph)
-    model = _load_robot(robot, asset_root)
-    surface = load_robot_surface_samples(collision_samples or _default_collision_samples(robot))
+    model = model_override if model_override is not None else _load_robot(robot, asset_root)
+    surface = (
+        surface_override
+        if surface_override is not None
+        else load_robot_surface_samples(collision_samples or _default_collision_samples(robot))
+    )
     return sequence, warm, graph_trajectory, model, surface, collision_samples
 
 
@@ -1235,11 +1241,20 @@ def _run_checkpoint_refinement(
     allow_shadow_while_queue_paused: bool = False,
     frame_health_gate: Callable[[dict[str, Any], list[dict[str, Any]]], str | None] | None = None,
     ready_callback: Callable[[], None] | None = None,
+    model_override: Any | None = None,
+    surface_override: Any | None = None,
 ) -> dict[str, Any]:
     command_started = time.perf_counter()
     tick = time.perf_counter()
     sequence, warm, graph, model, surface, selected_samples = _refinement_components(
-        canonical, warm_start, graph_path, robot, collision_samples, asset_root
+        canonical,
+        warm_start,
+        graph_path,
+        robot,
+        collision_samples,
+        asset_root,
+        model_override,
+        surface_override,
     )
     input_loading_seconds = time.perf_counter() - tick
     sample_path = selected_samples or _default_collision_samples(robot)

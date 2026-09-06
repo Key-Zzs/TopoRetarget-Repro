@@ -13,6 +13,7 @@ import ast
 import hashlib
 import json
 import pickle
+import time
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -20,6 +21,16 @@ from typing import Any
 
 import numpy as np
 from scipy.spatial.transform import Rotation
+
+from toporetarget.adapters.datasets.stage12_base import (
+    load_mesh,
+    make_hand,
+    make_object,
+    native_mano21_track,
+    sequence_metadata,
+)
+from toporetarget.contracts.canonical import CanonicalHOIv2
+from toporetarget.data.schema import ManoParameterTrack
 
 
 class OakInk2AdapterError(RuntimeError):
@@ -390,6 +401,170 @@ def reconstruct_mano_vertices(
     return vertices, faces
 
 
+def materialize_manifest_record_v2(
+    adapter: OakInk2CanonicalAdapterV1,
+    record: dict[str, Any],
+    *,
+    mano_model_path: str | Path,
+    admitted_split: str,
+) -> tuple[CanonicalHOIv2, dict[str, Any]]:
+    """Materialize one exact Manifest V2 row without sampling or reselection.
+
+    The record supplies the authoritative half-open source interval, active
+    hand, target object, and asset hashes. OakInk2 annotations supply every
+    frame in that interval. No Certification or Heldout row is discovered by
+    this function; callers must pass the already-admitted development row.
+    """
+
+    if admitted_split != "DEVELOPMENT":
+        raise OakInk2AdapterError("OAKINK2_O5_REQUIRES_DEVELOPMENT_RECORD")
+    if str(record.get("active_hand", "")).upper() != "RIGHT":
+        raise OakInk2AdapterError("OAKINK2_O5_REQUIRES_RIGHT_HAND_RECORD")
+    interval_value = record.get("source_interval")
+    if not isinstance(interval_value, list | tuple) or len(interval_value) != 2:
+        raise OakInk2AdapterError("OAKINK2_MANIFEST_INTERVAL_INVALID")
+    interval = (int(interval_value[0]), int(interval_value[1]))
+    sequence_id = str(record["sequence_id"])
+    object_id = str(record.get("target_object") or record["canonical_target_object"])
+    source_started = time.perf_counter()
+    annotation = adapter.load_annotation(sequence_id)
+    frames = adapter.select_interval(interval, adapter.available_frames(annotation))
+    if len(frames) != interval[1] - interval[0]:
+        raise OakInk2AdapterError(
+            f"OAKINK2_MANIFEST_INTERVAL_NOT_CONTIGUOUS:{record['record_id']}:{len(frames)}"
+        )
+    if not np.array_equal(frames, np.arange(interval[0], interval[1], dtype=np.int64)):
+        raise OakInk2AdapterError("OAKINK2_MANIFEST_FRAME_IDS_NOT_CONTIGUOUS")
+
+    hand_source = adapter.hand_track(annotation, "right", frames)
+    source_load_sec = time.perf_counter() - source_started
+    reconstruction_started = time.perf_counter()
+    vertices, joints, faces = reconstruct_mano_geometry(
+        hand_source["pose_quat_wxyz"],
+        hand_source["translation_world"],
+        hand_source["betas"],
+        mano_model_path,
+    )
+    mano_reconstruct_sec = time.perf_counter() - reconstruction_started
+    assembly_started = time.perf_counter()
+    wrist = np.broadcast_to(np.eye(4), (len(frames), 4, 4)).copy()
+    wrist[:, :3, :3] = adapter.quaternion_matrices_wxyz(hand_source["pose_quat_wxyz"][:, 0])
+    wrist[:, :3, 3] = hand_source["translation_world"]
+    rotvec = (
+        Rotation.from_matrix(
+            adapter.quaternion_matrices_wxyz(hand_source["pose_quat_wxyz"]).reshape(-1, 3, 3)
+        )
+        .as_rotvec()
+        .reshape(len(frames), 16, 3)
+    )
+    valid = np.ones(len(frames), dtype=bool)
+    annotation_path = adapter.annotation_path(sequence_id)
+    source_hash = str(record.get("source_annotation_sha256") or sha256_file(annotation_path))
+    mano_track = ManoParameterTrack(
+        global_orient_aa=rotvec[:, 0],
+        hand_pose_aa=rotvec[:, 1:].reshape(len(frames), 45),
+        transl=hand_source["translation_world"],
+        betas=hand_source["betas"],
+        model_profile="oakink2_raw_mano_quaternion_wxyz_flat_hand_mean_v1",
+    )
+    hand = make_hand(
+        hand_id="right_hand",
+        side="right",
+        vertices_scene=vertices,
+        faces=faces,
+        wrist_pose_scene=wrist,
+        valid=valid,
+        mano_parameters=mano_track,
+        mano_model_root=Path(mano_model_path).resolve().parent,
+        metadata={
+            "source": "OakInk2 raw_mano official quaternion reconstruction",
+            "quaternion_order": "SCALAR_FIRST_WXYZ",
+            "mano_center_idx": 0,
+            "use_pca": False,
+            "flat_hand_mean": True,
+            "manifest_record_sha256": record.get("canonical_record_sha256"),
+            "source_frame_ids": frames.tolist(),
+        },
+        native_joint_track=native_mano21_track(
+            joints,
+            valid=valid,
+            source_name="OakInk2 official MANO21",
+            source_path=str(annotation_path.resolve()),
+        ),
+    )
+    assembly_before_object_sec = time.perf_counter() - assembly_started
+    object_started = time.perf_counter()
+    object_path = Path(str(record["object_asset"]))
+    object_vertices, object_faces = load_mesh(object_path)
+    object_poses = adapter.object_track(annotation, object_id, frames)
+    object_load_sec = time.perf_counter() - object_started
+    assembly_started = time.perf_counter()
+    object_track = make_object(
+        object_id=object_id,
+        vertices=object_vertices,
+        faces=object_faces,
+        poses_scene=object_poses,
+        valid=valid,
+        mesh_hash=str(record.get("object_asset_sha256") or sha256_file(object_path)),
+        metadata={
+            "role": "primary_manipulation_object",
+            "source_path": str(object_path.resolve()),
+            "source_sha256": record.get("object_asset_sha256"),
+        },
+    )
+    metadata = sequence_metadata(
+        dataset="OakInk2",
+        sequence_id=str(record["record_id"]),
+        frame_count=len(frames),
+        fps=float(record.get("source_fps", 30.0)),
+        source_file=annotation_path,
+        source_hash=source_hash,
+        adapter_name=adapter.schema_version,
+        coordinate_convention="OakInk2 common global scene; identity source-to-scene",
+        conversion_options={
+            "selected_frame_range": list(interval),
+            "source_frame_ids": frames.tolist(),
+            "active_hand": "RIGHT",
+            "target_object": object_id,
+        },
+        metadata={
+            "manifest_record": record,
+            "manifest_record_sha256": record.get("canonical_record_sha256"),
+            "primitive": record.get("primitive"),
+            "interaction_mode": record.get("interaction_mode"),
+            "source_frame_ids": frames.tolist(),
+            "retiming": "NONE",
+        },
+    )
+    canonical = CanonicalHOIv2(metadata=metadata, hands=[hand], rigid_objects=[object_track])
+    canonical.validate()
+    canonical_assembly_sec = assembly_before_object_sec + time.perf_counter() - assembly_started
+    return canonical, {
+        "schema_version": "OakInk2ManifestV2MaterializationReceiptV1",
+        "record_id": record["record_id"],
+        "record_sha256": record.get("canonical_record_sha256"),
+        "source_interval": list(interval),
+        "source_frame_ids": frames.tolist(),
+        "frame_count": int(len(frames)),
+        "no_temporal_subsampling": True,
+        "no_retiming": True,
+        "active_hand": "RIGHT",
+        "target_object": object_id,
+        "mano_model_path": str(Path(mano_model_path).resolve()),
+        "mano_model_sha256": sha256_file(Path(mano_model_path)),
+        "source_annotation_path": str(annotation_path.resolve()),
+        "source_annotation_sha256": source_hash,
+        "object_asset_path": str(object_path.resolve()),
+        "object_asset_sha256": record.get("object_asset_sha256"),
+        "timing": {
+            "source_load_sec": source_load_sec,
+            "object_load_sec": object_load_sec,
+            "mano_reconstruct_sec": mano_reconstruct_sec,
+            "canonical_assembly_sec": canonical_assembly_sec,
+        },
+    }
+
+
 __all__ = [
     "OakInk2AdapterError",
     "OakInk2CanonicalAdapterV1",
@@ -397,5 +572,6 @@ __all__ = [
     "MANO_RIGHT_JOINT_NAMES",
     "reconstruct_mano_geometry",
     "reconstruct_mano_vertices",
+    "materialize_manifest_record_v2",
     "sha256_file",
 ]

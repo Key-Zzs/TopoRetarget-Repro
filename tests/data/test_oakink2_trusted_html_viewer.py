@@ -126,3 +126,70 @@ def test_vertex_normals_are_finite_for_precomputed_frame_stack() -> None:
     normals = vertex_normals(vertices, np.array([[0, 1, 2]], dtype=np.int64))
     assert np.isfinite(normals).all()
     assert np.allclose(np.linalg.norm(normals, axis=2), 1.0)
+
+
+def test_o5_payload_adds_wuji_in_the_same_root_relative_scene() -> None:
+    anatomy = np.zeros((1, 778, 3), dtype=np.float32)
+    world = anatomy + np.array([[[2.0, 3.0, 4.0]]], dtype=np.float32)
+    faces = np.array([[0, 1, 2]], dtype=np.int64)
+    part_transform = np.eye(4, dtype=np.float32)[None]
+    part_transform[0, :3, 3] = [5.0, 7.0, 11.0]
+    robot_joints = np.zeros((1, 21, 3), dtype=np.float32) + [3.0, 5.0, 7.0]
+    data = TrustedHTMLViewerData(
+        frames=np.array([4279]),
+        hand_vertices_world=world,
+        hand_vertices_anatomy=anatomy,
+        hand_faces_closed=faces,
+        hand_faces_open=faces,
+        hand_joints_world=np.zeros((1, 21, 3), dtype=np.float32),
+        hand_joints_anatomy=np.zeros((1, 21, 3), dtype=np.float32),
+        object_vertices=np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+        object_faces=faces,
+        object_transforms=np.eye(4, dtype=np.float32)[None],
+        primary_frame=4279,
+        record={"target_object": "C10001"},
+        camera_presets=camera_presets(),
+        wuji_parts=[
+            {
+                "name": "palm:0",
+                "vertices": np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+                "faces": faces,
+                "transforms": part_transform,
+            }
+        ],
+        wuji_joints_world=robot_joints,
+        frame_solver_sec=np.array([0.25]),
+    )
+
+    payload = payload_for(data)
+    transforms = np.frombuffer(
+        base64.b64decode(payload["wujiParts"][0]["transformsScene"]), dtype=np.float32
+    ).reshape(1, 4, 4)
+    joints = np.frombuffer(base64.b64decode(payload["wujiJointsScene"]), dtype=np.float32).reshape(
+        1, 21, 3
+    )
+
+    assert payload["hasWuji"] is True
+    assert np.allclose(transforms[0, :3, 3], [3.0, 4.0, 7.0])
+    assert np.allclose(joints[0, 0], [1.0, 2.0, 3.0])
+    assert payload["frameSolverSec"] == [0.25]
+
+
+def test_o5_viewer_controls_and_camera_certification_cover_all_scene_nodes() -> None:
+    source = (Path(__file__).parents[2] / "src/toporetarget/viz/oakink2_html_viewer.py").read_text(
+        encoding="utf-8"
+    )
+
+    for label in (
+        "SOURCE ONLY",
+        "WUJI ONLY",
+        "SOURCE + WUJI",
+        "SOURCE + WUJI + OBJECT",
+        "INTERACTION REVIEW",
+        "WUJI JOINT/SKELETON",
+        "WIREFRAME",
+    ):
+        assert label in source
+    assert "part_geometry_fingerprints" in source
+    assert "wuji_object" in source
+    assert "source_wuji" in source

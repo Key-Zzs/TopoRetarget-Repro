@@ -2709,6 +2709,9 @@ def refine_frame(
             if not optimizer_converged
             else f"strict acceptance failed: {acceptance_reason}"
         )
+    ended = time.perf_counter()
+    diagnostics["solver_start_perf_counter"] = float(started)
+    diagnostics["solver_end_perf_counter"] = float(ended)
     return FinalFrameResult(
         qpos=np.asarray(qpos, dtype=np.float64),
         base_pose_scene=_as_np(
@@ -2755,7 +2758,7 @@ def refine_frame(
         final_objective=float(diagnostics.get("final_objective", math.nan)),
         final_objective_change=float(diagnostics.get("final_objective_change", math.nan)),
         final_step_norm=float(diagnostics.get("final_step_norm", math.nan)),
-        solve_time_s=float(time.perf_counter() - started),
+        solve_time_s=float(ended - started),
         active_set_rounds=query_rounds,
         jacobian_diagnostics=diagnostics,
         failure=failure,
