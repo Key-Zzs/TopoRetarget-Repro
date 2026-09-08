@@ -315,6 +315,25 @@ def localize(root: Path, replay: dict[str, Any]) -> dict[str, Any]:
     graph = load_interaction_graph(paths("dev_01")["graph"])
     residual = np.asarray(bundle["interaction_final_laplacian_residual"], dtype=np.float64)
     per_vertex = np.square(residual).sum(axis=-1) / 71.0
+    write_json(
+        root / "dev1_semantic/e_im_definition_audit.json",
+        {
+            "schema_version": "EIMDefinitionAuditV1",
+            "production_source_files": [
+                "src/toporetarget/retarget/interaction_objective.py",
+                "src/toporetarget/retarget/final_refinement.py",
+            ],
+            "formula": "E_IM = sum_v ||L_robot(v) - L_source(v)||^2 / 71",
+            "vertices": "21 canonical MediaPipe hand keypoints plus 50 frozen object samples",
+            "normalization": "fixed graph vertex count 71",
+            "aggregation": "sum of squared 3D graph-Laplacian residuals",
+            "temporal_aggregation": "per-frame final E_IM followed by empirical p95",
+            "p95_aggregation": "numpy quantile(q=0.95) over 2722 saved final frames",
+            "additivity": "exact only over the 71 vertex residual masses; graph coupling prevents independent finger deletion/re-normalization",
+            "diagnostic_only": True,
+            "non_gating": True,
+        },
+    )
     hand_mass = per_vertex[:, :21]
     finger_mass = {
         name: hand_mass[:, indices].sum(axis=1) for name, indices in FINGER_INDICES.items()
@@ -865,6 +884,14 @@ def final(root: Path, loc: dict[str, Any]) -> None:
         },
     }
     write_json(root / "final_summary.json", summary)
+    (root / "final_summary.md").write_text(
+        "# OakInk2 O5R-A final summary\n\n"
+        f"Semantic replay parity: `{summary['dev1']['semantic_replay']['status']}`. "
+        f"Final E_IM p95: `{loc['stats']['p95']}` against `{THRESHOLD}`.\n\n"
+        "DEV1 remains `RETARGET_SEMANTIC_FAIL`; diagnostics are non-gating. "
+        f"DEV2 is `{recovery['status']}` and no production solve was run.\n",
+        encoding="utf-8",
+    )
     write_json(
         root / "tests.json",
         {
