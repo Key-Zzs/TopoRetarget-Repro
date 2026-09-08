@@ -81,6 +81,7 @@ from toporetarget.retarget.interaction_objective import InteractionMeshResidual
 from toporetarget.retarget.refinement_performance import (
     RefinementEvaluationCache,
     TimerBook,
+    solver_profiler_receipt,
 )
 
 FINAL_REFINEMENT_SCHEMA_VERSION_V1 = "toporetarget.final_retarget.v1"
@@ -2712,6 +2713,11 @@ def refine_frame(
     ended = time.perf_counter()
     diagnostics["solver_start_perf_counter"] = float(started)
     diagnostics["solver_end_perf_counter"] = float(ended)
+    diagnostics["retarget_solver_profiler_v1"] = solver_profiler_receipt(
+        diagnostics,
+        outer_attempt_count=query_rounds,
+        wall_solver_sec=ended - started,
+    )
     return FinalFrameResult(
         qpos=np.asarray(qpos, dtype=np.float64),
         base_pose_scene=_as_np(

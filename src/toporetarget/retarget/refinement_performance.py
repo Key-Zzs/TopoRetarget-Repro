@@ -334,9 +334,55 @@ def safe_percentile(values: list[float] | np.ndarray, percentile: float) -> floa
     return float(np.percentile(array, percentile))
 
 
+def solver_profiler_receipt(
+    diagnostics: dict[str, Any], *, outer_attempt_count: int, wall_solver_sec: float
+) -> dict[str, Any]:
+    """Normalize observed refinement diagnostics for future per-frame receipts.
+
+    This adapter is reporting-only: it never invokes a callback or changes a
+    numerical input. ``None`` explicitly marks unavailable current counters.
+    """
+
+    timers = diagnostics.get("timers", {})
+    elapsed = timers.get("elapsed_s", {}) if isinstance(timers, dict) else {}
+    counts = timers.get("counts", {}) if isinstance(timers, dict) else {}
+    attempts = diagnostics.get("solver_attempt_trace", [])
+    optimizer_calls = sum(
+        1 + int(bool(item.get("recovery_used", False)))
+        for item in attempts
+        if isinstance(item, dict)
+    )
+    return {
+        "schema_version": "RetargetSolverProfilerV1",
+        "outer_attempt_count": int(outer_attempt_count),
+        "optimizer_backend": "scipy.optimize.minimize/SLSQP",
+        "optimizer_call_count": int(optimizer_calls),
+        "least_squares_call_count": None,
+        "nfev": int(diagnostics.get("optimizer_function_evaluations", 0)),
+        "njev": int(diagnostics.get("optimizer_jacobian_evaluations", 0)),
+        "residual_eval_count": int(diagnostics.get("objective_evaluations", 0)),
+        "jacobian_eval_count": int(diagnostics.get("objective_jacobian_evaluations", 0)),
+        "constraint_eval_count": int(diagnostics.get("constraint_evaluations", 0)),
+        "constraint_jacobian_eval_count": int(
+            diagnostics.get("constraint_jacobian_evaluations", 0)
+        ),
+        "fk_calls": None,
+        "residual_total_sec": float(elapsed.get("objective_callback", 0.0)),
+        "jacobian_total_sec": float(elapsed.get("objective_jacobian_callback", 0.0)),
+        "fk_total_sec": float(elapsed.get("robot_keypoints", 0.0)),
+        "interaction_residual_sec": float(elapsed.get("interaction_laplacian", 0.0)),
+        "final_audit_sec": float(elapsed.get("final_full_audit", 0.0)),
+        "wall_solver_sec": float(wall_solver_sec),
+        "timer_counts": {str(key): int(value) for key, value in counts.items()},
+        "instrumentation_only": True,
+        "scientific_math_changed": False,
+    }
+
+
 __all__ = [
     "RefinementEvaluationCache",
     "RefinementExecutionProfile",
     "TimerBook",
     "safe_percentile",
+    "solver_profiler_receipt",
 ]

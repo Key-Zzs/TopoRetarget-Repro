@@ -18,6 +18,7 @@ from toporetarget.retarget.refinement_performance import (
     RefinementEvaluationCache,
     RefinementExecutionProfile,
     TimerBook,
+    solver_profiler_receipt,
 )
 
 
@@ -60,6 +61,30 @@ def test_timer_book_and_execution_profile() -> None:
     assert h3.final_audit_scheduling == "reuse_exact_reference_discovery_if_identical_v1"
     assert h3.math_equivalent
     assert h3.final_full_surface_audit
+
+
+def test_solver_profiler_receipt_is_diagnostic_only() -> None:
+    receipt = solver_profiler_receipt(
+        {
+            "optimizer_function_evaluations": 4,
+            "optimizer_jacobian_evaluations": 3,
+            "objective_evaluations": 5,
+            "objective_jacobian_evaluations": 4,
+            "constraint_evaluations": 7,
+            "constraint_jacobian_evaluations": 6,
+            "solver_attempt_trace": [{"recovery_used": False}, {"recovery_used": True}],
+            "timers": {
+                "elapsed_s": {"objective_callback": 1.0, "final_full_audit": 2.0},
+                "counts": {"objective_callback": 5},
+            },
+        },
+        outer_attempt_count=2,
+        wall_solver_sec=3.0,
+    )
+    assert receipt["optimizer_call_count"] == 3
+    assert receipt["least_squares_call_count"] is None
+    assert receipt["instrumentation_only"]
+    assert not receipt["scientific_math_changed"]
 
 
 def test_final_audit_discovery_reuse_is_exact_identity_only() -> None:
