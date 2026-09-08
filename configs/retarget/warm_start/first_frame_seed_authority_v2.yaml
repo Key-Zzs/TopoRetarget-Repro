@@ -1,0 +1,12 @@
+profile_id: first_frame_seed_authority_v2
+version: "2.0.0"
+candidate_ids: [v1_neutral, joint_range_midpoint, joint_range_lower_quartile, joint_range_upper_quartile]
+# Diagnostic-only budget.  The selected production run retains the frozen
+# Stage-7 profile and its original max_nfev.
+probe_max_nfev: 96
+selection_rule:
+  - reject nonfinite candidates
+  - reject candidates outside robot joint bounds
+  - retain only finite probes that make non-increasing objective progress
+  - rank successful probes first, then ascending probe final objective
+  - break ties by candidate_ids order
