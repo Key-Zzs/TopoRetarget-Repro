@@ -1103,6 +1103,7 @@ class _FrameContext:
     temporal_scope: str = "base_and_finger"
     fixed_base_to_seed: bool = False
     fixed_qpos_to_seed: bool = False
+    free_qpos_indices: tuple[int, ...] | None = None
     quality_extension: dict[str, Any] | None = None
     continuous_prediction_base: np.ndarray | None = None
     continuous_prediction_qpos: np.ndarray | None = None
@@ -2098,6 +2099,21 @@ def _solver_call(
         stop = start + context.robot_model.num_dofs
         lower_physical[start:stop] = context.seed_qpos
         upper_physical[start:stop] = context.seed_qpos
+    if context.free_qpos_indices is not None:
+        # A structured schedule may expose a generic, asset-derived subset of
+        # finger coordinates for a bounded preliminary refinement.  This is a
+        # numerical scheduling restriction only: ``context.objective`` and
+        # all production constraints stay byte-for-byte the same.  The final
+        # production polish is required to leave this field unset.
+        free = np.asarray(context.free_qpos_indices, dtype=np.int64)
+        if free.ndim != 1 or len(np.unique(free)) != len(free):
+            raise ValueError("free_qpos_indices must be unique one-dimensional indices")
+        if np.any(free < 0) or np.any(free >= context.robot_model.num_dofs):
+            raise ValueError("free_qpos_indices contains an out-of-range robot DOF")
+        all_indices = np.arange(context.robot_model.num_dofs, dtype=np.int64)
+        locked = np.setdiff1d(all_indices, free, assume_unique=True)
+        lower_physical[6 + locked] = context.seed_qpos[locked]
+        upper_physical[6 + locked] = context.seed_qpos[locked]
     lower = lower_physical / variable_scales
     upper = upper_physical / variable_scales
     bounds = list(zip(lower, upper, strict=True))
