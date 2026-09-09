@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from scripts.data.run_oakink2_o5rd2b import git, start_head_is_ancestor
 from toporetarget.retarget.objective_v2 import (
     ObjectiveV2Candidate,
     ObjectiveV2Measurements,
@@ -253,3 +254,7 @@ def test_objective_v2_certification_state_fails_closed() -> None:
         frame0_status="PASS",
     )
     assert all_pass["full_dev2_authorized"] is True
+
+
+def test_d2b_start_head_ancestry_uses_process_status() -> None:
+    assert start_head_is_ancestor(git("rev-parse", "HEAD")) is True

@@ -72,12 +72,23 @@ def _canonical_file_sha(path: Path) -> str:
     return _sha256_bytes(path.read_bytes())
 
 
+def start_head_is_ancestor(head: str) -> bool:
+    return (
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", START_HEAD, head],
+            cwd=REPO,
+            check=False,
+        ).returncode
+        == 0
+    )
+
+
 def preflight(root: Path) -> dict[str, Any]:
     branch = git("branch", "--show-current")
     head = git("rev-parse", "HEAD")
     if branch != EXPECTED_BRANCH:
         raise RuntimeError(f"O5RD2B_BRANCH_MISMATCH:{branch}")
-    if head != START_HEAD and not git("merge-base", "--is-ancestor", START_HEAD, head):
+    if head != START_HEAD and not start_head_is_ancestor(head):
         raise RuntimeError(f"O5RD2B_START_HEAD_NOT_ANCESTOR:{head}")
     d1_alignment = read_json(
         REPO
