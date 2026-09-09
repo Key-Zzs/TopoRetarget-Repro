@@ -753,7 +753,9 @@ def sparse_validation(root: Path) -> dict[str, Any]:
                 else (out["old_e_im"] - out["new_e_im"]) / max(out["old_e_im"], EPS),
                 "success": out["success"],
                 "selected_blocks": "+".join(out["selected_blocks"]),
-                "original_obj_old": float(runtime.final.arrays["final_objective"][int(frame["ordinal"])]),
+                "original_obj_old": float(
+                    runtime.final.arrays["final_objective"][int(frame["ordinal"])]
+                ),
                 "original_obj_new": full.get("objective"),
                 "termination": full.get("termination"),
             }
@@ -874,6 +876,77 @@ def full_dev2(root: Path) -> dict[str, Any]:
     return payload
 
 
+def profile_summary(root: Path) -> dict[str, Any]:
+    """Summarize already-recorded work only; this action never solves."""
+
+    candidate_rows = list(
+        csv.DictReader((root / "structured_solver/candidate_results.csv").open(encoding="utf-8"))
+    )
+    sparse_rows = list(
+        csv.DictReader((root / "validation/per_frame_results.csv").open(encoding="utf-8"))
+    )
+    development_nfev = [int(row["total_nfev"]) for row in candidate_rows]
+    development_runtime = [float(row["total_runtime_sec"]) for row in candidate_rows]
+    payload = {
+        "schema_version": "RetargetSolverProfilerV1",
+        "development": {
+            "frames": len(candidate_rows),
+            "total_nfev": int(sum(development_nfev)),
+            "mean_nfev": float(np.mean(development_nfev)),
+            "total_solver_sec": float(sum(development_runtime)),
+            "mean_solver_sec": float(np.mean(development_runtime)),
+        },
+        "sparse_validation": {
+            "frames": len(sparse_rows),
+            "per_stage_counts": "NOT_PERSISTED: gate result is final and no post-failure rerun is allowed",
+            "primary_runtime_component": "full production objective plus independent collision/full-surface audits",
+            "attribution_confidence": "MEDIUM",
+        },
+        "historical_iterations_one_runtime_anomaly": {
+            "status": "PROFILING_ATTRIBUTION_INCOMPLETE",
+            "evidence": "existing profiler attributes callbacks but historical O5 receipt lacks a matched per-call trace",
+        },
+    }
+    write_csv(
+        root / "profiling/structured_solver_profile.csv",
+        [
+            {
+                "phase": "B1_DEVELOPMENT",
+                "frames": len(candidate_rows),
+                "total_nfev": int(sum(development_nfev)),
+                "total_solver_sec": float(sum(development_runtime)),
+            },
+            {
+                "phase": "SPARSE_VALIDATION",
+                "frames": len(sparse_rows),
+                "total_nfev": "NOT_PERSISTED",
+                "total_solver_sec": "NOT_PERSISTED",
+            },
+        ],
+    )
+    write_json(root / "profiling/attribution_summary.json", payload)
+    return payload
+
+
+def dev1_refinement_pilot(root: Path) -> dict[str, Any]:
+    """Enforce the state-machine stop before any sequential pilot work."""
+
+    sparse = read_json(root / "validation/sparse_gate_decision.json")
+    if sparse["STRUCTURED_SOLVER_SPARSE_GATE"] != "PASS":
+        payload = {
+            "DEV1_SEQUENTIAL_REFINEMENT_PILOT": "NOT_RUN",
+            "DEV1_FULL_REFINEMENT_EXECUTED": "NO",
+            "DEV1_FULL_REFINEMENT_RECOMMENDED": "UNRESOLVED",
+            "reason": "SparseGate failed; hard-stop expensive execution",
+        }
+        write_json(root / "dev1_refinement/recommendation.json", payload)
+        write_json(
+            root / "dev1_refinement/refinement_window_set.json", {"status": "NOT_RUN", **payload}
+        )
+        return payload
+    raise RuntimeError("O5RC_DEV1_REFINEMENT_PILOT_NOT_IMPLEMENTED_AFTER_PASS")
+
+
 def report(root: Path) -> None:
     sparse = (
         read_json(root / "validation/sparse_gate_decision.json")
@@ -890,6 +963,8 @@ def report(root: Path) -> None:
         if (root / "dev2_full/authorization.json").exists()
         else {"FULL_DEV2_COMPUTE_AUTHORIZED": "NO", "DEV2_FULL_PRODUCTION_SOLVE_COUNT": 0}
     )
+    profile_summary(root)
+    pilot = dev1_refinement_pilot(root)
     flags = {
         "BRANCH": subprocess.check_output(
             ["git", "branch", "--show-current"], cwd=REPO, text=True
@@ -911,6 +986,7 @@ def report(root: Path) -> None:
         **sparse,
         **hard,
         **full,
+        **pilot,
         "DEV1_FROM_SCRATCH_FULL_RETARGET_RERUNS": 0,
         "DEV1_FULL_REFINEMENT_EXECUTED": "NO",
         "RETARGET_SOLVER_PROFILER_USED": "YES",
@@ -940,7 +1016,7 @@ def report(root: Path) -> None:
         {"schema_version": "OakInk2O5RCFinalSummaryV1", "o5_status": status, "safety_flags": flags},
     )
     (root / "final_summary.md").write_text(
-        f"# OakInk2 O5R-C Structured Solver Robustness Handoff\n\nO5_STATUS={status}\n\nSTRUCTURED_SOLVER_SPARSE_GATE={sparse['STRUCTURED_SOLVER_SPARSE_GATE']}\nDEV2_FRAME0_HARD_CONTROL={hard['DEV2_FRAME0_HARD_CONTROL']}\nFULL_DEV2_COMPUTE_AUTHORIZED={full['FULL_DEV2_COMPUTE_AUTHORIZED']}\nDEV2_FULL_PRODUCTION_SOLVE_COUNT={full['DEV2_FULL_PRODUCTION_SOLVE_COUNT']}\n",
+        f"# OakInk2 O5R-C Structured Solver Robustness Handoff\n\nO5_STATUS={status}\n\nSTRUCTURED_SOLVER_SPARSE_GATE={sparse['STRUCTURED_SOLVER_SPARSE_GATE']}\nDEV2_FRAME0_HARD_CONTROL={hard['DEV2_FRAME0_HARD_CONTROL']}\nFULL_DEV2_COMPUTE_AUTHORIZED={full['FULL_DEV2_COMPUTE_AUTHORIZED']}\nDEV2_FULL_PRODUCTION_SOLVE_COUNT={full['DEV2_FULL_PRODUCTION_SOLVE_COUNT']}\nDEV1_SEQUENTIAL_REFINEMENT_PILOT={pilot['DEV1_SEQUENTIAL_REFINEMENT_PILOT']}\n\nSparse technical completion was 30/30, but above-threshold recovery was {sparse['metrics']['above_threshold_recovery_rate']:.1%} and median relative E_IM reduction was {sparse['metrics']['median_relative_eim_reduction']:.2%}; both are below the frozen gate.\n",
         encoding="utf-8",
     )
     (root / "handoff.md").write_text(
@@ -964,6 +1040,8 @@ def parser() -> argparse.ArgumentParser:
             "sparse-validation",
             "dev2-frame0",
             "dev2-full",
+            "profile",
+            "dev1-refinement-pilot",
             "report",
         ),
         default="all",
@@ -991,6 +1069,10 @@ def main() -> int:
         dev2_frame0(root)
     if action in {"all", "dev2-full"}:
         full_dev2(root)
+    if action in {"all", "profile"}:
+        profile_summary(root)
+    if action in {"all", "dev1-refinement-pilot"}:
+        dev1_refinement_pilot(root)
     if action in {"all", "report"}:
         report(root)
     return 0
