@@ -27,6 +27,7 @@ NUMERICAL_RETENTION_EPSILON = 1.0e-10
 CandidateName = Literal[
     "A_INTERACTION_CONSTRAINED_FIDELITY",
     "B_LEXICOGRAPHIC_THRESHOLD",
+    "B2_INTERACTION_HINGE_CORRECTED_CONTINUITY",
 ]
 PhaseName = Literal["primary", "secondary"]
 
@@ -231,6 +232,27 @@ class ObjectiveV2Candidate:
             low_interaction_behavior="zero primary pressure at and below Semantic V1 tau",
         )
 
+    @classmethod
+    def candidate_b2(cls) -> ObjectiveV2Candidate:
+        """Return Candidate B with prediction correction demoted to a soft profile.
+
+        B2 retains Candidate B's interaction hinge and secondary objective.  Its
+        hard admissibility is evaluated by :func:`evaluate_candidate_b2`, which
+        uses actual frame-to-frame Semantic-V1 continuity instead of treating
+        transported-prediction correction scales as trajectory-validity gates.
+        """
+
+        return cls(
+            name="B2_INTERACTION_HINGE_CORRECTED_CONTINUITY",
+            primary_definition="minimize max(E_IM/tau - 1, 0)^2",
+            secondary_definition=(
+                "minimize V1 fidelity terms excluding interaction; prediction correction "
+                "remains a soft preference"
+            ),
+            retention_definition="E_IM <= tau if reached, else primary optimum + 1e-10",
+            low_interaction_behavior="zero primary pressure at and below Semantic V1 tau",
+        )
+
     def primary_value(self, interaction_e_im: float, target: float) -> float:
         if self.name == "A_INTERACTION_CONSTRAINED_FIDELITY":
             return float(interaction_e_im) / float(target)
@@ -295,6 +317,92 @@ def evaluate_candidate(
         "constraint_margins": margins,
         "violated_constraints": violated,
         "feasible": not violated,
+        "per_components": dict(values.per_components),
+        "semantic_diagnostics": {
+            "wrist_position_m": values.wrist_position_m,
+            "wrist_rotation_rad": values.wrist_rotation_rad,
+            "bone_direction_p95_rad": values.bone_direction_p95_rad,
+            "rotation_determinant": values.rotation_determinant,
+            "unit_scale_ratio": values.unit_scale_ratio,
+        },
+    }
+
+
+def evaluate_candidate_b2(
+    candidate: ObjectiveV2Candidate,
+    values: ObjectiveV2Measurements,
+    authority: RetargetNonRegressionBudgetAuthorityV1,
+    *,
+    actual_translation_step_m: float,
+    actual_rotation_step_rad: float,
+    actual_q_step_inf_rad: float,
+    semantic_translation_step_limit_m: float,
+    semantic_rotation_step_limit_rad: float,
+) -> dict[str, Any]:
+    """Evaluate B2 with actual trajectory continuity as the hard authority.
+
+    ``values.temporal_*`` continue to describe correction from the transported
+    predictor.  Those values are reported but are intentionally absent from the
+    hard constraint margins.  Semantic V1 supplies hard frame-to-frame wrist
+    translation/rotation limits; finger motion has no frozen Semantic-V1 hard
+    threshold and is therefore diagnostic only.
+    """
+
+    if candidate.name != "B2_INTERACTION_HINGE_CORRECTED_CONTINUITY":
+        raise ValueError("corrected admissibility is specific to Candidate B2")
+    if semantic_translation_step_limit_m <= 0.0 or semantic_rotation_step_limit_rad <= 0.0:
+        raise ValueError("Semantic V1 continuity limits must be positive")
+    margins = {
+        "wrist_position_m": authority.wrist_position_limit_m - values.wrist_position_m,
+        "wrist_rotation_rad": authority.wrist_rotation_limit_rad - values.wrist_rotation_rad,
+        "bone_direction_rad": authority.bone_direction_limit_rad - values.bone_direction_p95_rad,
+        "actual_temporal_translation_m": semantic_translation_step_limit_m
+        - float(actual_translation_step_m),
+        "actual_temporal_rotation_rad": semantic_rotation_step_limit_rad
+        - float(actual_rotation_step_rad),
+        "collision_hard_m": values.collision_min_signed_distance_m
+        + authority.collision_hard_bound_m,
+        "joint_limit_rad": values.joint_limit_min_margin_rad,
+        "reflection_determinant": values.rotation_determinant
+        - authority.reflection_determinant_minimum,
+        "unit_scale_lower": values.unit_scale_ratio - authority.unit_scale_ratio_minimum,
+        "unit_scale_upper": authority.unit_scale_ratio_maximum - values.unit_scale_ratio,
+    }
+    violated = sorted(name for name, margin in margins.items() if margin < -1.0e-12)
+    return {
+        "schema_version": "RetargetObjectiveV2B2EvaluationReceiptV1",
+        "candidate": candidate.name,
+        "primary_objective": candidate.primary_value(
+            values.interaction_e_im, authority.interaction_target
+        ),
+        "primary_interaction_e_im": values.interaction_e_im,
+        "per_frame_semantic_target_met": values.interaction_e_im <= authority.interaction_target,
+        "per_frame_target_is_not_trajectory_p95_gate": True,
+        "secondary_objective": values.secondary_objective,
+        "constraint_margins": margins,
+        "violated_constraints": violated,
+        "feasible": not violated,
+        "prediction_correction_profile": {
+            "hard_gate": False,
+            "translation_m": values.temporal_base_translation_m,
+            "rotation_rad": values.temporal_base_rotation_rad,
+            "q_inf_rad": values.temporal_q_inf_rad,
+            "excess_keypoint_m": values.temporal_excess_keypoint_m,
+            "profile_scales": {
+                "translation_m": authority.temporal_base_translation_limit_m,
+                "rotation_rad": authority.temporal_base_rotation_limit_rad,
+                "q_inf_rad": authority.temporal_q_inf_limit_rad,
+                "excess_keypoint_m": authority.temporal_excess_keypoint_limit_m,
+            },
+        },
+        "actual_trajectory_continuity": {
+            "translation_step_m": float(actual_translation_step_m),
+            "rotation_step_rad": float(actual_rotation_step_rad),
+            "q_step_inf_rad": float(actual_q_step_inf_rad),
+            "translation_limit_m": float(semantic_translation_step_limit_m),
+            "rotation_limit_rad": float(semantic_rotation_step_limit_rad),
+            "q_step_hard_limit_rad": None,
+        },
         "per_components": dict(values.per_components),
         "semantic_diagnostics": {
             "wrist_position_m": values.wrist_position_m,
@@ -447,6 +555,34 @@ def interaction_retention_limit(primary_e_im: float, interaction_target: float) 
     return float(primary_e_im) + NUMERICAL_RETENTION_EPSILON
 
 
+def objective_v2_certification_state(
+    *,
+    objective_frozen: bool,
+    sparse_status: Literal["PASS", "FAIL", "NOT_RUN"],
+    window_status: Literal["PASS", "FAIL", "NOT_RUN"],
+    frame0_status: Literal["PASS", "FAIL", "NOT_RUN"],
+) -> dict[str, Any]:
+    """Return the fail-closed D2B authorization state without side effects."""
+
+    if not objective_frozen:
+        return {
+            "sparse_allowed": False,
+            "window_allowed": False,
+            "frame0_allowed": False,
+            "full_dev2_authorized": False,
+        }
+    sparse_allowed = True
+    window_allowed = sparse_status == "PASS"
+    frame0_allowed = window_allowed and window_status == "PASS"
+    full = frame0_allowed and frame0_status == "PASS"
+    return {
+        "sparse_allowed": sparse_allowed,
+        "window_allowed": window_allowed,
+        "frame0_allowed": frame0_allowed,
+        "full_dev2_authorized": full,
+    }
+
+
 __all__ = [
     "CONTEXT_BINDING_V2_SCHEMA_VERSION",
     "DEVELOPMENT_OPTIMIZER_SCHEMA_VERSION",
@@ -462,6 +598,8 @@ __all__ = [
     "compare_candidate_states",
     "constraint_margins",
     "evaluate_candidate",
+    "evaluate_candidate_b2",
     "interaction_hinge",
     "interaction_retention_limit",
+    "objective_v2_certification_state",
 ]
