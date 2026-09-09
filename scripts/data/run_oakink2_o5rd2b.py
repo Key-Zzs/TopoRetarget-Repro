@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import subprocess
 import sys
 import time
@@ -1046,26 +1047,29 @@ def summarize(root: Path) -> dict[str, Any]:
             "dev2_full_frames": 0,
         },
     )
-    write_json(
-        root / "technical_failures.json",
+    technical_failures = [
         {
-            "schema_version": "O5RD2BTechnicalFailuresV1",
-            "bounded_development_noncompletion": [
-                {
-                    "ordinal": 2358,
-                    "reason": "primary and secondary iteration limit under frozen maxiter=8",
-                },
-                {
-                    "ordinal": 2367,
-                    "reason": "primary wrist-position violation; secondary iteration limit under frozen maxiter=8",
-                },
-                {
-                    "ordinal": 217,
-                    "reason": "primary and secondary iteration limit under frozen maxiter=8",
-                },
-            ],
-            "validation_or_production_failures": [],
+            "schema_version": "O5RD2BTechnicalFailureV1",
+            "stage": "CANDIDATE_B2_DEVELOPMENT",
+            "ordinal": 2358,
+            "reason": "primary and secondary iteration limit under frozen maxiter=8",
         },
+        {
+            "schema_version": "O5RD2BTechnicalFailureV1",
+            "stage": "CANDIDATE_B2_DEVELOPMENT",
+            "ordinal": 2367,
+            "reason": "primary wrist-position violation; secondary iteration limit under frozen maxiter=8",
+        },
+        {
+            "schema_version": "O5RD2BTechnicalFailureV1",
+            "stage": "CANDIDATE_B2_DEVELOPMENT",
+            "ordinal": 217,
+            "reason": "primary and secondary iteration limit under frozen maxiter=8",
+        },
+    ]
+    (root / "technical_failures.jsonl").write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in technical_failures),
+        encoding="utf-8",
     )
     markdown = f"""# OakInk2 O5R-D2B ObjectiveV2 Certification + DEV2 Recovery Handoff
 
