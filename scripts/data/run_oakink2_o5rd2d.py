@@ -901,12 +901,48 @@ def summarize(root: Path) -> dict[str, Any]:
     final_head = git("rev-parse", "HEAD")
     commit_receipt = record_git(root)
     sparse_rows = read_csv(root / "sparse_v2/per_frame_results.csv")
+    sparse_receipts = [
+        read_json(path) for path in sorted((root / "sparse_v2/receipts").glob("frame_*_run_1.json"))
+    ]
     pass_counts = {
         "wrist": sum(row["wrist_pass"] == "True" for row in sparse_rows),
         "bone": sum(row["bone_pass"] == "True" for row in sparse_rows),
         "continuity": sum(row["continuity_pass"] == "True" for row in sparse_rows),
         "collision": sum(row["collision_pass"] == "True" for row in sparse_rows),
         "joint_limits": sum(row["joint_limits_pass"] == "True" for row in sparse_rows),
+    }
+    search_statistics = {
+        "mean_seeds_per_frame": float(
+            np.mean([len(receipt["seed_pool"]) for receipt in sparse_receipts])
+        ),
+        "total_candidate_probes": sum(
+            len(receipt["probe_receipts"]) for receipt in sparse_receipts
+        ),
+        "interaction_valid_primary_count": sum(
+            bool(receipt["primary_interaction_valid"]) for receipt in sparse_receipts
+        ),
+        "secondary_polish_attempts": sum(
+            bool(receipt["secondary_polish_attempted"]) for receipt in sparse_receipts
+        ),
+        "polish_rejection_count": sum(
+            receipt["selected_candidate"] != "secondary_polished" for receipt in sparse_receipts
+        ),
+        "primary_retention_count": sum(
+            receipt["selected_candidate"] != "secondary_polished" for receipt in sparse_receipts
+        ),
+        "q_old_fallback_count": sum(
+            bool(receipt["baseline_fallback"]) for receipt in sparse_receipts
+        ),
+        "independently_valid_optimizer_nonsuccess_terminals": sum(
+            receipt["selected_candidate"] == "primary_terminal"
+            and not bool((receipt["primary_solver"] or {}).get("optimizer_converged"))
+            for receipt in sparse_receipts
+        ),
+        "true_technical_failure_count": sum(
+            not bool(receipt["technical_success"]) for receipt in sparse_receipts
+        ),
+        "total_nfev": sum(int(row["total_nfev"]) for row in sparse_rows),
+        "solver_wall_sec": sum(float(row["wall_solver_sec"]) for row in sparse_rows),
     }
     flags = {
         "BRANCH": git("branch", "--show-current"),
@@ -964,6 +1000,8 @@ def summarize(root: Path) -> dict[str, Any]:
         },
         "sparse_manifest": sparse_manifest,
         "sparse_result": sparse,
+        "sparse_pass_counts": pass_counts,
+        "sparse_search_statistics": search_statistics,
         "OBJECTIVE_V2_INDEPENDENT_CERTIFICATION": "PASS"
         if sparse["SPARSE_VALIDATION_V2"] == "PASS" and window == "PASS"
         else "FAIL",
@@ -1026,6 +1064,20 @@ def summarize(root: Path) -> dict[str, Any]:
             f"- `joint-limit PASS count={pass_counts['joint_limits']}/{sparse['N']}`",
             f"- `determinism={sparse['conditions']['determinism']}`",
             f"- `SPARSE_VALIDATION_V2={sparse['SPARSE_VALIDATION_V2']}`",
+            "",
+            "## Sparse execution/search statistics",
+            "",
+            f"- `mean seeds/frame={search_statistics['mean_seeds_per_frame']}`",
+            f"- `total candidate probes={search_statistics['total_candidate_probes']}`",
+            f"- `interaction-valid primary count={search_statistics['interaction_valid_primary_count']}`",
+            f"- `secondary polish attempts={search_statistics['secondary_polish_attempts']}`",
+            f"- `polish rejection count={search_statistics['polish_rejection_count']}`",
+            f"- `primary retention count={search_statistics['primary_retention_count']}`",
+            f"- `q_old fallback count={search_statistics['q_old_fallback_count']}`",
+            f"- `independently-valid optimizer-nonsuccess terminals={search_statistics['independently_valid_optimizer_nonsuccess_terminals']}`",
+            f"- `true technical failure count={search_statistics['true_technical_failure_count']}`",
+            f"- `total nfev={search_statistics['total_nfev']}`",
+            f"- `solver wall s={search_statistics['solver_wall_sec']}`",
             "",
             "## Downstream state",
             "",
