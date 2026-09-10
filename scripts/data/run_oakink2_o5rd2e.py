@@ -1232,6 +1232,7 @@ def run_window_v3(root: Path) -> dict[str, Any]:
     sparse = read_json(root / "sparse_v3/gate_decision.json")
     if sparse.get("SPARSE_VALIDATION_V3") != "PASS":
         raise RuntimeError("O5RD2E_WINDOW_V3_BLOCKED_BY_SPARSE_V3")
+    _invalidate_prior_not_run(root / "window_v3/not_run.json", stage="WindowV3")
     manifest = read_json(root / "window_v3/manifest.json")
     _require_file_hash(
         root / "window_v3/manifest.json",
@@ -1445,6 +1446,21 @@ def _require_stage_pass(root: Path, relative: str, key: str, error: str) -> None
         raise RuntimeError(error)
 
 
+def _invalidate_prior_not_run(path: Path, *, stage: str) -> None:
+    if not path.exists():
+        return
+    payload = read_json(path)
+    invalidated = path.with_name("not_run.invalidated_pre_authorization.json")
+    payload.update(
+        {
+            "decision_validity": "INVALIDATED",
+            "invalidation_reason": f"{stage} later became authorized and was executed",
+        }
+    )
+    write_json(invalidated, payload)
+    path.unlink()
+
+
 def run_dev2_frame0_if_authorized(root: Path) -> dict[str, Any]:
     verify_frozen_method(root)
     _require_stage_pass(
@@ -1453,6 +1469,7 @@ def run_dev2_frame0_if_authorized(root: Path) -> dict[str, Any]:
     _require_stage_pass(
         root, "window_v3/gate_decision.json", "WINDOW_VALIDATION_V3", "O5RD2E_DEV2_FRAME0_BLOCKED"
     )
+    _invalidate_prior_not_run(root / "dev2_frame0/not_run.json", stage="DEV2 frame0")
     decision_path = root / "dev2_frame0/decision.json"
     if decision_path.exists():
         return read_json(decision_path)
@@ -1673,6 +1690,34 @@ def summarize(root: Path) -> dict[str, Any]:
         read_json(root / "ledger/total_exclusion_ledger.json")
         if (root / "ledger/total_exclusion_ledger.json").exists()
         else {"TOTAL_PRE_V3_EXCLUSION_COUNT": 136}
+    )
+    sparse_manifest = read_json(root / "sparse_v3/manifest.json")
+    write_csv(
+        root / "sparse_v3/frame_identity_map.csv",
+        [
+            {
+                "ordinal": row["ordinal"],
+                "source_frame_id": row["frame_id"],
+                "receipt_frame_id": row["ordinal"],
+                "receipt_frame_id_semantics": "LOCAL_GRAPH_FRAME_ID",
+            }
+            for row in sparse_manifest["frames"]
+        ],
+    )
+    window_manifest = read_json(root / "window_v3/manifest.json")
+    write_csv(
+        root / "window_v3/frame_identity_map.csv",
+        [
+            {
+                "window_id": window["window_id"],
+                "ordinal": ordinal,
+                "source_frame_id": source_frame,
+                "receipt_frame_id": ordinal,
+                "receipt_frame_id_semantics": "LOCAL_GRAPH_FRAME_ID",
+            }
+            for window in window_manifest["windows"]
+            for ordinal, source_frame in zip(window["ordinals"], window["frame_ids"], strict=True)
+        ],
     )
     flags = {
         "BRANCH": git("branch", "--show-current"),
