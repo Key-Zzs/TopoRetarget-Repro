@@ -3000,7 +3000,10 @@ def summarize(root: Path) -> dict[str, Any]:
     }
     write_json(root / "final_summary.json", summary)
     write_json(root / "resource_usage.json", {"mode_comparison": summary["mode_comparison"]})
-    flags = "\n".join(f"{key}={value}" for key, value in summary["safety_flags"].items())
+    flags = "\n".join(
+        f"{key}={'null' if value is None else value}"
+        for key, value in summary["safety_flags"].items()
+    )
     git_state = summary["git"]
     commits = "\n".join(f"- `{item}`" for item in git_state["commits"]) or "- none"
     qold_sites = "\n".join(
@@ -3115,7 +3118,7 @@ The masked-q_old hard gate failed. Refinement regression, selection, DEV2 frame0
 
 ## Interaction graph authority
 
-`INTERACTION_GRAPH_AUTHORITY={graph["INTERACTION_GRAPH_AUTHORITY"]}`. Replay parity is `PASS` over `{graph["dev1_replay_parity"]["frame_count"]}` unique DEV1 frames; maximum source-vertex, Laplacian, and weight differences are all `0.0`, and object-sample reconstruction is exact. Neither a robot nor q_old was loaded.
+`INTERACTION_GRAPH_AUTHORITY={graph["INTERACTION_GRAPH_AUTHORITY"]}`. Replay parity is `PASS` over `{graph["dev1_replay_parity"]["frame_count"]}` unique DEV1 frames; maximum source-vertex, Laplacian, and weight differences are all `0.0`, and object-sample reconstruction is exact. Serialization determinism is `{graph["serialization_determinism"]["status"]}` with two identical artifact hashes. Neither a robot nor q_old was loaded.
 
 ## V3 candidates
 
