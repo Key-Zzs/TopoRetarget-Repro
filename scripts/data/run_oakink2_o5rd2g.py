@@ -2839,6 +2839,7 @@ def summarize(root: Path) -> dict[str, Any]:
             "COLDSTART_SPARSE_VALIDATION_V4": "NOT_RUN",
             "COLDSTART_WINDOW_VALIDATION_V4": "NOT_RUN",
             "FRESH_CROSS_EPISODE_CONTROLS": "NOT_RUN",
+            "FRESH_CROSS_EPISODE_CONTROL_COUNT": 0,
             "DEV2_FULL_PRODUCTION_SOLVE_COUNT": 0,
             "DEV1_FULL_RETARGET_RERUNS": 0,
             "DEV1_FULL_V2_REFINEMENT_RUNS": 0,
@@ -2863,9 +2864,88 @@ def summarize(root: Path) -> dict[str, Any]:
     write_json(root / "final_summary.json", summary)
     write_json(root / "resource_usage.json", {"mode_comparison": summary["mode_comparison"]})
     flags = "\n".join(f"{key}={value}" for key, value in summary["safety_flags"].items())
+    git_state = summary["git"]
+    commits = "\n".join(f"- `{item}`" for item in git_state["commits"]) or "- none"
+    qold_sites = "\n".join(
+        f"- `{item['site']}`: {item['role']} ({item['file']})" for item in qold["use_sites"]
+    )
+    candidate_results = {row["candidate"]: row["result"] for row in masked.get("candidates", [])}
+    candidate_rows = []
+    candidate_labels = {
+        "V3_A_GENERIC_ASSET_SOURCE_COLD_START": "V3-A",
+        "V3_B_GENERIC_WITH_PREVIOUS_ACCEPTED_RUNTIME": "V3-B",
+        "V3_C_SOURCE_GEOMETRIC_WITH_PREVIOUS_ACCEPTED_RUNTIME": "V3-C",
+    }
+    for candidate in V3_CANDIDATES.values():
+        frame0 = ", ".join(
+            item for item in candidate.cold_seed_sources if item != "previous_accepted_runtime"
+        )
+        previous = "yes" if candidate.use_previous_accepted_after_frame0 else "no"
+        candidate_rows.append(
+            f"| {candidate_labels[candidate.name]} | {frame0} | {previous} | no | "
+            f"{candidate_results.get(candidate.name, 'NOT_RUN')} |"
+        )
+    candidate_table = "\n".join(candidate_rows)
+    masked_rows = []
+    for result in masked.get("candidates", []):
+        name = result["candidate"]
+        detail = read_json(
+            root / f"development/{_candidate_slug(V3_CANDIDATES[name])}_summary.json"
+        )
+        for stratum in ("HIGH", "MID", "LOW"):
+            row = detail["strata"][stratum]
+            completed = row["technical"] == "20/20"
+            hard = "PASS" if row["hard_validity_pass"] else "FAIL"
+            masked_rows.append(
+                f"| {candidate_labels[name]} {stratum} | {row['technical']} | "
+                f"{row['p95_e_im'] if row['p95_e_im'] is not None else 'null'} | "
+                f"{hard if completed else 'NOT_EVALUATED'} | "
+                f"{hard if completed else 'NOT_EVALUATED'} | "
+                f"{'PASS' if row['continuity_pass'] else 'FAIL'} | "
+                f"{hard if completed else 'NOT_EVALUATED'} | "
+                f"{'PASS' if all((row['interaction_pass'], row['hard_validity_pass'], row['continuity_pass'])) else 'FAIL'} |"
+            )
+    masked_table = "\n".join(masked_rows)
+    dev2_rows = "\n".join(
+        f"| {row['run']} | {'YES' if row['optimizer_started'] else 'NO'} | {row['technical']} | "
+        f"{row['E_IM'] if row['E_IM'] is not None else 'null'} | {row['wrist']} | {row['bone']} | "
+        f"{row['collision']} | {row['joints']} | {row['deterministic']} |"
+        for row in dev2["runs"]
+    )
+    validation = (
+        read_json(root / "validation_results.json").get("status", "UNKNOWN")
+        if (root / "validation_results.json").exists()
+        else "NOT_RUN"
+    )
+    frozen_hashes = {name: value if value is not None else "null" for name, value in hashes.items()}
     markdown = f"""# OakInk2 O5R-D2G
 
 # Cross-Episode Input Authority + Cold-Start ExecutionV3 Handoff
+
+## Git
+
+```text
+BRANCH={EXPECTED_BRANCH}
+START_HEAD={git_state["start_head"]}
+FINAL_HEAD={git_state["final_head"]}
+tracked_worktree_clean={git_state["tracked_worktree_clean"]}
+PUSHED=NO
+PR_CREATED=NO
+```
+
+Commits:
+
+{commits}
+
+## Upstream scientific state
+
+```text
+SparseValidationV3={integrity["upstream_state"]["SparseValidationV3"]}
+WindowValidationV3={integrity["upstream_state"]["WindowValidationV3"]}
+DEV2_FRAME0_EXECUTION_V2={integrity["upstream_state"]["DEV2_FRAME0_EXECUTION_V2"]}
+ObjectiveV2 failure evidence={integrity["upstream_state"]["ObjectiveV2_failure_evidence"]}
+DEV2 optimizer evaluation under V2={integrity["upstream_state"]["DEV2_optimizer_evaluation_under_V2"]}
+```
 
 ## Outcome
 
@@ -2883,15 +2963,41 @@ def summarize(root: Path) -> dict[str, Any]:
 
 The masked-q_old hard gate failed. Refinement regression, selection, DEV2 frame0 V3 execution, and all V3 freezes are therefore `NOT_RUN`.
 
+## q_old role decision
+
+`Q_OLD_ROLE={qold["Q_OLD_ROLE"]}`. Use-site evidence:
+
+{qold_sites}
+
+## Interaction graph authority
+
+`INTERACTION_GRAPH_AUTHORITY={graph["INTERACTION_GRAPH_AUTHORITY"]}`. Replay parity is `PASS` over `{graph["dev1_replay_parity"]["frame_count"]}` unique DEV1 frames; maximum source-vertex, Laplacian, and weight differences are all `0.0`, and object-sample reconstruction is exact. Neither a robot nor q_old was loaded.
+
+## V3 candidates
+
+| Candidate | Frame0 seeds | t>0 runtime seed | q_old needed | Result |
+| --- | --- | --- | --- | --- |
+{candidate_table}
+
 ## Masked-q_old development
 
-| Candidate | HIGH | MID | LOW | Determinism | Result |
-| --- | ---: | ---: | ---: | --- | --- |
-| V3-A generic | 0/20 | 0/20 | 0/20 | PASS | FAIL |
-| V3-B generic + previous | 0/20 | 0/20 | 0/20 | PASS | FAIL |
-| V3-C source-geometric + previous | 0/20 | 20/20 | 0/20 | PASS | FAIL |
+| Window | Technical | p95 E_IM | Wrist | Bone | Continuity | Collision/Joints | Result |
+| --- | ---: | ---: | --- | --- | --- | --- | --- |
+{masked_table}
 
 The only passing stratum was V3-C MID (`p95 E_IM=9.958413517336691e-05`); HIGH and LOW failed at their first frame because no independently valid cold-start candidate was available.
+
+Determinism is `PASS` for all three candidates, meaning each observed success or technical-failure outcome reproduced exactly; it does not override the masked-q_old failure.
+
+## Refinement regression and selection
+
+```text
+REFINEMENT_MODE_REGRESSION={refinement["REFINEMENT_MODE_REGRESSION"]}
+max_q_abs={refinement.get("max_q_abs")}
+max_base_abs={refinement.get("max_base_abs")}
+max_e_im_abs={refinement.get("max_e_im_abs")}
+SELECTED_EXECUTION_V3={selection.get("SELECTED_EXECUTION_V3") or "NONE"}
+```
 
 ## DEV2 input completeness
 
@@ -2915,13 +3021,60 @@ The only passing stratum was V3-C MID (`p95 E_IM=9.958413517336691e-05`); HIGH a
 | frame0 | old trajectory authority | no previous-state alias |
 | t>0 | refinement carrier | previous accepted runtime state |
 
-## Frozen hashes
+## DEV2 frame0 known-failure development
+
+| Run | Optimizer Started | Technical | E_IM | Wrist | Bone | Collision | Joints | Deterministic |
+| --: | --- | --- | ---: | --- | --- | --- | --- | --- |
+{dev2_rows}
 
 ```text
-EXECUTION_INPUT_AUTHORITY_SHA256={hashes["execution_input"]}
-COLD_START_SEED_AUTHORITY_SHA256={hashes["cold_seed"]}
-SOURCE_INTERACTION_GRAPH_AUTHORITY_SHA256={hashes["graph"]}
-OBJECTIVE_V2_EXECUTION_CONTRACT_V3_SHA256={hashes["execution_v3"]}
+DEV2_FRAME0_ROLE=KNOWN_FAILURE_DEVELOPMENT_REGRESSION
+DEV2_FRAME0_V3_DEVELOPMENT={dev2["DEV2_FRAME0_V3_DEVELOPMENT"]}
+DEV2_FRAME0_V3_RUN_COUNT={dev2["DEV2_FRAME0_V3_RUN_COUNT"]}
+DEV2_FRAME0_V3_OPTIMIZER_RUN_COUNT={dev2["DEV2_FRAME0_V3_OPTIMIZER_RUN_COUNT"]}
+```
+
+## DEV2 special-case audit
+
+```text
+DEV2_SPECIAL_CASE_ADDED={special["DEV2_SPECIAL_CASE_ADDED"]}
+DEV2_EPISODE_ID_BRANCH={special["DEV2_EPISODE_ID_BRANCH"]}
+DEV2_OBJECT_ID_BRANCH={special["DEV2_OBJECT_ID_BRANCH"]}
+DEV2_FRAME_LITERAL_BRANCH={special["DEV2_FRAME_LITERAL_BRANCH"]}
+DEV2_HAND_TUNED_SEED={special["DEV2_HAND_TUNED_SEED"]}
+```
+
+## Development gate and freeze status
+
+```text
+EXECUTION_V3_DEVELOPMENT_GATE={development_gate}
+EXECUTION_V3_STATUS={summary["freeze"]["EXECUTION_V3_STATUS"]}
+EXECUTION_INPUT_AUTHORITY_SHA256={frozen_hashes["execution_input"]}
+COLD_START_SEED_AUTHORITY_SHA256={frozen_hashes["cold_seed"]}
+SOURCE_INTERACTION_GRAPH_AUTHORITY_SHA256={frozen_hashes["graph"]}
+OBJECTIVE_V2_EXECUTION_CONTRACT_V3_SHA256={frozen_hashes["execution_v3"]}
+```
+
+## ObjectiveV2 / GateV2 integrity
+
+```text
+RETARGET_OBJECTIVE_V2_SHA256={OBJECTIVE_SHA}
+CERTIFICATION_GATE_V2_SHA256={GATE_V2_SHA}
+OBJECTIVE_V2_CHANGED=NO
+GATE_V2_CHANGED=NO
+```
+
+## Evidence hygiene and independent-certification boundary
+
+```text
+NEW_DEV1_METHOD_DEVELOPMENT_FRAMES=0
+FUTURE_EXECUTION_V3_VALIDATION_EXCLUSION_COUNT={ledger["FUTURE_EXECUTION_V3_VALIDATION_EXCLUSION_COUNT"]}
+COLDSTART_SPARSE_VALIDATION_V4=NOT_RUN
+COLDSTART_WINDOW_VALIDATION_V4=NOT_RUN
+FRESH_CROSS_EPISODE_CONTROL_COUNT=0
+DEV2_FULL_PRODUCTION_SOLVE_COUNT=0
+REPOSITORY_VALIDATION={validation}
+NEXT={summary["next"]}
 ```
 
 ## Safety flags
