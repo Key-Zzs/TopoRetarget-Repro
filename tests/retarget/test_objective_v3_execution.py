@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from toporetarget.retarget.objective_v3_execution import (
+    ExecutionBaselineAuthority,
     ExecutionFrameInputsV3,
     ExecutionInputAuthorityError,
     RetargetMode,
@@ -37,6 +38,16 @@ def test_frame_zero_and_runtime_previous_are_distinct_authorities() -> None:
     with pytest.raises(ExecutionInputAuthorityError, match="frame zero forbids"):
         ExecutionFrameInputsV3(RetargetMode.COLD_START, 0, None, np.zeros(4), np.eye(4)).validate()
     _inputs(RetargetMode.COLD_START, step=1).validate()
+
+
+def test_t_gt_zero_runtime_state_is_not_old_production_authority() -> None:
+    inputs = _inputs(RetargetMode.COLD_START, step=1).validate()
+    assert inputs.old_production_q is None
+    assert inputs.previous_accepted_q is not None
+    assert (
+        ExecutionBaselineAuthority.PREVIOUS_ACCEPTED_RUNTIME_STATE
+        is not ExecutionBaselineAuthority.OLD_PRODUCTION_TRAJECTORY
+    )
 
 
 def test_cold_start_never_aliases_q_old() -> None:
