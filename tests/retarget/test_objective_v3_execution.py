@@ -4,13 +4,16 @@ import numpy as np
 import pytest
 
 from toporetarget.retarget.objective_v3_execution import (
+    ColdStartSearchV2Candidate,
     ExecutionBaselineAuthority,
     ExecutionFrameInputsV3,
     ExecutionInputAuthorityError,
     RetargetMode,
     cold_start_seeds_v3,
+    default_cold_start_search_v2_candidates,
     default_execution_v3_candidates,
     refinement_seeds_v3,
+    screen_whole_hand_bootstrap_states,
 )
 
 
@@ -110,3 +113,54 @@ def test_candidates_are_generic_and_contain_no_episode_literals() -> None:
     payload = repr([candidate.as_dict() for candidate in default_execution_v3_candidates()])
     for forbidden in ("C11001", "10704", "DEV2", "thumb"):
         assert forbidden not in payload
+
+
+def test_search_v2_candidate_is_full_hand_qold_free_and_budget_frozen() -> None:
+    (candidate,) = default_cold_start_search_v2_candidates()
+    assert candidate.validate() is candidate
+    assert candidate.bootstrap_free_dofs == "ALL_20_FINGER_DOFS"
+    assert candidate.post_bootstrap_contributor_ranking
+    assert candidate.top_k == 1
+    assert candidate.bootstrap_max_nfev == 250
+    assert candidate.contributor_probe_max_nfev == 24
+    assert all("old" not in source for source in candidate.bootstrap_seed_sources)
+    with pytest.raises(ValueError, match="budgets must remain frozen"):
+        ColdStartSearchV2Candidate(contributor_probe_max_nfev=25).validate()
+
+
+def test_whole_hand_bootstrap_screen_is_deterministic_and_complete() -> None:
+    lower = np.full(20, -1.0)
+    upper = np.ones(20)
+    first = np.linspace(-0.5, 0.5, 20)
+    duplicate = first.copy()
+    accepted = screen_whole_hand_bootstrap_states(
+        states=(("first", first), ("duplicate", duplicate)),
+        lower_q=lower,
+        upper_q=upper,
+        expected_dofs=20,
+    )
+    assert [name for name, _q in accepted] == ["first"]
+    assert accepted[0][1].shape == (20,)
+    assert np.all(np.isfinite(accepted[0][1]))
+    with pytest.raises(ValueError, match="full hand"):
+        screen_whole_hand_bootstrap_states(
+            states=(("local_only", np.zeros(4)),),
+            lower_q=lower,
+            upper_q=upper,
+            expected_dofs=20,
+        )
+
+
+def test_whole_hand_bootstrap_rejects_invalid_states_without_fabrication() -> None:
+    lower = np.full(20, -1.0)
+    upper = np.ones(20)
+    with pytest.raises(ExecutionInputAuthorityError, match="NO_VALID_COLDSTART"):
+        screen_whole_hand_bootstrap_states(
+            states=(
+                ("nan", np.full(20, np.nan)),
+                ("out_of_bounds", np.full(20, 2.0)),
+            ),
+            lower_q=lower,
+            upper_q=upper,
+            expected_dofs=20,
+        )
