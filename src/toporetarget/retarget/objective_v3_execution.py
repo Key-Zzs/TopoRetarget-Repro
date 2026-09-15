@@ -23,6 +23,9 @@ from toporetarget.retarget.objective_v2_execution import (
 EXECUTION_V3_SCHEMA_VERSION = "RetargetObjectiveV2ExecutionContractV3"
 EXECUTION_INPUT_AUTHORITY_SCHEMA_VERSION = "ExecutionInputAuthorityV1"
 COLD_START_SEED_AUTHORITY_SCHEMA_VERSION = "ColdStartSeedAuthorityV1"
+COLD_START_SEED_AUTHORITY_V2_SCHEMA_VERSION = "ColdStartSeedAuthorityV2"
+COLD_START_BOOTSTRAP_SCHEMA_VERSION = "ColdStartBootstrapContractV1"
+COLD_START_SEARCH_V2_SCHEMA_VERSION = "ColdStartSearchV2DevelopmentCandidate"
 
 
 class RetargetMode(StrEnum):
@@ -120,6 +123,98 @@ class ExecutionV3Candidate:
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class ColdStartSearchV2Candidate:
+    """Outcome-independent whole-hand bootstrap schedule for cold start.
+
+    The geometric solve is only a basin initializer.  Candidate-B2 remains the
+    scientific objective, and contributor selection remains top-1.  Ranking is
+    deliberately evaluated on each bootstrapped full-hand state rather than on
+    an unrelated neutral carrier.
+    """
+
+    name: str = "CS2_A_FULL_HAND_GEOMETRIC_BOOTSTRAP_TOP1"
+    bootstrap_seed_sources: tuple[str, ...] = (
+        "wuji_canonical_rest",
+        "joint_range_midpoint",
+    )
+    bootstrap_solver_profile: str = "paper_repro_scipy_trf"
+    bootstrap_max_nfev: int = 250
+    bootstrap_free_dofs: str = "ALL_20_FINGER_DOFS"
+    bootstrap_base_authority: str = "SOURCE_ROBOT_WRIST_FRAME_ALIGNMENT"
+    use_previous_accepted_after_frame0: bool = True
+    post_bootstrap_contributor_ranking: bool = True
+    top_k: int = 1
+    contributor_probe_max_nfev: int = 24
+    selected_primary_maxiter: int = 8
+    secondary_polish_maxiter: int = 8
+    numerical_epsilon: float = 1.0e-10
+    schema_version: str = COLD_START_SEARCH_V2_SCHEMA_VERSION
+
+    def validate(self) -> ColdStartSearchV2Candidate:
+        allowed = {"wuji_canonical_rest", "joint_range_midpoint"}
+        if self.name != "CS2_A_FULL_HAND_GEOMETRIC_BOOTSTRAP_TOP1":
+            raise ValueError("unsupported cold-start Search V2 candidate")
+        if not self.bootstrap_seed_sources or set(self.bootstrap_seed_sources) - allowed:
+            raise ValueError("bootstrap contains an unsupported seed authority")
+        if any("old" in source.lower() for source in self.bootstrap_seed_sources):
+            raise ValueError("cold-start bootstrap cannot consume q_old")
+        if self.bootstrap_solver_profile != "paper_repro_scipy_trf":
+            raise ValueError("bootstrap solver must reuse the predeclared geometric primitive")
+        if self.bootstrap_max_nfev != 250:
+            raise ValueError("bootstrap budget is frozen before development")
+        if self.bootstrap_free_dofs != "ALL_20_FINGER_DOFS":
+            raise ValueError("bootstrap must define the full hand")
+        if not self.post_bootstrap_contributor_ranking or self.top_k != 1:
+            raise ValueError("Search V2 freezes post-bootstrap top-1 contributor ranking")
+        if (
+            self.contributor_probe_max_nfev != 24
+            or self.selected_primary_maxiter != 8
+            or self.secondary_polish_maxiter != 8
+        ):
+            raise ValueError("Candidate-B2 budgets must remain frozen ExecutionV2 values")
+        return self
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def default_cold_start_search_v2_candidates() -> tuple[ColdStartSearchV2Candidate, ...]:
+    """Return the sole evidence-authorized Search V2 development candidate."""
+
+    return (ColdStartSearchV2Candidate().validate(),)
+
+
+def screen_whole_hand_bootstrap_states(
+    *,
+    states: Sequence[tuple[str, np.ndarray]],
+    lower_q: np.ndarray,
+    upper_q: np.ndarray,
+    expected_dofs: int,
+) -> tuple[tuple[str, np.ndarray], ...]:
+    """Fail closed on undefined, non-finite, or out-of-bounds bootstrap states."""
+
+    lower = np.asarray(lower_q, dtype=np.float64)
+    upper = np.asarray(upper_q, dtype=np.float64)
+    if lower.shape != (expected_dofs,) or upper.shape != (expected_dofs,):
+        raise ValueError("whole-hand bounds do not match the declared DOF count")
+    accepted: list[tuple[str, np.ndarray]] = []
+    for name, raw in states:
+        value = np.asarray(raw, dtype=np.float64)
+        if value.shape != (expected_dofs,):
+            raise ValueError(f"bootstrap state does not define the full hand: {name}")
+        if not np.all(np.isfinite(value)):
+            continue
+        if np.any(value < lower - 1.0e-12) or np.any(value > upper + 1.0e-12):
+            continue
+        if any(np.array_equal(value, prior) for _prior_name, prior in accepted):
+            continue
+        accepted.append((str(name), value.copy()))
+    if not accepted:
+        raise ExecutionInputAuthorityError("TECHNICAL_FAIL_NO_VALID_COLDSTART_CANDIDATE")
+    return tuple(accepted)
 
 
 def default_execution_v3_candidates() -> tuple[ExecutionV3Candidate, ...]:
@@ -224,7 +319,11 @@ def cold_start_seeds_v3(
 
 
 __all__ = [
+    "COLD_START_BOOTSTRAP_SCHEMA_VERSION",
     "COLD_START_SEED_AUTHORITY_SCHEMA_VERSION",
+    "COLD_START_SEED_AUTHORITY_V2_SCHEMA_VERSION",
+    "COLD_START_SEARCH_V2_SCHEMA_VERSION",
+    "ColdStartSearchV2Candidate",
     "EXECUTION_INPUT_AUTHORITY_SCHEMA_VERSION",
     "EXECUTION_V3_SCHEMA_VERSION",
     "ExecutionBaselineAuthority",
@@ -233,6 +332,8 @@ __all__ = [
     "ExecutionV3Candidate",
     "RetargetMode",
     "cold_start_seeds_v3",
+    "default_cold_start_search_v2_candidates",
     "default_execution_v3_candidates",
     "refinement_seeds_v3",
+    "screen_whole_hand_bootstrap_states",
 ]
