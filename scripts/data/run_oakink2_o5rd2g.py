@@ -15,6 +15,7 @@ import inspect
 import json
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -526,7 +527,13 @@ def audit_dev2_input_completeness(root: Path) -> dict[str, Any]:
 
 
 def run_graph_parity(root: Path) -> dict[str, Any]:
-    audit_dev2_input_completeness(root)
+    _require_status(root / "input_authority/authority_decision.json", "INPUT_AUTHORITY_AUDIT")
+    _require_status(root / "input_authority/dev2_input_completeness.json", "status")
+    _require_status(
+        root / "input_authority/interaction_graph_authority_audit.json",
+        "status",
+        "PASS_PENDING_REPLAY_PARITY",
+    )
     dev1 = load_hoi_sequence(frozen_paths()["dev1_canonical"])
     historical_samples = SurfaceSampleSet.load(frozen_paths()["dev1_object_samples"])
     profile = load_surface_profile("paper_strict_area_uniform", repo_root=REPO)
@@ -632,11 +639,24 @@ def run_graph_parity(root: Path) -> dict[str, Any]:
         frame_indices=[0],
     )
     graph_path = root / "graph_authority/dev2_frame0_source_graph.zarr"
-    if not graph_path.exists():
-        save_interaction_graph(dev2_graph, graph_path)
+    construction_timing = dict(dev2_graph.metadata.get("timings", {}))
+    save_interaction_graph(dev2_graph, graph_path, force=True)
+    with tempfile.TemporaryDirectory(
+        prefix=".serialization-determinism-", dir=root / "graph_authority"
+    ) as temporary:
+        temporary_root = Path(temporary)
+        first = temporary_root / "first.zarr"
+        second = temporary_root / "second.zarr"
+        save_interaction_graph(dev2_graph, first)
+        save_interaction_graph(dev2_graph, second)
+        serialization_hashes = [
+            interaction_artifact_hash(first),
+            interaction_artifact_hash(second),
+        ]
+    serialization_deterministic = len(set(serialization_hashes)) == 1
     authority = {
         "schema_version": "SourceInteractionGraphAuthorityV1",
-        "status": "PASS" if parity else "FAIL",
+        "status": "PASS" if parity and serialization_deterministic else "FAIL",
         "INTERACTION_GRAPH_AUTHORITY": "CANONICAL_SOURCE_DERIVED",
         "source_inputs": [
             "canonical mediapipe21",
@@ -649,7 +669,21 @@ def run_graph_parity(root: Path) -> dict[str, Any]:
         "topology": "strict_scipy_qhull_v1 Delaunay, all unique edges, no filtering",
         "distance_contact_definition": "weighted Euclidean graph; no semantic contact label",
         "normalization": "directed exp(-kappa*d2) row normalization",
-        "serialization": "toporetarget.interaction_graph.v1 Zarr",
+        "serialization": (
+            "toporetarget.interaction_graph.v1 Zarr; operational timings excluded from "
+            "content-addressed bytes"
+        ),
+        "serialization_implementation_sha256": sha256_file(
+            REPO / "src/toporetarget/retarget/interaction_artifacts.py"
+        ),
+        "content_hash_excluded_metadata": ["timings"],
+        "construction_timing_diagnostic": construction_timing,
+        "scientific_graph_hashes": list(dev2_graph.graph_hashes),
+        "serialization_determinism": {
+            "runs": 2,
+            "artifact_hashes": serialization_hashes,
+            "status": "PASS" if serialization_deterministic else "FAIL",
+        },
         "implementation_sha256": sha256_file(
             REPO / "src/toporetarget/retarget/interaction_graph.py"
         ),
@@ -660,7 +694,7 @@ def run_graph_parity(root: Path) -> dict[str, Any]:
         "q_old_loaded": False,
     }
     write_json(root / "graph_authority/source_interaction_graph_authority.json", authority)
-    if not parity:
+    if not parity or not serialization_deterministic:
         raise RuntimeError("COLD_START_GRAPH_AUTHORITY_FAIL")
     return authority
 
@@ -1054,6 +1088,14 @@ class V3Runtime(D2ARuntime):
         }
 
 
+def _require_coldstart_candidate(
+    candidate: ScreenedCandidate | None,
+) -> ScreenedCandidate:
+    if candidate is None:
+        raise RuntimeError("TECHNICAL_FAIL_NO_VALID_COLDSTART_CANDIDATE")
+    return candidate
+
+
 def search_cold_start_frame(
     runtime: V3Runtime,
     ordinal: int,
@@ -1064,6 +1106,7 @@ def search_cold_start_frame(
     candidate: ExecutionV3Candidate,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     started = time.perf_counter()
+    candidate_screening_time_sec = 0.0
     runtime.current_runtime_step = runtime_step
     frame_inputs = ExecutionFrameInputsV3(
         mode=RetargetMode.COLD_START,
@@ -1143,9 +1186,9 @@ def search_cold_start_frame(
                 "violations": probed_evaluation["violated_constraints"],
             }
         )
-    selected_seed = select_candidate(screened)
-    if selected_seed is None:
-        raise RuntimeError("TECHNICAL_FAIL_NO_VALID_COLDSTART_CANDIDATE")
+    screening_started = time.perf_counter()
+    selected_seed = _require_coldstart_candidate(select_candidate(screened))
+    candidate_screening_time_sec += time.perf_counter() - screening_started
     q_seed, base_seed, _seed_values, _seed_evaluation = states[selected_seed.candidate_id]
     primary_result = None
     primary_exception = None
@@ -1186,9 +1229,9 @@ def search_cold_start_frame(
         )
     except Exception as exc:
         primary_exception = f"{type(exc).__name__}:{exc}"
-    retained = select_candidate(screened)
-    if retained is None:
-        raise RuntimeError("TECHNICAL_FAIL_NO_VALID_COLDSTART_CANDIDATE")
+    screening_started = time.perf_counter()
+    retained = _require_coldstart_candidate(select_candidate(screened))
+    candidate_screening_time_sec += time.perf_counter() - screening_started
     retained_q, retained_base, retained_values, retained_evaluation = states[retained.candidate_id]
     limit = interaction_retention_limit(
         retained_values.interaction_e_im, runtime.authority.interaction_target
@@ -1234,12 +1277,14 @@ def search_cold_start_frame(
         )
     except Exception as exc:
         polish_exception = f"{type(exc).__name__}:{exc}"
+    screening_started = time.perf_counter()
     selected, retention = retain_after_polish(
         retained,
         polished,
         interaction_target=runtime.authority.interaction_target,
         numerical_epsilon=1e-10,
     )
+    candidate_screening_time_sec += time.perf_counter() - screening_started
     if polished is not None and selected is polished and polished_state is not None:
         q_out, base_out, values_out, evaluation_out, actual_out = polished_state
     else:
@@ -1262,7 +1307,7 @@ def search_cold_start_frame(
             float((profile or {}).get("fk_time_sec", 0.0))
             for profile in (primary_profile, secondary_profile)
         ),
-        "candidate_screening_time_sec": 0.0,
+        "candidate_screening_time_sec": candidate_screening_time_sec,
         "primary_retention": retention,
         "fallback": selected.candidate_id.startswith("generic:"),
         "wall_sec": time.perf_counter() - started,
@@ -1304,7 +1349,8 @@ def search_cold_start_frame(
 
 
 def develop_execution_v3_candidates(root: Path) -> dict[str, Any]:
-    run_graph_parity(root)
+    _require_status(root / "graph_authority/graph_parity_summary.json", "GRAPH_PARITY")
+    _require_status(root / "graph_authority/source_interaction_graph_authority.json", "status")
     candidates = list(V3_CANDIDATES.values())
     for index, candidate in enumerate(candidates):
         letter = chr(ord("a") + index)
@@ -1392,6 +1438,9 @@ def _development_row(
         "secondary_nfev": profiler["secondary_nfev"],
         "interaction_eval_time_sec": profiler["interaction_eval_time_sec"],
         "fk_time_sec": profiler["fk_time_sec"],
+        "candidate_screening_time_sec": profiler["candidate_screening_time_sec"],
+        "primary_retention": profiler["primary_retention"],
+        "fallback": profiler["fallback"],
         "wall_sec": profiler["wall_sec"],
     }
 
@@ -1458,6 +1507,7 @@ def _run_masked_candidate(root: Path, candidate: ExecutionV3Candidate) -> dict[s
                             "technical_success": False,
                             "optimizer_started": False,
                             "failure": failure["error"],
+                            "profiler_status": "NOT_AVAILABLE_TECHNICAL_FAIL_BEFORE_RECEIPT",
                         }
                     )
                 break
@@ -1519,6 +1569,60 @@ def _run_masked_candidate(root: Path, candidate: ExecutionV3Candidate) -> dict[s
     }
     write_json(root / f"development/{_candidate_slug(candidate)}_summary.json", payload)
     return payload
+
+
+def _write_masked_profiler(
+    root: Path, candidate_names: list[str] | tuple[str, ...]
+) -> list[dict[str, Any]]:
+    """Normalize stored frame receipts into the required profiler ledger.
+
+    This is evidence-only reconstruction: successful frame receipts already
+    contain RetargetSolverProfilerV1; failed frames remain explicit nulls.
+    """
+
+    profiler_rows: list[dict[str, Any]] = []
+    for name in candidate_names:
+        candidate = V3_CANDIDATES[name]
+        masked_rows = read_csv(root / f"development/{_candidate_slug(candidate)}_masked_qold.csv")
+        for row in masked_rows:
+            completed = row.get("technical_success") == "True"
+            profiler: dict[str, Any] = {}
+            status = "NOT_AVAILABLE_TECHNICAL_FAIL_BEFORE_RECEIPT"
+            if completed:
+                receipt_path = (
+                    root
+                    / "development/receipts"
+                    / _candidate_slug(candidate)
+                    / row["window_id"]
+                    / f"frame_{int(row['ordinal']):04d}.json"
+                )
+                _require(receipt_path)
+                profiler = read_json(receipt_path)["profiler"]
+                status = "RECORDED"
+            profiler_rows.append(
+                {
+                    "schema_version": "RetargetSolverProfilerV1",
+                    "candidate": name,
+                    "window_id": row["window_id"],
+                    "stratum": row["stratum"],
+                    "ordinal": int(row["ordinal"]),
+                    "technical_success": completed,
+                    "profiler_status": status,
+                    "seed_count": profiler.get("seed_count"),
+                    "candidate_probes": profiler.get("candidate_probes"),
+                    "probe_nfev": profiler.get("probe_nfev"),
+                    "primary_nfev": profiler.get("primary_nfev"),
+                    "secondary_nfev": profiler.get("secondary_nfev"),
+                    "interaction_eval_time_sec": profiler.get("interaction_eval_time_sec"),
+                    "fk_time_sec": profiler.get("fk_time_sec"),
+                    "candidate_screening_time_sec": profiler.get("candidate_screening_time_sec"),
+                    "primary_retention": profiler.get("primary_retention"),
+                    "fallback": profiler.get("fallback"),
+                    "wall_sec": profiler.get("wall_sec"),
+                }
+            )
+    write_csv(root / "development/profiler.csv", profiler_rows)
+    return profiler_rows
 
 
 def _run_candidate_determinism(root: Path, candidate: ExecutionV3Candidate) -> dict[str, Any]:
@@ -1611,7 +1715,10 @@ def _run_candidate_determinism(root: Path, candidate: ExecutionV3Candidate) -> d
 
 
 def run_masked_qold_development(root: Path) -> dict[str, Any]:
-    develop_execution_v3_candidates(root)
+    _require_status(root / "input_authority/authority_decision.json", "INPUT_AUTHORITY_AUDIT")
+    _require_status(root / "graph_authority/graph_parity_summary.json", "GRAPH_PARITY")
+    for letter in ("a", "b", "c"):
+        _require(root / f"execution_v3_design/candidate_v3_{letter}.json")
     summaries = []
     for name in (
         "V3_A_GENERIC_ASSET_SOURCE_COLD_START",
@@ -1682,12 +1789,7 @@ def run_masked_qold_development(root: Path) -> dict[str, Any]:
                 if row["stratum"] == stratum
             )
         write_csv(root / f"development/masked_qold_{stratum.lower()}.csv", combined)
-    all_profiler = []
-    for name in summary_by_name:
-        all_profiler.extend(
-            read_csv(root / f"development/{_candidate_slug(V3_CANDIDATES[name])}_masked_qold.csv")
-        )
-    write_csv(root / "development/profiler.csv", all_profiler)
+    _write_masked_profiler(root, tuple(summary_by_name))
     payload = {
         "schema_version": "MaskedQOldDevelopmentCandidateSummaryV1",
         "candidates": rows,
@@ -2524,18 +2626,30 @@ def _mode_comparison(root: Path) -> list[dict[str, Any]]:
                 "timing_comparison": "NON_STRICT_DIFFERENT_RUN_CLASS",
             }
         )
-    selection_path = root / "development/selection_decision.json"
-    if selection_path.exists():
-        selection = read_json(selection_path)
-        name = selection.get("SELECTED_EXECUTION_V3")
-        if name:
+    else:
+        result.append(
+            {
+                "mode": "V3 refinement",
+                "old_q_available": "yes",
+                "technical": "NOT_RUN",
+                "p95_e_im": None,
+                "mean_sec_per_frame": None,
+                "probes_per_frame": None,
+                "timing_comparison": "NOT_RUN_GATE_CLOSED",
+            }
+        )
+    masked_path = root / "development/masked_qold_decision.json"
+    if masked_path.exists():
+        masked = read_json(masked_path)
+        for candidate_result in masked.get("candidates", []):
+            name = candidate_result["candidate"]
             rows = read_csv(
                 root / f"development/{_candidate_slug(V3_CANDIDATES[name])}_masked_qold.csv"
             )
             completed = [row for row in rows if row.get("technical_success") == "True"]
             result.append(
                 {
-                    "mode": "V3 cold-start masked DEV1",
+                    "mode": f"V3 cold-start masked DEV1:{name}",
                     "old_q_available": "no",
                     "technical": f"{len(completed)}/{len(rows)}",
                     "p95_e_im": None
@@ -2572,6 +2686,18 @@ def _mode_comparison(root: Path) -> list[dict[str, Any]]:
                 "timing_comparison": "NON_STRICT_DIFFERENT_RUN_CLASS",
             }
         )
+    else:
+        result.append(
+            {
+                "mode": "V3 DEV2 frame0",
+                "old_q_available": "no",
+                "technical": "NOT_RUN",
+                "p95_e_im": None,
+                "mean_sec_per_frame": None,
+                "probes_per_frame": None,
+                "timing_comparison": "NOT_RUN_GATE_CLOSED",
+            }
+        )
     return result
 
 
@@ -2591,6 +2717,8 @@ def summarize(root: Path) -> dict[str, Any]:
         if (root / "development/masked_qold_decision.json").exists()
         else {"status": "NOT_RUN", "candidates": []}
     )
+    if masked.get("candidates"):
+        _write_masked_profiler(root, tuple(row["candidate"] for row in masked["candidates"]))
     if masked["status"] == "FAIL":
         stop_reason = "MASKED_QOLD_DEVELOPMENT_FAIL"
         determinism_path = root / "development/determinism.json"
@@ -2836,6 +2964,13 @@ def summarize(root: Path) -> dict[str, Any]:
             "DEV2_FRAME0_V3_RUN_COUNT": dev2["DEV2_FRAME0_V3_RUN_COUNT"],
             "DEV2_FRAME0_V3_OPTIMIZER_RUN_COUNT": dev2["DEV2_FRAME0_V3_OPTIMIZER_RUN_COUNT"],
             "EXECUTION_V3_DEVELOPMENT_GATE": development_gate,
+            "EXECUTION_INPUT_AUTHORITY_SHA256": hashes["execution_input"],
+            "COLD_START_SEED_AUTHORITY_SHA256": hashes["cold_seed"],
+            "SOURCE_INTERACTION_GRAPH_AUTHORITY_SHA256": hashes["graph"],
+            "OBJECTIVE_V2_EXECUTION_CONTRACT_V3_SHA256": hashes["execution_v3"],
+            "EXECUTION_V3_STATUS": "FROZEN_READY_FOR_INDEPENDENT_COLDSTART_CERTIFICATION"
+            if frozen
+            else "NO_EXECUTION_V3_READY",
             "COLDSTART_SPARSE_VALIDATION_V4": "NOT_RUN",
             "COLDSTART_WINDOW_VALIDATION_V4": "NOT_RUN",
             "FRESH_CROSS_EPISODE_CONTROLS": "NOT_RUN",
@@ -2918,6 +3053,13 @@ def summarize(root: Path) -> dict[str, Any]:
         else "NOT_RUN"
     )
     frozen_hashes = {name: value if value is not None else "null" for name, value in hashes.items()}
+    mode_rows = "\n".join(
+        f"| {row['mode']} | {row['old_q_available']} | {row['technical']} | "
+        f"{row['p95_e_im'] if row['p95_e_im'] is not None else 'null'} | "
+        f"{row['mean_sec_per_frame'] if row['mean_sec_per_frame'] is not None else 'null'} | "
+        f"{row['probes_per_frame'] if row['probes_per_frame'] is not None else 'null'} |"
+        for row in summary["mode_comparison"]
+    )
     markdown = f"""# OakInk2 O5R-D2G
 
 # Cross-Episode Input Authority + Cold-Start ExecutionV3 Handoff
@@ -3076,6 +3218,14 @@ DEV2_FULL_PRODUCTION_SOLVE_COUNT=0
 REPOSITORY_VALIDATION={validation}
 NEXT={summary["next"]}
 ```
+
+## Profiling comparison
+
+| Mode | old q available | technical | p95 E_IM | mean sec/frame | probes/frame |
+| --- | --- | ---: | ---: | ---: | ---: |
+{mode_rows}
+
+Timing rows are non-strict across different run classes; no speedup claim is made.
 
 ## Safety flags
 

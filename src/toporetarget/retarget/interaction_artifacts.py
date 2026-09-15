@@ -129,13 +129,20 @@ def _atomic_destination(path: str | Path, force: bool) -> tuple[Path, Path]:
 def save_interaction_graph(
     trajectory: InteractionGraphTrajectory, path: str | Path, *, force: bool = False
 ) -> Path:
-    """Publish a graph without a root-level unrecognized metadata sidecar."""
+    """Publish a content-deterministic graph artifact.
+
+    Construction timings are operational diagnostics rather than graph
+    authority.  Keeping them in the serialized metadata made identical graph
+    payloads hash differently across runs, so they remain available on the
+    in-memory trajectory but are deliberately excluded from the artifact.
+    """
 
     trajectory.validate()
     destination, temporary = _atomic_destination(path, force)
-    metadata = dict(trajectory.metadata)
+    metadata = {key: value for key, value in trajectory.metadata.items() if key != "timings"}
     metadata["schema_version"] = INTERACTION_GRAPH_SCHEMA_VERSION
     metadata["artifact_type"] = "source_only"
+    metadata["content_hash_excluded_metadata"] = ["timings"]
     metadata["array_manifest"] = sorted(trajectory.arrays())
     try:
         import zarr
