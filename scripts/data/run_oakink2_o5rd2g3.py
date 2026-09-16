@@ -1444,7 +1444,8 @@ def validate_repository(root: Path) -> dict[str, Any]:
             check=False,
         )
         output = completed.stdout + completed.stderr
-        log_path = logs / f"{index:02d}_{command[0]}_{command[1].replace('-', '_')}.log"
+        command_label = command[1].replace("-", "_").replace("/", "_")
+        log_path = logs / f"{index:02d}_{command[0]}_{command_label}.log"
         log_path.write_text(output, encoding="utf-8")
         rows.append(
             {
