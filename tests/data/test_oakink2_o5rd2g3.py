@@ -103,6 +103,32 @@ def test_fail_closed_cli_ordering(tmp_path: Path) -> None:
         workflow.freeze_execution_v3(tmp_path)
 
 
+def test_candidate_lock_drift_blocks_dev2(tmp_path: Path) -> None:
+    workflow.write_json(
+        tmp_path / "candidate_lock/selected_candidate_lock.json",
+        {
+            "status": "LOCKED_BEFORE_DEV2",
+            "candidate_name": workflow.CS2_A.name,
+        },
+    )
+    hash_path = tmp_path / "candidate_lock/selected_candidate_lock.sha256"
+    hash_path.write_text("invalid-lock-hash\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="LOCK_DRIFT"):
+        workflow.run_dev2_frame0_development(tmp_path)
+
+
+def test_refinement_failure_blocks_freeze(tmp_path: Path) -> None:
+    workflow.write_json(
+        tmp_path / "preflight/integrity.json", {"FROZEN_UPSTREAM_INTEGRITY": "PASS"}
+    )
+    workflow.write_json(
+        tmp_path / "refinement_regression/decision.json",
+        {"REFINEMENT_MODE_REGRESSION": "FAIL"},
+    )
+    with pytest.raises(RuntimeError, match="REFINEMENT_MODE_REGRESSION=FAIL"):
+        workflow.freeze_execution_v3(tmp_path)
+
+
 def test_cli_has_all_contract_actions_and_help_executes() -> None:
     required = {
         "preflight",

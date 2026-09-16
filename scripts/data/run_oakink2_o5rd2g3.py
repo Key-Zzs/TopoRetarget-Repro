@@ -414,6 +414,7 @@ def localize_refinement_divergence(root: Path) -> dict[str, Any]:
         )
     write_csv(root / "parity_localization/failed_items.csv", failed)
     write_csv(root / "parity_localization/first_divergence.csv", divergence_rows)
+    write_csv(root / "parity_localization/refinement_first_divergence.csv", divergence_rows)
     write_csv(root / "parity_localization/contributor_comparison.csv", contributor_rows)
     write_csv(root / "parity_localization/seed_comparison.csv", seed_rows)
     write_csv(root / "parity_localization/candidate_selection_comparison.csv", candidate_rows)
@@ -1709,6 +1710,7 @@ def completion_audit(root: Path) -> dict[str, Any]:
         "parity_contract/frozen_tolerances.json",
         "parity_localization/failed_items.csv",
         "parity_localization/first_divergence.csv",
+        "parity_localization/refinement_first_divergence.csv",
         "parity_localization/contributor_comparison.csv",
         "parity_localization/seed_comparison.csv",
         "parity_localization/candidate_selection_comparison.csv",
