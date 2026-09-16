@@ -85,6 +85,7 @@ def test_cli_has_every_contract_action_and_help_executes() -> None:
         "freeze-execution-v3",
         "generate-future-certification-plan",
         "summarize",
+        "completion-audit",
     }
     assert required <= set(workflow.ACTIONS)
     script = Path(workflow.__file__)
@@ -109,6 +110,27 @@ def test_no_forbidden_downstream_action_exists() -> None:
         "support",
     )
     assert not any(any(token in action for token in forbidden) for action in workflow.ACTIONS)
+
+
+def test_bootstrap_profiler_records_unavailable_internal_timing_without_inference() -> None:
+    fields = workflow._bootstrap_profiler_fields(
+        {
+            "seed_count": 2,
+            "solve_count": 2,
+            "nfev": 101,
+            "njev": 99,
+            "wall_sec": 12.5,
+            "residual_evals": 101,
+        }
+    )
+    assert fields["bootstrap_fk_calls"] is None
+    assert fields["bootstrap_fk_time_sec"] is None
+    assert fields["bootstrap_residual_evals"] == 101
+    assert fields["bootstrap_residual_eval_time_sec"] is None
+    assert (
+        fields["bootstrap_internal_timing_status"]
+        == "NOT_EMITTED_BY_EXISTING_GEOMETRIC_SOLVER_PRIMITIVE"
+    )
 
 
 def test_locked_candidate_cannot_be_switched_after_dev2_failure(tmp_path: Path) -> None:

@@ -297,10 +297,33 @@ def _whole_hand_geometric_bootstrap(
         "nfev": sum(row["nfev"] for row in rows),
         "njev": sum(row["njev"] or 0 for row in rows),
         "residual_evals": sum(row["nfev"] for row in rows),
-        "fk_calls": "ONE_OR_MORE_PER_GEOMETRIC_RESIDUAL_AND_JACOBIAN_EVAL",
+        "fk_calls": None,
+        "fk_time_sec": None,
+        "residual_eval_time_sec": None,
+        "internal_timing_status": "NOT_EMITTED_BY_EXISTING_GEOMETRIC_SOLVER_PRIMITIVE",
         "wall_sec": time.perf_counter() - started,
     }
     return accepted, receipt
+
+
+def _bootstrap_profiler_fields(bootstrap_receipt: dict[str, Any]) -> dict[str, Any]:
+    """Materialize required bootstrap profiler fields without inventing counters."""
+
+    unavailable = "NOT_EMITTED_BY_EXISTING_GEOMETRIC_SOLVER_PRIMITIVE"
+    return {
+        "bootstrap_seed_count": bootstrap_receipt["seed_count"],
+        "bootstrap_solve_count": bootstrap_receipt["solve_count"],
+        "bootstrap_nfev": bootstrap_receipt["nfev"],
+        "bootstrap_njev": bootstrap_receipt["njev"],
+        "bootstrap_wall_sec": bootstrap_receipt["wall_sec"],
+        "bootstrap_fk_calls": None,
+        "bootstrap_fk_time_sec": None,
+        "bootstrap_residual_evals": bootstrap_receipt["residual_evals"],
+        "bootstrap_residual_eval_time_sec": None,
+        "bootstrap_internal_timing_status": bootstrap_receipt.get(
+            "internal_timing_status", unavailable
+        ),
+    }
 
 
 def _state_metrics(
@@ -1004,13 +1027,7 @@ def search_cold_start_v2_frame(
     secondary_profile = None if polished_result is None else d2g._solver_profile(polished_result)
     profiler = {
         "schema_version": "RetargetSolverProfilerV1",
-        "bootstrap_seed_count": bootstrap_receipt["seed_count"],
-        "bootstrap_solve_count": bootstrap_receipt["solve_count"],
-        "bootstrap_nfev": bootstrap_receipt["nfev"],
-        "bootstrap_njev": bootstrap_receipt["njev"],
-        "bootstrap_wall_sec": bootstrap_receipt["wall_sec"],
-        "bootstrap_fk_calls": bootstrap_receipt["fk_calls"],
-        "bootstrap_residual_evals": bootstrap_receipt["residual_evals"],
+        **_bootstrap_profiler_fields(bootstrap_receipt),
         "bootstrap_hard_valid_candidates": sum(
             bool(item["bootstrap_screen_pass"]) for item in bootstrap_rows
         ),
@@ -1457,6 +1474,15 @@ def reconcile_development_reporting(root: Path) -> dict[str, Any]:
                 )
             receipt["selected_block"] = authoritative_name
             receipt["profiler"]["candidate_b2_contributor"] = authoritative_name
+            receipt["bootstrap"].update(
+                {
+                    "fk_calls": None,
+                    "fk_time_sec": None,
+                    "residual_eval_time_sec": None,
+                    "internal_timing_status": "NOT_EMITTED_BY_EXISTING_GEOMETRIC_SOLVER_PRIMITIVE",
+                }
+            )
+            receipt["profiler"].update(_bootstrap_profiler_fields(receipt["bootstrap"]))
             receipt["reporting_reconciliation"] = {
                 "schema_version": "SelectedBlockReportingReconciliationV1",
                 "original_selected_block": old_name,
@@ -1497,6 +1523,13 @@ def reconcile_development_reporting(root: Path) -> dict[str, Any]:
         "q_base_eim_changed": False,
         "gate_outcomes_changed": False,
         "rerun_count": 0,
+        "profiler_evidence_completion": {
+            "bootstrap_fk_calls": None,
+            "bootstrap_fk_time_sec": None,
+            "bootstrap_residual_eval_time_sec": None,
+            "status": "NOT_EMITTED_BY_EXISTING_GEOMETRIC_SOLVER_PRIMITIVE",
+            "inferred_values_used": False,
+        },
         "corrections": corrections,
     }
     _write_json(root / "development/reporting_reconciliation.json", payload)
@@ -2215,6 +2248,7 @@ def _profiler_aggregate(root: Path) -> dict[str, Any]:
         "bootstrap_solve_count",
         "bootstrap_nfev",
         "bootstrap_wall_sec",
+        "bootstrap_residual_evals",
         "bootstrap_hard_valid_candidates",
         "candidate_b2_candidate_probes",
         "primary_nfev",
@@ -2231,6 +2265,28 @@ def _profiler_aggregate(root: Path) -> dict[str, Any]:
         "schema_version": "RetargetSolverProfilerV1Aggregate",
         "completed_frames": len(completed),
         "mean": aggregate,
+        "bootstrap_internal_instrumentation": {
+            "fk_calls_available_frames": sum(
+                row.get("bootstrap_fk_calls") not in (None, "") for row in completed
+            ),
+            "fk_time_available_frames": sum(
+                row.get("bootstrap_fk_time_sec") not in (None, "") for row in completed
+            ),
+            "residual_eval_count_available_frames": sum(
+                row.get("bootstrap_residual_evals") not in (None, "") for row in completed
+            ),
+            "residual_eval_time_available_frames": sum(
+                row.get("bootstrap_residual_eval_time_sec") not in (None, "") for row in completed
+            ),
+            "unavailable_statuses": sorted(
+                {
+                    row["bootstrap_internal_timing_status"]
+                    for row in completed
+                    if row.get("bootstrap_internal_timing_status")
+                }
+            ),
+            "inferred_values_used": False,
+        },
     }
     _write_json(root / "profiler/aggregate.json", payload)
     return payload
@@ -2783,6 +2839,171 @@ This handoff hard-stops before any fresh independent validation, full DEV1/DEV2 
     return summary
 
 
+def completion_audit(root: Path) -> dict[str, Any]:
+    """Prove the bounded D2G2 fail-closed terminal without running new solves."""
+
+    required_artifacts = (
+        "handoff.md",
+        "final_summary.md",
+        "final_summary.json",
+        "preflight/git.json",
+        "preflight/upstream_state.json",
+        "preflight/frozen_authorities.json",
+        "preflight/integrity.json",
+        "failure_localization/first_frame_seed_metrics.csv",
+        "failure_localization/per_seed_terminal_metrics.csv",
+        "failure_localization/nonselected_dof_basin_audit.csv",
+        "failure_localization/source_geometric_multistart_contract_audit.json",
+        "failure_localization/root_cause.json",
+        "search_v2_candidates/cs2_a.json",
+        "search_v2_candidates/cs2_b.json",
+        "search_v2_candidates/cs2_c.json",
+        "search_v2_candidates/candidate_hashes.json",
+        "development/cs2_a_high.csv",
+        "development/cs2_a_mid.csv",
+        "development/cs2_a_low.csv",
+        "development/cs2_b_high.csv",
+        "development/cs2_b_mid.csv",
+        "development/cs2_b_low.csv",
+        "development/cs2_c_high.csv",
+        "development/cs2_c_mid.csv",
+        "development/cs2_c_low.csv",
+        "development/candidate_summary.csv",
+        "development/determinism.json",
+        "development/selection_decision.json",
+        "development/selected_candidate_lock.json",
+        "development/selected_candidate_lock.sha256",
+        "refinement_regression/frame_selection.json",
+        "refinement_regression/per_frame.csv",
+        "refinement_regression/window.csv",
+        "refinement_regression/parity_summary.json",
+        "dev2_frame0_development/role_receipt.json",
+        "dev2_frame0_development/run_1.json",
+        "dev2_frame0_development/run_2.json",
+        "dev2_frame0_development/run_3.json",
+        "dev2_frame0_development/profiler.csv",
+        "dev2_frame0_development/determinism.json",
+        "dev2_frame0_development/decision.json",
+        "frozen_v3/no_execution_v3_ready.json",
+        "ledger/execution_v3_evidence_ledger_v2.json",
+        "ledger/future_validation_exclusion_ledger.json",
+        "future_certification/execution_v3_independent_coldstart_certification_plan_v2.json",
+        "profiler/per_frame.csv",
+        "profiler/aggregate.json",
+        "tests.json",
+        "validation_results.json",
+        "git_commits.json",
+        "technical_failures.jsonl",
+        "resource_usage.json",
+    )
+    integrity = _read_json(root / "preflight/integrity.json")
+    root_cause = _read_json(root / "failure_localization/root_cause.json")
+    source_audit = _read_json(
+        root / "failure_localization/source_geometric_multistart_contract_audit.json"
+    )
+    candidates = _read_json(root / "search_v2_candidates/candidate_hashes.json")
+    masked = _read_json(root / "development/masked_qold_decision.json")
+    refinement = _read_json(root / "refinement_regression/parity_summary.json")
+    selection = _read_json(root / "development/selection_decision.json")
+    lock = _read_json(root / "development/selected_candidate_lock.json")
+    dev2 = _read_json(root / "dev2_frame0_development/decision.json")
+    no_v3 = _read_json(root / "frozen_v3/no_execution_v3_ready.json")
+    ledger = _read_json(root / "ledger/execution_v3_evidence_ledger_v2.json")
+    validation = _read_json(root / "validation_results.json")
+    summary = _read_json(root / "final_summary.json")
+    profiler_rows = _read_csv(root / "profiler/per_frame.csv")
+    required_profiler_fields = {
+        "bootstrap_seed_count",
+        "bootstrap_solve_count",
+        "bootstrap_nfev",
+        "bootstrap_wall_sec",
+        "bootstrap_fk_calls",
+        "bootstrap_fk_time_sec",
+        "bootstrap_residual_evals",
+        "bootstrap_residual_eval_time_sec",
+        "bootstrap_hard_valid_candidates",
+        "candidate_b2_contributor",
+        "candidate_b2_candidate_probes",
+        "primary_nfev",
+        "secondary_nfev",
+        "interaction_eval_time_sec",
+        "candidate_screening_time_sec",
+        "primary_retention",
+        "fallback",
+        "total_wall_sec",
+        "bootstrap_internal_timing_status",
+    }
+    hashes = _frozen_hashes(root)
+    checks = {
+        "required_artifacts_present": all((root / path).is_file() for path in required_artifacts),
+        "branch_exact": _git("branch", "--show-current") == EXPECTED_BRANCH,
+        "start_head_is_ancestor": subprocess.run(
+            ["git", "merge-base", "--is-ancestor", START_HEAD, "HEAD"],
+            cwd=REPO,
+            check=False,
+        ).returncode
+        == 0,
+        "tracked_worktree_clean": not bool(_git("status", "--porcelain", "--untracked-files=no")),
+        "local_untracked": not bool(_git("ls-files", ".local")),
+        "frozen_upstream_pass": integrity["FROZEN_UPSTREAM_INTEGRITY"] == "PASS",
+        "failure_localization_pass": root_cause["status"] == "PASS",
+        "source_geometric_scope_all_fingers": source_audit["status"] == "PASS"
+        and source_audit["SOURCE_GEOMETRIC_MULTISTART_SCOPE"] == "ALL_FINGERS",
+        "candidate_set_frozen_before_development": candidates["frozen_before_development"]
+        and candidates["N_COLDSTART_SEARCH_V2_CANDIDATES"] == 1,
+        "masked_qold_development_pass": masked["status"] == "PASS"
+        and masked["determinism"]["DETERMINISM"] == "PASS",
+        "refinement_gate_failed": refinement["REFINEMENT_MODE_REGRESSION"] == "FAIL",
+        "selection_not_run_gate_closed": selection["status"] == "NOT_RUN_GATE_CLOSED"
+        and selection["SELECTED_COLDSTART_SEARCH_V2"] is None,
+        "candidate_lock_not_frozen": lock["status"] == "NOT_RUN_GATE_CLOSED"
+        and (root / "development/selected_candidate_lock.sha256")
+        .read_text(encoding="utf-8")
+        .strip()
+        == "NOT_FROZEN",
+        "dev2_not_run": dev2["DEV2_FRAME0_V3_DEVELOPMENT"] == "NOT_RUN"
+        and dev2["DEV2_FRAME0_V3_RUN_COUNT"] == 0
+        and dev2["DEV2_FRAME0_V3_OPTIMIZER_RUN_COUNT"] == 0,
+        "execution_v3_not_ready": no_v3["EXECUTION_V3_STATUS"] == "NO_EXECUTION_V3_READY"
+        and all(value is None for value in hashes.values()),
+        "future_validation_not_consumed": ledger["FUTURE_EXECUTION_V3_VALIDATION_EXCLUSION_COUNT"]
+        == 295
+        and summary["evidence_hygiene"]["CERTIFICATION_SPLIT_NEW_CONSUMPTION"] == 0
+        and summary["evidence_hygiene"]["HELDOUT_SPLIT_NEW_CONSUMPTION"] == 0
+        and summary["evidence_hygiene"]["DEV2_FULL_PRODUCTION_SOLVE_COUNT"] == 0,
+        "profiler_complete_and_honest": len(profiler_rows) == 60
+        and all(required_profiler_fields <= set(row) for row in profiler_rows)
+        and all(row["bootstrap_fk_calls"] == "" for row in profiler_rows)
+        and all(row["bootstrap_fk_time_sec"] == "" for row in profiler_rows)
+        and all(row["bootstrap_residual_eval_time_sec"] == "" for row in profiler_rows)
+        and all(
+            row["bootstrap_internal_timing_status"]
+            == "NOT_EMITTED_BY_EXISTING_GEOMETRIC_SOLVER_PRIMITIVE"
+            for row in profiler_rows
+        ),
+        "repository_validation_pass": validation["status"] == "PASS",
+        "terminal_summary_fail_closed": summary["EXECUTION_V3_SEARCH_V2_DEVELOPMENT_GATE"] == "FAIL"
+        and summary["EXECUTION_V3_STATUS"] == "NO_EXECUTION_V3_READY"
+        and summary["NEXT"] == "EXECUTION_V3_REFINEMENT_PARITY_REPAIR",
+    }
+    payload = {
+        "schema_version": "O5RD2G2CompletionAuditV1",
+        "status": "PASS" if all(checks.values()) else "FAIL",
+        "terminal": "CONTRACT_COMPLETE_FAIL_CLOSED_REFINEMENT_GATE",
+        "scientific_outcome": "NO_EXECUTION_V3_READY",
+        "checks": checks,
+        "required_artifact_count": len(required_artifacts),
+        "missing_artifacts": [path for path in required_artifacts if not (root / path).is_file()],
+        "scientific_state_changed": False,
+        "optimizer_rerun_count": 0,
+    }
+    _write_json(root / "completion_audit.json", payload)
+    if payload["status"] != "PASS":
+        failed = [name for name, passed in checks.items() if not passed]
+        raise RuntimeError(f"O5RD2G2_COMPLETION_AUDIT_FAIL:{failed}")
+    return payload
+
+
 def run_all(root: Path) -> dict[str, Any]:
     preflight(root)
     localize_coldstart_failures(root)
@@ -2831,6 +3052,7 @@ ACTIONS = {
     "validate-repository": validate_repository,
     "record-git": record_git,
     "summarize": summarize,
+    "completion-audit": completion_audit,
     "run-all": run_all,
 }
 
