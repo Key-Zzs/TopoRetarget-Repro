@@ -1172,6 +1172,9 @@ def _required_artifacts(root: Path) -> list[Path]:
         root / "analysis/recoverability_decision.json",
         root / "review/index.html",
         root / "review/manifest.json",
+        root / "tests.json",
+        root / "validation_results.json",
+        root / "git_commits.json",
     ]
 
 
@@ -1182,11 +1185,30 @@ def summarize(root: Path) -> dict[str, Any]:
     reward = (root / "ppo_authority/reward_contract.sha256").read_text(encoding="utf-8").strip()
     selection = read_json(root / "study_manifest/selection_receipt.json")
     decision = read_json(root / "analysis/recoverability_decision.json")
+    final_head = git("rev-parse", "HEAD")
+    commits = git("log", "--format=%H%x09%s", f"{D2H_HEAD}..{final_head}").splitlines()
+    write_json(
+        root / "git_commits.json",
+        {
+            "schema_version": "O5RD2IGitCommitsV1",
+            "start_head": D2H_HEAD,
+            "final_head": final_head,
+            "commits": [
+                {"sha": row.split("\t", 1)[0], "subject": row.split("\t", 1)[1]}
+                for row in commits
+                if "\t" in row
+            ],
+            "pushed": False,
+            "pr_created": False,
+        },
+    )
     missing = [
         str(path.relative_to(root)) for path in _required_artifacts(root) if not path.exists()
     ]
     safety = {
         "BRANCH": git("branch", "--show-current"),
+        "START_HEAD": D2H_HEAD,
+        "FINAL_HEAD": final_head,
         "SPARSE_VALIDATION_V4": "FAIL",
         "HISTORICAL_SPARSE_V4_RESULT_REWRITTEN": "NO",
         "SPARSEV4_ANALYSIS_RETARGET_OPTIMIZER_RUN_COUNT": 0,
@@ -1267,6 +1289,31 @@ def summarize(root: Path) -> dict[str, Any]:
     write_json(root / "ledger/evidence_role_ledger.json", ledger)
     write_json(root / "resource_usage.json", {"MAX_GPU_JOBS": 1, "gpu_jobs_run": 0})
     (root / "technical_failures.jsonl").touch(exist_ok=True)
+    audit_checks = {
+        "required_artifacts_present": not missing,
+        "historical_sparse_v4_remains_fail": summary["SPARSE_VALIDATION_V4"] == "FAIL",
+        "retarget_optimizer_run_count_zero": summary[
+            "SPARSEV4_ANALYSIS_RETARGET_OPTIMIZER_RUN_COUNT"
+        ]
+        == 0,
+        "ppo_reward_unchanged": summary["PPO_REWARD_CHANGED"] == "NO",
+        "q_old_not_ppo_reference": summary["Q_OLD_USED_AS_PPO_REFERENCE"] == "NO",
+        "gpu_jobs_zero_at_blocked_gate": summary["GPU_JOBS_RUN"] == 0,
+        "new_independent_retarget_data_zero": summary[
+            "PPO_STUDY_NEW_INDEPENDENT_RETARGET_DATA_CONSUMED"
+        ]
+        == 0,
+    }
+    write_json(
+        root / "completion_audit.json",
+        {
+            "schema_version": "O5RD2ICompletionAuditV1",
+            "status": "PASS" if all(audit_checks.values()) else "FAIL",
+            "checks": audit_checks,
+            "required_artifact_count": len(_required_artifacts(root)),
+            "missing": missing,
+        },
+    )
     return summary
 
 
