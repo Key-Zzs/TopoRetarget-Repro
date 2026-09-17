@@ -22,6 +22,9 @@ class SupportType(str, Enum):
     # current production resolver.
     SOURCE_RECOVERED_SUPPORT = "SOURCE_RECONSTRUCTED_SUPPORT"
     INFERRED_PLANAR_SUPPORT = "INFERRED_PLANAR_SUPPORT"
+    # Controlled experimental support.  This is intentionally not part of
+    # source-support resolution and must never be emitted by SupportResolutionV1.
+    STATIC_RECOVERABILITY_PLANAR_PROXY = "STATIC_RECOVERABILITY_PLANAR_PROXY"
     HAND_SUPPORTED_ONLY = "HAND_SUPPORTED_ONLY"
     UNSUPPORTED = "UNSUPPORTED"
     UNRESOLVED = "UNRESOLVED"
@@ -84,7 +87,10 @@ class SupportCollisionContractV1:
                 object_support_collision=True,
                 hand_support_collision=True,
             )
-        if selected is SupportType.INFERRED_PLANAR_SUPPORT:
+        if selected in {
+            SupportType.INFERRED_PLANAR_SUPPORT,
+            SupportType.STATIC_RECOVERABILITY_PLANAR_PROXY,
+        }:
             return SupportCollisionPolicyV1(
                 schema_version=self.schema_version,
                 support_type=selected,

@@ -484,7 +484,10 @@ def _initial_trace_snapshot(
                 "hand_object_pair_force_valid": torch.zeros(count, dtype=torch.bool, device=device),
             }
         )
-    if getattr(env.cfg, "stage16_support_mode", None) == "finite_inferred_table_proxy_v1":
+    if getattr(env.cfg, "stage16_support_mode", None) in {
+        "finite_inferred_table_proxy_v1",
+        "static_recoverability_planar_proxy_v1",
+    }:
         clip_index = env.reference_bank.clip_ids.index(env.cfg.stage16d_fixed_clip)
         # Object specs are (clip_id, USD prim name, scene key, ...).  Contact
         # sensors are keyed by the scene key (for example ``object_external``),

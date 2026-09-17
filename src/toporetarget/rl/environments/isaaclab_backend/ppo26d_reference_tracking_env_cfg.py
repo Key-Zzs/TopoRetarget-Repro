@@ -52,6 +52,9 @@ class IsaacPPO26DReferenceTrackingEnvCfg(IsaacPhysicsConsistentRetargetingEnvCfg
     ppo26d_rse_adaptive_termination = False
     ppo26d_rse_distance_scope_m = 0.20
     ppo26d_rse_kappa_min = 0.50
+    # Adapter-only reset semantics for a one-state static reference.  This
+    # does not alter PPO, reward, RSE math, or any trajectory authority.
+    ppo26d_static_reference_adapter = False
     ppo26d_hardening_v2_enabled = False
     ppo26d_event_rsi_uniform_alpha = 0.50
     ppo26d_event_rsi_interaction_start: int | None = None
@@ -311,7 +314,16 @@ def configure_stage16d_grouped_multiplicative_rse(
         and not cfg.ppo26d_rsi_enabled
         and cfg.ppo26d_full_horizon_evaluation
     )
-    if not training_uniform_rsi and not frame0_full_horizon_evaluation:
+    static_single_reference = (
+        cfg.reset_reference_index == "frame0"
+        and cfg.ppo26d_static_reference_adapter
+        and not cfg.ppo26d_rsi_enabled
+    )
+    if (
+        not training_uniform_rsi
+        and not frame0_full_horizon_evaluation
+        and not static_single_reference
+    ):
         raise ValueError("GROUPED_MULTIPLICATIVE_RSE_REQUIRES_UNIFORM_RSI")
     if distance_scope_m != 0.20 or kappa_min != 0.50:
         raise ValueError("GROUPED_MULTIPLICATIVE_RSE_V1_GLOBAL_SCOPE_DRIFT")

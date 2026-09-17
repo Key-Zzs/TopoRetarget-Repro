@@ -31,6 +31,10 @@ from .source_evidence import (
     evidence_from_sequence_directory,
     normalize_source_evidence,
 )
+from .static_recoverability_proxy import (
+    StaticRecoverabilitySupportProxyParameterV1,
+    build_static_recoverability_support_proxy,
+)
 from .types import (
     FinitePlanarSupportProxy,
     GeometryValidation,
@@ -91,4 +95,6 @@ __all__ = [
     "validate_hand_table_geometry",
     "validate_object_table_geometry",
     "write_finite_planar_support_usda",
+    "StaticRecoverabilitySupportProxyParameterV1",
+    "build_static_recoverability_support_proxy",
 ]

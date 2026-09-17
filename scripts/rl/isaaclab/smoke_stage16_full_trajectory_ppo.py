@@ -90,6 +90,7 @@ def _make_table_env(
     object_mesh_root: Path | None = None,
     continuous_virtual_wrist_angles: bool = False,
     source_controller_admission_v2: bool = False,
+    static_reference_adapter: bool = False,
     hardening_v2_generalization: bool = False,
     hardening_v2_runtime_events: Any = None,
 ) -> Any:
@@ -122,6 +123,19 @@ def _make_table_env(
     ):
         raise ValueError("INDEPENDENT_TABLE_ENV_REQUIRES_REFERENCE_OBJECT_SUPPORT_PROXY_AND_ASSET")
     independent = reference_path is not None
+    support_type = "INFERRED_PLANAR_SUPPORT"
+    support_mode = "finite_inferred_table_proxy_v1"
+    if independent and support_proxy_path is not None:
+        proxy_record = json.loads(support_proxy_path.resolve().read_text(encoding="utf-8"))
+        support_type = str(proxy_record.get("support_type", support_type))
+        if support_type == "STATIC_RECOVERABILITY_PLANAR_PROXY":
+            support_mode = "static_recoverability_planar_proxy_v1"
+        elif support_type != "INFERRED_PLANAR_SUPPORT":
+            raise ValueError(f"INDEPENDENT_TABLE_SUPPORT_TYPE_INVALID:{support_type}")
+    if static_reference_adapter and (
+        not independent or support_type != "STATIC_RECOVERABILITY_PLANAR_PROXY"
+    ):
+        raise ValueError("STATIC_REFERENCE_ADAPTER_REQUIRES_STATIC_STUDY_PROXY")
 
     def support_cfg(
         support_clip: str,
@@ -239,7 +253,7 @@ def _make_table_env(
                     support_prim_paths=tuple(
                         f"/World/envs/env_{index}/{support_name}" for index in range(self.num_envs)
                     ),
-                    support_type="INFERRED_PLANAR_SUPPORT",
+                    support_type=support_type,
                 )
                 for support_name in support_prim_names
             ]
@@ -273,10 +287,12 @@ def _make_table_env(
             report = super().contract_report()
             physical = report["gravity_friction_curriculum"]
             assert isinstance(physical, dict)
-            physical["support"] = "finite_inferred_table_proxy_v1"
+            physical["support"] = support_mode
             physical["table_actor_active"] = True
             physical["mid_trajectory_rsi"] = (
-                (
+                "static_single_reference_index_v1"
+                if static_reference_adapter
+                else (
                     "uniform_plus_episodev1_contact_through_release_v1"
                     if hardening_v2_generalization
                     else "uniform_runtime_reference_valid_index_domain"
@@ -284,10 +300,14 @@ def _make_table_env(
                 if training_rsi
                 else "disabled"
             )
-            physical["table_resting_reset_semantics"] = "TABLE_RESTING_RESET_SEMANTICS_V1"
+            physical["table_resting_reset_semantics"] = (
+                "STATIC_RETARGET_EXACT_RESET_V1"
+                if static_reference_adapter
+                else "TABLE_RESTING_RESET_SEMANTICS_V1"
+            )
             physical["support_collision_contract"] = {
                 "schema_version": "SupportCollisionContractV1",
-                "support_type": "INFERRED_PLANAR_SUPPORT",
+                "support_type": support_type,
                 "object_support_collision": True,
                 "hand_support_collision": False,
                 "implementation": "pairwise_collision_filtering",
@@ -348,6 +368,13 @@ def _make_table_env(
             reference_path=reference_path,
             object_usd_path=object_usd_path,
         )
+    if static_reference_adapter:
+        cfg.reset_reference_index = "frame0"
+        cfg.ppo26d_rsi_enabled = False
+        cfg.ppo26d_static_reference_adapter = True
+        cfg.curriculum_reference_indices = None
+        cfg.curriculum_reference_probabilities = None
+        cfg.curriculum_phase = "static_single_reference_v1"
     selected_mode = ContactRewardMode.AGGREGATE_V3 if mode is None else mode
     if selected_mode is ContactRewardMode.AGGREGATE_V3:
         default_contact_contract = (
@@ -433,8 +460,10 @@ def _make_table_env(
         ),
     )
     cfg.stage16d_fixed_clip = clip
-    cfg.evaluation_reset_reference_indices = None if training_rsi else (start_index,) * num_envs
-    cfg.stage16_support_mode = "finite_inferred_table_proxy_v1"
+    cfg.evaluation_reset_reference_indices = (
+        None if training_rsi and not static_reference_adapter else (start_index,) * num_envs
+    )
+    cfg.stage16_support_mode = support_mode
     cfg.stage16_external_guidance = False
     return TableSupportedEnv(cfg)
 
