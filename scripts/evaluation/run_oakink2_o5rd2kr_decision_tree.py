@@ -1359,8 +1359,13 @@ def _v4_evaluate_state(
     ordinal: int,
     qpos: np.ndarray,
     base: np.ndarray,
+    *,
+    previous_q: np.ndarray | None = None,
+    previous_base: np.ndarray | None = None,
 ) -> tuple[Any, dict[str, Any], dict[str, Any]]:
-    binding, context = runtime.bind_context(ordinal, previous_base=None, previous_qpos=None)
+    binding, context = runtime.bind_context(
+        ordinal, previous_base=previous_base, previous_qpos=previous_q
+    )
     values, evaluation, actual = d2g2._measurement_and_evaluation(
         runtime,
         ordinal,
@@ -1368,8 +1373,8 @@ def _v4_evaluate_state(
         base,
         binding=binding,
         context=context,
-        previous_q=None,
-        previous_base=None,
+        previous_q=previous_q,
+        previous_base=previous_base,
     )
     return values, evaluation, actual
 
@@ -1382,8 +1387,18 @@ def _v4_phase(
     block: tuple[int, ...],
     candidate: ColdStartSearchV4Candidate,
     label: str,
+    *,
+    previous_q: np.ndarray | None = None,
+    previous_base: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, Any, dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
-    values, evaluation, actual = _v4_evaluate_state(runtime, ordinal, qpos, base)
+    values, evaluation, actual = _v4_evaluate_state(
+        runtime,
+        ordinal,
+        qpos,
+        base,
+        previous_q=previous_q,
+        previous_base=previous_base,
+    )
     retained = d2g._screened(f"{label}:input", values, evaluation, 0, True)
     retained_state = (qpos, base, values, evaluation, actual)
     phase_rows: list[dict[str, Any]] = []
@@ -1401,8 +1416,8 @@ def _v4_phase(
             ordinal,
             q_seed=qpos,
             base_seed=base,
-            previous_q=None,
-            previous_base=None,
+            previous_q=previous_q,
+            previous_base=previous_base,
             block=block,
             phase="primary",
             maxiter=candidate.selected_primary_maxiter,
@@ -1452,8 +1467,8 @@ def _v4_phase(
             ordinal,
             q_seed=retained_q,
             base_seed=retained_base,
-            previous_q=None,
-            previous_base=None,
+            previous_q=previous_q,
+            previous_base=previous_base,
             block=block,
             phase="secondary",
             maxiter=candidate.secondary_polish_maxiter,
@@ -1502,13 +1517,22 @@ def search_cold_start_v4_from_v3(
     candidate: ColdStartSearchV4Candidate,
     *,
     prefix_authority: str = "IMMUTABLE_STORED_SPARSE_V4_RUN_1",
+    previous_q: np.ndarray | None = None,
+    previous_base: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
     """Apply a frozen V4 contributor schedule to an immutable V3 prefix."""
 
     candidate.validate()
     qpos = np.asarray(q_v3, dtype=np.float64).copy()
     base = np.asarray(base_v3, dtype=np.float64).copy()
-    values, evaluation, actual = _v4_evaluate_state(runtime, ordinal, qpos, base)
+    values, evaluation, actual = _v4_evaluate_state(
+        runtime,
+        ordinal,
+        qpos,
+        base,
+        previous_q=previous_q,
+        previous_base=previous_base,
+    )
     blocks = asset_derived_dof_blocks(runtime.model.dof_names)
     initial_scores = contributor_scores(d2g._interaction_per_keypoint(runtime, ordinal, qpos, base))
     initial_ranking = rank_contributors(initial_scores)
@@ -1519,7 +1543,15 @@ def search_cold_start_v4_from_v3(
         used = list(initial_ranking[: candidate.top_k])
         block = tuple(index for finger in used for index in blocks[finger])
         qpos, base, values, evaluation, actual, phase_rows = _v4_phase(
-            runtime, ordinal, qpos, base, block, candidate, "joint_top2"
+            runtime,
+            ordinal,
+            qpos,
+            base,
+            block,
+            candidate,
+            "joint_top2",
+            previous_q=previous_q,
+            previous_base=previous_base,
         )
         stages.append({"contributors": used, "block": list(block), "phases": phase_rows})
     else:
@@ -1543,7 +1575,12 @@ def search_cold_start_v4_from_v3(
             )
             probed_base = runtime.base_for_q(ordinal, probed_q)
             probed_values, probed_evaluation, probed_actual = _v4_evaluate_state(
-                runtime, ordinal, probed_q, probed_base
+                runtime,
+                ordinal,
+                probed_q,
+                probed_base,
+                previous_q=previous_q,
+                previous_base=previous_base,
             )
             current = d2g._screened(f"step{step}:input", values, evaluation, 0, True)
             probed = d2g._screened(
@@ -1559,7 +1596,15 @@ def search_cold_start_v4_from_v3(
                     probed_actual,
                 )
             qpos, base, values, evaluation, actual, phase_rows = _v4_phase(
-                runtime, ordinal, qpos, base, block, candidate, f"step{step}:{finger}"
+                runtime,
+                ordinal,
+                qpos,
+                base,
+                block,
+                candidate,
+                f"step{step}:{finger}",
+                previous_q=previous_q,
+                previous_base=previous_base,
             )
             stages.append(
                 {
@@ -1579,10 +1624,13 @@ def search_cold_start_v4_from_v3(
         "candidate": candidate.name,
         "ordinal": ordinal,
         "source_frame_local": int(runtime.graph.frame_indices[ordinal]),
-        "runtime_step_index": 0,
+        "runtime_step_index": int(runtime.current_runtime_step),
         "old_production_q": "ABSENT",
-        "previous_accepted_state": "ABSENT",
+        "previous_accepted_state": (
+            "ABSENT" if int(runtime.current_runtime_step) == 0 else "PRESENT"
+        ),
         "q_old_synthesized": False,
+        "q_old_access_count": 0,
         "failed_stage7_terminal_used_as_q_old": False,
         "execution_v3_prefix": prefix_authority,
         "initial_contributor_scores": initial_scores,
@@ -1981,6 +2029,8 @@ def _run_fresh_v4_frame(
         base_v3,
         candidate,
         prefix_authority="LIVE_FROZEN_EXECUTION_V3_PREFIX",
+        previous_q=previous_q,
+        previous_base=previous_base,
     )
     receipt["runtime_step_index"] = runtime_step
     receipt["previous_accepted_state"] = "ABSENT" if runtime_step == 0 else "PRESENT"

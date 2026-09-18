@@ -7,10 +7,83 @@ cold-start prefix.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
+import numpy as np
+
 V4Mode = Literal["SEQUENTIAL", "JOINT_BLOCK", "ADAPTIVE_SEQUENTIAL"]
+
+
+@dataclass(frozen=True)
+class ExecutionV4AcceptedRuntimeState:
+    """Canonical accepted-state carrier between cold-start sequence frames."""
+
+    source_ordinal: int
+    source_frame: int
+    qpos: tuple[float, ...]
+    base_pose_scene: tuple[tuple[float, ...], ...]
+    object_id: str
+    search_method: str = "V4_A_TOP2_SEQUENTIAL"
+    schema_version: str = "ExecutionV4AcceptedRuntimeStateV1"
+
+    @classmethod
+    def from_arrays(
+        cls,
+        *,
+        source_ordinal: int,
+        source_frame: int,
+        qpos: np.ndarray,
+        base_pose_scene: np.ndarray,
+        object_id: str,
+    ) -> ExecutionV4AcceptedRuntimeState:
+        q = np.asarray(qpos, dtype=np.float64)
+        base = np.asarray(base_pose_scene, dtype=np.float64)
+        if q.ndim != 1 or base.shape != (4, 4):
+            raise ValueError("ExecutionV4 accepted state has invalid q/base shape")
+        if not np.all(np.isfinite(q)) or not np.all(np.isfinite(base)):
+            raise ValueError("ExecutionV4 accepted state must be finite")
+        return cls(
+            source_ordinal=int(source_ordinal),
+            source_frame=int(source_frame),
+            qpos=tuple(float(value) for value in q),
+            base_pose_scene=tuple(tuple(float(value) for value in row) for row in base),
+            object_id=str(object_id),
+        )
+
+    def canonical_payload(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @property
+    def sha256(self) -> str:
+        serialized = json.dumps(
+            self.canonical_payload(), sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
+        return hashlib.sha256(serialized.encode()).hexdigest()
+
+    def arrays(self) -> tuple[np.ndarray, np.ndarray]:
+        return (
+            np.asarray(self.qpos, dtype=np.float64),
+            np.asarray(self.base_pose_scene, dtype=np.float64),
+        )
+
+    @classmethod
+    def from_payload(cls, value: dict[str, Any]) -> ExecutionV4AcceptedRuntimeState:
+        if value.get("schema_version") != "ExecutionV4AcceptedRuntimeStateV1":
+            raise ValueError("unsupported ExecutionV4 accepted-state schema")
+        return cls(
+            source_ordinal=int(value["source_ordinal"]),
+            source_frame=int(value["source_frame"]),
+            qpos=tuple(float(item) for item in value["qpos"]),
+            base_pose_scene=tuple(
+                tuple(float(item) for item in row) for row in value["base_pose_scene"]
+            ),
+            object_id=str(value["object_id"]),
+            search_method=str(value["search_method"]),
+            schema_version=str(value["schema_version"]),
+        )
 
 
 @dataclass(frozen=True)
@@ -71,5 +144,6 @@ def default_cold_start_search_v4_candidates() -> tuple[ColdStartSearchV4Candidat
 
 __all__ = [
     "ColdStartSearchV4Candidate",
+    "ExecutionV4AcceptedRuntimeState",
     "default_cold_start_search_v4_candidates",
 ]
