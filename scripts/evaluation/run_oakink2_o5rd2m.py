@@ -648,6 +648,10 @@ def freeze_dev2_run(root: Path) -> dict[str, Any]:
     }
     manifest_sha = freeze_json(manifest_path, manifest)
     atomic_write_text(root / "run_authority/run_uuid.txt", run_uuid + "\n")
+    if not (root / "technical_failures.jsonl").exists():
+        atomic_write_text(root / "technical_failures.jsonl", "")
+    if not (root / "solver/frame_results.jsonl").exists():
+        atomic_write_text(root / "solver/frame_results.jsonl", "")
     manifest["DEV2_RUN_MANIFEST_SHA256"] = manifest_sha
     return manifest
 
@@ -830,6 +834,30 @@ def _profiler_row(receipt: dict[str, Any], ordinal: int, elapsed: float) -> dict
     }
 
 
+def _write_solver_projection_csvs(root: Path, rows: list[dict[str, Any]]) -> None:
+    write_csv(
+        root / "solver/interaction_metrics.csv",
+        rows,
+        ["ordinal", "source_frame", "status", "E_IM", "finite"],
+    )
+    write_csv(
+        root / "solver/hard_validity.csv",
+        rows,
+        ["ordinal", "source_frame", "hard_validity", "finite", "q_old_access_count"],
+    )
+    write_csv(
+        root / "solver/contributor_sequence.csv",
+        rows,
+        [
+            "ordinal",
+            "source_frame",
+            "selected_contributors",
+            "selected_candidate",
+            "context_binding_hash",
+        ],
+    )
+
+
 def _classify_failure(exc: Exception, receipt: dict[str, Any] | None) -> tuple[str, str]:
     text = f"{type(exc).__name__}:{exc}"
     lower = text.lower()
@@ -978,6 +1006,7 @@ def _execute_dev2(root: Path, *, resume: bool) -> dict[str, Any]:
     if not resume and start_ordinal:
         raise RuntimeError("RUN_DEV2_FULL_REJECTED:PREEXISTING_ACCEPTED_CHECKPOINT")
     previous = None if not accepted_states else accepted_states[-1]
+    _write_partial_trajectory(root, rows, q_states, base_states)
     runtime_started = time.perf_counter()
     load_started = time.perf_counter()
     runtime = _build_dev2_runtime()
@@ -1089,6 +1118,7 @@ def _execute_dev2(root: Path, *, resume: bool) -> dict[str, Any]:
             profiler_rows.append(profiler)
             previous = state
             write_csv(root / "solver/per_frame.csv", rows)
+            _write_solver_projection_csvs(root, rows)
             write_csv(root / "profiler/per_frame.csv", profiler_rows)
             with (root / "solver/frame_results.jsonl").open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps(row, sort_keys=True) + "\n")
@@ -1139,6 +1169,32 @@ def _execute_dev2(root: Path, *, resume: bool) -> dict[str, Any]:
     attempted = len(rows) + (1 if failure is not None else 0)
     completed = len(rows)
     coverage = _coverage_payload(rows)
+    if not rows:
+        write_csv(
+            root / "solver/per_frame.csv",
+            [],
+            [
+                "ordinal",
+                "source_frame",
+                "status",
+                "E_IM",
+                "hard_validity",
+                "finite",
+                "q_old_access_count",
+                "previous_state_hash",
+                "current_state_hash",
+                "context_binding_hash",
+                "selected_contributors",
+                "selected_candidate",
+                "wall_time",
+            ],
+        )
+        _write_solver_projection_csvs(root, [])
+        write_csv(
+            root / "profiler/per_frame.csv",
+            [],
+            list(_profiler_row({}, 0, 0.0)),
+        )
     atomic_write_json(root / "audits/frame_coverage.json", coverage)
     atomic_write_json(
         root / "audits/qold_access.json",
@@ -1195,6 +1251,7 @@ def _execute_dev2(root: Path, *, resume: bool) -> dict[str, Any]:
             },
         }
         atomic_write_json(root / "solver/result.json", result)
+        _write_trajectory_not_run(root, "INCOMPLETE_TRAJECTORY")
         _write_semantic_not_run(root, "INCOMPLETE_TRAJECTORY")
         _write_viewer_not_run(root, "INCOMPLETE_TRAJECTORY")
         return result
@@ -1721,6 +1778,13 @@ def _write_semantic_not_run(root: Path, reason: str) -> None:
     )
 
 
+def _write_trajectory_not_run(root: Path, reason: str) -> None:
+    atomic_write_json(
+        root / "trajectory/not_run.json",
+        {"schema_version": "DEV2TrajectoryNotRunV1", "status": "NOT_RUN", "reason": reason},
+    )
+
+
 def _write_viewer_not_run(root: Path, reason: str) -> None:
     atomic_write_json(
         root / "viewer/not_run.json",
@@ -1743,7 +1807,145 @@ def _write_blocked_terminal(root: Path, machine: str) -> None:
     )
 
 
+def _audit_method_integrity_postrun(root: Path) -> dict[str, Any]:
+    manifest_path = root / "run_authority/full_run_manifest.json"
+    if not manifest_path.is_file():
+        value = {
+            "schema_version": "DEV2MethodIntegrityPostrunV1",
+            "status": "NOT_RUN",
+            "reason": "RUN_MANIFEST_NOT_FROZEN",
+        }
+    else:
+        manifest = read_json(manifest_path)
+        expected = manifest.get("method_hashes", {})
+        observed = _method_hashes()
+        mismatches = {
+            name: {"expected": expected.get(name), "observed": observed.get(name)}
+            for name in sorted(set(expected) | set(observed))
+            if expected.get(name) != observed.get(name)
+        }
+        value = {
+            "schema_version": "DEV2MethodIntegrityPostrunV1",
+            "status": "PASS" if not mismatches else "FAIL",
+            "manifest_sha256": sha256_file(manifest_path),
+            "expected": expected,
+            "observed": observed,
+            "mismatches": mismatches,
+            "scientific_payload_unchanged": not mismatches,
+        }
+    atomic_write_json(root / "audits/method_integrity_postrun.json", value)
+    return value
+
+
+def validate_delivery(root: Path) -> dict[str, Any]:
+    commands = [
+        ("ruff_check", ["ruff", "check", "."]),
+        ("ruff_format_check", ["ruff", "format", "--check", "."]),
+        ("mypy_src", ["mypy", "src"]),
+        ("pytest", ["pytest", "-q"]),
+        ("paper_fidelity", [sys.executable, "scripts/check_paper_fidelity.py"]),
+        ("git_diff_check", ["git", "diff", "--check"]),
+    ]
+    results: dict[str, Any] = {}
+    for name, command in commands:
+        started = time.perf_counter()
+        completed = subprocess.run(command, cwd=REPO, text=True, capture_output=True, check=False)
+        results[name] = {
+            "command": command,
+            "returncode": completed.returncode,
+            "status": "PASS" if completed.returncode == 0 else "FAIL",
+            "wall_time_sec": time.perf_counter() - started,
+            "stdout": completed.stdout[-100_000:],
+            "stderr": completed.stderr[-100_000:],
+        }
+        atomic_write_json(
+            root / "validation_results.json",
+            {
+                "schema_version": "DEV2DeliveryValidationV1",
+                "status": "RUNNING",
+                "results": results,
+            },
+        )
+    status = "PASS" if all(row["status"] == "PASS" for row in results.values()) else "FAIL"
+    value = {
+        "schema_version": "DEV2DeliveryValidationV1",
+        "status": status,
+        "results": results,
+    }
+    atomic_write_json(root / "validation_results.json", value)
+    atomic_write_json(
+        root / "tests.json",
+        {
+            "schema_version": "DEV2TestsV1",
+            "status": results["pytest"]["status"],
+            "pytest": results["pytest"],
+        },
+    )
+    atomic_write_json(
+        root / "git_commits.json",
+        {
+            "schema_version": "DEV2GitCommitsV1",
+            "status": "RECORDED",
+            "branch": git("branch", "--show-current"),
+            "head": git("rev-parse", "HEAD"),
+            "commits_since_d2l": git(
+                "log", "--format=%H%x09%s", f"{D2L_HEAD}..HEAD", "--"
+            ).splitlines(),
+            "status_short": git("status", "--short"),
+        },
+    )
+    return value
+
+
 def summarize(root: Path) -> dict[str, Any]:
+    if not (root / "technical_failures.jsonl").exists():
+        atomic_write_text(root / "technical_failures.jsonl", "")
+    if (
+        not (root / "semantic_v1/result.json").is_file()
+        and not (root / "semantic_v1/not_run.json").is_file()
+    ):
+        _write_semantic_not_run(root, "TERMINAL_STATE_BEFORE_SEMANTIC_V1")
+    if (
+        not (root / "viewer/receipt.json").is_file()
+        and not (root / "viewer/not_run.json").is_file()
+    ):
+        _write_viewer_not_run(root, "TERMINAL_STATE_BEFORE_VIEWER")
+    if (
+        not (root / "trajectory/trajectory.npz").is_file()
+        and not (root / "trajectory/not_run.json").is_file()
+    ):
+        _write_trajectory_not_run(root, "TERMINAL_STATE_BEFORE_FULL_TRAJECTORY")
+    if not (root / "validation_results.json").is_file():
+        atomic_write_json(
+            root / "validation_results.json",
+            {
+                "schema_version": "DEV2DeliveryValidationV1",
+                "status": "NOT_RUN",
+                "reason": "VALIDATE_DELIVERY_NOT_RUN",
+            },
+        )
+    if not (root / "tests.json").is_file():
+        atomic_write_json(
+            root / "tests.json",
+            {
+                "schema_version": "DEV2TestsV1",
+                "status": "NOT_RUN",
+                "reason": "VALIDATE_DELIVERY_NOT_RUN",
+            },
+        )
+    atomic_write_json(
+        root / "git_commits.json",
+        {
+            "schema_version": "DEV2GitCommitsV1",
+            "status": "RECORDED",
+            "branch": git("branch", "--show-current"),
+            "head": git("rev-parse", "HEAD"),
+            "commits_since_d2l": git(
+                "log", "--format=%H%x09%s", f"{D2L_HEAD}..HEAD", "--"
+            ).splitlines(),
+            "status_short": git("status", "--short"),
+        },
+    )
     integrity = (
         read_json(root / "preflight/integrity.json")
         if (root / "preflight/integrity.json").is_file()
@@ -1781,11 +1983,15 @@ def summarize(root: Path) -> dict[str, Any]:
         if (root / "audits/special_case_audit.json").is_file()
         else {}
     )
+    method_integrity = _audit_method_integrity_postrun(root)
     numerical_fail = solver.get("status") == "SCIENTIFIC_FAIL"
     complete = int(coverage.get("COMPLETED_FRAMES", 0)) == EXPECTED_FRAMES
     semantic_result = semantic.get("DEV2_SEMANTIC_V1_RESULT", "NOT_RUN")
     viewer_pass = viewer.get("status") == "PASS" and viewer.get("VIEWER_REGRESSION") == "PASS"
-    if integrity.get("status") != "PASS":
+    if method_integrity.get("status") == "FAIL":
+        machine = "BLOCKED_METHOD_INTEGRITY"
+        next_step = "EXECUTION_V4_FROZEN_AUTHORITY_INTEGRITY_REPAIR"
+    elif integrity.get("status") != "PASS":
         machine = "BLOCKED_UPSTREAM_INTEGRITY"
         next_step = "EXECUTION_V4_FROZEN_AUTHORITY_INTEGRITY_REPAIR"
     elif identity.get("status") != "PASS":
@@ -1890,9 +2096,9 @@ def summarize(root: Path) -> dict[str, Any]:
         "PR_CREATED": "NO",
         ".local_TRACKED": "NO",
         "GUIDANCE_WORKTREE_MODIFIED": "NO",
+        "METHOD_INTEGRITY_POSTRUN": method_integrity.get("status"),
     }
     atomic_write_json(root / "final_summary.json", summary)
-    atomic_write_json(root / "completion_audit.json", _completion_audit(root, summary))
     handoff = _handoff_markdown(root, summary)
     atomic_write_text(root / "final_summary.md", handoff)
     atomic_write_text(root / "handoff.md", handoff)
@@ -1904,6 +2110,7 @@ def summarize(root: Path) -> dict[str, Any]:
             "unrelated_processes_killed": 0,
         },
     )
+    atomic_write_json(root / "completion_audit.json", _completion_audit(root, summary))
     return summary
 
 
@@ -1920,20 +2127,55 @@ def _completion_audit(root: Path, summary: dict[str, Any]) -> dict[str, Any]:
         "run_authority/technical_resume_policy.json",
         "run_authority/run_uuid.txt",
         "solver/result.json",
+        "solver/per_frame.csv",
+        "solver/frame_results.jsonl",
+        "solver/interaction_metrics.csv",
+        "solver/hard_validity.csv",
+        "solver/runtime_state_chain.csv",
+        "solver/contributor_sequence.csv",
+        "profiler/per_frame.csv",
         "profiler/aggregate.json",
         "timing/stage_timing.json",
+        "timing/frame_timing.csv",
         "audits/qold_access.json",
         "audits/special_case_audit.json",
         "audits/runtime_chain_integrity.json",
         "audits/frame_coverage.json",
+        "audits/method_integrity_postrun.json",
+        "technical_failures.jsonl",
+        "resource_usage.json",
+        "validation_results.json",
+        "tests.json",
+        "git_commits.json",
         "final_summary.json",
+        "final_summary.md",
+        "handoff.md",
     ]
+    required.append(
+        "semantic_v1/result.json"
+        if (root / "semantic_v1/result.json").is_file()
+        else "semantic_v1/not_run.json"
+    )
+    required.append(
+        "viewer/receipt.json" if (root / "viewer/receipt.json").is_file() else "viewer/not_run.json"
+    )
+    if (root / "trajectory/trajectory.npz").is_file():
+        required.extend(["trajectory/trajectory.npz", "trajectory/trajectory.sha256"])
+    else:
+        required.extend(["trajectory/trajectory_partial.npz", "trajectory/not_run.json"])
     missing = [name for name in required if not (root / name).exists()]
+    checkpoint_count = len(list((root / "checkpoints").glob("frame_*")))
+    expected_checkpoints = int(summary.get("COMPLETED_FRAMES", 0))
+    if checkpoint_count != expected_checkpoints:
+        missing.append(
+            f"checkpoint_count_expected_{expected_checkpoints}_observed_{checkpoint_count}"
+        )
     return {
         "schema_version": "OakInk2O5RD2MCompletionAuditV1",
         "status": "PASS" if not missing else "FAIL",
         "required_artifacts": required,
         "missing": missing,
+        "checkpoint_count": checkpoint_count,
         "DEV2_MACHINE": summary["DEV2_MACHINE"],
     }
 
@@ -2056,6 +2298,7 @@ ACTIONS = {
     "run-semantic-v1": run_semantic_v1,
     "render-dev2-viewer": render_dev2_viewer,
     "audit-dev2-special-cases": audit_dev2_special_cases,
+    "validate-delivery": validate_delivery,
     "summarize": summarize,
     "run-all": run_all,
 }

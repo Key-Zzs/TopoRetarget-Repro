@@ -160,3 +160,62 @@ def test_special_case_audit_scans_only_scientific_call_graph(tmp_path: Path) -> 
     assert result["DEV2_EPISODE_ID_BRANCH"] == "NO"
     assert result["DEV2_OBJECT_C11001_BRANCH"] == "NO"
     assert result["DEV2_FRAME_10704_BRANCH"] == "NO"
+
+
+def test_resume_rejects_different_run_uuid(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    method_hashes = {"frozen": "exact"}
+    manifest = {
+        "schema_version": "DEV2FullGeometricRunManifestV1",
+        "status": "FROZEN_BEFORE_SOLVE",
+        "RUN_UUID": "original-run",
+        "method_hashes": method_hashes,
+    }
+    study.atomic_write_json(tmp_path / "run_authority/full_run_manifest.json", manifest)
+    study.atomic_write_text(
+        tmp_path / "run_authority/full_run_manifest.sha256",
+        study.sha256_file(tmp_path / "run_authority/full_run_manifest.json") + "\n",
+    )
+    study.atomic_write_json(
+        tmp_path / "run_authority/run_state.json",
+        {
+            "SCIENTIFIC_RUN_COUNT": 1,
+            "TECHNICAL_RESUME_COUNT": 0,
+            "status": "TECHNICAL_INTERRUPTION",
+        },
+    )
+    study.atomic_write_json(
+        tmp_path / "technical_interruption.json",
+        {
+            "resume_allowed": True,
+            "RUN_UUID": "different-run",
+            "manifest_sha256": study.sha256_file(tmp_path / "run_authority/full_run_manifest.json"),
+        },
+    )
+    monkeypatch.setattr(study, "_method_hashes", lambda: method_hashes)
+    with pytest.raises(RuntimeError, match="RUN_AUTHORITY_MISMATCH"):
+        study.resume_dev2_full(tmp_path)
+
+
+def test_full_trajectory_rejects_239_frames(tmp_path: Path) -> None:
+    study.atomic_write_json(
+        tmp_path / "solver/result.json", {"status": "PASS", "COMPLETED_FRAMES": 239}
+    )
+    with pytest.raises(RuntimeError, match="INCOMPLETE"):
+        study.finalize_dev2_trajectory(tmp_path)
+
+
+def test_sequential_state_and_viewer_role_are_fail_closed() -> None:
+    execute_source = inspect.getsource(study._execute_dev2)
+    assert "previous = None if not accepted_states else accepted_states[-1]" in execute_source
+    assert 'previous_accepted_state"] = "ABSENT" if ordinal == 0 else "PRESENT"' in execute_source
+    assert "previous_q, previous_base" in execute_source
+    viewer_source = inspect.getsource(study.render_dev2_viewer)
+    assert 'if semantic["DEV2_SEMANTIC_V1_RESULT"] == "PASS"' in viewer_source
+    assert "MACHINE_PASS_HUMAN_REVIEW" in viewer_source
+
+
+def test_required_solver_projection_artifacts_exist_when_empty(tmp_path: Path) -> None:
+    study._write_solver_projection_csvs(tmp_path, [])
+    assert (tmp_path / "solver/interaction_metrics.csv").is_file()
+    assert (tmp_path / "solver/hard_validity.csv").is_file()
+    assert (tmp_path / "solver/contributor_sequence.csv").is_file()
