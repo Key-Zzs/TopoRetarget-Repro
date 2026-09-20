@@ -352,7 +352,7 @@ def _method_hashes() -> dict[str, str]:
         }
     )
     values["source_interaction_graph_artifact"] = d2g.interaction_artifact_hash(GRAPH_PATH)
-    values["dev2_canonical_artifact"] = sha256_path(CANONICAL_PATH)
+    values["dev2_canonical_artifact"] = d2g.digest(CANONICAL_PATH)
     values["semantic_gate_contract"] = SemanticGateContractV1().sha256
     return values
 
@@ -493,7 +493,7 @@ def verify_dev2_identity(root: Path) -> dict[str, Any]:
         and np.allclose(source_to_scene, np.eye(4), rtol=0.0, atol=1e-12),
         "frame_binding": record["frame_binding_authority"]
         == "OakInk2MocapFrameBindingV1:FRAME_BINDING_EXACT",
-        "canonical_artifact_exact": sha256_path(CANONICAL_PATH)
+        "canonical_artifact_exact": d2g.digest(CANONICAL_PATH)
         == "19ece59feb8588f1f155ac523b0497bb3d4e5f8965c3710d5e49b9c32e4d2d3d",
         "fixed_episode_receipt_exact": sha256_file(FIXED_EPISODES_PATH)
         == "26550d82feacb6b0321bf9a6458befcff0dffa802a192c6a91ed2a174fb89cf5",
@@ -521,7 +521,7 @@ def verify_dev2_identity(root: Path) -> dict[str, Any]:
         "units": record["canonical_units"],
         "frame_transform_authority": record["frame_binding_authority"],
         "canonical_path": str(CANONICAL_PATH.resolve()),
-        "canonical_sha256": sha256_path(CANONICAL_PATH),
+        "canonical_sha256": d2g.digest(CANONICAL_PATH),
         "manifest_record": record,
     }
     atomic_write_json(root / "dev2_identity/canonical_identity.json", value)
@@ -541,7 +541,7 @@ def verify_dev2_identity(root: Path) -> dict[str, Any]:
             "schema_version": "DEV2SourceAuthorityV1",
             "status": status,
             "canonical_path": str(CANONICAL_PATH.resolve()),
-            "canonical_sha256": sha256_path(CANONICAL_PATH),
+            "canonical_sha256": d2g.digest(CANONICAL_PATH),
             "manifest_v2_sha256": sha256_file(d2g.frozen_paths()["manifest_v2"]),
             "split_v2_sha256": sha256_file(d2g.frozen_paths()["split_v2"]),
             "interaction_graph_path": str(GRAPH_PATH.resolve()),

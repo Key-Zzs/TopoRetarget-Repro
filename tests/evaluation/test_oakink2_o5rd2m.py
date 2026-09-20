@@ -21,6 +21,9 @@ def test_frozen_authorities_match_d2l_and_upstream() -> None:
     assert study.d2g.interaction_artifact_hash(study.GRAPH_PATH) == (
         "2b941f517183b4e70903005f7b6914a7eedfa28654306db4f023e0447639f375"
     )
+    assert study.d2g.digest(study.CANONICAL_PATH) == (
+        "19ece59feb8588f1f155ac523b0497bb3d4e5f8965c3710d5e49b9c32e4d2d3d"
+    )
 
 
 def test_cli_exposes_full_fail_closed_contract() -> None:
