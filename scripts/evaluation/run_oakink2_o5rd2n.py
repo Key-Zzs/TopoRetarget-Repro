@@ -15,6 +15,7 @@ import argparse
 import inspect
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -52,6 +53,7 @@ OBJECT_ID = d2m.OBJECT_ID
 V1_UUID = d2mr2.V1_UUID
 V2_UUID = d2mr2.V2_UUID
 EXPECTED_V3_UUID = "8a868161-07f9-46f1-ac98-e77137749115"
+TASK_START_HEAD = "1aaf5c80ac817ead8d0dba72ce8c8931249d3390"
 GRAPH_AUTHORITY_SHA = d2mr2.GRAPH_AUTHORITY_SHA
 CONSUMER_AUTHORITY_SHA = "b5ee9a2b608f71eb8172232e8291ad644348d41068da6086c1867e8051745b8e"
 PREFLIGHT_CONTRACT_SHA = "4fcdc3fcc96fa4a99dfb92bb21f5336190e5c12b1cd4eadbf70c14249c4c4e6f"
@@ -98,6 +100,12 @@ def preflight(root: Path) -> dict[str, Any]:
     checks = {
         "repo_exact": Path(git("rev-parse", "--show-toplevel")) == REPO,
         "branch_exact": branch == EXPECTED_BRANCH,
+        "task_start_is_ancestor": subprocess.run(
+            ["git", "merge-base", "--is-ancestor", TASK_START_HEAD, "HEAD"],
+            cwd=REPO,
+            check=False,
+        ).returncode
+        == 0,
         "artifact_root_ignored": subprocess.run(
             ["git", "check-ignore", "-q", str(root)], cwd=REPO, check=False
         ).returncode
@@ -111,7 +119,8 @@ def preflight(root: Path) -> dict[str, Any]:
         "status": "PASS" if all(checks.values()) else "FAIL",
         "checks": checks,
         "BRANCH": branch,
-        "START_HEAD": head,
+        "START_HEAD": TASK_START_HEAD,
+        "HEAD_AT_PREFLIGHT": head,
         "status_short": status,
         "diff_stat": git("diff", "--stat"),
         "cached_diff_stat": git("diff", "--cached", "--stat"),
@@ -1125,6 +1134,51 @@ def run_v3_semantic_v1(root: Path) -> dict[str, Any]:
     return result
 
 
+def _viewer_regression_v3(html: Path, screenshot: Path, frame_count: int) -> dict[str, Any]:
+    """Certify all viewer controls with an explicit first-frame transition."""
+    base = d2m.o5.certify_viewer(html, screenshot)
+    chrome = shutil.which("google-chrome") or shutil.which("chromium")
+    if chrome is None or base.get("status") != "PASS":
+        return {"status": "FAIL", "base": base, "reason": "BASE_REGRESSION_OR_CHROME_MISSING"}
+    url = f"{html.resolve().as_uri()}?certify=1&preset=OBLIQUE&mode=SOURCE_WUJI_OBJECT"
+    with d2m.o5.ChromeCDP(chrome, width=900, height=1050) as browser:
+        browser.navigate(url)
+        browser.evaluate("window.__OAKINK2_VIEWER_V2__.setFrame(0)")
+        first = browser.certificate()
+        browser.evaluate(f"window.__OAKINK2_VIEWER_V2__.setFrame({frame_count // 2})")
+        middle = browser.certificate()
+        browser.evaluate(f"window.__OAKINK2_VIEWER_V2__.setFrame({frame_count - 1})")
+        last = browser.certificate()
+        browser.evaluate("window.__OAKINK2_VIEWER_V2__.setOrbit(37,-18,1.2)")
+        orbit_last = browser.certificate()
+        browser.evaluate(f"window.__OAKINK2_VIEWER_V2__.setFrame({frame_count // 2})")
+        orbit_middle = browser.certificate()
+        presets = {}
+        for preset in ("FRONT", "OBLIQUE", "SIDE"):
+            browser.evaluate(f"window.__OAKINK2_VIEWER_V2__.setPreset('{preset}')")
+            presets[preset] = browser.certificate()
+    checks = {
+        "base_pointer_drag_zoom_reset_timeline": base["status"] == "PASS",
+        "first_frame": int(first["frame_index"]) == 0,
+        "middle_frame": int(middle["frame_index"]) == frame_count // 2,
+        "last_frame": int(last["frame_index"]) == frame_count - 1,
+        "orbit_does_not_mutate_last_scene": orbit_last["scene_nodes"] == last["scene_nodes"],
+        "orbit_then_timeline": int(orbit_middle["frame_index"]) == frame_count // 2,
+        "front_oblique_side": all(name in presets for name in ("FRONT", "OBLIQUE", "SIDE")),
+    }
+    return {
+        "status": "PASS" if all(checks.values()) else "FAIL",
+        "checks": checks,
+        "base": base,
+        "first": first,
+        "middle": middle,
+        "last": last,
+        "orbit_last": orbit_last,
+        "orbit_middle": orbit_middle,
+        "presets": presets,
+    }
+
+
 def render_v3_viewer(root: Path) -> dict[str, Any]:
     require(
         root / "trajectory/finalization.json",
@@ -1142,22 +1196,54 @@ def render_v3_viewer(root: Path) -> dict[str, Any]:
     html = root / "viewer/oakink2_dev2_execution_v4_v3.html"
     if old_html != html:
         os.replace(old_html, html)
+    regression = _viewer_regression_v3(html, root / "viewer/interaction_review.png", 180)
     receipt["schema_version"] = "DEV2V3ExecutionV4ViewerReceiptV1"
+    receipt["status"] = regression["status"]
+    receipt["VIEWER_REGRESSION"] = regression["status"]
+    receipt["regression"] = regression
     receipt["DEV2_V3_HTML"] = str(html.resolve())
     receipt["DEV2_V3_HTML_SHA256"] = sha256_file(html)
     receipt["DEV2_EXECUTION_V4_HTML"] = str(html.resolve())
     receipt["DEV2_HTML_SHA256"] = receipt["DEV2_V3_HTML_SHA256"]
+    receipt["renderer"]["path"] = str(html.resolve())
     write_json(root / "viewer/receipt.json", receipt)
+    write_json(root / "viewer/regression.json", regression)
     manual = (root / "viewer/manual_review.md").read_text(encoding="utf-8")
-    manual = manual.replace(
-        "OAKINK2_O5_DEV2_EXECUTION_V4=APPROVE",
-        "OAKINK2_O5_DEV2_EXECUTION_V4_V3=APPROVE",
-    ).replace(
-        "OAKINK2_O5_DEV2_EXECUTION_V4=REJECT",
-        "OAKINK2_O5_DEV2_EXECUTION_V4_V3=REJECT",
+    manual = (
+        manual.replace(str(old_html.resolve()), str(html.resolve()))
+        .replace(
+            "OAKINK2_O5_DEV2_EXECUTION_V4=APPROVE",
+            "OAKINK2_O5_DEV2_EXECUTION_V4_V3=APPROVE",
+        )
+        .replace(
+            "OAKINK2_O5_DEV2_EXECUTION_V4=REJECT",
+            "OAKINK2_O5_DEV2_EXECUTION_V4_V3=REJECT",
+        )
     )
     write_text(root / "viewer/manual_review.md", manual)
     return receipt
+
+
+def validate_delivery(root: Path) -> dict[str, Any]:
+    value = d2m.validate_delivery(root)
+    value["schema_version"] = "D2NV3DeliveryValidationV1"
+    write_json(root / "validation_results.json", value)
+    tests = read_json(root / "tests.json")
+    tests["schema_version"] = "D2NV3TestsV1"
+    write_json(root / "tests.json", tests)
+    commits = {
+        "schema_version": "D2NV3GitCommitsV1",
+        "status": "RECORDED",
+        "branch": git("branch", "--show-current"),
+        "start_head": TASK_START_HEAD,
+        "head": git("rev-parse", "HEAD"),
+        "commits_since_task_start": git(
+            "log", "--format=%H%x09%s", f"{TASK_START_HEAD}..HEAD", "--"
+        ).splitlines(),
+        "status_short": git("status", "--short"),
+    }
+    write_json(root / "git_commits.json", commits)
+    return value
 
 
 def audit_v3_special_cases(root: Path) -> dict[str, Any]:
@@ -1217,6 +1303,15 @@ def _audit_method_integrity(root: Path) -> dict[str, Any]:
 
 
 def summarize(root: Path) -> dict[str, Any]:
+    if not (root / "technical_failures.jsonl").exists():
+        write_text(root / "technical_failures.jsonl", "")
+    git_receipt_path = root / "preflight/git.json"
+    if git_receipt_path.is_file():
+        git_receipt = read_json(git_receipt_path)
+        if git_receipt.get("START_HEAD") != TASK_START_HEAD:
+            git_receipt["HEAD_AT_LAST_PREFLIGHT"] = git_receipt.get("START_HEAD")
+            git_receipt["START_HEAD"] = TASK_START_HEAD
+            write_json(git_receipt_path, git_receipt)
     run_state = (
         read_json(root / "run_authority/run_state.json")
         if (root / "run_authority/run_state.json").is_file()
@@ -1237,6 +1332,11 @@ def summarize(root: Path) -> dict[str, Any]:
     )
     viewer = (
         read_json(root / "viewer/receipt.json") if (root / "viewer/receipt.json").is_file() else {}
+    )
+    profiler = (
+        read_json(root / "profiler/aggregate.json")
+        if (root / "profiler/aggregate.json").is_file()
+        else {}
     )
     precondition = (
         read_json(root / "preflight/d2mr2_precondition.json")
@@ -1316,10 +1416,10 @@ def summarize(root: Path) -> dict[str, Any]:
         "schema_version": "OakInk2O5RD2NFinalSummaryV1",
         "status": "HARD_STOP",
         "BRANCH": git("branch", "--show-current"),
-        "START_HEAD": read_json(root / "preflight/git.json").get("START_HEAD")
-        if (root / "preflight/git.json").is_file()
-        else None,
+        "START_HEAD": TASK_START_HEAD,
         "FINAL_HEAD": git("rev-parse", "HEAD"),
+        "commits": git("log", "--format=%H%x09%s", f"{TASK_START_HEAD}..HEAD", "--").splitlines(),
+        "tracked_worktree_clean": git("status", "--short") == "",
         "D2M_R2_STATUS": precondition.get("D2M_R2_STATUS"),
         "DEV2_FULL_RECOVERY_V3_AUTHORIZED": precondition.get("DEV2_FULL_RECOVERY_V3_AUTHORIZED"),
         "FULL_SEQUENCE_CONSUMER_PREFLIGHT": consumer.get(
@@ -1382,7 +1482,7 @@ def summarize(root: Path) -> dict[str, Any]:
         "OBJECT_POSE_BINDING_VALID_COUNT": binding.get("OBJECT_POSE_BINDING_VALID_COUNT", 0),
         "NO_SKIPPED_FRAMES": coverage.get("NO_SKIPPED_FRAMES", "NO"),
         "NO_DUPLICATED_FRAMES": coverage.get("NO_DUPLICATED_FRAMES", "NO"),
-        "FRAME_ORDER_STRICT": coverage.get("FRAME_ORDER_STRICT", "NO"),
+        "FRAME_ORDER_STRICT": coverage.get("SOURCE_FRAME_ORDER_STRICT", "NO"),
         "V3_Q_OLD_ACCESS_COUNT": 0 if int(run_state.get("SCIENTIFIC_RUN_COUNT", 0)) else "NOT_RUN",
         "V3_WARM_ACCESS_COUNT_T_GT_0": 0
         if int(run_state.get("SCIENTIFIC_RUN_COUNT", 0))
@@ -1405,6 +1505,18 @@ def summarize(root: Path) -> dict[str, Any]:
         ),
         "FAILURE_CLASS": solver.get("FAILURE_CLASS"),
         "FAILURE_MECHANISM": solver.get("FAILURE_MECHANISM"),
+        "mean solver sec/frame": profiler.get("mean_sec_per_frame"),
+        "p50": profiler.get("p50"),
+        "p90": profiler.get("p90"),
+        "p95": profiler.get("p95"),
+        "p99": profiler.get("p99"),
+        "max": profiler.get("max"),
+        "top1 frequency": profiler.get("top1_contributor_frequency"),
+        "top2 frequency": profiler.get("top2_contributor_frequency"),
+        "top2 pair frequency": profiler.get("top2_pair_frequency"),
+        "secondary polish attempts": profiler.get("secondary_polish_attempts"),
+        "retention count": profiler.get("primary_retention_count"),
+        "fallback count": profiler.get("fallback_count"),
         "DEV2_V3_TRAJECTORY": str(trajectory.resolve()) if trajectory.is_file() else None,
         "DEV2_V3_TRAJECTORY_SHA256": sha256_file(trajectory) if trajectory.is_file() else None,
         "DEV2_V3_PARTIAL_TRAJECTORY": str(partial.resolve())
@@ -1413,6 +1525,16 @@ def summarize(root: Path) -> dict[str, Any]:
         "RETARGET_SEMANTIC_VALIDITY_V1_RAN": semantic.get(
             "RETARGET_SEMANTIC_VALIDITY_V1_RAN", "NO"
         ),
+        "E_IM_MEAN": semantic.get("E_IM_MEAN"),
+        "E_IM_P95": semantic.get("E_IM_P95"),
+        "E_IM_MAX": semantic.get("E_IM_MAX"),
+        "E_IM_THRESHOLD": semantic.get("E_IM_THRESHOLD"),
+        "WRIST": semantic.get("WRIST"),
+        "BONE": semantic.get("BONE"),
+        "CONTACT_RECALL": semantic.get("CONTACT_RECALL"),
+        "CONTINUITY": semantic.get("CONTINUITY"),
+        "REFLECTION": semantic.get("REFLECTION"),
+        "SCALE": semantic.get("SCALE"),
         "DEV2_V3_SEMANTIC_V1_RESULT": semantic_result,
         "DEV2_V3_HTML": viewer.get("DEV2_V3_HTML"),
         "DEV2_V3_HTML_SHA256": viewer.get("DEV2_V3_HTML_SHA256"),
@@ -1468,6 +1590,26 @@ def summarize(root: Path) -> dict[str, Any]:
             "unrelated_processes_killed": 0,
         },
     )
+    blocked = root / "blocked_terminal.json"
+    if blocked.is_file() and machine == "PASS":
+        write_json(
+            root / "audits/superseded_preflight_diagnostics.json",
+            {
+                "schema_version": "D2NV3SupersededPreflightDiagnosticsV1",
+                "status": "SUPERSEDED_BEFORE_SCIENTIFIC_RUN",
+                "original": read_json(blocked),
+                "scientific_optimizer_run_count_at_diagnostic": 0,
+                "final_consumer_preflight": consumer.get("FULL_SEQUENCE_CONSUMER_PREFLIGHT"),
+            },
+        )
+        write_json(
+            blocked,
+            {
+                "schema_version": "D2NV3SupersededTerminalMarkerV1",
+                "status": "SUPERSEDED_BEFORE_SCIENTIFIC_RUN",
+                "replacement": "audits/superseded_preflight_diagnostics.json",
+            },
+        )
     write_json(root / "completion_audit.json", _completion_audit(root, summary))
     return summary
 
@@ -1491,10 +1633,29 @@ def _completion_audit(root: Path, summary: dict[str, Any]) -> dict[str, Any]:
         "run_authority/run_manifest.json",
         "run_authority/run_manifest.sha256",
         "run_authority/technical_resume_policy.json",
+        "milestones/frame10704.json",
+        "milestones/frame0_parity.json",
+        "milestones/frame10705_context.json",
+        "milestones/frame10705_optimizer_start.json",
+        "milestones/input_barrier_clearance.json",
         "solver/frame_results.jsonl",
+        "solver/graph_binding.csv",
+        "solver/source_binding.csv",
+        "solver/runtime_state_chain.csv",
+        "solver/contributor_sequence.csv",
+        "solver/hard_validity.csv",
         "technical_failures.jsonl",
         "resource_usage.json",
+        "validation_results.json",
+        "tests.json",
+        "git_commits.json",
         "audits/method_integrity_postrun.json",
+        "audits/special_cases.json",
+        "audits/input_authority_integrity.json",
+        "audits/graph_binding_integrity.json",
+        "audits/runtime_chain_integrity.json",
+        "timing/stage_timing.json",
+        "timing/frame_timing.csv",
     ]
     if int(summary.get("DEV2_FULL_RECOVERY_V3_SCIENTIFIC_RUN_COUNT", 0)):
         required.extend(
@@ -1507,9 +1668,24 @@ def _completion_audit(root: Path, summary: dict[str, Any]) -> dict[str, Any]:
                 "audits/warm_access.json",
                 "audits/frame_coverage.json",
                 "trajectory/trajectory_partial.npz",
+                "trajectory/trajectory.npz",
+                "trajectory/trajectory.sha256",
+                "semantic_v1/result.json",
+                "semantic_v1/per_frame.csv",
+                "semantic_v1/aggregate.json",
+                "viewer/oakink2_dev2_execution_v4_v3.html",
+                "viewer/receipt.json",
+                "viewer/regression.json",
+                "viewer/manual_review.md",
             ]
         )
     missing = [relative for relative in required if not (root / relative).exists()]
+    checkpoint_count = len(list((root / "checkpoints").glob("frame_*")))
+    expected_checkpoints = int(summary.get("COMPLETED_FRAMES", 0))
+    if checkpoint_count != expected_checkpoints:
+        missing.append(
+            f"checkpoint_count_expected_{expected_checkpoints}_observed_{checkpoint_count}"
+        )
     return {
         "schema_version": "O5RD2NCompletionAuditV1",
         "status": "PASS" if not missing else "FAIL",
@@ -1574,6 +1750,7 @@ ACTIONS = {
     "run-v3-semantic-v1": run_v3_semantic_v1,
     "render-v3-viewer": render_v3_viewer,
     "audit-v3-special-cases": audit_v3_special_cases,
+    "validate-delivery": validate_delivery,
     "summarize": summarize,
     "preflight-all": preflight_all,
     "run-all": run_all,

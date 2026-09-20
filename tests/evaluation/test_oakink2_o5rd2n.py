@@ -30,6 +30,7 @@ def test_cli_exposes_d2n_contract() -> None:
         "run-v3-semantic-v1",
         "render-v3-viewer",
         "audit-v3-special-cases",
+        "validate-delivery",
         "summarize",
     }
     assert required <= study.ACTIONS.keys()
@@ -196,6 +197,12 @@ def test_semantic_and_viewer_require_complete_trajectory(tmp_path: Path) -> None
         study.run_v3_semantic_v1(tmp_path)
     with pytest.raises(RuntimeError, match="RENDER_V3_VIEWER_REJECTED:MISSING"):
         study.render_v3_viewer(tmp_path)
+
+
+def test_v3_viewer_regression_explicitly_checks_first_frame() -> None:
+    source = inspect.getsource(study._viewer_regression_v3)
+    assert "setFrame(0)" in source
+    assert source.index("setFrame(0)") < source.index("first = browser.certificate()")
 
 
 def test_special_case_audit_uses_only_frozen_scientific_callgraph(tmp_path: Path) -> None:
