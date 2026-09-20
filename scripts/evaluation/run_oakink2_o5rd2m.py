@@ -157,7 +157,7 @@ METHOD_IMPLEMENTATIONS: dict[str, tuple[Path, str]] = {
     ),
 }
 
-GRAPH_PATH = D2G3_ROOT / "graph_authority/dev2_frame0_source_graph.zarr"
+GRAPH_PATH = d2g.ROOT / "graph_authority/dev2_frame0_source_graph.zarr"
 CANONICAL_PATH = d2g.frozen_paths()["dev2_canonical"]
 FIXED_EPISODES_PATH = d2g.frozen_paths()["dev2_episode_receipt"]
 FAILURE_ENUM = {
@@ -913,6 +913,21 @@ def _load_prefix(
     return rows, q_states, base_states, states
 
 
+def _build_dev2_runtime() -> d2g.V3Runtime:
+    """Load the frozen source graph while reusing the D2G3 geometry cache."""
+    runtime = d2g.V3Runtime("dev_02", D2G3_ROOT)
+    authoritative_graph = d2g.load_interaction_graph(GRAPH_PATH)
+    runtime.graph = authoritative_graph
+    runtime.resources = d2g.prepare_refinement_resources(
+        runtime.sequence,
+        authoritative_graph,
+        runtime.solver,
+        geometry_artifact_root=D2G3_ROOT / "execution_v3_design/geometry/dev2",
+    )
+    runtime.backends = d2g.prepare_refinement_runtime_backends(runtime.resources, runtime.execution)
+    return runtime
+
+
 def _execute_dev2(root: Path, *, resume: bool) -> dict[str, Any]:
     manifest = _require(
         root / "run_authority/full_run_manifest.json",
@@ -965,7 +980,7 @@ def _execute_dev2(root: Path, *, resume: bool) -> dict[str, Any]:
     previous = None if not accepted_states else accepted_states[-1]
     runtime_started = time.perf_counter()
     load_started = time.perf_counter()
-    runtime = d2g.V3Runtime("dev_02", D2G3_ROOT)
+    runtime = _build_dev2_runtime()
     load_elapsed = time.perf_counter() - load_started
     candidate = default_cold_start_search_v4_candidates()[0]
     profiler_rows = [

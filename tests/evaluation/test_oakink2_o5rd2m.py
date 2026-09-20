@@ -17,6 +17,10 @@ def test_frozen_authorities_match_d2l_and_upstream() -> None:
             assert sidecar.read_text(encoding="utf-8").split()[0] == expected
     for path, expected in study.METHOD_IMPLEMENTATIONS.values():
         assert study.sha256_file(path) == expected
+    assert study.GRAPH_PATH == (study.d2g.ROOT / "graph_authority/dev2_frame0_source_graph.zarr")
+    assert study.d2g.interaction_artifact_hash(study.GRAPH_PATH) == (
+        "2b941f517183b4e70903005f7b6914a7eedfa28654306db4f023e0447639f375"
+    )
 
 
 def test_cli_exposes_full_fail_closed_contract() -> None:
@@ -116,7 +120,7 @@ def test_scientific_run_count_cannot_exceed_one(
         study.sha256_file(tmp_path / "run_authority/full_run_manifest.json") + "\n",
     )
     monkeypatch.setattr(study, "_method_hashes", lambda: method_hashes)
-    monkeypatch.setattr(study.d2g, "V3Runtime", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(study, "_build_dev2_runtime", lambda: SimpleNamespace())
 
     def fail_scientifically(*_args, **_kwargs):
         raise RuntimeError("no valid candidate")
