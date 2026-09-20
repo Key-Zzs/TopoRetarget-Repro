@@ -162,6 +162,7 @@ CANONICAL_PATH = d2g.frozen_paths()["dev2_canonical"]
 FIXED_EPISODES_PATH = d2g.frozen_paths()["dev2_episode_receipt"]
 FAILURE_ENUM = {
     "MISSING_CANONICAL_INPUT",
+    "SOURCE_GRAPH_FRAME_BINDING_FAIL",
     "SOURCE_INTERACTION_GRAPH_FAILURE",
     "WHOLE_HAND_BOOTSTRAP_FAILURE",
     "TOP2_CONTRIBUTOR_REFINEMENT_FAILURE",
@@ -343,7 +344,7 @@ def preflight(root: Path) -> dict[str, Any]:
     return value
 
 
-def _method_hashes() -> dict[str, str]:
+def _method_hashes(graph_path: Path = GRAPH_PATH) -> dict[str, str]:
     values = {name: sha256_file(path) for name, (path, _expected) in FROZEN_AUTHORITIES.items()}
     values.update(
         {
@@ -351,7 +352,7 @@ def _method_hashes() -> dict[str, str]:
             for name, (path, _expected) in METHOD_IMPLEMENTATIONS.items()
         }
     )
-    values["source_interaction_graph_artifact"] = d2g.interaction_artifact_hash(GRAPH_PATH)
+    values["source_interaction_graph_artifact"] = d2g.interaction_artifact_hash(graph_path)
     values["dev2_canonical_artifact"] = d2g.digest(CANONICAL_PATH)
     values["semantic_gate_contract"] = SemanticGateContractV1().sha256
     return values
@@ -719,6 +720,16 @@ def verify_runtime_chain(root: Path) -> dict[str, Any]:
                 raise RuntimeError(f"PREVIOUS_STATE_HASH_CHAIN_MISMATCH:{ordinal}")
             if state.source_ordinal != ordinal or state.source_frame != SOURCE_START + ordinal:
                 raise RuntimeError(f"CHECKPOINT_FRAME_IDENTITY_MISMATCH:{ordinal}")
+            if (
+                "graph_source_frame" in marker
+                and marker.get("graph_source_frame") != state.source_frame
+            ):
+                raise RuntimeError(f"CHECKPOINT_GRAPH_FRAME_IDENTITY_MISMATCH:{ordinal}")
+            if (
+                "canonical_source_frame" in marker
+                and marker.get("canonical_source_frame") != state.source_frame
+            ):
+                raise RuntimeError(f"CHECKPOINT_CANONICAL_FRAME_IDENTITY_MISMATCH:{ordinal}")
             accepted.append(state)
             rows.append(
                 {
@@ -870,7 +881,9 @@ def _classify_failure(exc: Exception, receipt: dict[str, Any] | None) -> tuple[s
         ]
     )
     joined = " ".join(violations).lower()
-    if "previous" in lower and "state" in lower:
+    if "source_graph_frame_binding_fail" in lower:
+        category = "SOURCE_GRAPH_FRAME_BINDING_FAIL"
+    elif "previous" in lower and "state" in lower:
         category = "RUNTIME_PREVIOUS_STATE_FAILURE"
     elif "nonfinite" in lower or "non-finite" in lower or "nan" in lower:
         category = "NONFINITE_NUMERICAL_FAILURE"
@@ -941,10 +954,10 @@ def _load_prefix(
     return rows, q_states, base_states, states
 
 
-def _build_dev2_runtime() -> d2g.V3Runtime:
+def _build_dev2_runtime(graph_path: Path = GRAPH_PATH) -> d2g.V3Runtime:
     """Load the frozen source graph while reusing the D2G3 geometry cache."""
     runtime = d2g.V3Runtime("dev_02", D2G3_ROOT)
-    authoritative_graph = d2g.load_interaction_graph(GRAPH_PATH)
+    authoritative_graph = d2g.load_interaction_graph(graph_path)
     runtime.graph = authoritative_graph
     runtime.resources = d2g.prepare_refinement_resources(
         runtime.sequence,
@@ -954,6 +967,45 @@ def _build_dev2_runtime() -> d2g.V3Runtime:
     )
     runtime.backends = d2g.prepare_refinement_runtime_backends(runtime.resources, runtime.execution)
     return runtime
+
+
+def _full_sequence_graph_preflight(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Reject graph coverage or identity drift before any optimizer is entered."""
+
+    graph_authority = manifest["interaction_graph_authority"]
+    graph_path = Path(graph_authority["path"])
+    graph = d2g.load_interaction_graph(graph_path)
+    trajectory_frames = [int(value) for value in manifest["source_frames"]]
+    graph_source_frames = [
+        int(value) for value in manifest.get("graph_source_frame_ids", trajectory_frames)
+    ]
+    graph_ordinals = np.asarray(graph.frame_indices, dtype=np.int64).tolist()
+    canonical = o5.load_canonical_hoi(CANONICAL_PATH)
+    canonical_frames = [
+        int(value) for value in canonical.hand("right_hand").metadata["source_frame_ids"]
+    ]
+    checks = {
+        "trajectory_count": len(trajectory_frames) == EXPECTED_FRAMES,
+        "graph_count": len(graph.frames) == EXPECTED_FRAMES,
+        "graph_source_frame_count": len(graph_source_frames) == EXPECTED_FRAMES,
+        "trajectory_graph_frame_ids": trajectory_frames == graph_source_frames,
+        "canonical_source_frame_ids": canonical_frames == trajectory_frames,
+        "graph_ordinals": graph_ordinals == list(range(EXPECTED_FRAMES)),
+        "source_interval": trajectory_frames == list(range(SOURCE_START, SOURCE_STOP)),
+        "object_id": graph_authority.get("object_id", OBJECT_ID) == OBJECT_ID,
+        "artifact_sha256": d2g.interaction_artifact_hash(graph_path) == graph_authority["sha256"],
+    }
+    if not all(checks.values()):
+        raise RuntimeError(f"FULL_SEQUENCE_GRAPH_COVERAGE_MISMATCH:{checks}")
+    return {
+        "status": "PASS",
+        "graph_path": graph_path,
+        "graph": graph,
+        "trajectory_frames": trajectory_frames,
+        "graph_source_frames": graph_source_frames,
+        "canonical_frames": canonical_frames,
+        "checks": checks,
+    }
 
 
 def _execute_dev2(root: Path, *, resume: bool) -> dict[str, Any]:
@@ -968,7 +1020,9 @@ def _execute_dev2(root: Path, *, resume: bool) -> dict[str, Any]:
         encoding="utf-8"
     ).strip() != manifest_sha:
         raise RuntimeError("RUN_DEV2_FULL_REJECTED:MANIFEST_HASH_DRIFT")
-    if manifest["method_hashes"] != _method_hashes():
+    graph_preflight = _full_sequence_graph_preflight(manifest)
+    graph_path = graph_preflight["graph_path"]
+    if manifest["method_hashes"] != _method_hashes(graph_path):
         raise RuntimeError("RUN_DEV2_FULL_REJECTED:METHOD_HASH_DRIFT")
     run_state = _run_state(root)
     if resume:
@@ -1009,7 +1063,7 @@ def _execute_dev2(root: Path, *, resume: bool) -> dict[str, Any]:
     _write_partial_trajectory(root, rows, q_states, base_states)
     runtime_started = time.perf_counter()
     load_started = time.perf_counter()
-    runtime = _build_dev2_runtime()
+    runtime = _build_dev2_runtime(graph_path)
     load_elapsed = time.perf_counter() - load_started
     candidate = default_cold_start_search_v4_candidates()[0]
     profiler_rows = [
@@ -1022,6 +1076,16 @@ def _execute_dev2(root: Path, *, resume: bool) -> dict[str, Any]:
         frame_started = time.perf_counter()
         previous_q, previous_base = (None, None) if previous is None else previous.arrays()
         try:
+            current_source_frame = SOURCE_START + ordinal
+            graph_source_frame = int(graph_preflight["graph_source_frames"][ordinal])
+            canonical_source_frame = int(graph_preflight["canonical_frames"][ordinal])
+            if not current_source_frame == graph_source_frame == canonical_source_frame:
+                raise RuntimeError(
+                    "SOURCE_GRAPH_FRAME_BINDING_FAIL:"
+                    f"trajectory={current_source_frame}:graph={graph_source_frame}:"
+                    f"canonical={canonical_source_frame}"
+                )
+            graph_entry_hash = str(runtime.graph.graph_hashes[ordinal])
             q_v3, base_v3, v3_receipt = d2g2.search_cold_start_v2_frame(
                 runtime,
                 ordinal,
@@ -1068,7 +1132,10 @@ def _execute_dev2(root: Path, *, resume: bool) -> dict[str, Any]:
             profiler = _profiler_row(receipt, ordinal, elapsed)
             row = {
                 "ordinal": ordinal,
-                "source_frame": SOURCE_START + ordinal,
+                "source_frame": current_source_frame,
+                "graph_source_frame": graph_source_frame,
+                "canonical_source_frame": canonical_source_frame,
+                "graph_entry_hash": graph_entry_hash,
                 "status": "ACCEPTED",
                 "E_IM": float(receipt["selected"]["interaction_e_im"]),
                 "hard_validity": "PASS",
@@ -1094,7 +1161,10 @@ def _execute_dev2(root: Path, *, resume: bool) -> dict[str, Any]:
                 "RUN_UUID": manifest["RUN_UUID"],
                 "manifest_sha256": manifest_sha,
                 "ordinal": ordinal,
-                "source_frame": SOURCE_START + ordinal,
+                "source_frame": current_source_frame,
+                "graph_source_frame": graph_source_frame,
+                "canonical_source_frame": canonical_source_frame,
+                "graph_entry_hash": graph_entry_hash,
                 "previous_source_frame": None if ordinal == 0 else SOURCE_START + ordinal - 1,
                 "previous_state_hash": None if previous is None else previous.sha256,
                 "current_state_hash": state.sha256,

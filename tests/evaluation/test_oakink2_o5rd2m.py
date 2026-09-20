@@ -122,8 +122,23 @@ def test_scientific_run_count_cannot_exceed_one(
         tmp_path / "run_authority/full_run_manifest.sha256",
         study.sha256_file(tmp_path / "run_authority/full_run_manifest.json") + "\n",
     )
-    monkeypatch.setattr(study, "_method_hashes", lambda: method_hashes)
-    monkeypatch.setattr(study, "_build_dev2_runtime", lambda: SimpleNamespace())
+    monkeypatch.setattr(study, "_method_hashes", lambda *_args: method_hashes)
+    monkeypatch.setattr(
+        study,
+        "_full_sequence_graph_preflight",
+        lambda _manifest: {
+            "graph_path": study.GRAPH_PATH,
+            "graph_source_frames": list(range(study.SOURCE_START, study.SOURCE_STOP)),
+            "canonical_frames": list(range(study.SOURCE_START, study.SOURCE_STOP)),
+        },
+    )
+    monkeypatch.setattr(
+        study,
+        "_build_dev2_runtime",
+        lambda *_args: SimpleNamespace(
+            graph=SimpleNamespace(graph_hashes=["graph"] * study.EXPECTED_FRAMES)
+        ),
+    )
 
     def fail_scientifically(*_args, **_kwargs):
         raise RuntimeError("no valid candidate")
@@ -191,7 +206,12 @@ def test_resume_rejects_different_run_uuid(tmp_path: Path, monkeypatch: pytest.M
             "manifest_sha256": study.sha256_file(tmp_path / "run_authority/full_run_manifest.json"),
         },
     )
-    monkeypatch.setattr(study, "_method_hashes", lambda: method_hashes)
+    monkeypatch.setattr(study, "_method_hashes", lambda *_args: method_hashes)
+    monkeypatch.setattr(
+        study,
+        "_full_sequence_graph_preflight",
+        lambda _manifest: {"graph_path": study.GRAPH_PATH},
+    )
     with pytest.raises(RuntimeError, match="RUN_AUTHORITY_MISMATCH"):
         study.resume_dev2_full(tmp_path)
 
