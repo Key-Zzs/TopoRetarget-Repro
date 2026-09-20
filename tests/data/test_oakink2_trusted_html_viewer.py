@@ -159,6 +159,14 @@ def test_o5_payload_adds_wuji_in_the_same_root_relative_scene() -> None:
         ],
         wuji_joints_world=robot_joints,
         frame_solver_sec=np.array([0.25]),
+        old_wuji_parts=[
+            {
+                "name": "old-palm:0",
+                "vertices": np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+                "faces": faces,
+                "transforms": part_transform,
+            }
+        ],
     )
 
     payload = payload_for(data)
@@ -170,6 +178,8 @@ def test_o5_payload_adds_wuji_in_the_same_root_relative_scene() -> None:
     )
 
     assert payload["hasWuji"] is True
+    assert payload["hasOldWuji"] is True
+    assert len(payload["oldWujiParts"]) == 1
     assert np.allclose(transforms[0, :3, 3], [3.0, 4.0, 7.0])
     assert np.allclose(joints[0, 0], [1.0, 2.0, 3.0])
     assert payload["frameSolverSec"] == [0.25]
