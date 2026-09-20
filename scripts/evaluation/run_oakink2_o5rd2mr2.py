@@ -1038,6 +1038,52 @@ def build_consumer_input_authority(root: Path) -> dict[str, Any]:
     require(root / "warm_authority/authority_decision.json", "status", "PASS", "BUILD_AUTHORITY")
     require(root / "repair/repair_scope.json", "status", "PASS", "BUILD_AUTHORITY")
     matrix_path = root / "consumer_audit/consumer_input_authority_matrix.csv"
+    with (root / "consumer_audit/consumer_input_inventory.csv").open(
+        encoding="utf-8", newline=""
+    ) as handle:
+        inventory_rows = list(csv.DictReader(handle))
+    with matrix_path.open(encoding="utf-8", newline="") as handle:
+        matrix_rows = {row["field"]: row for row in csv.DictReader(handle)}
+    units = {
+        "trajectory.source_frame_ids": "integer source-frame identity",
+        "interaction_graph.frames": "m and dimensionless normalized weights",
+        "source_mano.mediapipe21.positions_scene": "m in scene frame",
+        "source_mano.parameters": "OakInk2 canonical MANO schema; diagnostic only",
+        "object.pose_scene": "4x4 scene transform; translation m",
+        "sequence.timestamps": "s",
+        "object.mesh": "m in object-local frame",
+        "object.surface_samples": "m in object-local frame",
+        "robot.asset_and_joint_limits": "rad and m",
+        "robot.surface_samples": "m in link-local frames",
+        "solver.objective_and_profiles": "frozen configured SI/rad weights",
+        "context_seed.qpos": "rad",
+        "context_seed.base_pose_scene": "4x4 scene transform; translation m",
+        "warm.qpos": "rad",
+        "warm.base_pose_scene": "4x4 scene transform; translation m",
+        "previous_accepted_runtime.qpos": "rad",
+        "previous_accepted_runtime.base_pose_scene": "4x4 scene transform; translation m",
+        "continuous_prediction.qpos_and_base": "rad and 4x4 scene transform",
+        "q_old": "absent",
+    }
+    inputs = []
+    for inventory in inventory_rows:
+        matrix = matrix_rows[inventory["field"]]
+        inputs.append(
+            {
+                "field": inventory["field"],
+                "producer": inventory["producer"],
+                "consumer": inventory["consumer"],
+                "scientific_role": inventory["scientific_role"],
+                "authority_role": matrix["authority_role"],
+                "binding_key": matrix["binding_key"],
+                "required_coverage": matrix["required_coverage"],
+                "actual_length": int(inventory["length"]),
+                "frame_ids": inventory["frame_ids"],
+                "units": units[inventory["field"]],
+                "schema": "canonical source/runtime contract referenced by producer",
+                "frozen": matrix["frozen"],
+            }
+        )
     authority = {
         "schema_version": "DEV2FullSequenceConsumerInputAuthorityV1",
         "status": "DRAFT_PREFLIGHT_REQUIRED",
@@ -1048,6 +1094,8 @@ def build_consumer_input_authority(root: Path) -> dict[str, Any]:
         },
         "source_interaction_graph_authority_sha256": GRAPH_AUTHORITY_SHA,
         "input_authority_matrix_sha256": sha256_file(matrix_path),
+        "inputs": inputs,
+        "input_count": len(inputs),
         "authority_roles": sorted(ROLES),
         "units": {
             "translation": "m",
@@ -1667,54 +1715,70 @@ def generate_d2n_plan(root: Path) -> dict[str, Any]:
         root / "authorization.json", "D2M_R2_STATUS", "PASS", "GENERATE_D2N_PLAN"
     )
     path = root / "future_d2n/dev2_full_recovery_v3_plan.json"
-    if path.exists():
-        plan = read_json(path)
-    else:
-        run_uuid = str(uuid.uuid4())
-        if run_uuid in {V1_UUID, V2_UUID}:
-            raise RuntimeError("D2N_UUID_COLLISION")
-        freeze = read_json(root / "frozen_authority/freeze_decision.json")
-        plan = {
-            "schema_version": "O5R-D2N_DEV2_FULL_RECOVERY_V3_PLAN",
-            "status": "AUTHORIZED_NOT_RUN",
+    run_uuid = read_json(path)["RUN_UUID"] if path.exists() else str(uuid.uuid4())
+    if run_uuid in {V1_UUID, V2_UUID}:
+        raise RuntimeError("D2N_UUID_COLLISION")
+    freeze = read_json(root / "frozen_authority/freeze_decision.json")
+    plan = {
+        "schema_version": "O5R-D2N_DEV2_FULL_RECOVERY_V3_PLAN",
+        "status": "AUTHORIZED_NOT_RUN",
+        "RUN_UUID": run_uuid,
+        "new_run_manifest_required": True,
+        "history": {
+            "V1": "immutable graph-singleton failure",
+            "V2": "immutable warm-singleton input-authority failure",
+            "V3": "future new scientific run",
+        },
+        "graph_authority_sha256": GRAPH_AUTHORITY_SHA,
+        "consumer_input_authority_sha256": freeze[
+            "DEV2_FULL_SEQUENCE_CONSUMER_INPUT_AUTHORITY_SHA256"
+        ],
+        "full_sequence_preflight_contract_sha256": freeze[
+            "FULL_SEQUENCE_CONSUMER_PREFLIGHT_CONTRACT_SHA256"
+        ],
+        "run_manifest": {
+            "schema_version": "DEV2FullRecoveryV3RunManifestPlannedV1",
+            "status": "PLANNED_NOT_EXECUTED",
             "RUN_UUID": run_uuid,
-            "new_run_manifest_required": True,
-            "history": {
-                "V1": "immutable graph-singleton failure",
-                "V2": "immutable warm-singleton input-authority failure",
-                "V3": "future new scientific run",
-            },
+            "episode": EPISODE,
+            "object_id": OBJECT_ID,
+            "source_frames": SOURCE_FRAMES,
+            "expected_frames": 240,
+            "runner_adapter": "scripts/evaluation/run_oakink2_o5rd2mr2.py:FullSequenceV3Runtime",
             "graph_authority_sha256": GRAPH_AUTHORITY_SHA,
             "consumer_input_authority_sha256": freeze[
                 "DEV2_FULL_SEQUENCE_CONSUMER_INPUT_AUTHORITY_SHA256"
             ],
-            "full_sequence_preflight_contract_sha256": freeze[
-                "FULL_SEQUENCE_CONSUMER_PREFLIGHT_CONTRACT_SHA256"
-            ],
-            "frame0": {
-                "fresh_recomputation": True,
-                "source_frame": 10704,
-                "q_old": "ABSENT",
-                "previous_runtime_state": "ABSENT",
-                "V1_frame0_reused": False,
-                "V2_frame0_reused": False,
-            },
-            "sequential_runtime": "exact accepted t-1 chain",
-            "scientific_attempts": 1,
-            "technical_resume": "same V3 UUID only after technical interruption",
-            "durable_checkpoints": True,
-            "expected_coverage": "240/240",
-            "semantic_v1": "required after complete trajectory",
-            "viewer": "required after SemanticV1",
-            "human_review": "required; viewer is non-authoritative evidence",
-            "milestone": "frame10705 context built AND frame10705 optimizer actually STARTED",
-            "first_real_failure_rule": "only solver/hard-validity failure after optimizer start",
-            "hard_stop_before": ["PPO", "DEV1 full", "O6"],
-            "DEV2_FULL_RECOVERY_V3_SCIENTIFIC_RUN_COUNT": authorization[
-                "DEV2_FULL_RECOVERY_V3_SCIENTIFIC_RUN_COUNT"
-            ],
-        }
-        write_json(path, plan)
+            "preflight_contract_sha256": freeze["FULL_SEQUENCE_CONSUMER_PREFLIGHT_CONTRACT_SHA256"],
+            "execution_v4_authority_hashes": d2m.V4_AUTHORITY_HASHES,
+            "frame0": "fresh cold start; q_old absent; previous runtime absent",
+            "continuation": "exact accepted t-1; q_old absent",
+            "scientific_attempt_limit": 1,
+        },
+        "frame0": {
+            "fresh_recomputation": True,
+            "source_frame": 10704,
+            "q_old": "ABSENT",
+            "previous_runtime_state": "ABSENT",
+            "V1_frame0_reused": False,
+            "V2_frame0_reused": False,
+        },
+        "sequential_runtime": "exact accepted t-1 chain",
+        "scientific_attempts": 1,
+        "technical_resume": "same V3 UUID only after technical interruption",
+        "durable_checkpoints": True,
+        "expected_coverage": "240/240",
+        "semantic_v1": "required after complete trajectory",
+        "viewer": "required after SemanticV1",
+        "human_review": "required; viewer is non-authoritative evidence",
+        "milestone": "frame10705 context built AND frame10705 optimizer actually STARTED",
+        "first_real_failure_rule": "only solver/hard-validity failure after optimizer start",
+        "hard_stop_before": ["PPO", "DEV1 full", "O6"],
+        "DEV2_FULL_RECOVERY_V3_SCIENTIFIC_RUN_COUNT": authorization[
+            "DEV2_FULL_RECOVERY_V3_SCIENTIFIC_RUN_COUNT"
+        ],
+    }
+    write_json(path, plan)
     return plan
 
 
