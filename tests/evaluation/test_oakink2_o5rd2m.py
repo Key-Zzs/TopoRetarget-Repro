@@ -1,0 +1,155 @@
+from __future__ import annotations
+
+import inspect
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from scripts.evaluation import run_oakink2_o5rd2m as study
+
+
+def test_frozen_authorities_match_d2l_and_upstream() -> None:
+    for path, expected in study.FROZEN_AUTHORITIES.values():
+        assert study.sha256_file(path) == expected
+        sidecar = path.with_suffix(".sha256")
+        if sidecar.is_file():
+            assert sidecar.read_text(encoding="utf-8").split()[0] == expected
+    for path, expected in study.METHOD_IMPLEMENTATIONS.values():
+        assert study.sha256_file(path) == expected
+
+
+def test_cli_exposes_full_fail_closed_contract() -> None:
+    expected = {
+        "preflight",
+        "verify-frozen-v4",
+        "verify-dev2-identity",
+        "freeze-dev2-run",
+        "run-dev2-full",
+        "resume-dev2-full",
+        "verify-runtime-chain",
+        "finalize-dev2-trajectory",
+        "run-semantic-v1",
+        "render-dev2-viewer",
+        "audit-dev2-special-cases",
+        "summarize",
+    }
+    assert expected <= study.ACTIONS.keys()
+
+
+def test_exact_240_frame_coverage_contract() -> None:
+    rows = [
+        {"ordinal": ordinal, "source_frame": study.SOURCE_START + ordinal}
+        for ordinal in range(study.EXPECTED_FRAMES)
+    ]
+    coverage = study._coverage_payload(rows)
+    assert coverage["status"] == "PASS"
+    assert coverage["COMPLETED_FRAMES"] == 240
+    assert coverage["FIRST_SOURCE_FRAME"] == 10704
+    assert coverage["LAST_SOURCE_FRAME"] == 10943
+    assert coverage["NO_SKIPPED_FRAMES"] == "YES"
+    assert coverage["NO_DUPLICATED_FRAMES"] == "YES"
+    assert coverage["SOURCE_FRAME_ORDER_STRICT"] == "YES"
+
+
+def test_skip_and_duplicate_fail_coverage() -> None:
+    skipped = [
+        {"ordinal": ordinal, "source_frame": study.SOURCE_START + ordinal}
+        for ordinal in range(10)
+        if ordinal != 5
+    ]
+    duplicated = skipped + [skipped[-1]]
+    assert study._coverage_payload(skipped)["NO_SKIPPED_FRAMES"] == "NO"
+    assert study._coverage_payload(duplicated)["NO_DUPLICATED_FRAMES"] == "NO"
+
+
+def test_technical_resume_policy_separates_scientific_failure() -> None:
+    policy = study._technical_resume_policy()
+    assert policy["scientific_failure_resume_through"] == "FORBIDDEN"
+    assert policy["second_scientific_run"] == "FORBIDDEN"
+    assert set(policy["scientific_failures"]) == study.FAILURE_ENUM
+    assert "same RUN_UUID" in policy["technical_resume_requires"]
+
+
+def test_freeze_rejects_missing_upstream_integrity(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError, match="FREEZE_DEV2_RUN_REJECTED:MISSING"):
+        study.freeze_dev2_run(tmp_path)
+
+
+def test_corrupt_checkpoint_rejected(tmp_path: Path) -> None:
+    manifest = {
+        "schema_version": "DEV2FullGeometricRunManifestV1",
+        "status": "FROZEN_BEFORE_SOLVE",
+        "RUN_UUID": "run",
+    }
+    study.atomic_write_json(tmp_path / "run_authority/full_run_manifest.json", manifest)
+    study.atomic_write_text(
+        tmp_path / "run_authority/full_run_manifest.sha256",
+        study.sha256_file(tmp_path / "run_authority/full_run_manifest.json") + "\n",
+    )
+    study.atomic_write_json(
+        tmp_path / "checkpoints/frame_000/checkpoint.json",
+        {
+            "status": "ACCEPTED",
+            "ordinal": 0,
+            "RUN_UUID": "run",
+            "manifest_sha256": study.sha256_file(tmp_path / "run_authority/full_run_manifest.json"),
+        },
+    )
+    with pytest.raises(RuntimeError, match="CORRUPT_CHECKPOINT_CONTENT"):
+        study.verify_runtime_chain(tmp_path)
+
+
+def test_scientific_run_count_cannot_exceed_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    method_hashes = {"frozen": "exact"}
+    manifest = {
+        "schema_version": "DEV2FullGeometricRunManifestV1",
+        "status": "FROZEN_BEFORE_SOLVE",
+        "RUN_UUID": "one-run",
+        "method_hashes": method_hashes,
+    }
+    study.atomic_write_json(tmp_path / "run_authority/full_run_manifest.json", manifest)
+    study.atomic_write_text(
+        tmp_path / "run_authority/full_run_manifest.sha256",
+        study.sha256_file(tmp_path / "run_authority/full_run_manifest.json") + "\n",
+    )
+    monkeypatch.setattr(study, "_method_hashes", lambda: method_hashes)
+    monkeypatch.setattr(study.d2g, "V3Runtime", lambda *_args, **_kwargs: SimpleNamespace())
+
+    def fail_scientifically(*_args, **_kwargs):
+        raise RuntimeError("no valid candidate")
+
+    monkeypatch.setattr(study.d2g2, "search_cold_start_v2_frame", fail_scientifically)
+    result = study.run_dev2_full(tmp_path)
+    assert result["status"] == "SCIENTIFIC_FAIL"
+    assert result["DEV2_FULL_GEOMETRIC_SOLVE_COUNT"] == 1
+    with pytest.raises(RuntimeError, match="SCIENTIFIC_RUN_COUNT_ALREADY_ONE"):
+        study.run_dev2_full(tmp_path)
+
+
+def test_semantic_v1_requires_complete_finalized_trajectory(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError, match="RUN_SEMANTIC_V1_REJECTED:MISSING"):
+        study.run_semantic_v1(tmp_path)
+
+
+def test_no_budget_escalation_and_qold_absence_are_static_contracts() -> None:
+    candidate = study.default_cold_start_search_v4_candidates()[0]
+    assert candidate.name == "V4_A_TOP2_SEQUENTIAL"
+    assert candidate.top_k == 2
+    assert candidate.contributor_probe_max_nfev == 24
+    assert candidate.selected_primary_maxiter == 8
+    assert candidate.secondary_polish_maxiter == 8
+    source = inspect.getsource(study._execute_dev2)
+    assert "d2g2.CS2_A" in source
+    assert "q_old_access_count" in source
+    assert "DEV2_DEVELOPMENT_FRAME0_STATE_REUSED" not in source
+
+
+def test_special_case_audit_scans_only_scientific_call_graph(tmp_path: Path) -> None:
+    result = study.audit_dev2_special_cases(tmp_path)
+    assert result["status"] == "PASS"
+    assert result["DEV2_EPISODE_ID_BRANCH"] == "NO"
+    assert result["DEV2_OBJECT_C11001_BRANCH"] == "NO"
+    assert result["DEV2_FRAME_10704_BRANCH"] == "NO"
