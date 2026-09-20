@@ -1008,6 +1008,21 @@ def _full_sequence_graph_preflight(manifest: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _full_sequence_runtime_input_preflight(runtime: Any) -> dict[str, Any]:
+    """Validate every ordinal-indexed consumer input before scientific-run commit."""
+
+    warm_q = np.asarray(runtime.warm.arrays["qpos"])
+    warm_base = np.asarray(runtime.warm.arrays["base_pose_scene"])
+    checks = {
+        "runtime_graph_count": int(runtime.graph.frame_count) == EXPECTED_FRAMES,
+        "warm_q_seed_carrier_count": int(warm_q.shape[0]) == EXPECTED_FRAMES,
+        "warm_base_seed_carrier_count": int(warm_base.shape[0]) == EXPECTED_FRAMES,
+    }
+    if not all(checks.values()):
+        raise RuntimeError(f"FULL_SEQUENCE_RUNTIME_INPUT_COVERAGE_MISMATCH:{checks}")
+    return {"status": "PASS", "checks": checks}
+
+
 def _execute_dev2(root: Path, *, resume: bool) -> dict[str, Any]:
     manifest = _require(
         root / "run_authority/full_run_manifest.json",
@@ -1024,6 +1039,10 @@ def _execute_dev2(root: Path, *, resume: bool) -> dict[str, Any]:
     graph_path = graph_preflight["graph_path"]
     if manifest["method_hashes"] != _method_hashes(graph_path):
         raise RuntimeError("RUN_DEV2_FULL_REJECTED:METHOD_HASH_DRIFT")
+    load_started = time.perf_counter()
+    runtime = _build_dev2_runtime(graph_path)
+    _full_sequence_runtime_input_preflight(runtime)
+    load_elapsed = time.perf_counter() - load_started
     run_state = _run_state(root)
     if resume:
         if (
@@ -1062,9 +1081,6 @@ def _execute_dev2(root: Path, *, resume: bool) -> dict[str, Any]:
     previous = None if not accepted_states else accepted_states[-1]
     _write_partial_trajectory(root, rows, q_states, base_states)
     runtime_started = time.perf_counter()
-    load_started = time.perf_counter()
-    runtime = _build_dev2_runtime(graph_path)
-    load_elapsed = time.perf_counter() - load_started
     candidate = default_cold_start_search_v4_candidates()[0]
     profiler_rows = [
         read_json(_checkpoint_dir(root, ordinal) / "profiler.json")

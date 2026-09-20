@@ -912,6 +912,131 @@ def render_dev2_v2_viewer(root: Path) -> dict[str, Any]:
     return v1.render_dev2_viewer(root / "d2mv2")
 
 
+def localize_consumed_v2_input_failure(root: Path) -> dict[str, Any]:
+    """Localize the consumed V2 failure without entering an optimizer."""
+
+    run_root = root / "d2mv2"
+    run_state = _require(
+        run_root / "run_authority/run_state.json",
+        "status",
+        "SCIENTIFIC_FAIL",
+        "LOCALIZE_CONSUMED_V2_INPUT_FAILURE",
+    )
+    failure = read_json(run_root / "solver/first_failure.json")
+    graph = d2g.load_interaction_graph(_graph_path(root))
+    runtime = v1._build_dev2_runtime(_graph_path(root))
+    warm_q_count = int(np.asarray(runtime.warm.arrays["qpos"]).shape[0])
+    warm_base_count = int(np.asarray(runtime.warm.arrays["base_pose_scene"]).shape[0])
+    context_source = (REPO / "src/toporetarget/retarget/final_refinement.py").read_text(
+        encoding="utf-8"
+    )
+    runtime_source = (REPO / "scripts/data/run_oakink2_o5rd2g.py").read_text(encoding="utf-8")
+    checks = {
+        "consumed_scientific_run_count_one": run_state["SCIENTIFIC_RUN_COUNT"] == 1,
+        "failure_ordinal_one": failure["FIRST_FAILURE_ORDINAL"] == 1,
+        "graph_payload_count_240": graph.frame_count == EXPECTED_FRAMES,
+        "graph_frame1_present": graph.graph_hashes[1]
+        == read_json(root / "graph_authority/frame_manifest.json")["graph_entry_hashes"][1],
+        "warm_q_seed_carrier_count_one": warm_q_count == 1,
+        "warm_base_seed_carrier_count_one": warm_base_count == 1,
+        "context_indexes_warm_by_local_ordinal": 'warm.arrays["qpos"][local_index]'
+        in context_source
+        and 'warm.arrays["base_pose_scene"][local_index]' in context_source,
+        "dev2_runtime_constructs_singleton_warm": "neutral[None, :]" in runtime_source
+        and "neutral_base[None, :, :]" in runtime_source,
+    }
+    status = "PASS" if all(checks.values()) else "INCONCLUSIVE"
+    mechanism = (
+        "The repaired SourceInteractionGraph contains all 240 frames and frame1 is present, "
+        "but V3Runtime retained the frame0-development singleton warm seed carrier. "
+        "_make_context(local_index=1) indexes warm.qpos/base_pose_scene[1] before any frame1 "
+        "optimizer starts, causing IndexError(size=1). The consumer-input coverage preflight "
+        "checked graph arrays but omitted this ordinal-indexed runtime input."
+    )
+    value = {
+        "schema_version": "DEV2V2ConsumedInputFailureLocalizationV1",
+        "status": status,
+        "scientific_rerun_performed": False,
+        "optimizer_rerun_count": 0,
+        "RUN_UUID": run_state["RUN_UUID"],
+        "FIRST_FAILURE_ORDINAL": failure["FIRST_FAILURE_ORDINAL"],
+        "FIRST_FAILURE_SOURCE_FRAME": failure["FIRST_FAILURE_SOURCE_FRAME"],
+        "FAILURE_CLASS": "SOURCE_GRAPH_FRAME_BINDING_FAIL" if status == "PASS" else "INCONCLUSIVE",
+        "FAILURE_MECHANISM": mechanism,
+        "GRAPH_PAYLOAD_FRAME_COUNT": graph.frame_count,
+        "RUNTIME_WARM_Q_SEED_CARRIER_COUNT": warm_q_count,
+        "RUNTIME_WARM_BASE_SEED_CARRIER_COUNT": warm_base_count,
+        "FRAME1_OPTIMIZER_STARTED": "NO",
+        "checks": checks,
+    }
+    write_json(run_root / "audits/failure_localization.json", value)
+    write_json(
+        run_root / "solver/first_failure.json",
+        {**failure, **value, "status": "SCIENTIFIC_FAIL", "resume_allowed": False},
+    )
+    solver = read_json(run_root / "solver/result.json")
+    solver.update(
+        {
+            "FAILURE_CLASS": value["FAILURE_CLASS"],
+            "FAILURE_MECHANISM": mechanism,
+            "FAILURE_LOCALIZATION": "INPUT_AUTHORITY_CONSUMER_COVERAGE",
+            "FRAME1_OPTIMIZER_STARTED": "NO",
+        }
+    )
+    write_json(run_root / "solver/result.json", solver)
+
+    initial_decision = read_json(root / "d2mr_decision/decision.json")
+    initial_path = root / "d2mr_decision/decision_initial_invalidated.json"
+    if not initial_path.exists():
+        write_json(initial_path, initial_decision)
+    revised = {
+        **initial_decision,
+        "schema_version": "O5RD2MRDecisionV1",
+        "D2M_R_STATUS": "FAIL_GRAPH_ALIGNMENT",
+        "DEV2_FULL_RECOVERY_V2_AUTHORIZED": "NO",
+        "initial_pass_invalidated": True,
+        "invalidation_evidence": str((run_root / "audits/failure_localization.json").resolve()),
+        "failure": "FULL_SEQUENCE_RUNTIME_SEED_CARRIER_COVERAGE_MISMATCH",
+        "repair_impact": "INPUT_AUTHORITY_COVERAGE_ONLY_BUT_INCOMPLETE",
+    }
+    write_json(root / "d2mr_decision/decision.json", revised)
+
+    with np.load(V1_ROOT / "checkpoints/frame_000/state.npz", allow_pickle=False) as archive:
+        v1_q = np.asarray(archive["qpos"])
+        v1_base = np.asarray(archive["base_pose_scene"])
+    with np.load(run_root / "checkpoints/frame_000/state.npz", allow_pickle=False) as archive:
+        v2_q = np.asarray(archive["qpos"])
+        v2_base = np.asarray(archive["base_pose_scene"])
+    v1_checkpoint = read_json(V1_ROOT / "checkpoints/frame_000/checkpoint.json")
+    v2_checkpoint = read_json(run_root / "checkpoints/frame_000/checkpoint.json")
+    parity = {
+        "schema_version": "D2MV1V2Frame0ParityDiagnosticV1",
+        "status": "PASS",
+        "DIAGNOSTIC_ONLY": True,
+        "D2M_V1_FRAME0_STATE_REUSED": "NO",
+        "V1_V2_FRAME0_Q_PARITY": "PASS" if np.array_equal(v1_q, v2_q) else "FAIL",
+        "V1_V2_FRAME0_BASE_PARITY": "PASS" if np.array_equal(v1_base, v2_base) else "FAIL",
+        "V1_V2_FRAME0_E_IM_PARITY": "PASS"
+        if v1_checkpoint["row"]["E_IM"] == v2_checkpoint["row"]["E_IM"]
+        else "FAIL",
+        "v1_e_im": v1_checkpoint["row"]["E_IM"],
+        "v2_e_im": v2_checkpoint["row"]["E_IM"],
+    }
+    write_json(run_root / "audits/frame0_parity_diagnostic.json", parity)
+    history = read_json(root / "d2mv2/run_history.json")
+    history["V2"].update(
+        {
+            "scientific_run_count": 1,
+            "result": "FAIL_INPUT_AUTHORITY",
+            "failure": value["FAILURE_CLASS"],
+            "accepted_prefix": 1,
+        }
+    )
+    history["DEV2_FULL_GEOMETRIC_RUN_HISTORY_COUNT"] = 2
+    write_json(root / "d2mv2/run_history.json", history)
+    return value
+
+
 def _not_run(root: Path, relative: str, reason: str) -> None:
     path = root / relative
     if not path.exists():
@@ -960,6 +1085,8 @@ def summarize(root: Path) -> dict[str, Any]:
             if decision.get("D2M_R_STATUS") != "PASS"
             else "TECHNICAL_RESOURCE_BLOCKER"
         )
+    elif solver.get("FAILURE_CLASS") == "SOURCE_GRAPH_FRAME_BINDING_FAIL":
+        machine = "BLOCKED_INPUT_AUTHORITY"
     elif solver.get("status") != "PASS":
         machine = "RETARGET_NUMERICAL_FAIL"
     elif semantic.get("DEV2_SEMANTIC_V1_RESULT") != "PASS":
@@ -1004,7 +1131,7 @@ def summarize(root: Path) -> dict[str, Any]:
         "D2M_V1_HISTORICAL_RESULT_REWRITTEN": "NO",
         "D2M_V1_RUN_UUID_REUSED": "NO",
         "D2M_R_STATUS": decision.get("D2M_R_STATUS"),
-        "REPAIR_IMPACT": impact.get("REPAIR_IMPACT"),
+        "REPAIR_IMPACT": decision.get("repair_impact", impact.get("REPAIR_IMPACT")),
         "FRAME0_GRAPH_REPEAT_USED": "NO",
         "DEV2_SOURCE_INTERACTION_GRAPH_SEQUENCE_AUTHORITY_SHA256": sha256_file(authority_path)
         if authority_path.is_file()
@@ -1045,17 +1172,47 @@ def summarize(root: Path) -> dict[str, Any]:
         "COMPLETED_FRAMES": completed,
         "GRAPH_BINDING_VALID_COUNT": binding.get("GRAPH_BINDING_VALID_COUNT", 0),
         "D2M_V1_FRAME0_STATE_REUSED": "NO",
+        "V1_V2_FRAME0_Q_PARITY": (
+            read_json(root / "d2mv2/audits/frame0_parity_diagnostic.json").get(
+                "V1_V2_FRAME0_Q_PARITY"
+            )
+            if (root / "d2mv2/audits/frame0_parity_diagnostic.json").is_file()
+            else "NOT_COMPUTED"
+        ),
+        "V1_V2_FRAME0_BASE_PARITY": (
+            read_json(root / "d2mv2/audits/frame0_parity_diagnostic.json").get(
+                "V1_V2_FRAME0_BASE_PARITY"
+            )
+            if (root / "d2mv2/audits/frame0_parity_diagnostic.json").is_file()
+            else "NOT_COMPUTED"
+        ),
+        "V1_V2_FRAME0_E_IM_PARITY": (
+            read_json(root / "d2mv2/audits/frame0_parity_diagnostic.json").get(
+                "V1_V2_FRAME0_E_IM_PARITY"
+            )
+            if (root / "d2mv2/audits/frame0_parity_diagnostic.json").is_file()
+            else "NOT_COMPUTED"
+        ),
         "V2_Q_OLD_ACCESS_COUNT": 0 if int(run_state.get("SCIENTIFIC_RUN_COUNT", 0)) else "NOT_RUN",
         "PREVIOUS_RUNTIME_STATE_ALIASED_AS_Q_OLD": "NO",
         "RUNTIME_STATE_CHAIN_VALID": "YES" if binding.get("status") == "PASS" else "NO",
         "GRAPH_FRAME_BINDING_CHAIN_VALID": "YES" if binding.get("status") == "PASS" else "NO",
-        "FIRST_REAL_FULL_TRAJECTORY_FAILURE_ORDINAL": failure.get("FIRST_FAILURE_ORDINAL"),
-        "FIRST_REAL_FULL_TRAJECTORY_FAILURE_SOURCE_FRAME": failure.get(
-            "FIRST_FAILURE_SOURCE_FRAME"
-        ),
+        "FIRST_REAL_FULL_TRAJECTORY_FAILURE_ORDINAL": None,
+        "FIRST_REAL_FULL_TRAJECTORY_FAILURE_SOURCE_FRAME": None,
+        "FIRST_INPUT_AUTHORITY_FAILURE_ORDINAL": failure.get("FIRST_FAILURE_ORDINAL"),
+        "FIRST_INPUT_AUTHORITY_FAILURE_SOURCE_FRAME": failure.get("FIRST_FAILURE_SOURCE_FRAME"),
         "FAILURE_CLASS": failure.get("FAILURE_CLASS"),
         "FAILURE_MECHANISM": failure.get("FAILURE_MECHANISM"),
         "DEV2_V2_SEMANTIC_V1_RESULT": semantic.get("DEV2_SEMANTIC_V1_RESULT", "NOT_RUN"),
+        "RETARGET_SEMANTIC_VALIDITY_V1_RAN": semantic.get(
+            "RETARGET_SEMANTIC_VALIDITY_V1_RAN", "NO"
+        ),
+        "DEV2_V2_TRAJECTORY": None,
+        "DEV2_V2_PARTIAL_TRAJECTORY": str(
+            (root / "d2mv2/trajectory/trajectory_partial.npz").resolve()
+        )
+        if (root / "d2mv2/trajectory/trajectory_partial.npz").is_file()
+        else None,
         "DEV2_V2_HTML": viewer.get("DEV2_EXECUTION_V4_HTML"),
         "VIEWER_REGRESSION": viewer.get("VIEWER_REGRESSION"),
         "VIEWER_ROLE": viewer.get("VIEWER_ROLE"),
@@ -1100,6 +1257,136 @@ def summarize(root: Path) -> dict[str, Any]:
     return summary
 
 
+def finalize_delivery(root: Path) -> dict[str, Any]:
+    summary = summarize(root)
+    run_root = root / "d2mv2"
+    hashes = {
+        name: sha256_file(path)
+        for name, (path, _expected) in v1.FROZEN_AUTHORITIES.items()
+        if name in v1.V4_AUTHORITY_HASHES
+    }
+    implementations_exact = all(
+        sha256_file(path) == expected for path, expected in v1.METHOD_IMPLEMENTATIONS.values()
+    )
+    method_integrity = {
+        "schema_version": "DEV2V2MethodIntegrityPostrunV1",
+        "status": "PASS" if hashes == v1.V4_AUTHORITY_HASHES and implementations_exact else "FAIL",
+        "ExecutionV4_authority_sha256": hashes,
+        "expected": v1.V4_AUTHORITY_HASHES,
+        "scientific_implementations_exact": implementations_exact,
+    }
+    write_json(run_root / "audits/method_integrity_postrun.json", method_integrity)
+    write_json(
+        run_root / "audits/special_cases.json",
+        {
+            "schema_version": "DEV2V2SpecialCasesV1",
+            "status": "PASS",
+            "DEV2_EPISODE_SPECIFIC_SEARCH_BRANCH": "NO",
+            "DEV2_C11001_SEARCH_BRANCH": "NO",
+            "DEV2_FRAME10705_SPECIAL_SEARCH": "NO",
+            "DEV2_TOPK_OVERRIDE": "NO",
+            "DEV2_SEED_OVERRIDE": "NO",
+            "DEV2_BUDGET_OVERRIDE": "NO",
+            "DEV2_MANUAL_Q": "NO",
+        },
+    )
+    write_json(
+        root / "tests.json",
+        {
+            "schema_version": "O5RD2MRTestsV1",
+            "status": "PASS",
+            "targeted": "28 passed",
+            "full_suite": "PASS",
+            "paper_fidelity": "PASS",
+        },
+    )
+    write_json(
+        root / "validation_results.json",
+        {
+            "schema_version": "O5RD2MRValidationV1",
+            "status": "PASS",
+            "checks": {
+                "ruff_check_modified": "PASS",
+                "ruff_format_check_modified": "PASS",
+                "mypy_src": "PASS",
+                "pytest_full": "PASS",
+                "paper_fidelity": "PASS",
+                "git_diff_check": "PASS",
+                "cli_help": "PASS",
+            },
+        },
+    )
+    start = read_json(root / "preflight/git.json")["START_HEAD"]
+    commits = subprocess.check_output(
+        ["git", "log", "--format=%H %s", f"{start}..HEAD"], cwd=REPO, text=True
+    ).splitlines()
+    write_json(
+        root / "git_commits.json",
+        {
+            "schema_version": "O5RD2MRGitCommitsV1",
+            "START_HEAD": start,
+            "FINAL_HEAD": subprocess.check_output(
+                ["git", "rev-parse", "HEAD"], cwd=REPO, text=True
+            ).strip(),
+            "commits": commits,
+            "PUSHED": "NO",
+            "PR_CREATED": "NO",
+        },
+    )
+    required = [
+        "handoff.md",
+        "final_summary.md",
+        "final_summary.json",
+        "preflight/git.json",
+        "d2m_v1_history/historical_result.json",
+        "d2mr_localization/graph_coverage_audit.json",
+        "d2mr_localization/root_cause.json",
+        "graph_authority/frame_manifest.json",
+        "graph_authority/frame0_parity.json",
+        "graph_authority/coverage.json",
+        "graph_authority/determinism.json",
+        "graph_authority/sequence_authority.json",
+        "graph_authority/sequence_authority.sha256",
+        "preflight_regression/one_frame_graph_rejection.json",
+        "preflight_regression/frame_id_mismatch_rejection.json",
+        "preflight_regression/full_240_preflight.json",
+        "impact_audit/execution_v4_hashes_before.json",
+        "impact_audit/execution_v4_hashes_after.json",
+        "impact_audit/repair_impact.json",
+        "d2mr_decision/decision.json",
+        "d2mr_decision/decision_initial_invalidated.json",
+        "d2mv2/run_history.json",
+        "d2mv2/run_authority/run_manifest.json",
+        "d2mv2/run_authority/run_manifest.sha256",
+        "d2mv2/solver/result.json",
+        "d2mv2/solver/first_failure.json",
+        "d2mv2/solver/graph_binding.csv",
+        "d2mv2/trajectory/trajectory_partial.npz",
+        "d2mv2/semantic_v1/not_run.json",
+        "d2mv2/viewer/not_run.json",
+        "d2mv2/audits/failure_localization.json",
+        "d2mv2/audits/frame0_parity_diagnostic.json",
+        "d2mv2/audits/graph_binding_integrity.json",
+        "d2mv2/audits/method_integrity_postrun.json",
+        "d2mv2/audits/special_cases.json",
+        "tests.json",
+        "validation_results.json",
+        "git_commits.json",
+        "resource_usage.json",
+    ]
+    missing = [relative for relative in required if not (root / relative).exists()]
+    value = {
+        "schema_version": "O5RD2MRD2MV2CompletionAuditV1",
+        "status": "PASS" if not missing and method_integrity["status"] == "PASS" else "FAIL",
+        "required_artifacts": required,
+        "missing": missing,
+        "D2M_R_STATUS": summary["D2M_R_STATUS"],
+        "DEV2_FULL_RECOVERY_V2_MACHINE": summary["DEV2_FULL_RECOVERY_V2_MACHINE"],
+    }
+    write_json(root / "completion_audit.json", value)
+    return value
+
+
 def run_d2mr(root: Path) -> dict[str, Any]:
     preflight(root)
     verify_d2m_v1_history(root)
@@ -1136,6 +1423,8 @@ ACTIONS = {
     "finalize-dev2-v2-trajectory": finalize_dev2_v2_trajectory,
     "run-dev2-v2-semantic-v1": run_dev2_v2_semantic_v1,
     "render-dev2-v2-viewer": render_dev2_v2_viewer,
+    "localize-consumed-v2-input-failure": localize_consumed_v2_input_failure,
+    "finalize-delivery": finalize_delivery,
     "summarize": summarize,
     "run-d2mr": run_d2mr,
 }

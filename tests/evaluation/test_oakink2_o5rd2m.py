@@ -136,7 +136,16 @@ def test_scientific_run_count_cannot_exceed_one(
         study,
         "_build_dev2_runtime",
         lambda *_args: SimpleNamespace(
-            graph=SimpleNamespace(graph_hashes=["graph"] * study.EXPECTED_FRAMES)
+            graph=SimpleNamespace(
+                frame_count=study.EXPECTED_FRAMES,
+                graph_hashes=["graph"] * study.EXPECTED_FRAMES,
+            ),
+            warm=SimpleNamespace(
+                arrays={
+                    "qpos": [[0.0]] * study.EXPECTED_FRAMES,
+                    "base_pose_scene": [[[0.0]]] * study.EXPECTED_FRAMES,
+                }
+            ),
         ),
     )
 
@@ -212,6 +221,19 @@ def test_resume_rejects_different_run_uuid(tmp_path: Path, monkeypatch: pytest.M
         "_full_sequence_graph_preflight",
         lambda _manifest: {"graph_path": study.GRAPH_PATH},
     )
+    monkeypatch.setattr(
+        study,
+        "_build_dev2_runtime",
+        lambda *_args: SimpleNamespace(
+            graph=SimpleNamespace(frame_count=study.EXPECTED_FRAMES),
+            warm=SimpleNamespace(
+                arrays={
+                    "qpos": [[0.0]] * study.EXPECTED_FRAMES,
+                    "base_pose_scene": [[[0.0]]] * study.EXPECTED_FRAMES,
+                }
+            ),
+        ),
+    )
     with pytest.raises(RuntimeError, match="RUN_AUTHORITY_MISMATCH"):
         study.resume_dev2_full(tmp_path)
 
@@ -222,6 +244,17 @@ def test_full_trajectory_rejects_239_frames(tmp_path: Path) -> None:
     )
     with pytest.raises(RuntimeError, match="INCOMPLETE"):
         study.finalize_dev2_trajectory(tmp_path)
+
+
+def test_runtime_seed_carrier_coverage_rejected_before_optimizer() -> None:
+    runtime = SimpleNamespace(
+        graph=SimpleNamespace(frame_count=study.EXPECTED_FRAMES),
+        warm=SimpleNamespace(
+            arrays={"qpos": [[0.0]], "base_pose_scene": [[[0.0]]]},
+        ),
+    )
+    with pytest.raises(RuntimeError, match="FULL_SEQUENCE_RUNTIME_INPUT_COVERAGE_MISMATCH"):
+        study._full_sequence_runtime_input_preflight(runtime)
 
 
 def test_sequential_state_and_viewer_role_are_fail_closed() -> None:
