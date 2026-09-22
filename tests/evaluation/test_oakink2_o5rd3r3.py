@@ -285,3 +285,18 @@ def test_frozen_design_has_no_episode_or_frame_special_cases() -> None:
         "wuji_canonical_rest",
         "joint_range_midpoint",
     ]
+
+
+def test_observed_development_failure_is_effect_size_not_recovery() -> None:
+    root = r3.ROOT
+    if not (root / "gate/failure_analysis.json").is_file():
+        pytest.skip("live R3 artifacts are not required for a clean-checkout unit test")
+    decision = r3.read_json(root / "gate/decision.json")
+    analysis = r3.read_json(root / "gate/failure_analysis.json")
+    assert decision["G2_RECOVERY"] == "PASS"
+    assert decision["G3_MEDIAN_REDUCTION"] == "FAIL"
+    assert (
+        analysis["PRIMARY_DEVELOPMENT_FAILURE_MECHANISM"]
+        == "EXPANDED_ACTIVE_SET_EFFECT_SIZE_INSUFFICIENT"
+    )
+    assert analysis["REMAINING_INVALID_CLUSTERS"] == [4]

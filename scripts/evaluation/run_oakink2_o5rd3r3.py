@@ -1140,6 +1140,46 @@ def evaluate_r3_development_gate(root: Path) -> dict[str, Any]:
             "G8_DETERMINISM": "PASS" if determinism["DETERMINISM"] == "PASS" else "FAIL",
         }
     passed = all(value == "PASS" for value in criteria.values())
+    failure_rows = _load_failure_rows(root)
+    remaining = [row for row in failure_rows if not bool(row["recovery"])]
+    cluster_rows = read_csv(root / "failure_frames/per_cluster.csv")
+    reduction_gate = float(
+        read_json(root / "preflight/gate_integrity.json")["MEDIAN_REDUCTION_REQUIRED"]
+    )
+    if criteria["G3_MEDIAN_REDUCTION"] == "FAIL":
+        primary_failure_mechanism = "EXPANDED_ACTIVE_SET_EFFECT_SIZE_INSUFFICIENT"
+    elif criteria["G4_VALID_PRESERVATION"] == "FAIL":
+        primary_failure_mechanism = "VALID_CONTROL_REGRESSION"
+    elif criteria["G6_SEQUENTIAL"] == "FAIL" or criteria["G7_CONTINUITY"] == "FAIL":
+        primary_failure_mechanism = "SEQUENTIAL_PROPAGATION_FAILURE"
+    elif criteria["G8_DETERMINISM"] == "FAIL":
+        primary_failure_mechanism = "DETERMINISM_FAILURE"
+    elif criteria["G2_RECOVERY"] == "FAIL":
+        primary_failure_mechanism = "EXPANDED_ACTIVE_SET_STILL_NO_VALID_TERMINAL"
+    else:
+        primary_failure_mechanism = "NONE" if passed else "MULTI_FACTOR"
+    failure_analysis = {
+        "schema_version": "D3R3DevelopmentFailureAnalysisV1",
+        "status": "NOT_APPLICABLE" if passed else "FAILURE_LOCALIZED",
+        "PRIMARY_DEVELOPMENT_FAILURE_MECHANISM": primary_failure_mechanism,
+        "FAILURE_CONCENTRATED_IN_ONE_CLUSTER": "YES"
+        if remaining and len({int(row["cluster_id"]) for row in remaining}) == 1
+        else "NO",
+        "REMAINING_INVALID_COUNT": len(remaining),
+        "REMAINING_INVALID_ORDINALS": [int(row["ordinal"]) for row in remaining],
+        "REMAINING_INVALID_SOURCE_FRAMES": [int(row["source_frame"]) for row in remaining],
+        "REMAINING_INVALID_CLUSTERS": sorted({int(row["cluster_id"]) for row in remaining}),
+        "EXPANDED_ACTIVE_SET_STILL_NO_VALID_TERMINAL_COUNT": len(remaining),
+        "CLUSTERS_MEETING_MEDIAN_REDUCTION_GATE": sum(
+            float(row["median_relative_reduction"]) >= reduction_gate for row in cluster_rows
+        ),
+        "CLUSTER_COUNT": len(cluster_rows),
+        "VALID_CONTROL_REGRESSION": "YES" if criteria["G4_VALID_PRESERVATION"] == "FAIL" else "NO",
+        "SEQUENTIAL_PROPAGATION_FAILURE": "YES"
+        if criteria["G6_SEQUENTIAL"] == "FAIL" or criteria["G7_CONTINUITY"] == "FAIL"
+        else "NO",
+        "DETERMINISM_FAILURE": "YES" if criteria["G8_DETERMINISM"] == "FAIL" else "NO",
+    }
     result = {
         "schema_version": "D3R3DevelopmentGateDecisionV1",
         "status": "PASS" if passed else "FAIL",
@@ -1154,6 +1194,7 @@ def evaluate_r3_development_gate(root: Path) -> dict[str, Any]:
         {"schema_version": "D3R3CriterionResultsV1", **criteria},
     )
     write_json(root / "gate/decision.json", result)
+    write_json(root / "gate/failure_analysis.json", failure_analysis)
     if not passed:
         write_json(
             root / "future/not_authorized.json",
@@ -1167,6 +1208,7 @@ def evaluate_r3_development_gate(root: Path) -> dict[str, Any]:
                 "D3_V2_SCIENTIFIC_RUN_COUNT": 0,
                 "NEXT": "DEV1_REFINEMENT_V2_DEVELOPMENT_FAILURE_ANALYSIS",
                 "failed_criteria": [key for key, value in criteria.items() if value == "FAIL"],
+                "failure_analysis": failure_analysis,
             },
         )
     return result
@@ -1531,6 +1573,7 @@ def validate_repository(root: Path) -> dict[str, Any]:
 
 def summarize(root: Path) -> dict[str, Any]:
     decision = read_json(root / "gate/decision.json")
+    failure_analysis = read_json(root / "gate/failure_analysis.json")
     failures = read_json(root / "failure_frames/recovery_summary.json")
     clusters = read_csv(root / "failure_frames/per_cluster.csv")
     controls = read_json(root / "valid_controls/summary.json")
@@ -1630,6 +1673,22 @@ def summarize(root: Path) -> dict[str, Any]:
                 "G8_DETERMINISM",
                 "REFINEMENT_V2_DEVELOPMENT_VALIDATION",
                 "D3_R3_STATUS",
+            )
+        },
+        **{
+            key: failure_analysis[key]
+            for key in (
+                "PRIMARY_DEVELOPMENT_FAILURE_MECHANISM",
+                "FAILURE_CONCENTRATED_IN_ONE_CLUSTER",
+                "REMAINING_INVALID_COUNT",
+                "REMAINING_INVALID_ORDINALS",
+                "REMAINING_INVALID_SOURCE_FRAMES",
+                "REMAINING_INVALID_CLUSTERS",
+                "CLUSTERS_MEETING_MEDIAN_REDUCTION_GATE",
+                "CLUSTER_COUNT",
+                "VALID_CONTROL_REGRESSION",
+                "SEQUENTIAL_PROPAGATION_FAILURE",
+                "DETERMINISM_FAILURE",
             )
         },
         "R3_DEVELOPMENT_VIEWER": viewer["R3_DEVELOPMENT_VIEWER"],
@@ -1832,6 +1891,17 @@ def summarize(root: Path) -> dict[str, Any]:
                 "G8_DETERMINISM",
                 "REFINEMENT_V2_DEVELOPMENT_VALIDATION",
                 "D3_R3_STATUS",
+                "PRIMARY_DEVELOPMENT_FAILURE_MECHANISM",
+                "FAILURE_CONCENTRATED_IN_ONE_CLUSTER",
+                "REMAINING_INVALID_COUNT",
+                "REMAINING_INVALID_ORDINALS",
+                "REMAINING_INVALID_SOURCE_FRAMES",
+                "REMAINING_INVALID_CLUSTERS",
+                "CLUSTERS_MEETING_MEDIAN_REDUCTION_GATE",
+                "CLUSTER_COUNT",
+                "VALID_CONTROL_REGRESSION",
+                "SEQUENTIAL_PROPAGATION_FAILURE",
+                "DETERMINISM_FAILURE",
                 "FRESH_REFINEMENT_CERTIFICATION_AUTHORIZED",
                 "REFINEMENT_V2_INDEPENDENT_CERTIFICATION",
                 "NEXT",
