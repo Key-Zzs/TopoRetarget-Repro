@@ -1565,6 +1565,13 @@ def design_refinement_v2(root: Path) -> dict[str, Any]:
     }
     selected = mapping[mechanism]
     plan = read_json(root / "oracle_plan/search_space_oracle_plan.json")
+    compute_budget = {
+        "INITIALIZATION_BASIN_COVERAGE_INSUFFICIENT": "fallback only; one source-conditioned bootstrap at 250 nfev, then frozen primary/secondary 8/8 iterations; no dynamic escalation",
+        "OPTIMIZATION_SUBSPACE_TOO_NARROW": "fallback only; three frozen seed sources over all 20 finger DOFs, primary/secondary 8/8 iterations; no bootstrap and no dynamic escalation",
+        "SEARCH_ENVELOPE_TOO_RESTRICTIVE": "fallback only; frozen finite envelope level with unchanged optimizer budget; no dynamic escalation",
+        "COMBINED_INITIALIZATION_AND_SUBSPACE_LIMIT": "fallback only; one source-conditioned bootstrap at 250 nfev followed by all-20-finger primary/secondary 8/8 iterations; no dynamic escalation",
+        "SEQUENTIAL_BASIN_HYSTERESIS": "fallback only with the evidence-selected bounded search and normal accepted-state propagation; no dynamic escalation",
+    }[mechanism]
     design = {
         "schema_version": "RefinementV2DesignV1",
         "status": "DRAFT_PENDING_SENTINELS",
@@ -1588,7 +1595,7 @@ def design_refinement_v2(root: Path) -> dict[str, Any]:
         "retention": "threshold-aware primary retention; reject secondary interaction regression",
         "previous_state_lifecycle": "after a fallback state is accepted, it becomes previous accepted runtime state; q_old[t] remains historical and separate",
         "failure_behavior": "return existing hard-valid refinement result and report interaction-invalid; never relax threshold",
-        "compute_budget": "fallback only; bootstrap 250 nfev when selected, primary/secondary 8 iterations, no dynamic escalation",
+        "compute_budget": compute_budget,
         "frame_episode_object_special_cases": False,
     }
     write_json(

@@ -119,6 +119,8 @@ def test_zero_recovery_cannot_freeze_design() -> None:
 def test_no_dataset_or_frame_special_case_in_design() -> None:
     source = inspect.getsource(study.design_refinement_v2)
     assert '"frame_episode_object_special_cases": False' in source
+    assert "three frozen seed sources over all 20 finger DOFs" in source
+    assert "no bootstrap and no dynamic escalation" in source
     assert "C10001" not in source
     assert "source_frame" not in source
 
