@@ -271,6 +271,7 @@ def test_cli_help_is_real() -> None:
         "render-r3-development-viewer",
         "audit-r3-special-cases",
         "authorize-fresh-certification",
+        "validate-repository",
         "summarize",
     ):
         assert action in help_text

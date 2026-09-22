@@ -1461,6 +1461,74 @@ def authorize_fresh_certification(root: Path) -> dict[str, Any]:
     return value
 
 
+def validate_repository(root: Path) -> dict[str, Any]:
+    commands = [
+        [
+            "conda",
+            "run",
+            "-n",
+            "toporetarget-rl",
+            "ruff",
+            "check",
+            "scripts/evaluation/run_oakink2_o5rd3r3.py",
+            "tests/evaluation/test_oakink2_o5rd3r3.py",
+        ],
+        [
+            "conda",
+            "run",
+            "-n",
+            "toporetarget-rl",
+            "ruff",
+            "format",
+            "--check",
+            "scripts/evaluation/run_oakink2_o5rd3r3.py",
+            "tests/evaluation/test_oakink2_o5rd3r3.py",
+        ],
+        ["conda", "run", "-n", "toporetarget-rl", "python", "-m", "mypy", "src"],
+        ["conda", "run", "-n", "toporetarget-rl", "python", "-m", "pytest", "-q"],
+        [
+            "conda",
+            "run",
+            "-n",
+            "toporetarget-rl",
+            "python",
+            "scripts/check_paper_fidelity.py",
+        ],
+        ["git", "diff", "--check"],
+    ]
+    rows = []
+    for command in commands:
+        result = subprocess.run(command, cwd=REPO, text=True, capture_output=True, check=False)
+        rows.append(
+            {
+                "command": command,
+                "returncode": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+            }
+        )
+    passed = all(row["returncode"] == 0 for row in rows)
+    tests = {
+        "schema_version": "D3R3RepositoryTestsV1",
+        "status": "PASS" if passed else "FAIL",
+        "commands": rows,
+    }
+    write_json(root / "tests.json", tests)
+    write_json(
+        root / "validation_results.json",
+        {
+            "schema_version": "D3R3ValidationResultsV1",
+            "status": "PASS" if passed else "FAIL",
+            "repository_validation": tests,
+            "scientific_gate": read_json(root / "gate/decision.json"),
+            "scientific_and_engineering_status_are_distinct": True,
+        },
+    )
+    if not passed:
+        raise RuntimeError("D3R3_REPOSITORY_VALIDATION_FAILED")
+    return tests
+
+
 def summarize(root: Path) -> dict[str, Any]:
     decision = read_json(root / "gate/decision.json")
     failures = read_json(root / "failure_frames/recovery_summary.json")
@@ -1847,6 +1915,7 @@ ACTIONS: dict[str, Callable[[Path], dict[str, Any]]] = {
     "render-r3-development-viewer": render_r3_development_viewer,
     "audit-r3-special-cases": audit_r3_special_cases,
     "authorize-fresh-certification": authorize_fresh_certification,
+    "validate-repository": validate_repository,
     "summarize": summarize,
     "prepare-all": prepare_all,
 }
