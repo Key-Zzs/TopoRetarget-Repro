@@ -1154,6 +1154,21 @@ def evaluate_r3_development_gate(root: Path) -> dict[str, Any]:
         {"schema_version": "D3R3CriterionResultsV1", **criteria},
     )
     write_json(root / "gate/decision.json", result)
+    if not passed:
+        write_json(
+            root / "future/not_authorized.json",
+            {
+                "schema_version": "D3R3FreshCertificationNotAuthorizedV1",
+                "status": "NOT_AUTHORIZED",
+                "FRESH_REFINEMENT_CERTIFICATION_AUTHORIZED": "NO",
+                "FRESH_REFINEMENT_SPARSE": "NOT_RUN",
+                "FRESH_REFINEMENT_WINDOW": "NOT_RUN",
+                "CROSS_EPISODE_REFINEMENT": "NOT_RUN",
+                "D3_V2_SCIENTIFIC_RUN_COUNT": 0,
+                "NEXT": "DEV1_REFINEMENT_V2_DEVELOPMENT_FAILURE_ANALYSIS",
+                "failed_criteria": [key for key, value in criteria.items() if value == "FAIL"],
+            },
+        )
     return result
 
 
@@ -1164,23 +1179,35 @@ def profile_r3_cost(root: Path) -> dict[str, Any]:
     normal = np.asarray([float(row["normal_wall_time_sec"]) for row in rows])
     expanded = np.asarray([float(row["expanded_wall_time_sec"]) for row in rows])
     fallback = sum(bool(row["expanded_triggered"]) for row in rows)
+    d3_profile = read_json(D3_ROOT / "profiler/aggregate.json")
+    original_full_runtime = float(d3_profile["solver_total_sec"])
+    observed_added_full_runtime = fallback * float(np.mean(expanded))
+    estimated_conditional_runtime = original_full_runtime + observed_added_full_runtime
     aggregate = {
         "schema_version": "D3R3CostAggregateV1",
         "status": "PASS",
         "N_failure_frames": len(rows),
         "N_fallback_invocations": fallback,
         "fallback_invocation_rate": fallback / len(rows),
-        "mean_normal_sec": float(np.mean(normal)),
+        "mean_normal_historical_sec_on_failure_frames": float(np.mean(normal)),
         "mean_fallback_sec": float(np.mean(expanded)),
-        "mean_total_sec": float(np.mean(total)),
+        "mean_r3_validation_wall_sec": float(np.mean(total)),
         "p50_total_sec": float(np.percentile(total, 50)),
         "p90_total_sec": float(np.percentile(total, 90)),
         "p95_total_sec": float(np.percentile(total, 95)),
         "max_total_sec": float(np.max(total)),
         "total_additional_development_compute_sec": float(np.sum(expanded)),
         "expected_fallback_rate_on_D3_V1_trajectory": fallback / d3.EXPECTED_FRAMES,
-        "estimated_conditional_runtime_sec_on_D3_V1_trajectory": float(np.sum(normal))
-        + fallback * float(np.mean(expanded)),
+        "original_D3_V1_full_runtime_sec": original_full_runtime,
+        "observed_added_runtime_projected_to_D3_V1_sec": observed_added_full_runtime,
+        "estimated_conditional_runtime_sec_on_D3_V1_trajectory": estimated_conditional_runtime,
+        "estimated_conditional_mean_sec_per_D3_frame": estimated_conditional_runtime
+        / d3.EXPECTED_FRAMES,
+        "observed_added_sec_per_D3_frame": observed_added_full_runtime / d3.EXPECTED_FRAMES,
+        "observed_failure_frame_slowdown_vs_historical_normal": (
+            float(np.mean(normal)) + float(np.mean(expanded))
+        )
+        / float(np.mean(normal)),
         "unconditional_20dof_runtime": "NOT_MEASURED",
     }
     write_csv(root / "profiler/per_frame.csv", rows)
@@ -1191,7 +1218,13 @@ def profile_r3_cost(root: Path) -> dict[str, Any]:
         "status": "PASS",
         "R2_predicted": cost,
         "R3_observed_fallback_invocation_rate": aggregate["fallback_invocation_rate"],
-        "R3_observed_mean_total_sec": aggregate["mean_total_sec"],
+        "R3_observed_added_sec_per_D3_frame": aggregate["observed_added_sec_per_D3_frame"],
+        "R3_observed_failure_frame_slowdown": aggregate[
+            "observed_failure_frame_slowdown_vs_historical_normal"
+        ],
+        "R3_estimated_conditional_runtime_sec": aggregate[
+            "estimated_conditional_runtime_sec_on_D3_V1_trajectory"
+        ],
         "runtime_is_scientific_gate": False,
     }
     write_json(root / "profiler/cost_model_comparison.json", comparison)
@@ -1512,9 +1545,9 @@ def summarize(root: Path) -> dict[str, Any]:
             )
         },
         "FALLBACK_INVOCATION_RATE": cost["fallback_invocation_rate"],
-        "NORMAL_PATH_MEAN_SEC": cost["mean_normal_sec"],
+        "NORMAL_PATH_MEAN_SEC": cost["mean_normal_historical_sec_on_failure_frames"],
         "EXPANDED_PATH_MEAN_SEC": cost["mean_fallback_sec"],
-        "TOTAL_MEAN_SEC_PER_VALIDATION_FRAME": cost["mean_total_sec"],
+        "TOTAL_MEAN_SEC_PER_VALIDATION_FRAME": cost["mean_r3_validation_wall_sec"],
         "CONDITIONAL_COST_ESTIMATE": cost["estimated_conditional_runtime_sec_on_D3_V1_trajectory"],
         **{
             key: decision[key]
@@ -1686,6 +1719,31 @@ def summarize(root: Path) -> dict[str, Any]:
                 "MAX_Q_ABS_DIFF",
                 "MAX_BASE_ABS_DIFF",
                 "MAX_E_IM_ABS_DIFF",
+            )
+        ],
+        "```",
+        "",
+        "## Cluster results",
+        "",
+        "| Cluster | N | Recovered | Recovery rate | Old p95 | New p95 | Expanded triggers |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+        *[
+            "| {cluster_id} | {N} | {recovered_count} | {recovery_fraction} | "
+            "{old_E_IM_p95} | {new_E_IM_p95} | {expanded_fallback_invocation_count} |".format(**row)
+            for row in clusters
+        ],
+        "",
+        "## Cost",
+        "",
+        "```text",
+        *[
+            f"{key}={summary[key]}"
+            for key in (
+                "FALLBACK_INVOCATION_RATE",
+                "NORMAL_PATH_MEAN_SEC",
+                "EXPANDED_PATH_MEAN_SEC",
+                "TOTAL_MEAN_SEC_PER_VALIDATION_FRAME",
+                "CONDITIONAL_COST_ESTIMATE",
             )
         ],
         "```",
