@@ -1270,6 +1270,14 @@ def summarize(root: Path) -> dict[str, Any]:
             for row in comparison
         ],
     ]
+    provenance_table = [
+        "| Criterion | Value | Authority classification | Independent authority? |",
+        "| --- | ---: | --- | --- |",
+        *[
+            f"| {row['criterion']} | {row['value']} | {row['authority_type']} | {row['independent']} |"
+            for row in gate_v1_criteria()
+        ],
+    ]
     handoff = "\n".join(
         [
             "# OakInk2 O5R-D3-R4",
@@ -1297,6 +1305,10 @@ def summarize(root: Path) -> dict[str, Any]:
             "- CONTINUITY=PASS",
             "- DETERMINISM=PASS",
             "",
+            "## GateV1 provenance",
+            "",
+            *provenance_table,
+            "",
             "## 50% authority decision",
             "",
             f"- MEDIAN_REDUCTION_50_PERCENT_AUTHORITY={summary['MEDIAN_REDUCTION_50_PERCENT_AUTHORITY']}",
@@ -1323,6 +1335,11 @@ def summarize(root: Path) -> dict[str, Any]:
             "- GATE_SEMANTIC_ALIGNMENT=MISALIGNED",
             "- PRIMARY_ROOT_CAUSE=DEVELOPMENT_GATE_SEMANTIC_MISMATCH",
             "- ROOT_CAUSE_CONFIDENCE=HIGH",
+            "",
+            "## GateV2",
+            "",
+            "- REFINEMENT_V2_DEVELOPMENT_GATE_V2_CREATED=YES",
+            f"- REFINEMENT_V2_DEVELOPMENT_GATE_V2_SHA256={summary['REFINEMENT_V2_DEVELOPMENT_GATE_V2_SHA256']}",
             "",
             "## GateV1 vs GateV2",
             "",
