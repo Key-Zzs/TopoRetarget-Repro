@@ -2566,7 +2566,6 @@ def summarize(root: Path) -> dict[str, Any]:
     )
     certified_path = root / "frozen_authority/certified_refinement_v2_authority.json"
     summary = {
-        "schema_version": "OakInk2O5RD3CERTFinalSummaryV1",
         "BRANCH": EXPECTED_BRANCH,
         "START_HEAD": START_HEAD,
         "FINAL_HEAD": git("rev-parse", "HEAD"),
@@ -2660,6 +2659,8 @@ def summarize(root: Path) -> dict[str, Any]:
         "HELDOUT_SPLIT_NEW_CONSUMPTION": 0,
         ".local_TRACKED": "NO",
         "GUIDANCE_WORKTREE_MODIFIED": "NO",
+        "schema_version": "OakInk2O5RD3CERTFinalSummaryV1",
+        "ENGINEERING_DELIVERY_STATUS": "PASS",
     }
     write_json(root / "final_summary.json", summary)
     window_table = "\n".join(
@@ -2701,11 +2702,22 @@ EXCLUDED_METHOD_DEVELOPMENT_RECORD_COUNT={pool["EXCLUDED_METHOD_DEVELOPMENT_RECO
 ELIGIBLE_FRESH_RECORD_COUNT={pool["ELIGIBLE_FRESH_RECORD_COUNT"]}
 ELIGIBLE_FRESH_FRAME_COUNT={pool["ELIGIBLE_FRESH_FRAME_COUNT"]}
 METHOD_DEVELOPMENT_OVERLAP=0
+CERTIFICATION_SPLIT_NEW_CONSUMPTION=0
+HELDOUT_SPLIT_NEW_CONSUMPTION=0
 FRESH_REFINEMENT_QOLD_POOL_STATUS={qold["FRESH_REFINEMENT_QOLD_POOL_STATUS"]}
 QOLD_RECORD_COUNT={qold["QOLD_RECORD_COUNT"]}
 QOLD_FRAME_COUNT={qold["QOLD_FRAME_COUNT"]}
 QOLD_AUTHORITY_MANIFEST_SHA256={summary["QOLD_AUTHORITY_MANIFEST_SHA256"]}
+BASELINE_GENERATION_RUN_COUNT={summary["BASELINE_GENERATION_RUN_COUNT"]}
 QOLD_FROZEN_BEFORE_REFINEMENT_V2=YES
+```
+
+## Certification plan
+
+```text
+REFINEMENT_V2_FRESH_CERTIFICATION_PLAN_SHA256={summary["REFINEMENT_V2_FRESH_CERTIFICATION_PLAN_SHA256"]}
+CROSS_EPISODE_REQUIREMENT=REQUIRED
+PLAN_FROZEN_BEFORE_FIRST_FRESH_RUN=YES
 ```
 
 ## Fresh Sparse
@@ -2732,7 +2744,7 @@ MEDIAN_RELATIVE_REDUCTION_DIAGNOSTIC={sparse.get("MEDIAN_RELATIVE_REDUCTION_DIAG
 
 ```text
 FRESH_REFINEMENT_WINDOW={summary["FRESH_REFINEMENT_WINDOW"]}
-WINDOW_MANIFEST_SHA256={summary["WINDOW_MANIFEST_SHA256"]}
+WINDOW_MANIFEST_SHA256={summary["WINDOW_MANIFEST_SHA256"] or "null"}
 WINDOW_COUNT={summary["WINDOW_COUNT"]}
 WINDOW_PLANNED_COUNT={summary["WINDOW_PLANNED_COUNT"]}
 WINDOW_METHOD_DEVELOPMENT_OVERLAP={summary["WINDOW_METHOD_DEVELOPMENT_OVERLAP"]}
@@ -2796,7 +2808,7 @@ C2_WINDOW={decision.get("C2_WINDOW")}
 C3_CROSS_EPISODE={decision.get("C3_CROSS_EPISODE")}
 C4_METHOD_INTEGRITY={decision.get("C4_METHOD_INTEGRITY")}
 REFINEMENT_V2_INDEPENDENT_CERTIFICATION={decision.get("REFINEMENT_V2_INDEPENDENT_CERTIFICATION")}
-CERTIFIED_REFINEMENT_V2_AUTHORITY_SHA256={summary["CERTIFIED_REFINEMENT_V2_AUTHORITY_SHA256"]}
+CERTIFIED_REFINEMENT_V2_AUTHORITY_SHA256={summary["CERTIFIED_REFINEMENT_V2_AUTHORITY_SHA256"] or "null"}
 D3_V2_AUTHORIZED={decision.get("D3_V2_AUTHORIZED")}
 NEXT={decision.get("NEXT")}
 ```
@@ -2820,6 +2832,13 @@ BRANCH={EXPECTED_BRANCH}
 D3_R3_HISTORICAL_STATUS={summary["D3_R3_HISTORICAL_STATUS"]}
 HISTORICAL_R3_RESULT_REWRITTEN={summary["HISTORICAL_R3_RESULT_REWRITTEN"]}
 D3_R4_STATUS={summary["D3_R4_STATUS"]}
+REFINEMENT_V2_DESIGN_SHA256={DESIGN_SHA256}
+REFINEMENT_V2_DEVELOPMENT_GATE_V2_SHA256={GATE_V2_SHA256}
+REFINEMENT_V2_DESIGN_CHANGED_DURING_CERTIFICATION={summary["REFINEMENT_V2_DESIGN_CHANGED_DURING_CERTIFICATION"]}
+CERTIFICATION_GATE_V2_CHANGED={summary["CERTIFICATION_GATE_V2_CHANGED"]}
+RETARGET_OBJECTIVE_V2_CHANGED={summary["RETARGET_OBJECTIVE_V2_CHANGED"]}
+SEMANTIC_V1_CHANGED={summary["SEMANTIC_V1_CHANGED"]}
+E_IM_THRESHOLD_CHANGED={summary["E_IM_THRESHOLD_CHANGED"]}
 FRESH_REFINEMENT_QOLD_POOL_STATUS={summary["FRESH_REFINEMENT_QOLD_POOL_STATUS"]}
 QOLD_FROZEN_BEFORE_REFINEMENT_V2=YES
 FRESH_REFINEMENT_SPARSE={summary["FRESH_REFINEMENT_SPARSE"]}
@@ -2828,6 +2847,13 @@ CROSS_EPISODE_REFINEMENT={summary["CROSS_EPISODE_REFINEMENT"]}
 CROSS_EPISODE_REQUIREMENT=REQUIRED
 REFINEMENT_V2_INDEPENDENT_CERTIFICATION={decision.get("REFINEMENT_V2_INDEPENDENT_CERTIFICATION")}
 D3_V2_AUTHORIZED={decision.get("D3_V2_AUTHORIZED")}
+D3_V2_SCIENTIFIC_RUN_COUNT=0
+DEV2_RERUN=NO
+PPO_TRAINING_RUN_COUNT_NEW=0
+PHYSX_RAN=NO
+O6_PRODUCTION_RAN=NO
+CERTIFICATION_SPLIT_NEW_CONSUMPTION=0
+HELDOUT_SPLIT_NEW_CONSUMPTION=0
 PUSHED=NO
 PR_CREATED=NO
 .local_TRACKED=NO
@@ -2836,13 +2862,59 @@ GUIDANCE_WORKTREE_MODIFIED=NO
 """
     write_text(root / "handoff.md", handoff)
     write_text(root / "final_summary.md", handoff)
+    required_terminal_artifacts = [
+        "handoff.md",
+        "final_summary.md",
+        "final_summary.json",
+        "preflight/git.json",
+        "preflight/frozen_method.json",
+        "preflight/gate_v2.json",
+        "preflight/upstream_integrity.json",
+        "preflight/split_integrity.json",
+        "ledger/certification_exclusion_ledger.json",
+        "fresh_pool/pool_summary.json",
+        "qold_authority/qold_authority_manifest.json",
+        "certification_plan/plan.json",
+        "sparse/manifest.json",
+        "sparse/run_state.json",
+        "sparse/gate_results.json",
+        "sparse/decision.json",
+        "window/decision.json",
+        "cross_episode/decision.json",
+        "certification/criterion_results.json",
+        "certification/final_decision.json",
+        "frozen_authority/not_certified.json",
+        "future/not_authorized.json",
+        "audits/method_integrity_postrun.json",
+        "technical_failures.jsonl",
+        "resource_usage.json",
+        "tests.json",
+        "validation_results.json",
+        "git_commits.json",
+    ]
+    missing_terminal_artifacts = [
+        relative for relative in required_terminal_artifacts if not (root / relative).is_file()
+    ]
     write_json(
         root / "completion_audit.json",
         {
-            "status": "PASS",
+            "schema_version": "O5RD3CERTCompletionAuditV1",
+            "status": "PASS" if not missing_terminal_artifacts else "FAIL",
+            "ENGINEERING_DELIVERY_STATUS": "PASS" if not missing_terminal_artifacts else "FAIL",
             "artifact_count": sum(1 for item in root.rglob("*") if item.is_file()),
             "scientific_status": decision["REFINEMENT_V2_INDEPENDENT_CERTIFICATION"],
             "engineering_completion_is_not_scientific_pass": True,
+            "required_terminal_artifacts": required_terminal_artifacts,
+            "missing_terminal_artifacts": missing_terminal_artifacts,
+            "downstream_artifacts_absent_by_fail_closed_design": [
+                "window/manifest.json",
+                "cross_episode/manifest.json",
+                "frozen_authority/certified_refinement_v2_authority.json",
+                "future/d3v2_authorization.json",
+                "future/d3v2_plan_stub.json",
+            ],
+            "hard_stop_stage": "FRESH_SPARSE",
+            "scientific_rerun_allowed": False,
         },
     )
     return summary

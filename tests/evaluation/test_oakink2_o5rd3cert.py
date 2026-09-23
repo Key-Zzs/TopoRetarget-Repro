@@ -205,6 +205,10 @@ def test_handoff_contains_contract_required_safety_and_runtime_fields() -> None:
         "REFINEMENT_V2_DESIGN_CHANGED_DURING_CERTIFICATION",
         "CERTIFICATION_GATE_V2_CHANGED",
         "GUIDANCE_WORKTREE_MODIFIED",
+        "BASELINE_GENERATION_RUN_COUNT",
+        "REFINEMENT_V2_FRESH_CERTIFICATION_PLAN_SHA256",
+        "ENGINEERING_DELIVERY_STATUS",
+        "missing_terminal_artifacts",
     ):
         assert field in block
 
