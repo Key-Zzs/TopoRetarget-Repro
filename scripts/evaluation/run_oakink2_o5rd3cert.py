@@ -2542,6 +2542,18 @@ def summarize(root: Path) -> dict[str, Any]:
         else float(np.mean([float(row["total_wall_time_sec"]) for row in all_rows]))
         * d3.EXPECTED_FRAMES
     )
+    sparse_manifest = read_json(root / "sparse/manifest.json")
+    sparse_strata = sparse_manifest["strata"]
+    expanded_count = sum(row["expanded_triggered"] == "True" for row in sparse_rows)
+    expanded_recovery_count = sum(
+        row["expanded_triggered"] == "True" and row["recovered"] == "True" for row in sparse_rows
+    )
+    unnecessary_expanded_count = sum(
+        row["expanded_triggered"] == "True"
+        and row["normal_hard_valid"] == "True"
+        and float(row["normal_E_IM"]) <= TAU + EPS
+        for row in sparse_rows
+    )
     write_json(root / "profiler/aggregate.json", aggregate)
     write_json(
         root / "profiler/d3v2_runtime_estimate.json",
@@ -2565,6 +2577,9 @@ def summarize(root: Path) -> dict[str, Any]:
         "REFINEMENT_V2_DEVELOPMENT_GATE_V2_SHA256": GATE_V2_SHA256,
         "METHOD_INTEGRITY_START": "PASS",
         "GATE_V2_INTEGRITY": "PASS",
+        "D3_R3_HISTORICAL_STATUS": "FAIL_DEVELOPMENT_GATE",
+        "HISTORICAL_R3_RESULT_REWRITTEN": "NO",
+        "D3_R4_STATUS": "PASS_GATE_REALIGNMENT",
         **pool,
         "FRESH_REFINEMENT_QOLD_POOL_STATUS": qold["FRESH_REFINEMENT_QOLD_POOL_STATUS"],
         "QOLD_RECORD_COUNT": qold["QOLD_RECORD_COUNT"],
@@ -2582,9 +2597,56 @@ def summarize(root: Path) -> dict[str, Any]:
         "CROSS_EPISODE_REQUIREMENT": "REQUIRED",
         "PLAN_FROZEN_BEFORE_FIRST_FRESH_RUN": "YES",
         "FRESH_REFINEMENT_SPARSE": sparse.get("FRESH_REFINEMENT_SPARSE", "NOT_RUN"),
+        "SPARSE_MANIFEST_SHA256": sha256_file(root / "sparse/manifest.json"),
+        "SPARSE_N": sparse.get("SPARSE_N", len(sparse_manifest["frames"])),
+        "HIGH_N": sparse_strata["HIGH"],
+        "MID_N": sparse_strata["MID"],
+        "LOW_N": sparse_strata["LOW"],
+        "TECHNICAL": sparse.get("TECHNICAL"),
+        "OLD_INVALID_COUNT": sparse.get("OLD_INVALID_COUNT"),
+        "RECOVERED_COUNT": sparse.get("RECOVERED_COUNT"),
+        "RECOVERY_FRACTION": sparse.get("RECOVERY_FRACTION"),
+        "THRESHOLD_AWARE_NONREGRESSION": sparse.get("THRESHOLD_AWARE_NONREGRESSION"),
+        "LOW_PRESERVED": sparse.get("LOW_PRESERVED"),
+        "HARD_VALID": sparse.get("HARD_VALID"),
+        "DETERMINISM": sparse.get("DETERMINISM"),
+        "MEDIAN_RELATIVE_REDUCTION_DIAGNOSTIC": sparse.get("MEDIAN_RELATIVE_REDUCTION_DIAGNOSTIC"),
         "FRESH_REFINEMENT_WINDOW": window.get("FRESH_REFINEMENT_WINDOW", "NOT_RUN"),
+        "WINDOW_MANIFEST_SHA256": sha256_file(root / "window/manifest.json")
+        if (root / "window/manifest.json").is_file()
+        else None,
+        "WINDOW_COUNT": len(window.get("windows", [])),
+        "WINDOW_PLANNED_COUNT": WINDOW_COUNT,
+        "WINDOW_METHOD_DEVELOPMENT_OVERLAP": window.get(
+            "WINDOW_METHOD_DEVELOPMENT_OVERLAP", "NOT_RUN"
+        ),
+        "WINDOW_SPARSE_OVERLAP": window.get("WINDOW_SPARSE_OVERLAP", "NOT_RUN"),
         "CROSS_EPISODE_REFINEMENT": cross.get("CROSS_EPISODE_REFINEMENT", "NOT_RUN"),
+        "CROSS_EPISODE_CONTROL_COUNT": len(cross.get("controls", [])),
+        "CROSS_EPISODE_PLANNED_CONTROL_COUNT": CROSS_CONTROL_COUNT,
+        "CROSS_EPISODE_SOURCE_SEQUENCE_DISJOINT": cross.get(
+            "CROSS_EPISODE_SOURCE_SEQUENCE_DISJOINT", "NOT_RUN"
+        ),
+        "NORMAL_PATH_FRAME_COUNT": len(sparse_rows),
+        "EXPANDED_PATH_INVOCATION_COUNT": expanded_count,
+        "EXPANDED_PATH_INVOCATION_RATE": None
+        if not sparse_rows
+        else expanded_count / len(sparse_rows),
+        "EXPANDED_PATH_RECOVERY_COUNT": expanded_recovery_count,
+        "VALID_NORMAL_PATHS_UNNECESSARILY_EXPANDED": unnecessary_expanded_count,
+        "SPARSE_MEAN_SEC": sparse_profile.get("mean_sec", "UNKNOWN_NOT_MEASURED"),
+        "WINDOW_MEAN_SEC_PER_FRAME": window_profile.get("mean_sec", "UNKNOWN_NOT_MEASURED"),
+        "CROSS_EPISODE_MEAN_SEC_PER_FRAME": cross_profile.get("mean_sec", "UNKNOWN_NOT_MEASURED"),
+        "ESTIMATED_D3_V2_2722_RUNTIME_SEC": estimate,
+        "ESTIMATE_METHOD": "measured completed certification frame mean sec multiplied by 2722; diagnostic only",
         "METHOD_INTEGRITY_POSTRUN": integrity["METHOD_INTEGRITY_POSTRUN"],
+        "REFINEMENT_V2_DESIGN_CHANGED_DURING_CERTIFICATION": integrity[
+            "REFINEMENT_V2_DESIGN_CHANGED"
+        ],
+        "CERTIFICATION_GATE_V2_CHANGED": integrity["GATE_V2_CHANGED"],
+        "RETARGET_OBJECTIVE_V2_CHANGED": integrity["OBJECTIVE_V2_CHANGED"],
+        "SEMANTIC_V1_CHANGED": integrity["SEMANTIC_V1_CHANGED"],
+        "E_IM_THRESHOLD_CHANGED": integrity["E_IM_THRESHOLD_CHANGED"],
         **decision,
         "CERTIFIED_REFINEMENT_V2_AUTHORITY_SHA256": sha256_file(certified_path)
         if certified_path.is_file()
@@ -2651,6 +2713,10 @@ QOLD_FROZEN_BEFORE_REFINEMENT_V2=YES
 ```text
 FRESH_REFINEMENT_SPARSE={summary["FRESH_REFINEMENT_SPARSE"]}
 SPARSE_MANIFEST_SHA256={sha256_file(root / "sparse/manifest.json") if (root / "sparse/manifest.json").is_file() else None}
+SPARSE_N={summary["SPARSE_N"]}
+HIGH_N={summary["HIGH_N"]}
+MID_N={summary["MID_N"]}
+LOW_N={summary["LOW_N"]}
 TECHNICAL={sparse.get("TECHNICAL")}
 OLD_INVALID_COUNT={sparse.get("OLD_INVALID_COUNT")}
 RECOVERED_COUNT={sparse.get("RECOVERED_COUNT")}
@@ -2664,7 +2730,14 @@ MEDIAN_RELATIVE_REDUCTION_DIAGNOSTIC={sparse.get("MEDIAN_RELATIVE_REDUCTION_DIAG
 
 ## Fresh Windows
 
+```text
 FRESH_REFINEMENT_WINDOW={summary["FRESH_REFINEMENT_WINDOW"]}
+WINDOW_MANIFEST_SHA256={summary["WINDOW_MANIFEST_SHA256"]}
+WINDOW_COUNT={summary["WINDOW_COUNT"]}
+WINDOW_PLANNED_COUNT={summary["WINDOW_PLANNED_COUNT"]}
+WINDOW_METHOD_DEVELOPMENT_OVERLAP={summary["WINDOW_METHOD_DEVELOPMENT_OVERLAP"]}
+WINDOW_SPARSE_OVERLAP={summary["WINDOW_SPARSE_OVERLAP"]}
+```
 
 | Window | N | Baseline p95 | Refined p95 | Hard-valid | Continuity | Runtime chain | Determinism | Result |
 |---|---:|---:|---:|---|---|---|---|---|
@@ -2672,11 +2745,48 @@ FRESH_REFINEMENT_WINDOW={summary["FRESH_REFINEMENT_WINDOW"]}
 
 ## Fresh CrossEpisode
 
+```text
 CROSS_EPISODE_REFINEMENT={summary["CROSS_EPISODE_REFINEMENT"]}
+CROSS_EPISODE_CONTROL_COUNT={summary["CROSS_EPISODE_CONTROL_COUNT"]}
+CROSS_EPISODE_PLANNED_CONTROL_COUNT={summary["CROSS_EPISODE_PLANNED_CONTROL_COUNT"]}
+CROSS_EPISODE_SOURCE_SEQUENCE_DISJOINT={summary["CROSS_EPISODE_SOURCE_SEQUENCE_DISJOINT"]}
+CROSS_EPISODE_REQUIREMENT=REQUIRED
+```
 
 | Control | Episode | Primitive | Object | Frames | Fallback rate | Interaction | Continuity | Result |
 |---|---|---|---|---:|---:|---|---|---|---|
 {cross_table}
+
+## Conditional repair behavior
+
+```text
+NORMAL_PATH_FRAME_COUNT={summary["NORMAL_PATH_FRAME_COUNT"]}
+EXPANDED_PATH_INVOCATION_COUNT={summary["EXPANDED_PATH_INVOCATION_COUNT"]}
+EXPANDED_PATH_INVOCATION_RATE={summary["EXPANDED_PATH_INVOCATION_RATE"]}
+EXPANDED_PATH_RECOVERY_COUNT={summary["EXPANDED_PATH_RECOVERY_COUNT"]}
+VALID_NORMAL_PATHS_UNNECESSARILY_EXPANDED={summary["VALID_NORMAL_PATHS_UNNECESSARILY_EXPANDED"]}
+```
+
+## Runtime estimate
+
+```text
+SPARSE_MEAN_SEC={summary["SPARSE_MEAN_SEC"]}
+WINDOW_MEAN_SEC_PER_FRAME={summary["WINDOW_MEAN_SEC_PER_FRAME"]}
+CROSS_EPISODE_MEAN_SEC_PER_FRAME={summary["CROSS_EPISODE_MEAN_SEC_PER_FRAME"]}
+ESTIMATED_D3_V2_2722_RUNTIME_SEC={summary["ESTIMATED_D3_V2_2722_RUNTIME_SEC"]}
+ESTIMATE_METHOD={summary["ESTIMATE_METHOD"]}
+```
+
+## Method integrity
+
+```text
+METHOD_INTEGRITY_POSTRUN={summary["METHOD_INTEGRITY_POSTRUN"]}
+REFINEMENT_V2_DESIGN_CHANGED_DURING_CERTIFICATION={summary["REFINEMENT_V2_DESIGN_CHANGED_DURING_CERTIFICATION"]}
+CERTIFICATION_GATE_V2_CHANGED={summary["CERTIFICATION_GATE_V2_CHANGED"]}
+RETARGET_OBJECTIVE_V2_CHANGED={summary["RETARGET_OBJECTIVE_V2_CHANGED"]}
+SEMANTIC_V1_CHANGED={summary["SEMANTIC_V1_CHANGED"]}
+E_IM_THRESHOLD_CHANGED={summary["E_IM_THRESHOLD_CHANGED"]}
+```
 
 ## Final certification
 
@@ -2701,6 +2811,27 @@ PHYSX_RAN=NO
 O6_PRODUCTION_RAN=NO
 CERTIFICATION_SPLIT_NEW_CONSUMPTION=0
 HELDOUT_SPLIT_NEW_CONSUMPTION=0
+```
+
+## Final safety flags
+
+```text
+BRANCH={EXPECTED_BRANCH}
+D3_R3_HISTORICAL_STATUS={summary["D3_R3_HISTORICAL_STATUS"]}
+HISTORICAL_R3_RESULT_REWRITTEN={summary["HISTORICAL_R3_RESULT_REWRITTEN"]}
+D3_R4_STATUS={summary["D3_R4_STATUS"]}
+FRESH_REFINEMENT_QOLD_POOL_STATUS={summary["FRESH_REFINEMENT_QOLD_POOL_STATUS"]}
+QOLD_FROZEN_BEFORE_REFINEMENT_V2=YES
+FRESH_REFINEMENT_SPARSE={summary["FRESH_REFINEMENT_SPARSE"]}
+FRESH_REFINEMENT_WINDOW={summary["FRESH_REFINEMENT_WINDOW"]}
+CROSS_EPISODE_REFINEMENT={summary["CROSS_EPISODE_REFINEMENT"]}
+CROSS_EPISODE_REQUIREMENT=REQUIRED
+REFINEMENT_V2_INDEPENDENT_CERTIFICATION={decision.get("REFINEMENT_V2_INDEPENDENT_CERTIFICATION")}
+D3_V2_AUTHORIZED={decision.get("D3_V2_AUTHORIZED")}
+PUSHED=NO
+PR_CREATED=NO
+.local_TRACKED=NO
+GUIDANCE_WORKTREE_MODIFIED=NO
 ```
 """
     write_text(root / "handoff.md", handoff)

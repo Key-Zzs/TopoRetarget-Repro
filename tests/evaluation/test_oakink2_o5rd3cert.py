@@ -190,6 +190,25 @@ def test_consumed_sparse_technical_failure_is_fail_closed() -> None:
     assert '"RECOVERED_COUNT": "UNKNOWN_NOT_MEASURED"' in block
 
 
+def test_handoff_contains_contract_required_safety_and_runtime_fields() -> None:
+    source = Path(cert.__file__).read_text()
+    block = source[source.index("def summarize") : source.index("def validate_repository")]
+    for field in (
+        "HIGH_N",
+        "MID_N",
+        "LOW_N",
+        "WINDOW_MANIFEST_SHA256",
+        "CROSS_EPISODE_CONTROL_COUNT",
+        "NORMAL_PATH_FRAME_COUNT",
+        "VALID_NORMAL_PATHS_UNNECESSARILY_EXPANDED",
+        "ESTIMATED_D3_V2_2722_RUNTIME_SEC",
+        "REFINEMENT_V2_DESIGN_CHANGED_DURING_CERTIFICATION",
+        "CERTIFICATION_GATE_V2_CHANGED",
+        "GUIDANCE_WORKTREE_MODIFIED",
+    ):
+        assert field in block
+
+
 def test_window_failure_blocks_cross_episode() -> None:
     source = Path(cert.__file__).read_text()
     block = source[
