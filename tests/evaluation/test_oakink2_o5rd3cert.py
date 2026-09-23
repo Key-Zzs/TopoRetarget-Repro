@@ -175,6 +175,21 @@ def test_sparse_failure_blocks_windows_and_cross_episode() -> None:
     assert "DEV1_REFINEMENT_V2_FRESH_SPARSE_FAILURE_ANALYSIS" in block
 
 
+def test_consumed_sparse_technical_failure_is_fail_closed() -> None:
+    source = Path(cert.__file__).read_text()
+    block = source[
+        source.index("def finalize_sparse_technical_failure") : source.index(
+            "def select_fresh_windows"
+        )
+    ]
+    assert '"FAILED_TECHNICAL_AFTER_OPTIMIZER_START"' in block
+    assert '"TECHNICAL": f"{len(rows)}/{SPARSE_N}"' in block
+    assert '"SCIENTIFIC_RERUN_ALLOWED": "NO"' in block
+    assert '"FRESH_REFINEMENT_WINDOW": "NOT_RUN"' in block
+    assert '"CROSS_EPISODE_REFINEMENT": "NOT_RUN"' in block
+    assert '"RECOVERED_COUNT": "UNKNOWN_NOT_MEASURED"' in block
+
+
 def test_window_failure_blocks_cross_episode() -> None:
     source = Path(cert.__file__).read_text()
     block = source[

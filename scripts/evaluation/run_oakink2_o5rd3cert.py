@@ -1728,6 +1728,110 @@ def evaluate_fresh_sparse(root: Path) -> dict[str, Any]:
     return value
 
 
+def finalize_sparse_technical_failure(root: Path) -> dict[str, Any]:
+    """Close a consumed, incomplete Sparse run without permitting a retry."""
+
+    state_path = root / "sparse/run_state.json"
+    state = require(state_path, "status", "STARTED", "FINALIZE_SPARSE_TECHNICAL_FAILURE")
+    manifest, manifest_sha = frozen(
+        root / "sparse/manifest.json", "FINALIZE_SPARSE_TECHNICAL_FAILURE"
+    )
+    completed = list(state.get("completed", []))
+    if not completed or len(completed) >= SPARSE_N:
+        raise RuntimeError("FINALIZE_SPARSE_TECHNICAL_FAILURE_REJECTED:NOT_PARTIAL")
+    failures = [
+        json.loads(line)
+        for line in (root / "technical_failures.jsonl").read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    matching = [item for item in failures if item.get("action") == "run-fresh-sparse"]
+    if not matching:
+        raise RuntimeError("FINALIZE_SPARSE_TECHNICAL_FAILURE_REJECTED:NO_FAILURE_RECEIPT")
+    failure = matching[-1]
+    rows = read_csv(root / "sparse/per_frame.csv")
+    if len(rows) != len(completed):
+        raise RuntimeError("FINALIZE_SPARSE_TECHNICAL_FAILURE_REJECTED:RECEIPT_COUNT_MISMATCH")
+    old_invalid_count = sum(float(item["baseline_E_IM"]) > TAU for item in manifest["frames"])
+    updated_state = {
+        **state,
+        "status": "FAILED_TECHNICAL_AFTER_OPTIMIZER_START",
+        "failure": failure,
+        "completed_count": len(completed),
+        "expected_count": SPARSE_N,
+        "optimizer_started": True,
+        "retry_allowed": False,
+    }
+    write_json(state_path, updated_state)
+    write_json(
+        root / "sparse/determinism_manifest.json",
+        {
+            "schema_version": "O5RD3CERTSparseDeterminismV1",
+            "status": "NOT_RUN",
+            "DETERMINISM": "NOT_RUN",
+            "reason": "SPARSE_TECHNICAL_FAILURE_AFTER_OPTIMIZER_START",
+        },
+    )
+    criteria = {
+        "technical_30_of_30": False,
+        "old_invalid_evidence_present": old_invalid_count > 0,
+        "old_invalid_recovery": False,
+        "threshold_aware_nonregression": False,
+        "low_preservation": False,
+        "hard_validity": False,
+        "determinism": False,
+    }
+    value = {
+        "schema_version": "O5RD3CERTSparseGateResultsV1",
+        "status": "FAIL",
+        "FRESH_REFINEMENT_SPARSE": "FAIL",
+        "FAILURE_CLASS": "TECHNICAL_EXECUTION_FAILURE_AFTER_OPTIMIZER_START",
+        "FAILURE": failure,
+        "criteria": criteria,
+        "SPARSE_N": SPARSE_N,
+        "COMPLETED_N": len(rows),
+        "TECHNICAL": f"{len(rows)}/{SPARSE_N}",
+        "OLD_INVALID_COUNT": old_invalid_count,
+        "RECOVERED_COUNT": "UNKNOWN_NOT_MEASURED",
+        "RECOVERY_FRACTION": "UNKNOWN_NOT_MEASURED",
+        "THRESHOLD_AWARE_NONREGRESSION": "UNKNOWN_NOT_MEASURED",
+        "LOW_PRESERVED": "UNKNOWN_NOT_MEASURED",
+        "HARD_VALID": "UNKNOWN_NOT_MEASURED",
+        "DETERMINISM": "NOT_RUN",
+        "MEDIAN_RELATIVE_REDUCTION_DIAGNOSTIC": "UNKNOWN_NOT_MEASURED",
+        "OPTIMIZER_STARTED": "YES",
+        "SCIENTIFIC_RERUN_ALLOWED": "NO",
+        "manifest_sha256": manifest_sha,
+    }
+    write_json(root / "sparse/gate_results.json", value)
+    write_json(root / "sparse/decision.json", value)
+    write_json(
+        root / "window/decision.json",
+        {
+            "status": "NOT_RUN",
+            "FRESH_REFINEMENT_WINDOW": "NOT_RUN",
+            "reason": "SPARSE_FAIL_TECHNICAL_AFTER_OPTIMIZER_START",
+        },
+    )
+    write_json(
+        root / "cross_episode/decision.json",
+        {
+            "status": "NOT_RUN",
+            "CROSS_EPISODE_REFINEMENT": "NOT_RUN",
+            "reason": "SPARSE_FAIL_TECHNICAL_AFTER_OPTIMIZER_START",
+        },
+    )
+    write_json(
+        root / "certification/final_decision.json",
+        {
+            "status": "FAIL",
+            "REFINEMENT_V2_INDEPENDENT_CERTIFICATION": "FAIL",
+            "D3_V2_AUTHORIZED": "NO",
+            "NEXT": "DEV1_REFINEMENT_V2_FRESH_SPARSE_FAILURE_ANALYSIS",
+        },
+    )
+    return value
+
+
 def select_fresh_windows(root: Path) -> dict[str, Any]:
     require(root / "sparse/decision.json", "FRESH_REFINEMENT_SPARSE", "PASS", "SELECT_WINDOWS")
     plan, plan_sha = _manifest_authority(root, "SELECT_WINDOWS")
@@ -2722,6 +2826,7 @@ ACTIONS: dict[str, Callable[[Path], dict[str, Any]]] = {
     "run-fresh-sparse": run_fresh_sparse,
     "run-fresh-sparse-determinism": run_fresh_sparse_determinism,
     "evaluate-fresh-sparse": evaluate_fresh_sparse,
+    "finalize-sparse-technical-failure": finalize_sparse_technical_failure,
     "select-fresh-windows": select_fresh_windows,
     "freeze-fresh-windows": freeze_fresh_windows,
     "run-fresh-windows": run_fresh_windows,
