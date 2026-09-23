@@ -38,6 +38,7 @@ from scripts.data import run_oakink2_o5rd2g as d2g  # noqa: E402
 from scripts.evaluation import run_oakink2_o5rd3 as d3  # noqa: E402
 from scripts.evaluation import run_oakink2_o5rd3r2 as r2  # noqa: E402
 from scripts.evaluation import run_oakink2_o5rd3r3 as r3  # noqa: E402
+from toporetarget.retarget.artifacts import load_warm_start  # noqa: E402
 from toporetarget.retarget.objective_v2_execution import (  # noqa: E402
     asset_derived_dof_blocks,
     default_search_contracts,
@@ -783,7 +784,7 @@ class FreshRefinementRuntime(d2g.V3Runtime):
         self.authority_receipt = authority
         self.sequence = d2g.load_hoi_sequence(Path(authority["canonical_path"]))
         self.graph = d2g.load_interaction_graph(Path(authority["interaction_graph_path"]))
-        self.warm = o5.load_warm_start(Path(authority["warm_path"]))
+        self.warm = load_warm_start(Path(authority["warm_path"]))
         self.final = o5.load_final_trajectory(Path(authority["final_artifact_path"]))
         geometry = root / "qold_authority/runtime_geometry" / str(authority["baseline_id"])
         self.resources = d2g.prepare_refinement_resources(

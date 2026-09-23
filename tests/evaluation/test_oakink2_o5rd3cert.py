@@ -99,6 +99,15 @@ def test_refinement_v2_cannot_generate_its_own_qold() -> None:
     )
 
 
+def test_generic_runtime_loads_warm_start_from_artifact_authority() -> None:
+    source = Path(cert.__file__).read_text()
+    block = source[
+        source.index("class FreshRefinementRuntime") : source.index("def _baseline_metrics")
+    ]
+    assert "self.warm = load_warm_start" in block
+    assert "o5.load_warm_start" not in block
+
+
 def test_plan_is_required_before_every_fresh_manifest() -> None:
     source = Path(cert.__file__).read_text()
     for function in (
