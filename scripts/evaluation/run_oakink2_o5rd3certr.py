@@ -1469,6 +1469,8 @@ def summarize(root: Path) -> dict[str, Any]:
         "BRANCH": EXPECTED_BRANCH,
         "START_HEAD": START_HEAD,
         "FINAL_HEAD": git("rev-parse", "HEAD"),
+        "commits": git("log", "--format=%H", f"{START_HEAD}..HEAD").splitlines(),
+        "tracked_worktree_clean": not git("status", "--short", "--untracked-files=all"),
         "PUSHED": "NO",
         "PR_CREATED": "NO",
         "REFINEMENT_V2_INDEPENDENT_CERTIFICATION_V1": "FAIL",
