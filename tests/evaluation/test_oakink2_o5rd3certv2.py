@@ -41,6 +41,18 @@ def test_protocol_v2_requires_prefix_and_cross_episode() -> None:
     assert protocol["scientific_retry_policy"] == "NO_RETRY_AFTER_OPTIMIZER_START"
 
 
+def test_cert_r_exclusion_ledger_is_copied_byte_identically() -> None:
+    source = Path(certv2.__file__).read_text()
+    block = source[
+        source.index("def verify_cert_v2_exclusion_ledger") : source.index(
+            "def build_cert_v2_fresh_pool"
+        )
+    ]
+    assert "shutil.copy2(source, target)" in block
+    assert "sha256_file(target) != observed" in block
+    assert "FROZEN_CERT_V2_EXCLUSION_LEDGER_NOT_BYTE_IDENTICAL_TO_CERT_R" in block
+
+
 def test_cli_exposes_full_contract_and_no_forbidden_action() -> None:
     required = {
         "preflight",

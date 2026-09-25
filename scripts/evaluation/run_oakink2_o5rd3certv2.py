@@ -320,13 +320,24 @@ def verify_cert_v2_exclusion_ledger(root: Path) -> dict[str, Any]:
     }
     if not all(checks.values()):
         raise RuntimeError("D3_CERT_V2_STATUS=BLOCKED_FROZEN_AUTHORITY_INTEGRITY:EXCLUSION_LEDGER")
-    value = {
-        **ledger,
-        "source_path": str(source.resolve()),
-        "source_sha256": observed,
-        "verification_checks": checks,
-    }
-    return freeze_json(root / "freshness/cert_v2_exclusion_ledger.json", value)
+    target = root / "freshness/cert_v2_exclusion_ledger.json"
+    if target.is_file():
+        if sha256_file(target) != observed:
+            raise RuntimeError("FROZEN_CERT_V2_EXCLUSION_LEDGER_NOT_BYTE_IDENTICAL_TO_CERT_R")
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        write_text(target.with_suffix(".sha256"), observed + "\n")
+    write_json(
+        root / "freshness/cert_v2_exclusion_ledger_verification.json",
+        {
+            "status": "PASS",
+            "source_path": str(source.resolve()),
+            "source_sha256": observed,
+            "verification_checks": checks,
+        },
+    )
+    return ledger
 
 
 def build_cert_v2_fresh_pool(root: Path) -> dict[str, Any]:
