@@ -649,8 +649,13 @@ def finalize_qold_generation_failure(root: Path) -> dict[str, Any]:
     expected_frames = int(item["frame_count"])
     if not 0 <= accepted_frames < expected_frames:
         raise RuntimeError(f"QOLD_FAILURE_PROGRESS_NOT_INCOMPLETE:{baseline_id}")
-    if progress.get("invalid_frame_indices"):
+    invalid_frames = progress.get("invalid_frame_indices", progress.get("invalid_frames", []))
+    if invalid_frames:
         raise RuntimeError(f"QOLD_FAILURE_CHECKPOINT_ALREADY_INVALID:{baseline_id}")
+    if progress.get("accepted_frames", list(range(accepted_frames))) != list(
+        range(accepted_frames)
+    ):
+        raise RuntimeError(f"QOLD_FAILURE_CHECKPOINT_NOT_CONTIGUOUS:{baseline_id}")
 
     completed = []
     missing = []
@@ -682,7 +687,7 @@ def finalize_qold_generation_failure(root: Path) -> dict[str, Any]:
         "accepted_frame_count": accepted_frames,
         "attempted_sequence_local_ordinal": accepted_frames,
         "expected_frame_count": expected_frames,
-        "invalid_frame_indices_before_failure": progress["invalid_frame_indices"],
+        "invalid_frame_indices_before_failure": invalid_frames,
         "authority_frozen": False,
         "exception_type": exception_type,
         "exception_message": exception_message,

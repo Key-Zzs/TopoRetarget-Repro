@@ -151,7 +151,7 @@ def test_qold_failure_terminalizer_freezes_not_run_handoff(
     certv2.write_json(root / "qold/generated/done/authority.json", {"frame_count": 2})
     certv2.write_json(
         root / "qold/generation_work/retarget/failed/work/continuous_checkpoints/progress.json",
-        {"next_frame": 3, "invalid_frame_indices": []},
+        {"next_frame": 3, "accepted_frames": [0, 1, 2], "invalid_frames": []},
     )
     certv2.write_json(
         root / "freshness/eligible_pool_summary.json",
