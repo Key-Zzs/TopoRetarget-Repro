@@ -18,6 +18,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import shutil
 import subprocess
 import sys
@@ -596,6 +597,230 @@ def generate_cert_v2_qold_if_required(root: Path) -> dict[str, Any]:
     }
     write_json(root / "qold/generation_result.json", value)
     return value
+
+
+def finalize_qold_generation_failure(root: Path) -> dict[str, Any]:
+    """Freeze a witnessed baseline-generation failure without retrying it.
+
+    The frozen eligibility policy makes a candidate failure terminal.  This
+    action is deliberately observation-only: it validates the already frozen
+    plan and checkpoint, records the externally witnessed process exception,
+    and emits the mandatory NOT_RUN handoff.  It never invokes an optimizer.
+    """
+
+    plan, generation_plan_sha = frozen(
+        root / "qold/generation_plan.json", "FINALIZE_QOLD_GENERATION_FAILURE"
+    )
+    existing = root / "qold/generation_failure.json"
+    if existing.is_file():
+        return read_json(existing)
+    if (root / "qold/generation_result.json").exists():
+        raise RuntimeError("QOLD_GENERATION_ALREADY_TERMINAL_PASS")
+
+    baseline_id = os.environ.get("O5RD3CERTV2_FAILED_BASELINE_ID", "")
+    exception_type = os.environ.get("O5RD3CERTV2_FAILURE_EXCEPTION_TYPE", "")
+    exception_message = os.environ.get("O5RD3CERTV2_FAILURE_EXCEPTION_MESSAGE", "")
+    observed_at = os.environ.get("O5RD3CERTV2_FAILURE_OBSERVED_AT", "")
+    exit_code_text = os.environ.get("O5RD3CERTV2_FAILURE_EXIT_CODE", "")
+    if not all((baseline_id, exception_type, exception_message, observed_at, exit_code_text)):
+        raise RuntimeError("QOLD_FAILURE_OBSERVATION_ENV_INCOMPLETE")
+    try:
+        exit_code = int(exit_code_text)
+    except ValueError as error:
+        raise RuntimeError("QOLD_FAILURE_EXIT_CODE_INVALID") from error
+    if exit_code == 0:
+        raise RuntimeError("QOLD_FAILURE_EXIT_CODE_MUST_BE_NONZERO")
+
+    records = {str(item["baseline_id"]): item for item in plan["records"]}
+    if baseline_id not in records:
+        raise RuntimeError(f"QOLD_FAILURE_BASELINE_NOT_IN_FROZEN_PLAN:{baseline_id}")
+    item = records[baseline_id]
+    authority_path = root / "qold/generated" / baseline_id / "authority.json"
+    if authority_path.exists():
+        raise RuntimeError(f"QOLD_FAILURE_AUTHORITY_ALREADY_EXISTS:{baseline_id}")
+    progress_path = (
+        root
+        / "qold/generation_work/retarget"
+        / baseline_id
+        / "work/continuous_checkpoints/progress.json"
+    )
+    progress = read_json(progress_path)
+    accepted_frames = int(progress["next_frame"])
+    expected_frames = int(item["frame_count"])
+    if not 0 <= accepted_frames < expected_frames:
+        raise RuntimeError(f"QOLD_FAILURE_PROGRESS_NOT_INCOMPLETE:{baseline_id}")
+    if progress.get("invalid_frame_indices"):
+        raise RuntimeError(f"QOLD_FAILURE_CHECKPOINT_ALREADY_INVALID:{baseline_id}")
+
+    completed = []
+    missing = []
+    reused_completed = 0
+    new_completed = 0
+    completed_frames = 0
+    for candidate in plan["records"]:
+        candidate_path = root / "qold/generated" / candidate["baseline_id"] / "authority.json"
+        if not candidate_path.is_file():
+            missing.append(str(candidate["baseline_id"]))
+            continue
+        authority = read_json(candidate_path)
+        completed.append(str(candidate["baseline_id"]))
+        completed_frames += int(authority["frame_count"])
+        if candidate["reuse_source_authority_path"] is None:
+            new_completed += 1
+        else:
+            reused_completed += 1
+
+    failure = {
+        "schema_version": "O5RD3CERTV2QOldGenerationFailureV1",
+        "status": "FAIL",
+        "D3_CERT_V2_STATUS": "BLOCKED_QOLD_BASELINE_GENERATION",
+        "failure_stage": "HISTORICAL_QOLD_GENERATION",
+        "failed_baseline_id": baseline_id,
+        "failed_record_id": item["record_id"],
+        "failed_sequence_id": item["sequence_id"],
+        "failed_role": item["role"],
+        "accepted_frame_count": accepted_frames,
+        "attempted_sequence_local_ordinal": accepted_frames,
+        "expected_frame_count": expected_frames,
+        "invalid_frame_indices_before_failure": progress["invalid_frame_indices"],
+        "authority_frozen": False,
+        "exception_type": exception_type,
+        "exception_message": exception_message,
+        "process_exit_code": exit_code,
+        "observed_at": observed_at,
+        "observation_source": "CAPTURED_PROCESS_STDERR",
+        "generation_plan_sha256": generation_plan_sha,
+        "eligibility_failure_policy": plan["eligibility_failure_policy"],
+        "replacement_allowed": False,
+        "technical_resume_allowed_after_observed_candidate_failure": False,
+        "completed_baseline_ids": completed,
+        "missing_baseline_ids": missing,
+        "completed_authority_count": len(completed),
+        "completed_qold_frame_count": completed_frames,
+        "completed_reused_authority_count": reused_completed,
+        "completed_new_authority_count": new_completed,
+        "REFINEMENT_V2_CERTIFICATION_RUN_COUNT": 0,
+        "CERTIFICATION_SPLIT_NEW_CONSUMPTION": 0,
+        "HELDOUT_SPLIT_NEW_CONSUMPTION": 0,
+        "HARD_STOP": True,
+    }
+    write_json(existing, failure)
+
+    not_run = {
+        "schema_version": "O5RD3CERTV2BlockedQOldNotRunV1",
+        "status": "NOT_RUN",
+        "reason": "QOLD_BASELINE_GENERATION_FAIL",
+        "D3_CERT_V2_STATUS": failure["D3_CERT_V2_STATUS"],
+        "FRESH_SPARSE_V2": "NOT_RUN",
+        "FRESH_WINDOW_V2": "NOT_RUN",
+        "FRESH_CROSS_EPISODE_V2": "NOT_RUN",
+        "REFINEMENT_V2_INDEPENDENT_CERTIFICATION_V2": "NOT_RUN",
+        "D3_V2_AUTHORIZED": "NO",
+        "D3_V2_SCIENTIFIC_RUN_COUNT": 0,
+        "DEV2_RERUN": "NO",
+        "PPO_TRAINING_RUN_COUNT_NEW": 0,
+        "PHYSX_RAN": "NO",
+        "O6_PRODUCTION_RAN": "NO",
+        "CERTIFICATION_SPLIT_NEW_CONSUMPTION": 0,
+        "HELDOUT_SPLIT_NEW_CONSUMPTION": 0,
+    }
+    for relative in (
+        "sparse_v2/decision.json",
+        "window_v2/decision.json",
+        "cross_episode_v2/decision.json",
+        "certification/final_decision.json",
+        "future/not_authorized.json",
+    ):
+        write_json(root / relative, not_run)
+
+    pool = read_json(root / "freshness/eligible_pool_summary.json")
+    summary = {
+        "schema_version": "OakInk2O5RD3CERTV2BlockedQOldFinalSummaryV1",
+        "D3_CERT_V2_STATUS": failure["D3_CERT_V2_STATUS"],
+        "BRANCH": git("branch", "--show-current"),
+        "START_HEAD": START_HEAD,
+        "FINAL_HEAD": git("rev-parse", "HEAD"),
+        "tracked_worktree_clean": not git("status", "--short", "--untracked-files=all"),
+        "PUSHED": "NO",
+        "PR_CREATED": "NO",
+        "D3_CERT_V1_HISTORICAL_RESULT": "FAIL",
+        "D3_CERT_V1_HISTORICAL_RESULT_REWRITTEN": "NO",
+        "CERT_R_STATUS": "PASS_PROTOCOL_REPAIR",
+        "REFINEMENT_V2_DESIGN_SHA256": DESIGN_SHA256,
+        "REFINEMENT_V2_DEVELOPMENT_GATE_V2_SHA256": GATE_V2_SHA256,
+        "CERTIFICATION_PROTOCOL_V2_SHA256": PROTOCOL_V2_SHA256,
+        "METHOD_INTEGRITY_START": "PASS",
+        "GATE_INTEGRITY_START": "PASS",
+        "PROTOCOL_INTEGRITY_START": "PASS",
+        "DEVELOPMENT_RECORD_COUNT": pool["DEVELOPMENT_RECORD_COUNT"],
+        "ELIGIBLE_FRESH_RECORD_COUNT": pool["ELIGIBLE_FRESH_RECORD_COUNT"],
+        "ELIGIBLE_FRESH_FRAME_COUNT": pool["ELIGIBLE_FRESH_FRAME_COUNT"],
+        "METHOD_DEVELOPMENT_OVERLAP": pool["METHOD_DEVELOPMENT_OVERLAP"],
+        "CERT_V1_OVERLAP": pool["CERT_V1_OVERLAP"],
+        "CERT_R_EXPOSED_SEQUENCE_OVERLAP": pool["CERT_R_EXPOSED_SEQUENCE_OVERLAP"],
+        "REUSED_BASELINE_ONLY_RECORD_COUNT_COMPLETED": reused_completed,
+        "NEW_BASELINE_GENERATION_RECORD_COUNT_COMPLETED": new_completed,
+        "QOLD_FRAME_COUNT_COMPLETED": completed_frames,
+        "QOLD_AUTHORITY_MANIFEST_SHA256": None,
+        "QOLD_FROZEN_BEFORE_TARGET_SELECTION": "NO",
+        "QOLD_FROZEN_BEFORE_REFINEMENT_V2": "NO",
+        "CERT_V2_RUN_PLAN_SHA256": None,
+        "ALL_STAGE_IDENTITIES_FROZEN_BEFORE_FIRST_FRESH_RUN": "NO",
+        "FRESH_SPARSE_V2": "NOT_RUN",
+        "FRESH_WINDOW_V2": "NOT_RUN",
+        "FRESH_CROSS_EPISODE_V2": "NOT_RUN",
+        "METHOD_INTEGRITY_POSTRUN": "NOT_RUN",
+        "PROTOCOL_INTEGRITY_POSTRUN": "NOT_RUN",
+        "REFINEMENT_V2_INDEPENDENT_CERTIFICATION_V2": "NOT_RUN",
+        "CERTIFIED_REFINEMENT_V2_AUTHORITY_SHA256": None,
+        "D3_V2_AUTHORIZED": "NO",
+        "NEXT": "DEV1_REFINEMENT_V2_QOLD_BASELINE_GENERATION_FAILURE_ANALYSIS",
+        "D3_V2_SCIENTIFIC_RUN_COUNT": 0,
+        "DEV2_RERUN": "NO",
+        "PPO_TRAINING_RUN_COUNT_NEW": 0,
+        "PHYSX_RAN": "NO",
+        "O6_PRODUCTION_RAN": "NO",
+        "CERTIFICATION_SPLIT_NEW_CONSUMPTION": 0,
+        "HELDOUT_SPLIT_NEW_CONSUMPTION": 0,
+        ".local_TRACKED": "NO",
+        "GUIDANCE_WORKTREE_MODIFIED": "NO",
+        "HARD_STOP": True,
+    }
+    write_json(root / "final_summary.json", summary)
+    audit = {
+        "schema_version": "O5RD3CERTV2BlockedQOldCompletionAuditV1",
+        "status": "HARD_STOP_CONFIRMED",
+        "earliest_failing_stage": "HISTORICAL_QOLD_GENERATION",
+        "terminal_status": failure["D3_CERT_V2_STATUS"],
+        "failure_receipt_sha256": sha256_file(existing),
+        "downstream_not_run": {
+            "RUN_PLAN": True,
+            "FRESH_SPARSE_V2": True,
+            "FRESH_WINDOW_V2": True,
+            "FRESH_CROSS_EPISODE_V2": True,
+            "D3_V2": True,
+            "DEV2": True,
+            "PPO": True,
+            "PHYSX": True,
+            "O6": True,
+        },
+        "replacement_performed": False,
+        "retry_after_failure_performed": False,
+    }
+    write_json(root / "completion_audit.json", audit)
+    lines = [
+        "# OakInk2 O5R-D3-CERT-V2",
+        "",
+        "# RefinementV2 Fresh Independent Certification Handoff",
+        "",
+    ] + [
+        f"{key}={json.dumps(value, sort_keys=True)}"
+        for key, value in summary.items()
+        if key != "schema_version"
+    ]
+    write_text(root / "final_summary.md", "\n".join(lines) + "\n")
+    write_text(root / "handoff.md", "\n".join(lines) + "\n")
+    return summary
 
 
 def freeze_cert_v2_qold_authority(root: Path) -> dict[str, Any]:
@@ -2392,6 +2617,7 @@ ACTIONS = {
     "audit-reusable-qold": audit_reusable_qold,
     "freeze-cert-v2-qold-generation-plan": freeze_cert_v2_qold_generation_plan,
     "generate-cert-v2-qold-if-required": generate_cert_v2_qold_if_required,
+    "finalize-qold-generation-failure": finalize_qold_generation_failure,
     "freeze-cert-v2-qold-authority": freeze_cert_v2_qold_authority,
     "freeze-cert-v2-run-plan": freeze_cert_v2_run_plan,
     "freeze-cert-v2-sparse-manifest": freeze_cert_v2_sparse_manifest,

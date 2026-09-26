@@ -63,6 +63,7 @@ def test_cli_exposes_full_contract_and_no_forbidden_action() -> None:
         "audit-reusable-qold",
         "freeze-cert-v2-qold-generation-plan",
         "generate-cert-v2-qold-if-required",
+        "finalize-qold-generation-failure",
         "freeze-cert-v2-qold-authority",
         "freeze-cert-v2-run-plan",
         "freeze-cert-v2-sparse-manifest",
@@ -101,6 +102,101 @@ def test_qold_generation_has_no_refinement_execution() -> None:
     ]
     assert "_run_refinement_frame" not in block
     assert "_generate_one_baseline" in block
+
+
+def test_qold_failure_terminalizer_never_runs_or_replaces_baseline() -> None:
+    source = Path(certv2.__file__).read_text()
+    block = source[
+        source.index("def finalize_qold_generation_failure") : source.index(
+            "def freeze_cert_v2_qold_authority"
+        )
+    ]
+    assert '"BLOCKED_QOLD_BASELINE_GENERATION"' in block
+    assert '"replacement_allowed": False' in block
+    assert '"technical_resume_allowed_after_observed_candidate_failure": False' in block
+    assert '"FRESH_SPARSE_V2": "NOT_RUN"' in block
+    assert '"D3_V2_AUTHORIZED": "NO"' in block
+    assert "_generate_one_baseline" not in block
+
+
+def test_qold_failure_terminalizer_freezes_not_run_handoff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path
+    plan = {
+        "eligibility_failure_policy": (
+            "no replacement after baseline execution starts; "
+            "a frozen candidate failure blocks certification"
+        ),
+        "records": [
+            {
+                "baseline_id": "done",
+                "record_id": "record_done",
+                "sequence_id": "sequence_done",
+                "role": "SPARSE_CANDIDATE",
+                "frame_count": 2,
+                "reuse_source_authority_path": None,
+            },
+            {
+                "baseline_id": "failed",
+                "record_id": "record_failed",
+                "sequence_id": "sequence_failed",
+                "role": "WINDOW_CANDIDATE",
+                "frame_count": 5,
+                "reuse_source_authority_path": None,
+            },
+        ],
+    }
+    certv2.freeze_json(root / "qold/generation_plan.json", plan)
+    certv2.write_json(root / "qold/generated/done/authority.json", {"frame_count": 2})
+    certv2.write_json(
+        root / "qold/generation_work/retarget/failed/work/continuous_checkpoints/progress.json",
+        {"next_frame": 3, "invalid_frame_indices": []},
+    )
+    certv2.write_json(
+        root / "freshness/eligible_pool_summary.json",
+        {
+            "DEVELOPMENT_RECORD_COUNT": 10,
+            "ELIGIBLE_FRESH_RECORD_COUNT": 8,
+            "ELIGIBLE_FRESH_FRAME_COUNT": 80,
+            "METHOD_DEVELOPMENT_OVERLAP": 0,
+            "CERT_V1_OVERLAP": 0,
+            "CERT_R_EXPOSED_SEQUENCE_OVERLAP": 0,
+        },
+    )
+    monkeypatch.setattr(
+        certv2,
+        "git",
+        lambda *args: (
+            "feature/oakink2-raw-to-physical"
+            if args == ("branch", "--show-current")
+            else "f" * 40
+            if args == ("rev-parse", "HEAD")
+            else ""
+        ),
+    )
+    values = {
+        "O5RD3CERTV2_FAILED_BASELINE_ID": "failed",
+        "O5RD3CERTV2_FAILURE_EXCEPTION_TYPE": "FrameDegeneracyError",
+        "O5RD3CERTV2_FAILURE_EXCEPTION_MESSAGE": "degenerate frame",
+        "O5RD3CERTV2_FAILURE_OBSERVED_AT": "2026-09-27T04:12:00+08:00",
+        "O5RD3CERTV2_FAILURE_EXIT_CODE": "1",
+    }
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+
+    summary = certv2.finalize_qold_generation_failure(root)
+
+    failure = certv2.read_json(root / "qold/generation_failure.json")
+    audit = certv2.read_json(root / "completion_audit.json")
+    assert failure["accepted_frame_count"] == 3
+    assert failure["missing_baseline_ids"] == ["failed"]
+    assert failure["replacement_allowed"] is False
+    assert summary["D3_CERT_V2_STATUS"] == "BLOCKED_QOLD_BASELINE_GENERATION"
+    assert summary["FRESH_SPARSE_V2"] == "NOT_RUN"
+    assert summary["D3_V2_AUTHORIZED"] == "NO"
+    assert audit["status"] == "HARD_STOP_CONFIRMED"
+    assert audit["retry_after_failure_performed"] is False
 
 
 def test_qold_is_frozen_before_target_selection() -> None:
