@@ -1230,7 +1230,18 @@ class _FrameContext:
         delta_p, delta_w, qpos, slack = self.unpack(value)
         base = self.base_pose_torch(value)
         with self.timers.measure("robot_keypoints"):
-            robot_keypoints = self.robot_model.keypoints_scene(qpos, base, layout="mediapipe21")
+            # Bone-direction features are defined in a wrist-local canonical
+            # frame and are exactly invariant to the robot's rigid scene pose.
+            # Construct that frame before adding the optimizer's unbounded
+            # scene translation.  Otherwise a numerically remote SLSQP probe
+            # can round distinct MCP anchors to the same float64 scene point
+            # (large translation followed by subtraction), even though the
+            # underlying robot geometry is nondegenerate.  Interaction terms
+            # continue to consume the unchanged scene-frame keypoints below.
+            robot_keypoints_base = self.robot_model.keypoints_base(qpos, layout="mediapipe21")
+            robot_keypoints = (
+                robot_keypoints_base @ base[..., :3, :3].transpose(-1, -2) + base[..., None, :3, 3]
+            )
         robot_vertices = self.robot_graph_vertices_torch(value, robot_keypoints)
         with self.timers.measure("interaction_laplacian"):
             residual = self._residual_model(robot_vertices)
@@ -1238,7 +1249,7 @@ class _FrameContext:
             e_im = residual.square().sum() / 71.0
         with self.timers.measure("bone_features"):
             robot_features = extract_bone_features(
-                robot_keypoints,
+                robot_keypoints_base,
                 self.frame_profile,
                 self.bone_profile,
                 side=self.robot_model.side,
