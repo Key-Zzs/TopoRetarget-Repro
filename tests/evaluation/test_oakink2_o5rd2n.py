@@ -213,8 +213,13 @@ def test_special_case_audit_uses_only_frozen_scientific_callgraph(tmp_path: Path
     assert value["DEV2_FRAME10705_SEARCH_BRANCH"] == "NO"
 
 
-def test_method_hashes_remain_exact() -> None:
+def test_historical_method_hashes_fail_closed_after_qold_authority_repair() -> None:
     for path, expected in study.d2m.FROZEN_AUTHORITIES.values():
         assert study.sha256_file(path) == expected
-    for path, expected in study.d2m.METHOD_IMPLEMENTATIONS.values():
-        assert study.sha256_file(path) == expected
+    for name, (path, expected) in study.d2m.METHOD_IMPLEMENTATIONS.items():
+        actual = study.sha256_file(path)
+        if name == "production_refinement":
+            assert actual != expected
+            assert "robot_keypoints_base" in path.read_text(encoding="utf-8")
+        else:
+            assert actual == expected

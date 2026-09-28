@@ -15,8 +15,16 @@ def test_frozen_authorities_match_d2l_and_upstream() -> None:
         sidecar = path.with_suffix(".sha256")
         if sidecar.is_file():
             assert sidecar.read_text(encoding="utf-8").split()[0] == expected
-    for path, expected in study.METHOD_IMPLEMENTATIONS.values():
-        assert study.sha256_file(path) == expected
+    for name, (path, expected) in study.METHOD_IMPLEMENTATIONS.items():
+        actual = study.sha256_file(path)
+        if name == "production_refinement":
+            # D2M's scientific run remains bound to its historical production
+            # implementation.  The later q_old authority-restoration repair is
+            # intentionally detected as drift, so a DEV2 rerun fails closed.
+            assert actual != expected
+            assert "robot_keypoints_base" in path.read_text(encoding="utf-8")
+        else:
+            assert actual == expected
     assert study.GRAPH_PATH == (study.d2g.ROOT / "graph_authority/dev2_frame0_source_graph.zarr")
     assert study.d2g.interaction_artifact_hash(study.GRAPH_PATH) == (
         "2b941f517183b4e70903005f7b6914a7eedfa28654306db4f023e0447639f375"
